@@ -9,3 +9,6 @@ labels:
     tool: fathom
 entrypoints:
     readme: README.md
+related_repos:
+    - repo_id: github.com/skaphos/meridian
+      relationship: integrates-with
