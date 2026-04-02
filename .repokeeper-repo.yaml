@@ -1,0 +1,11 @@
+apiVersion: repokeeper/v1
+kind: RepoMetadata
+repo_id: github.com/skaphos/fathom
+name: Fathom
+labels:
+    kind: tool
+    org: skaphos
+    role: cluster-integrity
+    tool: fathom
+entrypoints:
+    readme: README.md
