@@ -87,7 +87,7 @@ jobs:
           go -C tools tool task catalog-push CATALOG_IMG=${{ steps.vars.outputs.catalog_img }}
 
       - name: Create GitHub release with install.yaml
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/install.yaml
           generate_release_notes: true
