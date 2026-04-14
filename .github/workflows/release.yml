@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: skaphos
+  IMAGE_NAME: fathom-operator
+  BUNDLE_NAME: fathom-operator-bundle
+  CATALOG_NAME: fathom-operator-catalog
+
+jobs:
+  release:
+    name: Publish operator images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install operator-sdk
+        run: |
+          set -euo pipefail
+          VERSION=$(awk '/^operator-sdk /{print $2}' .tool-versions)
+          curl -sSLo /usr/local/bin/operator-sdk \
+            "https://github.com/operator-framework/operator-sdk/releases/download/v${VERSION}/operator-sdk_linux_amd64"
+          chmod +x /usr/local/bin/operator-sdk
+
+      - name: Install opm
+        run: |
+          set -euo pipefail
+          curl -sSLo /usr/local/bin/opm \
+            https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/linux-amd64-opm
+          chmod +x /usr/local/bin/opm
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Compute tag vars
+        id: vars
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:v${VERSION}"
+          BUNDLE_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${BUNDLE_NAME}:v${VERSION}"
+          CATALOG_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${CATALOG_NAME}:v${VERSION}"
+          {
+            echo "version=${VERSION}"
+            echo "img=${IMG}"
+            echo "bundle_img=${BUNDLE_IMG}"
+            echo "catalog_img=${CATALOG_IMG}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push operator image
+        run: |
+          go -C tools tool task docker-build IMG=${{ steps.vars.outputs.img }}
+          go -C tools tool task docker-push IMG=${{ steps.vars.outputs.img }}
+
+      - name: Generate install.yaml
+        run: |
+          go -C tools tool task build-installer IMG=${{ steps.vars.outputs.img }}
+
+      - name: Build and push OLM bundle
+        run: |
+          go -C tools tool task bundle IMG=${{ steps.vars.outputs.img }} VERSION=${{ steps.vars.outputs.version }}
+          go -C tools tool task bundle-build BUNDLE_IMG=${{ steps.vars.outputs.bundle_img }}
+          go -C tools tool task bundle-push BUNDLE_IMG=${{ steps.vars.outputs.bundle_img }}
+
+      - name: Build and push OLM catalog
+        run: |
+          go -C tools tool task catalog-build BUNDLE_IMG=${{ steps.vars.outputs.bundle_img }} CATALOG_IMG=${{ steps.vars.outputs.catalog_img }}
+          go -C tools tool task catalog-push CATALOG_IMG=${{ steps.vars.outputs.catalog_img }}
+
+      - name: Create GitHub release with install.yaml
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/install.yaml
+          generate_release_notes: true
