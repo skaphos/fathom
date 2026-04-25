@@ -36,7 +36,6 @@ dist/
 .windsurf/
 .continue/
 .aider*
-CLAUDE.md
 
 # OS
 .DS_Store
