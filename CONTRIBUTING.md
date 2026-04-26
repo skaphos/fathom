@@ -32,7 +32,9 @@ must be on `PATH` when you run the corresponding tasks.
 
 - Follow Go conventions and keep code readable.
 - Keep REUSE metadata valid:
+  <!-- REUSE-IgnoreStart -->
   - Source files should include SPDX headers (`SPDX-License-Identifier: MIT`).
+  <!-- REUSE-IgnoreEnd -->
   - Use `reuse lint` to validate licensing metadata.
 - Format code:
   - `go -C tools tool task fmt`
