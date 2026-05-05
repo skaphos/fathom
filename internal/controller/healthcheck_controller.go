@@ -3,6 +3,7 @@ SPDX-FileCopyrightText: 2026 Skaphos
 SPDX-License-Identifier: MIT
 */
 
+// Package controller implements reconcilers for the fathom.skaphos.io CRDs.
 package controller
 
 import (

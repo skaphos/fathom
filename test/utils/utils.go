@@ -3,6 +3,7 @@ SPDX-FileCopyrightText: 2026 Skaphos
 SPDX-License-Identifier: MIT
 */
 
+// Package utils provides shared helpers for the e2e Ginkgo suite.
 package utils
 
 import (
