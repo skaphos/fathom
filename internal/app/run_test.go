@@ -200,4 +200,3 @@ func TestRun_ManagerCreationFailure(t *testing.T) {
 		t.Errorf("underlying error not wrapped: %v", err)
 	}
 }
-
