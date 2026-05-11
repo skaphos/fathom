@@ -25,9 +25,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
+	"github.com/skaphos/fathom/pkg/adapter"
 )
 
 // readyzCheck returns a [healthz.Checker] that returns nil only once synced has
@@ -129,13 +131,39 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 
 // DefaultControllers returns the operator's built-in reconcilers, configured
 // against mgr. Tests substitute their own Setupper slice instead.
-func DefaultControllers(mgr ctrl.Manager) []Setupper {
-	adapterRegistry := registry.New(ctrl.Log.WithName("adapter-registry"))
+func DefaultControllers(mgr ctrl.Manager) ([]Setupper, error) {
+	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), builtInAdapters()...)
+	if err != nil {
+		return nil, err
+	}
 	return []Setupper{
 		&controller.AddonCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Adapters: adapterRegistry},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
+	}, nil
+}
+
+// BuildAdapterRegistry constructs the in-process registry used by AddonCheck
+// reconciliation and registers every compiled-in adapter.
+func BuildAdapterRegistry(logger logr.Logger, adapters ...adapter.Adapter) (*registry.Registry, error) {
+	adapterRegistry := registry.New(logger)
+	for _, a := range adapters {
+		if err := adapterRegistry.Register(a); err != nil {
+			return nil, fmt.Errorf("register built-in adapter %q: %w", adapterName(a), err)
+		}
 	}
+	return adapterRegistry, nil
+}
+
+func adapterName(a adapter.Adapter) string {
+	if a == nil {
+		return "<nil>"
+	}
+	return a.Name()
+}
+
+func builtInAdapters() []adapter.Adapter {
+	return nil
 }
 
 // managerFactory builds a manager from a rest.Config and ctrl.Options. It is a
@@ -152,7 +180,7 @@ func Run(
 	ctx context.Context,
 	cfg *rest.Config,
 	opts Options,
-	controllersFor func(ctrl.Manager) []Setupper,
+	controllersFor func(ctrl.Manager) ([]Setupper, error),
 ) error {
 	if cfg == nil {
 		return errors.New("rest.Config must not be nil")
@@ -181,7 +209,11 @@ func Run(
 		return fmt.Errorf("create manager: %w", err)
 	}
 
-	for _, s := range controllersFor(mgr) {
+	controllers, err := controllersFor(mgr)
+	if err != nil {
+		return fmt.Errorf("build controllers: %w", err)
+	}
+	for _, s := range controllers {
 		if err := s.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("setup controller: %w", err)
 		}

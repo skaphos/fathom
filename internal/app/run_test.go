@@ -21,9 +21,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/skaphos/fathom/pkg/adapter"
 )
+
+type appFakeAdapter struct{}
+
+func (appFakeAdapter) Name() string            { return "fake-cert-manager" }
+func (appFakeAdapter) Version() string         { return "0.1.0" }
+func (appFakeAdapter) ContractVersion() string { return adapter.ContractVersion }
+func (appFakeAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{"cert-manager"}, Families: []adapter.Family{"system_health"}}
+}
+func (appFakeAdapter) Run(context.Context, adapter.Request) (adapter.Result, error) {
+	return adapter.Result{}, nil
+}
 
 // writeSelfSignedCert writes a tls.crt + tls.key pair into dir. The cert is
 // minimal but valid PEM, which is enough for certwatcher.New to accept.
@@ -159,6 +174,34 @@ func TestBuildManagerOptions_MissingWebhookCert_Errors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "webhook cert watcher") {
 		t.Errorf("error wrap: %v", err)
+	}
+}
+
+func TestBuildAdapterRegistry_RegistersBuiltInAdapters(t *testing.T) {
+	adapterRegistry, err := BuildAdapterRegistry(logr.Discard(), appFakeAdapter{})
+	if err != nil {
+		t.Fatalf("BuildAdapterRegistry: %v", err)
+	}
+
+	got, err := adapterRegistry.Lookup("cert-manager")
+	if err != nil {
+		t.Fatalf("Lookup(cert-manager): %v", err)
+	}
+	if got.Name() != "fake-cert-manager" {
+		t.Fatalf("adapter name: got %q, want fake-cert-manager", got.Name())
+	}
+}
+
+func TestBuildAdapterRegistry_WrapsRegistrationErrors(t *testing.T) {
+	_, err := BuildAdapterRegistry(logr.Discard(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil built-in adapter")
+	}
+	if !strings.Contains(err.Error(), "register built-in adapter") {
+		t.Errorf("error wrap: %v", err)
+	}
+	if !strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("adapter identity missing from error: %v", err)
 	}
 }
 
