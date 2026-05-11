@@ -192,6 +192,34 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(ready.Reason).To(Equal("RunCompleted"))
 	})
 
+	DescribeTable("aggregateHealthReportResult worst-case ranking",
+		func(outcomes []adapter.Outcome, want fathomv1alpha1.HealthReportResult) {
+			checks := make([]adapter.CheckResult, 0, len(outcomes))
+			for _, o := range outcomes {
+				checks = append(checks, adapter.CheckResult{Outcome: o})
+			}
+			Expect(aggregateHealthReportResult(checks)).To(Equal(want))
+		},
+		Entry("empty input returns Skipped (adapter ran, produced no outcomes)",
+			[]adapter.Outcome{}, fathomv1alpha1.HealthReportResultSkipped),
+		Entry("all Pass aggregates to Pass",
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomePass}, fathomv1alpha1.HealthReportResultPass),
+		Entry("Pass+Skipped aggregates to Skipped",
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeSkipped}, fathomv1alpha1.HealthReportResultSkipped),
+		Entry("Pass+Warn aggregates to Warn",
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeWarn}, fathomv1alpha1.HealthReportResultWarn),
+		Entry("Pass+Fail aggregates to Fail",
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeFail}, fathomv1alpha1.HealthReportResultFail),
+		Entry("Pass+Error aggregates to Error",
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeError}, fathomv1alpha1.HealthReportResultError),
+		Entry("Fail+Unknown aggregates to Fail (Fail outranks Unknown)",
+			[]adapter.Outcome{adapter.OutcomeFail, adapter.Outcome("synthetic-unknown")}, fathomv1alpha1.HealthReportResultFail),
+		Entry("Error wins everything",
+			[]adapter.Outcome{adapter.OutcomeFail, adapter.OutcomeError, adapter.OutcomeWarn}, fathomv1alpha1.HealthReportResultError),
+		Entry("All Skipped aggregates to Skipped",
+			[]adapter.Outcome{adapter.OutcomeSkipped, adapter.OutcomeSkipped}, fathomv1alpha1.HealthReportResultSkipped),
+	)
+
 	It("ignores deleted AddonChecks", func() {
 		controllerReconciler := &AddonCheckReconciler{
 			Client: k8sClient,

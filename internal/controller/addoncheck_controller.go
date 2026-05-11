@@ -390,31 +390,24 @@ func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.
 	return out
 }
 
+// aggregateHealthReportResult returns the worst-case Result across an
+// adapter's per-check outcomes via the shared HealthReportResult.Severity
+// ranking. An empty checks slice means the adapter ran but produced no
+// outcomes — surfaced as Skipped so the report carries some signal.
 func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1alpha1.HealthReportResult {
 	if len(checks) == 0 {
 		return fathomv1alpha1.HealthReportResultSkipped
 	}
-	result := fathomv1alpha1.HealthReportResultPass
+	worst := fathomv1alpha1.HealthReportResultPass
+	worstRank := worst.Severity()
 	for _, check := range checks {
-		switch check.Outcome {
-		case adapter.OutcomeError:
-			return fathomv1alpha1.HealthReportResultError
-		case adapter.OutcomeFail:
-			result = fathomv1alpha1.HealthReportResultFail
-		case adapter.OutcomeWarn:
-			if result == fathomv1alpha1.HealthReportResultPass {
-				result = fathomv1alpha1.HealthReportResultWarn
-			}
-		case adapter.OutcomeSkipped:
-			if result == fathomv1alpha1.HealthReportResultPass {
-				result = fathomv1alpha1.HealthReportResultSkipped
-			}
-		case adapter.OutcomePass:
-		default:
-			return fathomv1alpha1.HealthReportResultUnknown
+		r := healthReportResult(check.Outcome)
+		if rank := r.Severity(); rank > worstRank {
+			worst = r
+			worstRank = rank
 		}
 	}
-	return result
+	return worst
 }
 
 func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResult {

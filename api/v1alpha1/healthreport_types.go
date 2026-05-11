@@ -22,6 +22,35 @@ const (
 	HealthReportResultUnknown HealthReportResult = "Unknown"
 )
 
+// Severity returns the relative severity of this Result for worst-case
+// aggregation across multiple Results. Higher value = worse. The ordering
+// is: Pass(1) < Skipped(2) < Warn(3) < Unknown(4) < Fail(5) < Error(6).
+// Empty or unrecognized values return 0; callers should treat that as
+// "exclude from worst-case aggregation" (e.g. the input was never observed,
+// like a HealthCheck that has not yet been reconciled).
+//
+// Unknown sits above Warn and below Fail rather than short-circuiting the
+// aggregate: a known Fail is more actionable than an Unknown, so when both
+// appear in the same set the aggregate reports Fail.
+func (r HealthReportResult) Severity() int {
+	switch r {
+	case HealthReportResultPass:
+		return 1
+	case HealthReportResultSkipped:
+		return 2
+	case HealthReportResultWarn:
+		return 3
+	case HealthReportResultUnknown:
+		return 4
+	case HealthReportResultFail:
+		return 5
+	case HealthReportResultError:
+		return 6
+	default:
+		return 0
+	}
+}
+
 // HealthReportTargetRef identifies a Kubernetes object observed by a check.
 type HealthReportTargetRef struct {
 	// APIVersion is the target object's API version.

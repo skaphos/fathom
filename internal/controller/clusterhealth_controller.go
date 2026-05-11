@@ -32,19 +32,6 @@ const (
 	clusterHealthConditionReady    = "Ready"
 )
 
-// resultSeverity ranks HealthReportResult values for worst-case aggregation.
-// Higher value = worse. The empty Result (HealthCheck not yet reconciled) is
-// intentionally absent so it is excluded from the worst-case roll-up — pending
-// HealthChecks contribute to MatchedCount but not to Result.
-var resultSeverity = map[fathomv1alpha1.HealthReportResult]int{
-	fathomv1alpha1.HealthReportResultPass:    1,
-	fathomv1alpha1.HealthReportResultSkipped: 2,
-	fathomv1alpha1.HealthReportResultWarn:    3,
-	fathomv1alpha1.HealthReportResultUnknown: 4,
-	fathomv1alpha1.HealthReportResultFail:    5,
-	fathomv1alpha1.HealthReportResultError:   6,
-}
-
 // ClusterHealthReconciler reconciles a ClusterHealth object. It aggregates
 // the Status of selected HealthCheck resources into a single worst-case
 // Result. Per the AGENTS.md invariant and ADR-0004, this controller
@@ -142,7 +129,7 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			Summary:    hc.Status.Summary,
 			ObservedAt: hc.Status.SourceObservedAt,
 		})
-		if rank, ok := resultSeverity[hc.Status.Result]; ok && rank > worstRank {
+		if rank := hc.Status.Result.Severity(); rank > 0 && rank > worstRank {
 			worst = hc.Status.Result
 			worstRank = rank
 		}
