@@ -133,14 +133,21 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 }
 
 // DefaultControllers returns the operator's built-in reconcilers, configured
-// against mgr. Tests substitute their own Setupper slice instead.
-func DefaultControllers(mgr ctrl.Manager) ([]Setupper, error) {
+// against mgr. Tests substitute their own Setupper slice instead. opts carries
+// values that reconcilers need to relay into per-Run adapter requests (e.g.
+// the operator-level probe image).
+func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), builtInAdapters()...)
 	if err != nil {
 		return nil, err
 	}
 	return []Setupper{
-		&controller.AddonCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Adapters: adapterRegistry},
+		&controller.AddonCheckReconciler{
+			Client:     mgr.GetClient(),
+			Scheme:     mgr.GetScheme(),
+			Adapters:   adapterRegistry,
+			ProbeImage: opts.ProbeImage,
+		},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 	}, nil
@@ -178,7 +185,7 @@ var managerFactory = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, er
 // Run starts the operator. It blocks until ctx is cancelled or the manager
 // returns. cfg is the Kubernetes REST config to talk to the API server;
 // controllersFor returns the reconcilers to register against the built manager
-// (use DefaultControllers in production).
+// (production callers pass nil to use DefaultControllers).
 func Run(
 	ctx context.Context,
 	cfg *rest.Config,
@@ -189,7 +196,9 @@ func Run(
 		return errors.New("rest.Config must not be nil")
 	}
 	if controllersFor == nil {
-		controllersFor = DefaultControllers
+		controllersFor = func(mgr ctrl.Manager) ([]Setupper, error) {
+			return DefaultControllers(mgr, opts)
+		}
 	}
 	if err := opts.Validate(); err != nil {
 		return fmt.Errorf("invalid options: %w", err)

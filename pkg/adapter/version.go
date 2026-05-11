@@ -16,7 +16,11 @@ import (
 // method so a contract bump is visible at adapter-build time.
 //
 // Pre-1.0: minor bumps are treated as breaking by [EnsureCompatible].
-const ContractVersion = "0.1.0"
+//
+// 0.2.0 added [Request.ProbeImage], which adapters that launch probe pods may
+// consult as the operator-supplied default image. Adapters built against
+// 0.1.0 cannot observe that field and so are rejected at registration time.
+const ContractVersion = "0.2.0"
 
 // semverPattern matches MAJOR.MINOR.PATCH with an optional pre-release or
 // build suffix. We do not interpret the suffix — only major/minor/patch

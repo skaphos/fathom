@@ -36,11 +36,12 @@ const (
 	defaultRestartWarnCount = int32(3)
 	defaultDNSServiceName   = "kube-dns"
 	defaultDNSTargets       = "kubernetes.default.svc.cluster.local"
-	// defaultProbeImage is a placeholder. The publish pipeline for the probe
-	// image is its own ticket; until that lands, the threshold below lets
-	// users override per-AddonCheck. A future operator-level flag will
-	// override this default cluster-wide.
-	defaultProbeImage    = "ghcr.io/skaphos/fathom-probe:v0.1.0"
+	// fallbackProbeImage is the last-resort probe image when neither the
+	// per-AddonCheck probeImage threshold nor the operator-level
+	// adapter.Request.ProbeImage is set. Keeping a non-empty fallback means a
+	// misconfigured operator produces a clear ImagePullBackOff against this
+	// reference instead of an empty Pod spec.
+	fallbackProbeImage   = "ghcr.io/skaphos/fathom-probe:v0.1.0"
 	defaultProbeTimeout  = 10 * time.Second
 	probePodNameMaxLabel = 30
 
@@ -258,7 +259,7 @@ func (Adapter) checkEndpointSlices(ctx context.Context, c client.Client, namespa
 // way to assert workload-perspective DNS behavior.
 func (a Adapter) checkDNSResolution(ctx context.Context, req adapter.Request, policy adapter.FamilyPolicy) []adapter.CheckResult {
 	targets := dnsTargets(policy)
-	image := stringThreshold(policy, thresholdProbeImage, defaultProbeImage)
+	image := resolveProbeImage(policy, req.ProbeImage)
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = defaultProbeTimeout
@@ -393,6 +394,21 @@ func int32Threshold(policy adapter.FamilyPolicy, key string, defaultValue int32)
 		return defaultValue
 	}
 	return int32(parsed)
+}
+
+// resolveProbeImage implements the probe-image precedence chain:
+// per-AddonCheck threshold → operator-level Request.ProbeImage → hardcoded
+// fallback. The fallback is intentionally non-empty so a misconfigured
+// operator yields a recognizable ImagePullBackOff rather than a Pod with no
+// container image.
+func resolveProbeImage(policy adapter.FamilyPolicy, operatorDefault string) string {
+	if v := strings.TrimSpace(policy.Thresholds[thresholdProbeImage]); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(operatorDefault); v != "" {
+		return v
+	}
+	return fallbackProbeImage
 }
 
 func stringThreshold(policy adapter.FamilyPolicy, key, defaultValue string) string {

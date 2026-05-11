@@ -58,6 +58,12 @@ type AddonCheckReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Adapters addonAdapterLookup
+
+	// ProbeImage is the operator-level default container image surfaced to
+	// adapters that launch probe pods. Forwarded verbatim into adapter.Request.
+	// Empty when no operator default is configured; adapters then fall back to
+	// per-AddonCheck thresholds or their own hardcoded default.
+	ProbeImage string
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
@@ -183,11 +189,12 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 
 	started := time.Now()
 	result, runErr := selectedAdapter.Run(runCtx, adapter.Request{
-		Client:  r.Client,
-		Logger:  log.WithValues("adapter", selectedAdapter.Name(), "addonType", check.Spec.AddonType),
-		Target:  addonCheckTargetRef(check),
-		Policy:  addonCheckPolicy(check),
-		Timeout: timeout,
+		Client:     r.Client,
+		Logger:     log.WithValues("adapter", selectedAdapter.Name(), "addonType", check.Spec.AddonType),
+		Target:     addonCheckTargetRef(check),
+		Policy:     addonCheckPolicy(check),
+		Timeout:    timeout,
+		ProbeImage: r.ProbeImage,
 	})
 	observedAt := metav1.NewTime(time.Now())
 	if result.Duration == 0 {

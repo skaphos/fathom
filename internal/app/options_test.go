@@ -145,6 +145,74 @@ leader_election_id: custom.example.com
 	}
 }
 
+func TestLoad_ProbeImagePrecedence(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "fathom.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+probe_image: registry.example.com/probe:from-config
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Run("default when nothing set", func(t *testing.T) {
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, "", false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.ProbeImage != DefaultProbeImage {
+			t.Errorf("ProbeImage: got %q, want default %q", got.ProbeImage, DefaultProbeImage)
+		}
+	})
+
+	t.Run("config beats default", func(t *testing.T) {
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.ProbeImage != "registry.example.com/probe:from-config" {
+			t.Errorf("ProbeImage: got %q", got.ProbeImage)
+		}
+	})
+
+	t.Run("env beats config", func(t *testing.T) {
+		t.Setenv("FATHOM_PROBE_IMAGE", "registry.example.com/probe:from-env")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.ProbeImage != "registry.example.com/probe:from-env" {
+			t.Errorf("ProbeImage: got %q", got.ProbeImage)
+		}
+	})
+
+	t.Run("flag beats env", func(t *testing.T) {
+		t.Setenv("FATHOM_PROBE_IMAGE", "registry.example.com/probe:from-env")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse([]string{"--probe-image=registry.example.com/probe:from-flag"}); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.ProbeImage != "registry.example.com/probe:from-flag" {
+			t.Errorf("ProbeImage: got %q", got.ProbeImage)
+		}
+	})
+}
+
 func TestLoad_MissingDefaultConfig_Ignored(t *testing.T) {
 	fs, zapOpts := newTestFlags(t)
 	if err := fs.Parse(nil); err != nil {

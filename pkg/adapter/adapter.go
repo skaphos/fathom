@@ -91,6 +91,15 @@ type Request struct {
 	// spec.timeout. Adapters should also honor ctx.Done() — Beacon may
 	// cancel mid-Run for reasons unrelated to the timeout.
 	Timeout time.Duration
+
+	// ProbeImage is the operator-supplied default container image for
+	// adapters that launch probe pods (see internal/probe). Adapters that
+	// do not launch probe pods ignore it. Empty means "no operator-level
+	// default was configured"; adapters that need a probe image must then
+	// fall back to a per-AddonCheck override or an adapter-local default.
+	//
+	// Available since contract version 0.2.0.
+	ProbeImage string
 }
 
 // FamilyPolicy is the configuration block for a single check family.

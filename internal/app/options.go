@@ -53,6 +53,12 @@ type Options struct {
 	LeaderElectionID       string         `mapstructure:"leader_election_id"`
 	EnableHTTP2            bool           `mapstructure:"enable_http2"`
 
+	// ProbeImage is the cluster-wide default container image for adapter
+	// probe pods (see internal/probe). Adapters consult adapter.Request.ProbeImage
+	// when no per-AddonCheck override is set. Operators running a private
+	// GHCR mirror set this once instead of on every AddonCheck.
+	ProbeImage string `mapstructure:"probe_image"`
+
 	// Zap is bound directly to flags (not Viper) because zap.Options uses
 	// the stdlib flag package and is not round-trippable via mapstructure.
 	// Its default is whatever zap.Options.BindFlags registers (Development
@@ -60,6 +66,12 @@ type Options struct {
 	// opts.Zap with the flag-parsed value before returning.
 	Zap zap.Options `mapstructure:"-"`
 }
+
+// DefaultProbeImage is the published probe image this build of Fathom ships
+// with. Probe-using adapters fall back to this when neither a per-AddonCheck
+// threshold nor an operator-level --probe-image flag is set. Bumped in lockstep
+// with the probe-image publish pipeline.
+const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.1.0"
 
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
@@ -83,6 +95,7 @@ func DefaultOptions() Options {
 		LeaderElect:            false,
 		LeaderElectionID:       "2d3dbc4f.skaphos.io",
 		EnableHTTP2:            false,
+		ProbeImage:             DefaultProbeImage,
 	}
 }
 
@@ -148,6 +161,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "The name of the resource used for leader election."},
 		{flagName: "enable-http2", viperKey: "enable_http2", isBool: true, boolDef: defaults.EnableHTTP2,
 			usage: "If set, HTTP/2 will be enabled for the metrics and webhook servers."},
+		{flagName: "probe-image", viperKey: "probe_image", stringDef: defaults.ProbeImage,
+			usage: "Container image used by adapters that launch probe pods. Per-AddonCheck thresholds still override this."},
 	}
 }
 

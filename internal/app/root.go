@@ -50,7 +50,7 @@ func NewRootCommand() *cobra.Command {
 				ctx = context.Background()
 			}
 			ctx = signalAwareContext(ctx)
-			return Run(ctx, cfg, opts, DefaultControllers)
+			return Run(ctx, cfg, opts, nil)
 		},
 	}
 

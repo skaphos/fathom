@@ -182,6 +182,45 @@ func TestRun_DNSResolutionHonorsRequestTimeoutAndProbeImage(t *testing.T) {
 	}
 }
 
+func TestRun_DNSResolutionProbeImagePrecedence(t *testing.T) {
+	cases := []struct {
+		name      string
+		threshold string
+		operator  string
+		want      string
+	}{
+		{name: "threshold wins over operator", threshold: "registry.example.com/probe:thr", operator: "registry.example.com/probe:op", want: "registry.example.com/probe:thr"},
+		{name: "operator default fills empty threshold", threshold: "", operator: "registry.example.com/probe:op", want: "registry.example.com/probe:op"},
+		{name: "fallback when nothing is set", threshold: "", operator: "", want: fallbackProbeImage},
+		{name: "threshold whitespace falls through to operator", threshold: "   ", operator: "registry.example.com/probe:op", want: "registry.example.com/probe:op"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			launcher := passingDNSLauncher()
+			a := adapterWithLauncher(launcher)
+			policy := adapter.FamilyPolicy{Enabled: true, Thresholds: map[string]string{thresholdTargets: "kubernetes.default"}}
+			if tc.threshold != "" {
+				policy.Thresholds[thresholdProbeImage] = tc.threshold
+			}
+			_, err := a.Run(context.Background(), adapter.Request{
+				Client:     newFakeClient(t),
+				Logger:     logr.Discard(),
+				ProbeImage: tc.operator,
+				Policy:     map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: policy},
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if len(launcher.calls) != 1 {
+				t.Fatalf("launcher.calls: got %d, want 1", len(launcher.calls))
+			}
+			if got := launcher.calls[0].Image; got != tc.want {
+				t.Errorf("Request.Image: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRun_DNSResolutionUsesAddonCheckNamespaceForProbePods(t *testing.T) {
 	launcher := passingDNSLauncher()
 	a := adapterWithLauncher(launcher)
