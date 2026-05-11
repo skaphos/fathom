@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -32,6 +33,20 @@ const (
 	addonCheckConditionReady    = "Ready"
 
 	defaultAddonCheckTimeout = 30 * time.Second
+
+	// defaultHealthReportHistoryLimit matches the +kubebuilder:default=10 on
+	// AddonCheckSpec.HistoryLimit. It is duplicated here so the reconciler can
+	// fall back when an in-memory AddonCheck has not been round-tripped through
+	// the API server (envtest fixtures, etc.).
+	defaultHealthReportHistoryLimit = 10
+
+	// labelHealthReportSourceKind/Name pin a HealthReport to the resource that
+	// produced it. The pair is queried via MatchingLabels so retention pruning
+	// can list reports for a given AddonCheck without scanning every report in
+	// the namespace. Future specialized check kinds (DNSCheck, NodeHealthCheck,
+	// etc.) reuse the same label scheme — kind disambiguates name collisions.
+	labelHealthReportSourceKind = "fathom.skaphos.io/source-kind"
+	labelHealthReportSourceName = "fathom.skaphos.io/source-name"
 )
 
 type addonAdapterLookup interface {
@@ -48,7 +63,7 @@ type AddonCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
 
 // Reconcile records that the AddonCheck spec has been observed. Adapter
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
@@ -188,6 +203,7 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	if err := r.Create(ctx, report); err != nil {
 		return err
 	}
+	r.pruneHealthReportHistory(ctx, log, check)
 
 	check.Status.LastRunTime = &observedAt
 	check.Status.LastReportName = report.Name
@@ -208,6 +224,51 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		Message:            readyMessage,
 	})
 	return nil
+}
+
+// pruneHealthReportHistory enforces Spec.HistoryLimit by deleting the oldest
+// HealthReports owned by check beyond the cap. Failures are logged but not
+// returned: the user-facing write (the new HealthReport) already succeeded,
+// and the next reconcile will retry the prune. The list query is indexed by
+// the source-kind/name labels written in healthReportForAddonCheck.
+func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+	limit := defaultHealthReportHistoryLimit
+	if check.Spec.HistoryLimit != nil {
+		limit = int(*check.Spec.HistoryLimit)
+	}
+	if limit < 1 {
+		// CRD validation rejects this, but defend in depth: a Minimum=1 below
+		// would prune the just-created report and strand Status.LastReportName.
+		return
+	}
+
+	var reports fathomv1alpha1.HealthReportList
+	if err := r.List(ctx, &reports,
+		client.InNamespace(check.Namespace),
+		client.MatchingLabels{
+			labelHealthReportSourceKind: "AddonCheck",
+			labelHealthReportSourceName: check.Name,
+		},
+	); err != nil {
+		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
+		return
+	}
+	if len(reports.Items) <= limit {
+		return
+	}
+
+	sort.Slice(reports.Items, func(i, j int) bool {
+		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
+	})
+	excess := len(reports.Items) - limit
+	for i := 0; i < excess; i++ {
+		victim := &reports.Items[i]
+		if err := r.Delete(ctx, victim); err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "delete old HealthReport failed", "name", victim.Name)
+			// Continue: a transient delete error on one report should not block pruning the rest.
+		}
+	}
+	log.V(1).Info("pruned HealthReport history", "deleted", excess, "limit", limit)
 }
 
 func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
@@ -263,6 +324,10 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
+			Labels: map[string]string{
+				labelHealthReportSourceKind: "AddonCheck",
+				labelHealthReportSourceName: check.Name,
+			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
 			SourceRef: fathomv1alpha1.HealthReportTargetRef{

@@ -53,6 +53,15 @@ type AddonCheckSpec struct {
 	// leaves family selection to the adapter defaults.
 	// +optional
 	Policy map[string]AddonCheckFamilyPolicy `json:"policy,omitempty"`
+
+	// HistoryLimit caps the number of HealthReports retained for this
+	// AddonCheck. After each new HealthReport is created the controller
+	// deletes the oldest reports until the total count is at or below this
+	// limit. The minimum of 1 keeps Status.LastReportName referenceable.
+	// +optional
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	HistoryLimit *int32 `json:"historyLimit,omitempty"`
 }
 
 // AddonCheckStatus defines the observed state of AddonCheck.

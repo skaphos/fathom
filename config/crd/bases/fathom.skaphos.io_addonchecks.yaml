@@ -45,6 +45,16 @@ spec:
                   cert-manager, coredns, or external-secrets.
                 minLength: 1
                 type: string
+              historyLimit:
+                default: 10
+                description: |-
+                  HistoryLimit caps the number of HealthReports retained for this
+                  AddonCheck. After each new HealthReport is created the controller
+                  deletes the oldest reports until the total count is at or below this
+                  limit. The minimum of 1 keeps Status.LastReportName referenceable.
+                format: int32
+                minimum: 1
+                type: integer
               interval:
                 description: Interval is the desired cadence between successful check
                   runs.

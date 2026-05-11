@@ -203,4 +203,144 @@ var _ = Describe("AddonCheck Controller", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 	})
+
+	It("labels created HealthReports with their source kind and name", func() {
+		typeNamespacedName := types.NamespacedName{Name: "addoncheck-labels", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: typeNamespacedName.Name, Namespace: typeNamespacedName.Namespace},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		_, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		var reports fathomv1alpha1.HealthReportList
+		Expect(k8sClient.List(ctx, &reports,
+			client.InNamespace(typeNamespacedName.Namespace),
+			client.MatchingLabels{
+				"fathom.skaphos.io/source-kind": "AddonCheck",
+				"fathom.skaphos.io/source-name": typeNamespacedName.Name,
+			},
+		)).To(Succeed())
+		Expect(reports.Items).To(HaveLen(1))
+		Expect(reports.Items[0].Labels["fathom.skaphos.io/source-kind"]).To(Equal("AddonCheck"))
+		Expect(reports.Items[0].Labels["fathom.skaphos.io/source-name"]).To(Equal(typeNamespacedName.Name))
+	})
+
+	It("prunes HealthReports beyond Spec.HistoryLimit, oldest first", func() {
+		name := "addoncheck-prune"
+		ns := "default"
+		limit := int32(2)
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		// Seed three HealthReports above the eventual cap. metav1.Time is
+		// serialized at second precision (RFC3339, not Nano), so we wait >1s
+		// between seeds and before the final reconcile to guarantee distinct
+		// CreationTimestamps for an unambiguous oldest-first sort.
+		var seeded []string
+		for i := 0; i < 3; i++ {
+			seed := &fathomv1alpha1.HealthReport{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:    ns,
+					GenerateName: name + "-seed-",
+					Labels: map[string]string{
+						"fathom.skaphos.io/source-kind": "AddonCheck",
+						"fathom.skaphos.io/source-name": name,
+					},
+				},
+				Spec: fathomv1alpha1.HealthReportSpec{
+					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
+					Result:     fathomv1alpha1.HealthReportResultPass,
+					ObservedAt: metav1.NewTime(time.Now()),
+				},
+			}
+			Expect(k8sClient.Create(ctx, seed)).To(Succeed())
+			seeded = append(seeded, seed.Name)
+			time.Sleep(1100 * time.Millisecond)
+		}
+
+		// Reconcile creates a fourth HealthReport, then prunes to limit=2.
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		_, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}})
+		Expect(err).NotTo(HaveOccurred())
+
+		var reports fathomv1alpha1.HealthReportList
+		Expect(k8sClient.List(ctx, &reports,
+			client.InNamespace(ns),
+			client.MatchingLabels{"fathom.skaphos.io/source-name": name},
+		)).To(Succeed())
+		Expect(reports.Items).To(HaveLen(int(limit)))
+
+		// Newest survivor = the report the reconcile just created.
+		var updated fathomv1alpha1.AddonCheck
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &updated)).To(Succeed())
+		survivors := map[string]bool{}
+		for _, r := range reports.Items {
+			survivors[r.Name] = true
+		}
+		Expect(survivors[updated.Status.LastReportName]).To(BeTrue(), "newly created HealthReport must survive pruning")
+		// The two oldest seeds should be gone.
+		Expect(survivors[seeded[0]]).To(BeFalse(), "oldest seed should be pruned")
+		Expect(survivors[seeded[1]]).To(BeFalse(), "second-oldest seed should be pruned")
+	})
+
+	It("prunes HealthReports without going through a reconcile", func() {
+		name := "addoncheck-prune-direct"
+		ns := "default"
+		limit := int32(1)
+		check := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed())
+		})
+
+		for i := 0; i < 3; i++ {
+			seed := &fathomv1alpha1.HealthReport{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:    ns,
+					GenerateName: name + "-seed-",
+					Labels: map[string]string{
+						"fathom.skaphos.io/source-kind": "AddonCheck",
+						"fathom.skaphos.io/source-name": name,
+					},
+				},
+				Spec: fathomv1alpha1.HealthReportSpec{
+					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
+					Result:     fathomv1alpha1.HealthReportResultPass,
+					ObservedAt: metav1.NewTime(time.Now()),
+				},
+			}
+			Expect(k8sClient.Create(ctx, seed)).To(Succeed())
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		(&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
+			pruneHealthReportHistory(ctx, logr.Discard(), check)
+
+		var reports fathomv1alpha1.HealthReportList
+		Expect(k8sClient.List(ctx, &reports,
+			client.InNamespace(ns),
+			client.MatchingLabels{"fathom.skaphos.io/source-name": name},
+		)).To(Succeed())
+		Expect(reports.Items).To(HaveLen(int(limit)))
+	})
 })

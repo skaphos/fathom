@@ -110,6 +110,7 @@ rules:
   - healthreports
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
