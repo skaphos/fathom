@@ -130,6 +130,7 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // against mgr. Tests substitute their own Setupper slice instead.
 func DefaultControllers(mgr ctrl.Manager) []Setupper {
 	return []Setupper{
+		&controller.AddonCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 	}

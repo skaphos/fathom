@@ -17,6 +17,15 @@ resources:
   controller: true
   domain: skaphos.io
   group: fathom
+  kind: AddonCheck
+  path: github.com/skaphos/fathom/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: skaphos.io
+  group: fathom
   kind: HealthCheck
   path: github.com/skaphos/fathom/api/v1alpha1
   version: v1alpha1

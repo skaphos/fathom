@@ -62,17 +62,18 @@ func TestNewScheme_RegistersFathomTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewScheme: %v", err)
 	}
-	// HealthCheck is the canonical CRD; if it's registered the others will be too.
+	// AddonCheck exercises the newest API type; if it is registered the package
+	// init hooks are being included in the application scheme.
 	gvks := scheme.AllKnownTypes()
 	found := false
 	for gvk := range gvks {
-		if gvk.Group == "fathom.skaphos.io" && gvk.Kind == "HealthCheck" {
+		if gvk.Group == "fathom.skaphos.io" && gvk.Kind == "AddonCheck" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("HealthCheck not registered in scheme")
+		t.Error("AddonCheck not registered in scheme")
 	}
 }
 

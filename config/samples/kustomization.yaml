@@ -1,5 +1,6 @@
 ## Append samples of your project ##
 resources:
+- fathom_v1alpha1_addoncheck.yaml
 - fathom_v1alpha1_healthcheck.yaml
 - fathom_v1alpha1_clusterhealth.yaml
 - fathom_v1alpha1_healthreport.yaml

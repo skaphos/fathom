@@ -31,6 +31,7 @@ func TestAddToScheme(t *testing.T) {
 	}
 
 	kinds := []runtime.Object{
+		&AddonCheck{}, &AddonCheckList{},
 		&HealthCheck{}, &HealthCheckList{},
 		&ClusterHealth{}, &ClusterHealthList{},
 		&HealthReport{}, &HealthReportList{},
@@ -80,6 +81,41 @@ func TestSchemeBuilderRegisterReturnsSelf(t *testing.T) {
 // the zz_generated.deepcopy.go statements light up. Bugs in DeepCopy show up
 // as nil or aliased pointers, both of which we assert against.
 func TestDeepCopyRoundTrip(t *testing.T) {
+	t.Run("AddonCheck", func(t *testing.T) {
+		orig := &AddonCheck{Spec: AddonCheckSpec{
+			AddonType: "cert-manager",
+			Policy: map[string]AddonCheckFamilyPolicy{
+				"system_health": {Enabled: true, Thresholds: map[string]string{"warnDays": "14"}},
+			},
+		}}
+		clone, ok := orig.DeepCopyObject().(*AddonCheck)
+		if !ok || clone == nil {
+			t.Fatalf("DeepCopyObject did not return *AddonCheck: %T", clone)
+		}
+		if clone == orig {
+			t.Fatalf("DeepCopy returned the same pointer")
+		}
+		clone.Spec.Policy["system_health"].Thresholds["warnDays"] = "7"
+		if orig.Spec.Policy["system_health"].Thresholds["warnDays"] != "14" {
+			t.Errorf("DeepCopy aliased nested policy thresholds")
+		}
+		_ = orig.DeepCopy()
+		_ = orig.Spec.DeepCopy()
+		_ = orig.Status.DeepCopy()
+	})
+
+	t.Run("AddonCheckList", func(t *testing.T) {
+		orig := &AddonCheckList{Items: []AddonCheck{{Spec: AddonCheckSpec{AddonType: "cert-manager"}}}}
+		clone, ok := orig.DeepCopyObject().(*AddonCheckList)
+		if !ok || clone == nil {
+			t.Fatalf("DeepCopyObject did not return *AddonCheckList: %T", clone)
+		}
+		if len(clone.Items) != 1 || clone.Items[0].Spec.AddonType != "cert-manager" {
+			t.Errorf("unexpected clone: %+v", clone)
+		}
+		_ = orig.DeepCopy()
+	})
+
 	t.Run("HealthCheck", func(t *testing.T) {
 		orig := &HealthCheck{Spec: HealthCheckSpec{Foo: "bar"}}
 		clone, ok := orig.DeepCopyObject().(*HealthCheck)

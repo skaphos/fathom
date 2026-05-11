@@ -1,0 +1,14 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: addoncheck-sample
+spec:
+  addonType: cert-manager
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
