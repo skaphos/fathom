@@ -45,6 +45,17 @@ rules:
   - issuers
   verbs:
   - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - clusterissuers
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - fathom.skaphos.io
   resources:

@@ -15,3 +15,12 @@ spec:
       thresholds:
         restartWarnCount: "3"
         webhookProbe: "true"
+    issuer_health:
+      enabled: true
+      thresholds:
+        kinds: "Issuer,ClusterIssuer"
+    certificate_health:
+      enabled: true
+      thresholds:
+        warnDays: "30"
+        failDays: "7"

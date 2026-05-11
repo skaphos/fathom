@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
@@ -16,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,8 +38,8 @@ func TestAdapterMetadata(t *testing.T) {
 	if len(caps.AddonTypes) != 1 || caps.AddonTypes[0] != "cert-manager" {
 		t.Fatalf("AddonTypes: got %#v, want [cert-manager]", caps.AddonTypes)
 	}
-	if len(caps.Families) != 1 || caps.Families[0] != FamilySystemHealth {
-		t.Fatalf("Families: got %#v, want [system_health]", caps.Families)
+	if len(caps.Families) != 3 {
+		t.Fatalf("Families: got %#v, want 3 families", caps.Families)
 	}
 }
 
@@ -174,6 +176,84 @@ func TestRun_MissingCRDFails(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", "orders.acme.cert-manager.io", adapter.OutcomeFail, "missing")
 }
 
+func TestRun_IssuerHealthChecksIssuersAndClusterIssuers(t *testing.T) {
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			readyIssuer("Issuer", defaultNamespace, "local-issuer"),
+			notReadyIssuer("ClusterIssuer", "", "global-issuer"),
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilyIssuerHealth: {Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Issuer", "local-issuer", adapter.OutcomePass, "ready")
+	assertHasOutcome(t, result.Checks, "ClusterIssuer", "global-issuer", adapter.OutcomeFail, "not ready")
+}
+
+func TestRun_IssuerHealthSupportsKindSelector(t *testing.T) {
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			readyIssuer("Issuer", defaultNamespace, "local-issuer"),
+			readyIssuer("ClusterIssuer", "", "global-issuer"),
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilyIssuerHealth: {Enabled: true, Thresholds: map[string]string{thresholdKinds: "Issuer"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Issuer", "local-issuer", adapter.OutcomePass, "ready")
+	assertNoKind(t, result.Checks, "ClusterIssuer")
+}
+
+func TestRun_CertificateHealthChecksReadinessAndExpiry(t *testing.T) {
+	now := time.Now().UTC()
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			readyCertificate("healthy-cert", now.Add(60*24*time.Hour), now.Add(30*24*time.Hour)),
+			readyCertificate("warning-cert", now.Add(20*24*time.Hour), now.Add(10*24*time.Hour)),
+			notReadyCertificate("broken-cert"),
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilyCertHealth: {Enabled: true, Thresholds: map[string]string{thresholdWarnDays: "30", thresholdFailDays: "7"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Certificate", "healthy-cert", adapter.OutcomePass, "ready")
+	assertHasOutcome(t, result.Checks, "Certificate", "warning-cert", adapter.OutcomeWarn, "warnDays")
+	assertHasOutcome(t, result.Checks, "Certificate", "broken-cert", adapter.OutcomeFail, "not ready")
+	assertHasDetail(t, result.Checks, "Certificate", "healthy-cert", "issuerRefName", "local-issuer")
+	assertHasDetail(t, result.Checks, "Certificate", "healthy-cert", "secretName", "healthy-cert-tls")
+}
+
+func TestRun_CertificateHealthFailsNearExpiryAndWarnsOnPastRenewal(t *testing.T) {
+	now := time.Now().UTC()
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			readyCertificate("expiring-cert", now.Add(3*24*time.Hour), now.Add(24*time.Hour)),
+			readyCertificate("renewal-due-cert", now.Add(60*24*time.Hour), now.Add(-24*time.Hour)),
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilyCertHealth: {Enabled: true, Thresholds: map[string]string{thresholdWarnDays: "30", thresholdFailDays: "7"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Certificate", "expiring-cert", adapter.OutcomeFail, "failDays")
+	assertHasOutcome(t, result.Checks, "Certificate", "renewal-due-cert", adapter.OutcomeWarn, "renewal time")
+}
+
 func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome, summaryContains string) {
 	t.Helper()
 	for _, check := range checks {
@@ -184,6 +264,28 @@ func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name str
 		}
 	}
 	t.Fatalf("missing %s/%s outcome %s containing %q in %#v", kind, name, outcome, summaryContains, checks)
+}
+
+func assertNoKind(t *testing.T, checks []adapter.CheckResult, kind string) {
+	t.Helper()
+	for _, check := range checks {
+		if check.TargetRef.Kind == kind {
+			t.Fatalf("unexpected %s check: %#v", kind, check)
+		}
+	}
+}
+
+func assertHasDetail(t *testing.T, checks []adapter.CheckResult, kind, name, key, want string) {
+	t.Helper()
+	for _, check := range checks {
+		if check.TargetRef.Kind == kind && check.TargetRef.Name == name {
+			if got := check.Details[key]; got != want {
+				t.Fatalf("detail %s for %s/%s: got %q, want %q", key, kind, name, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing %s/%s in %#v", kind, name, checks)
 }
 
 func newFakeClient(t *testing.T, objects ...clientObject) client.Client {
@@ -314,4 +416,63 @@ func establishedCRD(name string) *apixv1.CustomResourceDefinition {
 			Status: apixv1.ConditionTrue,
 		}}},
 	}
+}
+
+func readyIssuer(kind, namespace, name string) *unstructured.Unstructured {
+	return certManagerResource(kind, namespace, name, map[string]any{
+		"status": map[string]any{
+			"conditions": []any{map[string]any{"type": "Ready", "status": "True", "reason": "Ready", "message": "issuer is ready"}},
+		},
+	})
+}
+
+func notReadyIssuer(kind, namespace, name string) *unstructured.Unstructured {
+	return certManagerResource(kind, namespace, name, map[string]any{
+		"status": map[string]any{
+			"conditions": []any{map[string]any{"type": "Ready", "status": "False", "reason": "Failed", "message": "issuer failed"}},
+		},
+	})
+}
+
+func readyCertificate(name string, notAfter, renewalTime time.Time) *unstructured.Unstructured {
+	return certManagerResource("Certificate", defaultNamespace, name, map[string]any{
+		"spec": map[string]any{
+			"secretName": name + "-tls",
+			"issuerRef":  map[string]any{"name": "local-issuer", "kind": "Issuer", "group": "cert-manager.io"},
+		},
+		"status": map[string]any{
+			"conditions":  []any{map[string]any{"type": "Ready", "status": "True", "reason": "Ready", "message": "certificate is ready"}},
+			"notAfter":    notAfter.Format(time.RFC3339),
+			"renewalTime": renewalTime.Format(time.RFC3339),
+		},
+	})
+}
+
+func notReadyCertificate(name string) *unstructured.Unstructured {
+	return certManagerResource("Certificate", defaultNamespace, name, map[string]any{
+		"spec": map[string]any{
+			"secretName": name + "-tls",
+			"issuerRef":  map[string]any{"name": "local-issuer", "kind": "Issuer", "group": "cert-manager.io"},
+		},
+		"status": map[string]any{
+			"conditions": []any{map[string]any{"type": "Ready", "status": "False", "reason": "DoesNotExist", "message": "secret missing"}},
+		},
+	})
+}
+
+func certManagerResource(kind, namespace, name string, fields map[string]any) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "cert-manager.io/v1",
+		"kind":       kind,
+		"metadata": map[string]any{
+			"name": name,
+		},
+	}}
+	if namespace != "" {
+		obj.SetNamespace(namespace)
+	}
+	for key, value := range fields {
+		obj.Object[key] = value
+	}
+	return obj
 }

@@ -9,7 +9,9 @@ package certmanager
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
@@ -29,11 +31,18 @@ const (
 	Name               = "cert-manager"
 	Version            = "0.1.0"
 	FamilySystemHealth = adapter.Family("system_health")
+	FamilyIssuerHealth = adapter.Family("issuer_health")
+	FamilyCertHealth   = adapter.Family("certificate_health")
 
 	defaultNamespace          = "cert-manager"
 	defaultRestartWarnCount   = int32(3)
+	defaultWarnDays           = 30
+	defaultFailDays           = 7
 	thresholdRestartWarnCount = "restartWarnCount"
 	thresholdWebhookProbe     = "webhookProbe"
+	thresholdKinds            = "kinds"
+	thresholdWarnDays         = "warnDays"
+	thresholdFailDays         = "failDays"
 )
 
 var (
@@ -61,7 +70,7 @@ func (Adapter) Version() string         { return Version }
 func (Adapter) ContractVersion() string { return adapter.ContractVersion }
 
 func (Adapter) Capabilities() adapter.Capabilities {
-	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth}}
+	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth, FamilyIssuerHealth, FamilyCertHealth}}
 }
 
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
@@ -69,12 +78,13 @@ func (Adapter) Capabilities() adapter.Capabilities {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;clusterissuers;issuers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;issuers,verbs=create
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
 	started := time.Now()
-	policy, enabled := systemHealthPolicy(req.Policy)
-	if !enabled {
+	systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true)
+	if !enabled && !familyEnabled(req.Policy, FamilyIssuerHealth) && !familyEnabled(req.Policy, FamilyCertHealth) {
 		return adapter.Result{
 			Checks:   []adapter.CheckResult{skipped(req.Target, "system_health family is disabled by policy")},
 			Duration: time.Since(started),
@@ -82,47 +92,60 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 	}
 
 	checks := make([]adapter.CheckResult, 0, len(components)*2+len(crds)+1)
-	namespaces := policy.Namespaces
+	namespaces := systemPolicy.Namespaces
 	if len(namespaces) == 0 {
 		namespaces = []string{defaultNamespace}
 	}
-	restartWarnCount := restartWarnCount(policy)
+	if enabled {
+		restartWarnCount := restartWarnCount(systemPolicy)
 
-	for _, namespace := range namespaces {
-		for _, component := range components {
-			deployment, check := a.checkDeployment(ctx, req.Client, namespace, component)
-			checks = append(checks, check)
-			if deployment != nil {
-				checks = append(checks, a.checkPods(ctx, req.Client, deployment, restartWarnCount)...)
+		for _, namespace := range namespaces {
+			for _, component := range components {
+				deployment, check := a.checkDeployment(ctx, req.Client, namespace, component)
+				checks = append(checks, check)
+				if deployment != nil {
+					checks = append(checks, a.checkPods(ctx, req.Client, deployment, restartWarnCount)...)
+				}
+			}
+		}
+		for _, name := range crds {
+			checks = append(checks, a.checkCRD(ctx, req.Client, name))
+		}
+		if webhookProbeEnabled(systemPolicy) {
+			for _, namespace := range namespaces {
+				checks = append(checks, a.checkWebhookService(ctx, req.Client, namespace))
+			}
+			checks = append(checks, a.checkValidatingWebhookConfiguration(ctx, req.Client))
+			checks = append(checks, a.checkMutatingWebhookConfiguration(ctx, req.Client))
+			for _, namespace := range namespaces {
+				checks = append(checks, a.checkAdmissionDryRun(ctx, req.Client, namespace))
 			}
 		}
 	}
-	for _, name := range crds {
-		checks = append(checks, a.checkCRD(ctx, req.Client, name))
+	if issuerPolicy, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
+		checks = append(checks, a.checkIssuers(ctx, req.Client, issuerPolicy)...)
 	}
-	if webhookProbeEnabled(policy) {
-		for _, namespace := range namespaces {
-			checks = append(checks, a.checkWebhookService(ctx, req.Client, namespace))
-		}
-		checks = append(checks, a.checkValidatingWebhookConfiguration(ctx, req.Client))
-		checks = append(checks, a.checkMutatingWebhookConfiguration(ctx, req.Client))
-		for _, namespace := range namespaces {
-			checks = append(checks, a.checkAdmissionDryRun(ctx, req.Client, namespace))
-		}
+	if certPolicy, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
+		checks = append(checks, a.checkCertificates(ctx, req.Client, certPolicy)...)
 	}
 
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
 }
 
-func systemHealthPolicy(policy map[adapter.Family]adapter.FamilyPolicy) (adapter.FamilyPolicy, bool) {
+func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
 	if policy == nil {
-		return adapter.FamilyPolicy{Enabled: true}, true
+		return adapter.FamilyPolicy{Enabled: defaultEnabled}, defaultEnabled
 	}
-	familyPolicy, ok := policy[FamilySystemHealth]
+	familyPolicy, ok := policy[family]
 	if !ok {
 		return adapter.FamilyPolicy{}, false
 	}
 	return familyPolicy, familyPolicy.Enabled
+}
+
+func familyEnabled(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family) bool {
+	_, enabled := familyPolicy(policy, family, false)
+	return enabled
 }
 
 func restartWarnCount(policy adapter.FamilyPolicy) int32 {
@@ -392,6 +415,245 @@ func dryRunCertificate(namespace string) *unstructured.Unstructured {
 		},
 	}}
 	return certificate
+}
+
+func (Adapter) checkIssuers(ctx context.Context, c client.Client, policy adapter.FamilyPolicy) []adapter.CheckResult {
+	checks := []adapter.CheckResult{}
+	if includesKind(policy, "Issuer", true) {
+		for _, namespace := range policyNamespaces(policy) {
+			var issuers unstructured.UnstructuredList
+			issuers.SetAPIVersion("cert-manager.io/v1")
+			issuers.SetKind("IssuerList")
+			listOpts := []client.ListOption{client.InNamespace(namespace)}
+			if policy.LabelSelector != nil {
+				selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
+				if err != nil {
+					checks = append(checks, check(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Issuer", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("issuer label selector is invalid: %v", err), nil, time.Now()))
+					continue
+				}
+				listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
+			}
+			checks = append(checks, listIssuerObjects(ctx, c, &issuers, listOpts, "Issuer", namespace)...)
+		}
+	}
+	if includesKind(policy, "ClusterIssuer", true) {
+		var issuers unstructured.UnstructuredList
+		issuers.SetAPIVersion("cert-manager.io/v1")
+		issuers.SetKind("ClusterIssuerList")
+		listOpts := []client.ListOption{}
+		if policy.LabelSelector != nil {
+			selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
+			if err != nil {
+				checks = append(checks, check(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "ClusterIssuer", Name: "clusterissuers"}, adapter.OutcomeError, fmt.Sprintf("clusterissuer label selector is invalid: %v", err), nil, time.Now()))
+			} else {
+				listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
+			}
+		}
+		checks = append(checks, listIssuerObjects(ctx, c, &issuers, listOpts, "ClusterIssuer", "")...)
+	}
+	if len(checks) == 0 {
+		checks = append(checks, skipped(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Issuer", Name: "issuers"}, "issuer_health found no matching issuers"))
+	}
+	return checks
+}
+
+func listIssuerObjects(ctx context.Context, c client.Client, list *unstructured.UnstructuredList, opts []client.ListOption, kind, namespace string) []adapter.CheckResult {
+	started := time.Now()
+	if err := c.List(ctx, list, opts...); err != nil {
+		return []adapter.CheckResult{check(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: kind, Namespace: namespace, Name: strings.ToLower(kind) + "s"}, adapter.OutcomeError, fmt.Sprintf("failed to list cert-manager %s resources: %v", strings.ToLower(kind), err), nil, started)}
+	}
+	checks := make([]adapter.CheckResult, 0, len(list.Items))
+	for i := range list.Items {
+		checks = append(checks, issuerCheck(&list.Items[i]))
+	}
+	return checks
+}
+
+func issuerCheck(obj *unstructured.Unstructured) adapter.CheckResult {
+	started := time.Now()
+	condition := readyCondition(obj)
+	target := objectTarget(obj)
+	details := conditionDetails(condition)
+	if condition == nil {
+		return check(target, adapter.OutcomeFail, strings.ToLower(obj.GetKind())+" has no Ready condition", details, started)
+	}
+	if conditionStatus(condition) != "True" {
+		return check(target, adapter.OutcomeFail, strings.ToLower(obj.GetKind())+" is not ready", details, started)
+	}
+	return check(target, adapter.OutcomePass, strings.ToLower(obj.GetKind())+" is ready", details, started)
+}
+
+func (Adapter) checkCertificates(ctx context.Context, c client.Client, policy adapter.FamilyPolicy) []adapter.CheckResult {
+	checks := []adapter.CheckResult{}
+	for _, namespace := range policyNamespaces(policy) {
+		var certificates unstructured.UnstructuredList
+		certificates.SetAPIVersion("cert-manager.io/v1")
+		certificates.SetKind("CertificateList")
+		listOpts := []client.ListOption{client.InNamespace(namespace)}
+		if policy.LabelSelector != nil {
+			selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
+			if err != nil {
+				checks = append(checks, check(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("certificate label selector is invalid: %v", err), nil, time.Now()))
+				continue
+			}
+			listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
+		}
+		started := time.Now()
+		if err := c.List(ctx, &certificates, listOpts...); err != nil {
+			checks = append(checks, check(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Namespace: namespace, Name: "certificates"}, adapter.OutcomeError, fmt.Sprintf("failed to list cert-manager certificates: %v", err), nil, started))
+			continue
+		}
+		for i := range certificates.Items {
+			checks = append(checks, certificateCheck(&certificates.Items[i], policy))
+		}
+	}
+	if len(checks) == 0 {
+		checks = append(checks, skipped(adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Name: "certificates"}, "certificate_health found no matching certificates"))
+	}
+	return checks
+}
+
+func certificateCheck(obj *unstructured.Unstructured, policy adapter.FamilyPolicy) adapter.CheckResult {
+	started := time.Now()
+	target := objectTarget(obj)
+	condition := readyCondition(obj)
+	details := certificateDetails(obj, condition)
+	if condition == nil {
+		return check(target, adapter.OutcomeFail, "certificate has no Ready condition", details, started)
+	}
+	if conditionStatus(condition) != "True" {
+		return check(target, adapter.OutcomeFail, "certificate is not ready", details, started)
+	}
+	if renewalTime, ok := stringAt(obj.Object, "status", "renewalTime"); ok {
+		details["renewalTime"] = renewalTime
+		if parsed, err := time.Parse(time.RFC3339, renewalTime); err == nil && time.Now().After(parsed) {
+			return check(target, adapter.OutcomeWarn, "certificate renewal time has passed", details, started)
+		}
+	}
+	if notAfter, ok := stringAt(obj.Object, "status", "notAfter"); ok {
+		details["notAfter"] = notAfter
+		parsed, err := time.Parse(time.RFC3339, notAfter)
+		if err != nil {
+			return check(target, adapter.OutcomeError, "certificate expiry timestamp is invalid", details, started)
+		}
+		remaining := time.Until(parsed)
+		details["daysRemaining"] = strconv.Itoa(daysRemaining(remaining))
+		if remaining <= daysThreshold(policy, thresholdFailDays, defaultFailDays) {
+			return check(target, adapter.OutcomeFail, "certificate expires within failDays threshold", details, started)
+		}
+		if remaining <= daysThreshold(policy, thresholdWarnDays, defaultWarnDays) {
+			return check(target, adapter.OutcomeWarn, "certificate expires within warnDays threshold", details, started)
+		}
+	}
+	return check(target, adapter.OutcomePass, "certificate is ready", details, started)
+}
+
+func policyNamespaces(policy adapter.FamilyPolicy) []string {
+	if len(policy.Namespaces) == 0 {
+		return []string{defaultNamespace}
+	}
+	return policy.Namespaces
+}
+
+func includesKind(policy adapter.FamilyPolicy, kind string, defaultIncluded bool) bool {
+	if policy.Thresholds == nil || policy.Thresholds[thresholdKinds] == "" {
+		return defaultIncluded
+	}
+	for _, candidate := range strings.Split(policy.Thresholds[thresholdKinds], ",") {
+		if strings.EqualFold(strings.TrimSpace(candidate), kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func daysThreshold(policy adapter.FamilyPolicy, key string, defaultDays int) time.Duration {
+	if policy.Thresholds == nil {
+		return time.Duration(defaultDays) * 24 * time.Hour
+	}
+	value, ok := policy.Thresholds[key]
+	if !ok {
+		return time.Duration(defaultDays) * 24 * time.Hour
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return time.Duration(defaultDays) * 24 * time.Hour
+	}
+	return time.Duration(parsed) * 24 * time.Hour
+}
+
+func daysRemaining(remaining time.Duration) int {
+	days := remaining.Hours() / 24
+	if days < 0 {
+		return int(math.Floor(days))
+	}
+	return int(math.Ceil(days))
+}
+
+func objectTarget(obj *unstructured.Unstructured) adapter.TargetRef {
+	return adapter.TargetRef{APIVersion: obj.GetAPIVersion(), Kind: obj.GetKind(), Namespace: obj.GetNamespace(), Name: obj.GetName()}
+}
+
+func readyCondition(obj *unstructured.Unstructured) map[string]any {
+	conditions, ok, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	if !ok {
+		return nil
+	}
+	for _, candidate := range conditions {
+		condition, ok := candidate.(map[string]any)
+		if !ok {
+			continue
+		}
+		if conditionType(condition) == "Ready" {
+			return condition
+		}
+	}
+	return nil
+}
+
+func conditionType(condition map[string]any) string {
+	value, _ := condition["type"].(string)
+	return value
+}
+
+func conditionStatus(condition map[string]any) string {
+	value, _ := condition["status"].(string)
+	return value
+}
+
+func conditionDetails(condition map[string]any) map[string]string {
+	details := map[string]string{}
+	if condition == nil {
+		return details
+	}
+	for _, key := range []string{"reason", "message", "status"} {
+		if value, ok := condition[key].(string); ok && value != "" {
+			details[key] = value
+		}
+	}
+	return details
+}
+
+func certificateDetails(obj *unstructured.Unstructured, condition map[string]any) map[string]string {
+	details := conditionDetails(condition)
+	for key, path := range map[string][]string{
+		"secretName":               {"spec", "secretName"},
+		"issuerRefName":            {"spec", "issuerRef", "name"},
+		"issuerRefKind":            {"spec", "issuerRef", "kind"},
+		"issuerRefGroup":           {"spec", "issuerRef", "group"},
+		"revision":                 {"status", "revision"},
+		"nextPrivateKeySecretName": {"status", "nextPrivateKeySecretName"},
+	} {
+		if value, ok := stringAt(obj.Object, path...); ok {
+			details[key] = value
+		}
+	}
+	return details
+}
+
+func stringAt(obj map[string]any, fields ...string) (string, bool) {
+	value, ok, _ := unstructured.NestedString(obj, fields...)
+	return value, ok
 }
 
 func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {
