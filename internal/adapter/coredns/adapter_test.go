@@ -91,7 +91,11 @@ func TestAdapterMetadata(t *testing.T) {
 func TestRun_SystemHealthAndDNSResolutionPass(t *testing.T) {
 	launcher := passingDNSLauncher()
 	a := adapterWithLauncher(launcher)
-	result, err := a.Run(context.Background(), adapter.Request{Client: newFakeClient(t, healthyObjects()...), Logger: logr.Discard()})
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, healthyObjects()...),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "coredns"},
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -116,6 +120,7 @@ func TestRun_DNSResolutionFailureIncludesError(t *testing.T) {
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t),
 		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "coredns"},
 		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{thresholdTargets: "svc-a,svc-b"}}},
 	})
 	if err != nil {
@@ -135,6 +140,7 @@ func TestRun_DNSLauncherErrorSurfacesAsError(t *testing.T) {
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t),
 		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "coredns"},
 		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{thresholdTargets: "svc-a"}}},
 	})
 	if err != nil {
@@ -152,6 +158,7 @@ func TestRun_DNSResolutionHonorsRequestTimeoutAndProbeImage(t *testing.T) {
 	_, err := a.Run(context.Background(), adapter.Request{
 		Client:  newFakeClient(t),
 		Logger:  logr.Discard(),
+		Target:  adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "coredns"},
 		Timeout: customTimeout,
 		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{
 			thresholdTargets:    "kubernetes.default",
@@ -205,6 +212,7 @@ func TestRun_DNSResolutionProbeImagePrecedence(t *testing.T) {
 			_, err := a.Run(context.Background(), adapter.Request{
 				Client:     newFakeClient(t),
 				Logger:     logr.Discard(),
+				Target:     adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "coredns"},
 				ProbeImage: tc.operator,
 				Policy:     map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: policy},
 			})
@@ -235,6 +243,76 @@ func TestRun_DNSResolutionUsesAddonCheckNamespaceForProbePods(t *testing.T) {
 	}
 	if len(launcher.calls) != 1 || launcher.calls[0].Namespace != "tenant-platform" {
 		t.Errorf("probe pod namespace: got %#v", launcher.calls)
+	}
+}
+
+func TestRun_DNSResolutionProbeNamespaceThresholdOverridesAddonCheckNamespace(t *testing.T) {
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
+	_, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "tenant-platform", Name: "coredns"},
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{
+			thresholdTargets:        "kubernetes.default",
+			thresholdProbeNamespace: "fathom-probes",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(launcher.calls) != 1 {
+		t.Fatalf("launcher.calls: got %d, want 1", len(launcher.calls))
+	}
+	if got := launcher.calls[0].Namespace; got != "fathom-probes" {
+		t.Errorf("probe pod namespace: got %q, want fathom-probes", got)
+	}
+}
+
+func TestRun_DNSResolutionSkipsWhenNamespaceCannotBeResolved(t *testing.T) {
+	// Target.Namespace is empty (cluster-scoped feeder, or synthetic request)
+	// and no probeNamespace threshold is set. The adapter must not let
+	// probe.Pod() fail per target; it must surface one Skipped per target
+	// with an actionable summary, and must not call the launcher at all.
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Name: "coredns"},
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{
+			thresholdTargets: "svc-a,svc-b",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(launcher.calls) != 0 {
+		t.Errorf("launcher must not be called when namespace is unresolved: got %d calls", len(launcher.calls))
+	}
+	assertHasOutcome(t, result.Checks, "DNSName", "svc-a", adapter.OutcomeSkipped, "probe namespace is required")
+	assertHasOutcome(t, result.Checks, "DNSName", "svc-b", adapter.OutcomeSkipped, "probe namespace is required")
+}
+
+func TestRun_DNSResolutionProbeNamespaceFillsEmptyAddonCheckNamespace(t *testing.T) {
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
+	_, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Name: "coredns"}, // no Namespace
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{
+			thresholdProbeNamespace: "fathom-probes",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(launcher.calls) != 1 {
+		t.Fatalf("launcher.calls: got %d, want 1", len(launcher.calls))
+	}
+	if got := launcher.calls[0].Namespace; got != "fathom-probes" {
+		t.Errorf("probe pod namespace: got %q, want fathom-probes", got)
 	}
 }
 

@@ -51,6 +51,7 @@ const (
 	thresholdServiceName      = "serviceName"
 	thresholdTargets          = "targets"
 	thresholdProbeImage       = "probeImage"
+	thresholdProbeNamespace   = "probeNamespace"
 )
 
 // dnsProbeLauncher is the surface the dns_resolution family needs from
@@ -260,9 +261,23 @@ func (Adapter) checkEndpointSlices(ctx context.Context, c client.Client, namespa
 func (a Adapter) checkDNSResolution(ctx context.Context, req adapter.Request, policy adapter.FamilyPolicy) []adapter.CheckResult {
 	targets := dnsTargets(policy)
 	image := resolveProbeImage(policy, req.ProbeImage)
+	namespace := resolveProbeNamespace(policy, req.Target.Namespace)
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = defaultProbeTimeout
+	}
+	if namespace == "" {
+		// Bail out before any pod-build attempt so callers see one Skipped per
+		// target with an actionable summary, not an opaque "probe namespace is
+		// required" error per target from probe.Pod.
+		checks := make([]adapter.CheckResult, 0, len(targets))
+		for _, name := range targets {
+			checks = append(checks, skipped(
+				adapter.TargetRef{Kind: "DNSName", Name: name},
+				"probe namespace is required; set the probeNamespace threshold or run the AddonCheck in a namespace",
+			))
+		}
+		return checks
 	}
 	launcher := a.launcher
 	if launcher == nil {
@@ -270,7 +285,7 @@ func (a Adapter) checkDNSResolution(ctx context.Context, req adapter.Request, po
 	}
 	checks := make([]adapter.CheckResult, 0, len(targets))
 	for _, name := range targets {
-		checks = append(checks, runDNSProbe(ctx, launcher, image, req.Target.Namespace, name, timeout))
+		checks = append(checks, runDNSProbe(ctx, launcher, image, namespace, name, timeout))
 	}
 	return checks
 }
@@ -394,6 +409,21 @@ func int32Threshold(policy adapter.FamilyPolicy, key string, defaultValue int32)
 		return defaultValue
 	}
 	return int32(parsed)
+}
+
+// resolveProbeNamespace picks the namespace in which to launch probe pods.
+// Precedence: per-AddonCheck probeNamespace threshold > AddonCheck namespace
+// > "". Returning "" tells the caller no namespace could be resolved; the
+// caller is expected to surface that as Skipped with a clear summary instead
+// of letting downstream pod-build code fail per target.
+//
+// An operator-level default could slot between the threshold and the
+// AddonCheck namespace in a future change without altering this signature.
+func resolveProbeNamespace(policy adapter.FamilyPolicy, addonCheckNamespace string) string {
+	if v := strings.TrimSpace(policy.Thresholds[thresholdProbeNamespace]); v != "" {
+		return v
+	}
+	return strings.TrimSpace(addonCheckNamespace)
 }
 
 // resolveProbeImage implements the probe-image precedence chain:
