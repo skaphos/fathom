@@ -205,6 +205,20 @@ func TestBuildAdapterRegistry_WrapsRegistrationErrors(t *testing.T) {
 	}
 }
 
+func TestBuiltInAdapters_IncludesCertManager(t *testing.T) {
+	adapterRegistry, err := BuildAdapterRegistry(logr.Discard(), builtInAdapters()...)
+	if err != nil {
+		t.Fatalf("BuildAdapterRegistry: %v", err)
+	}
+	got, err := adapterRegistry.Lookup("cert-manager")
+	if err != nil {
+		t.Fatalf("Lookup(cert-manager): %v", err)
+	}
+	if got.Name() != "cert-manager" {
+		t.Fatalf("adapter name: got %q, want cert-manager", got.Name())
+	}
+}
+
 func TestReadyzCheck(t *testing.T) {
 	var synced atomic.Bool
 
