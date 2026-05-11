@@ -99,3 +99,29 @@ spec:
       thresholds:
         staleMinutes: "60"
 ```
+
+## Probe Pods
+
+Fathom has a shared lightweight probe-pod path under `internal/probe` plus a
+tiny Go probe binary in `cmd/probe`. The probe image is built from
+`Dockerfile.probe` and runs on `scratch` as a static binary with no shell or
+package manager.
+
+Supported probe modes are currently:
+
+- `dns`: resolve a DNS name from inside the probe Pod
+- `tcp-connect`: attempt a TCP connection to a target/port
+- `tcp-listen`: run a TCP listener for peer connectivity tests
+
+Build helpers:
+
+```sh
+go -C tools tool task probe-build
+go -C tools tool task probe-docker-build PROBE_IMG=example.com/fathom-probe:latest
+```
+
+The shared pod builder applies the default hardening profile used for probe
+workloads: no service account token, non-root UID, read-only root filesystem,
+all capabilities dropped, no privilege escalation, runtime-default seccomp, and
+small CPU/memory requests. It also supports pod anti-affinity so future network
+checks can place client/server probe Pods on different nodes.

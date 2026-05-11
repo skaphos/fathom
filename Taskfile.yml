@@ -11,6 +11,7 @@ vars:
   GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4
   ENVTEST_K8S_VERSION: "1.33"
   IMG: '{{.IMG | default "controller:latest"}}'
+  PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
   VERSION: '{{.VERSION | default "0.0.1"}}'
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
@@ -129,6 +130,16 @@ tasks:
     desc: Build container image (IMG={{.IMG}})
     cmds:
       - docker build -t {{.IMG}} .
+
+  probe-build:
+    desc: Build probe binary
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o bin/probe ./cmd/probe
+
+  probe-docker-build:
+    desc: Build probe container image (PROBE_IMG={{.PROBE_IMG}})
+    cmds:
+      - docker build -f Dockerfile.probe -t {{.PROBE_IMG}} .
 
   docker-push:
     desc: Push container image (IMG={{.IMG}})
