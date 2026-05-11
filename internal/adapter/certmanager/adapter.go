@@ -18,6 +18,7 @@ import (
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -68,6 +69,7 @@ func (Adapter) Capabilities() adapter.Capabilities {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;issuers,verbs=create
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
 	started := time.Now()
@@ -104,6 +106,9 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 		}
 		checks = append(checks, a.checkValidatingWebhookConfiguration(ctx, req.Client))
 		checks = append(checks, a.checkMutatingWebhookConfiguration(ctx, req.Client))
+		for _, namespace := range namespaces {
+			checks = append(checks, a.checkAdmissionDryRun(ctx, req.Client, namespace))
+		}
 	}
 
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
@@ -334,6 +339,59 @@ func validateWebhookClients(clients []webhookClient) error {
 		}
 	}
 	return nil
+}
+
+func (Adapter) checkAdmissionDryRun(ctx context.Context, c client.Client, namespace string) adapter.CheckResult {
+	started := time.Now()
+	target := adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Namespace: namespace, Name: "fathom-webhook-probe"}
+	issuer := dryRunIssuer(namespace)
+	if err := c.Create(ctx, issuer, dryRunCreate()); err != nil {
+		return check(target, adapter.OutcomeError, fmt.Sprintf("cert-manager issuer dry-run admission failed: %v", err), map[string]string{"component": "cert-manager-webhook", "resource": "Issuer"}, started)
+	}
+	certificate := dryRunCertificate(namespace)
+	if err := c.Create(ctx, certificate, dryRunCreate()); err != nil {
+		return check(target, adapter.OutcomeError, fmt.Sprintf("cert-manager certificate dry-run admission failed: %v", err), map[string]string{"component": "cert-manager-webhook", "resource": "Certificate"}, started)
+	}
+	return check(target, adapter.OutcomePass, "cert-manager issuer and certificate dry-run admission succeeded", map[string]string{"component": "cert-manager-webhook"}, started)
+}
+
+func dryRunCreate() *client.CreateOptions {
+	return &client.CreateOptions{DryRun: []string{metav1.DryRunAll}}
+}
+
+func dryRunIssuer(namespace string) *unstructured.Unstructured {
+	issuer := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "cert-manager.io/v1",
+		"kind":       "Issuer",
+		"metadata": map[string]any{
+			"name":      "fathom-webhook-probe",
+			"namespace": namespace,
+		},
+		"spec": map[string]any{
+			"selfSigned": map[string]any{},
+		},
+	}}
+	return issuer
+}
+
+func dryRunCertificate(namespace string) *unstructured.Unstructured {
+	certificate := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "cert-manager.io/v1",
+		"kind":       "Certificate",
+		"metadata": map[string]any{
+			"name":      "fathom-webhook-probe",
+			"namespace": namespace,
+		},
+		"spec": map[string]any{
+			"secretName": "fathom-webhook-probe-tls",
+			"dnsNames":   []any{"fathom-webhook-probe.local"},
+			"issuerRef": map[string]any{
+				"name": "fathom-webhook-probe",
+				"kind": "Issuer",
+			},
+		},
+	}}
+	return certificate
 }
 
 func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {

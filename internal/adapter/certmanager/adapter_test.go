@@ -71,12 +71,13 @@ func TestRun_WebhookProbeEnabledChecksService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(result.Checks) != 15 {
-		t.Fatalf("checks: got %d, want 15", len(result.Checks))
+	if len(result.Checks) != 16 {
+		t.Fatalf("checks: got %d, want 16", len(result.Checks))
 	}
 	assertHasOutcome(t, result.Checks, "Service", "cert-manager-webhook", adapter.OutcomePass, "routable")
 	assertHasOutcome(t, result.Checks, "ValidatingWebhookConfiguration", "cert-manager-webhook", adapter.OutcomePass, "ready")
 	assertHasOutcome(t, result.Checks, "MutatingWebhookConfiguration", "cert-manager-webhook", adapter.OutcomePass, "ready")
+	assertHasOutcome(t, result.Checks, "Certificate", "fathom-webhook-probe", adapter.OutcomePass, "dry-run admission succeeded")
 }
 
 func TestRun_SystemHealthDisabledSkips(t *testing.T) {
