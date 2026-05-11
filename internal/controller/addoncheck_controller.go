@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,17 +19,25 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/adapter/registry"
+	"github.com/skaphos/fathom/pkg/adapter"
 )
 
 const (
 	addonCheckConditionAccepted = "Accepted"
 	addonCheckConditionPaused   = "Paused"
+	addonCheckConditionReady    = "Ready"
 )
+
+type addonAdapterLookup interface {
+	Lookup(addonType string) (adapter.Adapter, error)
+}
 
 // AddonCheckReconciler reconciles an AddonCheck object.
 type AddonCheckReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Adapters addonAdapterLookup
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
@@ -74,6 +83,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Reason:             pausedReason,
 		Message:            pausedMessage,
 	})
+	setAddonCheckReadyCondition(&check, r.Adapters)
 
 	if equality.Semantic.DeepEqual(before, &check.Status) {
 		return ctrl.Result{}, nil
@@ -84,6 +94,56 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	log.V(1).Info("updated AddonCheck status")
 
 	return ctrl.Result{}, nil
+}
+
+func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) {
+	if check.Spec.Paused {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               addonCheckConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: check.Generation,
+			Reason:             "Paused",
+			Message:            "AddonCheck is paused; adapter execution is disabled.",
+		})
+		return
+	}
+	if adapters == nil {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               addonCheckConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: check.Generation,
+			Reason:             "MissingAdapter",
+			Message:            "No adapter registry is configured for AddonCheck reconciliation.",
+		})
+		return
+	}
+	if _, err := adapters.Lookup(check.Spec.AddonType); err != nil {
+		if errors.Is(err, registry.ErrNotFound) {
+			apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: check.Generation,
+				Reason:             "MissingAdapter",
+				Message:            "No adapter is registered for addonType " + check.Spec.AddonType + ".",
+			})
+			return
+		}
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               addonCheckConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: check.Generation,
+			Reason:             "AdapterLookupFailed",
+			Message:            err.Error(),
+		})
+		return
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+		Type:               addonCheckConditionReady,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "AdapterResolved",
+		Message:            "AddonCheck has a registered adapter and is ready for execution.",
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.
