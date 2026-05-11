@@ -38,10 +38,9 @@ type HealthCheckReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
-	_ = log
+	log.V(1).Info("reconciliation requested")
 
-	// TODO(SKA-46): implement HealthCheck reconciliation.
-
+	// TODO(SKA-309): implement HealthCheck reconciliation body.
 	return ctrl.Result{}, nil
 }
 
