@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,8 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -27,6 +30,8 @@ const (
 	addonCheckConditionAccepted = "Accepted"
 	addonCheckConditionPaused   = "Paused"
 	addonCheckConditionReady    = "Ready"
+
+	defaultAddonCheckTimeout = 30 * time.Second
 )
 
 type addonAdapterLookup interface {
@@ -43,6 +48,7 @@ type AddonCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch
 
 // Reconcile records that the AddonCheck spec has been observed. Adapter
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
@@ -59,6 +65,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	before := check.Status.DeepCopy()
+	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               addonCheckConditionAccepted,
@@ -83,7 +90,13 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Reason:             pausedReason,
 		Message:            pausedMessage,
 	})
-	setAddonCheckReadyCondition(&check, r.Adapters)
+	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
+
+	if adapterReady && (check.Status.LastRunTime == nil || previousObservedGeneration != check.Generation) {
+		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	if equality.Semantic.DeepEqual(before, &check.Status) {
 		return ctrl.Result{}, nil
@@ -96,7 +109,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) {
+func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
 	if check.Spec.Paused {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type:               addonCheckConditionReady,
@@ -105,7 +118,7 @@ func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addo
 			Reason:             "Paused",
 			Message:            "AddonCheck is paused; adapter execution is disabled.",
 		})
-		return
+		return nil, false
 	}
 	if adapters == nil {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -115,9 +128,10 @@ func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addo
 			Reason:             "MissingAdapter",
 			Message:            "No adapter registry is configured for AddonCheck reconciliation.",
 		})
-		return
+		return nil, false
 	}
-	if _, err := adapters.Lookup(check.Spec.AddonType); err != nil {
+	selectedAdapter, err := adapters.Lookup(check.Spec.AddonType)
+	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 				Type:               addonCheckConditionReady,
@@ -126,7 +140,7 @@ func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addo
 				Reason:             "MissingAdapter",
 				Message:            "No adapter is registered for addonType " + check.Spec.AddonType + ".",
 			})
-			return
+			return nil, false
 		}
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type:               addonCheckConditionReady,
@@ -135,7 +149,7 @@ func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addo
 			Reason:             "AdapterLookupFailed",
 			Message:            err.Error(),
 		})
-		return
+		return nil, false
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               addonCheckConditionReady,
@@ -144,6 +158,215 @@ func setAddonCheckReadyCondition(check *fathomv1alpha1.AddonCheck, adapters addo
 		Reason:             "AdapterResolved",
 		Message:            "AddonCheck has a registered adapter and is ready for execution.",
 	})
+	return selectedAdapter, true
+}
+
+func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) error {
+	timeout := addonCheckTimeout(check)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	started := time.Now()
+	result, runErr := selectedAdapter.Run(runCtx, adapter.Request{
+		Client:  r.Client,
+		Logger:  log.WithValues("adapter", selectedAdapter.Name(), "addonType", check.Spec.AddonType),
+		Target:  addonCheckTargetRef(check),
+		Policy:  addonCheckPolicy(check),
+		Timeout: timeout,
+	})
+	observedAt := metav1.NewTime(time.Now())
+	if result.Duration == 0 {
+		result.Duration = time.Since(started)
+	}
+
+	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
+	if r.Scheme != nil {
+		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
+			return err
+		}
+	}
+	if err := r.Create(ctx, report); err != nil {
+		return err
+	}
+
+	check.Status.LastRunTime = &observedAt
+	check.Status.LastReportName = report.Name
+	check.Status.LastResult = string(report.Spec.Result)
+	readyStatus := metav1.ConditionTrue
+	readyReason := "RunCompleted"
+	readyMessage := "AddonCheck adapter run completed and a HealthReport was created."
+	if runErr != nil {
+		readyStatus = metav1.ConditionFalse
+		readyReason = "AdapterRunFailed"
+		readyMessage = runErr.Error()
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+		Type:               addonCheckConditionReady,
+		Status:             readyStatus,
+		ObservedGeneration: check.Generation,
+		Reason:             readyReason,
+		Message:            readyMessage,
+	})
+	return nil
+}
+
+func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
+	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
+		return check.Spec.Timeout.Duration
+	}
+	return defaultAddonCheckTimeout
+}
+
+func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {
+	if len(check.Spec.Policy) == 0 {
+		return nil
+	}
+	policy := make(map[adapter.Family]adapter.FamilyPolicy, len(check.Spec.Policy))
+	for family, familyPolicy := range check.Spec.Policy {
+		policy[adapter.Family(family)] = adapter.FamilyPolicy{
+			Enabled:       familyPolicy.Enabled,
+			Namespaces:    append([]string(nil), familyPolicy.Namespaces...),
+			LabelSelector: familyPolicy.LabelSelector.DeepCopy(),
+			Thresholds:    copyStringMap(familyPolicy.Thresholds),
+		}
+	}
+	return policy
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func addonCheckTargetRef(check *fathomv1alpha1.AddonCheck) adapter.TargetRef {
+	return adapter.TargetRef{
+		APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Kind:       "AddonCheck",
+		Namespace:  check.Namespace,
+		Name:       check.Name,
+	}
+}
+
+func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter, result adapter.Result, observedAt metav1.Time, runErr error) *fathomv1alpha1.HealthReport {
+	aggregate := aggregateHealthReportResult(result.Checks)
+	if runErr != nil {
+		aggregate = fathomv1alpha1.HealthReportResultError
+	}
+	duration := metav1.Duration{Duration: result.Duration}
+	report := &fathomv1alpha1.HealthReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    check.Namespace,
+			GenerateName: check.Name + "-",
+		},
+		Spec: fathomv1alpha1.HealthReportSpec{
+			SourceRef: fathomv1alpha1.HealthReportTargetRef{
+				APIVersion: fathomv1alpha1.GroupVersion.String(),
+				Kind:       "AddonCheck",
+				Namespace:  check.Namespace,
+				Name:       check.Name,
+			},
+			AddonType:       check.Spec.AddonType,
+			AdapterName:     selectedAdapter.Name(),
+			AdapterVersion:  selectedAdapter.Version(),
+			ContractVersion: selectedAdapter.ContractVersion(),
+			Result:          aggregate,
+			Checks:          healthReportChecks(result.Checks, observedAt),
+			ObservedAt:      observedAt,
+			Duration:        &duration,
+		},
+	}
+	if runErr != nil {
+		report.Spec.Checks = append(report.Spec.Checks, fathomv1alpha1.HealthReportCheck{
+			Family:     "adapter",
+			Result:     fathomv1alpha1.HealthReportResultError,
+			TargetRef:  report.Spec.SourceRef,
+			Summary:    runErr.Error(),
+			ObservedAt: observedAt,
+		})
+	}
+	return report
+}
+
+func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.Time) []fathomv1alpha1.HealthReportCheck {
+	if len(checks) == 0 {
+		return nil
+	}
+	out := make([]fathomv1alpha1.HealthReportCheck, 0, len(checks))
+	for _, check := range checks {
+		observedAt := fallbackObservedAt
+		if !check.ObservedAt.IsZero() {
+			observedAt = metav1.NewTime(check.ObservedAt)
+		}
+		var duration *metav1.Duration
+		if check.Duration > 0 {
+			duration = &metav1.Duration{Duration: check.Duration}
+		}
+		out = append(out, fathomv1alpha1.HealthReportCheck{
+			Family: string(check.Family),
+			Result: healthReportResult(check.Outcome),
+			TargetRef: fathomv1alpha1.HealthReportTargetRef{
+				APIVersion: check.TargetRef.APIVersion,
+				Kind:       check.TargetRef.Kind,
+				Namespace:  check.TargetRef.Namespace,
+				Name:       check.TargetRef.Name,
+			},
+			Summary:    check.Summary,
+			Details:    copyStringMap(check.Details),
+			ObservedAt: observedAt,
+			Duration:   duration,
+		})
+	}
+	return out
+}
+
+func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1alpha1.HealthReportResult {
+	if len(checks) == 0 {
+		return fathomv1alpha1.HealthReportResultSkipped
+	}
+	result := fathomv1alpha1.HealthReportResultPass
+	for _, check := range checks {
+		switch check.Outcome {
+		case adapter.OutcomeError:
+			return fathomv1alpha1.HealthReportResultError
+		case adapter.OutcomeFail:
+			result = fathomv1alpha1.HealthReportResultFail
+		case adapter.OutcomeWarn:
+			if result == fathomv1alpha1.HealthReportResultPass {
+				result = fathomv1alpha1.HealthReportResultWarn
+			}
+		case adapter.OutcomeSkipped:
+			if result == fathomv1alpha1.HealthReportResultPass {
+				result = fathomv1alpha1.HealthReportResultSkipped
+			}
+		case adapter.OutcomePass:
+		default:
+			return fathomv1alpha1.HealthReportResultUnknown
+		}
+	}
+	return result
+}
+
+func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResult {
+	switch outcome {
+	case adapter.OutcomePass:
+		return fathomv1alpha1.HealthReportResultPass
+	case adapter.OutcomeWarn:
+		return fathomv1alpha1.HealthReportResultWarn
+	case adapter.OutcomeFail:
+		return fathomv1alpha1.HealthReportResultFail
+	case adapter.OutcomeError:
+		return fathomv1alpha1.HealthReportResultError
+	case adapter.OutcomeSkipped:
+		return fathomv1alpha1.HealthReportResultSkipped
+	default:
+		return fathomv1alpha1.HealthReportResultUnknown
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -36,3 +36,12 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - healthreports
+  verbs:
+  - create
+  - get
+  - list
+  - watch

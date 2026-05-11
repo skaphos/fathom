@@ -6,4 +6,24 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: healthreport-sample
 spec:
-  # TODO(user): Add fields here
+  sourceRef:
+    apiVersion: fathom.skaphos.io/v1alpha1
+    kind: AddonCheck
+    namespace: default
+    name: addoncheck-sample
+  addonType: cert-manager
+  adapterName: cert-manager
+  adapterVersion: 0.1.0
+  contractVersion: 0.1.0
+  result: Pass
+  observedAt: "2026-01-01T00:00:00Z"
+  checks:
+  - family: system_health
+    result: Pass
+    targetRef:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: cert-manager
+      name: cert-manager
+    summary: cert-manager deployment is available
+    observedAt: "2026-01-01T00:00:00Z"

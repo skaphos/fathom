@@ -9,22 +9,102 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// HealthReportResult is the aggregate result for a report or individual check.
+// +kubebuilder:validation:Enum=Pass;Warn;Fail;Error;Skipped;Unknown
+type HealthReportResult string
+
+const (
+	HealthReportResultPass    HealthReportResult = "Pass"
+	HealthReportResultWarn    HealthReportResult = "Warn"
+	HealthReportResultFail    HealthReportResult = "Fail"
+	HealthReportResultError   HealthReportResult = "Error"
+	HealthReportResultSkipped HealthReportResult = "Skipped"
+	HealthReportResultUnknown HealthReportResult = "Unknown"
+)
+
+// HealthReportTargetRef identifies a Kubernetes object observed by a check.
+type HealthReportTargetRef struct {
+	// APIVersion is the target object's API version.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+
+	// Kind is the target object's kind.
+	// +optional
+	Kind string `json:"kind,omitempty"`
+
+	// Namespace is the target object's namespace, if namespaced.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+
+	// Name is the target object's name.
+	Name string `json:"name"`
+}
+
+// HealthReportCheck records one adapter-emitted check result.
+type HealthReportCheck struct {
+	// Family is the adapter-defined check family that produced this result.
+	Family string `json:"family"`
+
+	// Result is this check's outcome.
+	Result HealthReportResult `json:"result"`
+
+	// TargetRef is the observed resource for this check.
+	TargetRef HealthReportTargetRef `json:"targetRef"`
+
+	// Summary is a human-readable one-line outcome description.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+
+	// Details is adapter-defined structured context for the check.
+	// +optional
+	Details map[string]string `json:"details,omitempty"`
+
+	// ObservedAt is when this check completed.
+	ObservedAt metav1.Time `json:"observedAt"`
+
+	// Duration is how long this check took.
+	// +optional
+	Duration *metav1.Duration `json:"duration,omitempty"`
+}
 
 // HealthReportSpec defines the desired state of HealthReport.
 type HealthReportSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// SourceRef identifies the check resource that produced this report.
+	SourceRef HealthReportTargetRef `json:"sourceRef"`
 
-	// Foo is an example field of HealthReport. Edit healthreport_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// AddonType is the AddonCheck addon type used to select the adapter.
+	// +optional
+	AddonType string `json:"addonType,omitempty"`
+
+	// AdapterName is the adapter identity that produced this report.
+	// +optional
+	AdapterName string `json:"adapterName,omitempty"`
+
+	// AdapterVersion is the adapter implementation version.
+	// +optional
+	AdapterVersion string `json:"adapterVersion,omitempty"`
+
+	// ContractVersion is the adapter contract version used for this run.
+	// +optional
+	ContractVersion string `json:"contractVersion,omitempty"`
+
+	// Result is the aggregate outcome across all checks.
+	Result HealthReportResult `json:"result"`
+
+	// Checks are the individual observations produced by the adapter.
+	// +optional
+	Checks []HealthReportCheck `json:"checks,omitempty"`
+
+	// ObservedAt is when the adapter run completed.
+	ObservedAt metav1.Time `json:"observedAt"`
+
+	// Duration is the total adapter run duration.
+	// +optional
+	Duration *metav1.Duration `json:"duration,omitempty"`
 }
 
 // HealthReportStatus defines the observed state of HealthReport.
 type HealthReportStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 // +kubebuilder:object:root=true

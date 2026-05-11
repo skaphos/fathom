@@ -169,10 +169,23 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 	})
 
 	t.Run("HealthReport", func(t *testing.T) {
-		orig := &HealthReport{}
+		orig := &HealthReport{Spec: HealthReportSpec{
+			SourceRef: HealthReportTargetRef{Kind: "AddonCheck", Name: "cert-manager"},
+			Result:    HealthReportResultPass,
+			Checks: []HealthReportCheck{{
+				Family:    "system_health",
+				Result:    HealthReportResultPass,
+				TargetRef: HealthReportTargetRef{Kind: "Deployment", Name: "cert-manager"},
+				Details:   map[string]string{"available": "true"},
+			}},
+		}}
 		clone, ok := orig.DeepCopyObject().(*HealthReport)
 		if !ok || clone == nil || clone == orig {
 			t.Fatalf("unexpected DeepCopyObject result: %T %p", clone, clone)
+		}
+		clone.Spec.Checks[0].Details["available"] = "false"
+		if orig.Spec.Checks[0].Details["available"] != "true" {
+			t.Errorf("DeepCopy aliased nested check details")
 		}
 		_ = orig.DeepCopy()
 		_ = orig.Spec.DeepCopy()

@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
 )
 
@@ -129,8 +130,9 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // DefaultControllers returns the operator's built-in reconcilers, configured
 // against mgr. Tests substitute their own Setupper slice instead.
 func DefaultControllers(mgr ctrl.Manager) []Setupper {
+	adapterRegistry := registry.New(ctrl.Log.WithName("adapter-registry"))
 	return []Setupper{
-		&controller.AddonCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
+		&controller.AddonCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Adapters: adapterRegistry},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 	}
