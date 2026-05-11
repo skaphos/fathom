@@ -43,11 +43,16 @@ const (
 	thresholdKinds            = "kinds"
 	thresholdWarnDays         = "warnDays"
 	thresholdFailDays         = "failDays"
+	thresholdControllerName   = "controllerName"
+	thresholdWebhookName      = "webhookName"
+	thresholdCainjectorName   = "cainjectorName"
+	thresholdWebhookService   = "webhookServiceName"
+	thresholdWebhookConfig    = "webhookConfigName"
 )
 
 var (
-	components = []string{"cert-manager", "cert-manager-webhook", "cert-manager-cainjector"}
-	crds       = []string{
+	defaultComponents = []string{"cert-manager", "cert-manager-webhook", "cert-manager-cainjector"}
+	crds              = []string{
 		"certificates.cert-manager.io",
 		"certificaterequests.cert-manager.io",
 		"challenges.acme.cert-manager.io",
@@ -91,7 +96,7 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 		}, nil
 	}
 
-	checks := make([]adapter.CheckResult, 0, len(components)*2+len(crds)+1)
+	checks := make([]adapter.CheckResult, 0, len(certManagerComponents(systemPolicy))*2+len(crds)+1)
 	namespaces := systemPolicy.Namespaces
 	if len(namespaces) == 0 {
 		namespaces = []string{defaultNamespace}
@@ -100,7 +105,7 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 		restartWarnCount := restartWarnCount(systemPolicy)
 
 		for _, namespace := range namespaces {
-			for _, component := range components {
+			for _, component := range certManagerComponents(systemPolicy) {
 				deployment, check := a.checkDeployment(ctx, req.Client, namespace, component)
 				checks = append(checks, check)
 				if deployment != nil {
@@ -112,11 +117,13 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 			checks = append(checks, a.checkCRD(ctx, req.Client, name))
 		}
 		if webhookProbeEnabled(systemPolicy) {
+			webhookServiceName := stringThreshold(systemPolicy, thresholdWebhookService, stringThreshold(systemPolicy, thresholdWebhookName, "cert-manager-webhook"))
+			webhookConfigName := stringThreshold(systemPolicy, thresholdWebhookConfig, webhookServiceName)
 			for _, namespace := range namespaces {
-				checks = append(checks, a.checkWebhookService(ctx, req.Client, namespace))
+				checks = append(checks, a.checkWebhookService(ctx, req.Client, namespace, webhookServiceName))
 			}
-			checks = append(checks, a.checkValidatingWebhookConfiguration(ctx, req.Client))
-			checks = append(checks, a.checkMutatingWebhookConfiguration(ctx, req.Client))
+			checks = append(checks, a.checkValidatingWebhookConfiguration(ctx, req.Client, webhookConfigName, webhookServiceName, namespaces[0]))
+			checks = append(checks, a.checkMutatingWebhookConfiguration(ctx, req.Client, webhookConfigName, webhookServiceName, namespaces[0]))
 			for _, namespace := range namespaces {
 				checks = append(checks, a.checkAdmissionDryRun(ctx, req.Client, namespace))
 			}
@@ -161,6 +168,25 @@ func restartWarnCount(policy adapter.FamilyPolicy) int32 {
 		return defaultRestartWarnCount
 	}
 	return int32(parsed)
+}
+
+func certManagerComponents(policy adapter.FamilyPolicy) []string {
+	return []string{
+		stringThreshold(policy, thresholdControllerName, defaultComponents[0]),
+		stringThreshold(policy, thresholdWebhookName, defaultComponents[1]),
+		stringThreshold(policy, thresholdCainjectorName, defaultComponents[2]),
+	}
+}
+
+func stringThreshold(policy adapter.FamilyPolicy, key, defaultValue string) string {
+	if policy.Thresholds == nil {
+		return defaultValue
+	}
+	value := strings.TrimSpace(policy.Thresholds[key])
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
 
 func (Adapter) checkDeployment(ctx context.Context, c client.Client, namespace, name string) (*appsv1.Deployment, adapter.CheckResult) {
@@ -277,52 +303,52 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 	return check(target, adapter.OutcomePass, "cert-manager CRD is established", map[string]string{"crd": name}, started)
 }
 
-func (Adapter) checkWebhookService(ctx context.Context, c client.Client, namespace string) adapter.CheckResult {
+func (Adapter) checkWebhookService(ctx context.Context, c client.Client, namespace, serviceName string) adapter.CheckResult {
 	started := time.Now()
-	target := adapter.TargetRef{APIVersion: "v1", Kind: "Service", Namespace: namespace, Name: "cert-manager-webhook"}
+	target := adapter.TargetRef{APIVersion: "v1", Kind: "Service", Namespace: namespace, Name: serviceName}
 	var service corev1.Service
-	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "cert-manager-webhook"}, &service); err != nil {
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, &service); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(target, adapter.OutcomeFail, "cert-manager webhook service is missing", map[string]string{"component": "cert-manager-webhook"}, started)
+			return check(target, adapter.OutcomeFail, "cert-manager webhook service is missing", map[string]string{"component": serviceName}, started)
 		}
-		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager webhook service: %v", err), map[string]string{"component": "cert-manager-webhook"}, started)
+		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager webhook service: %v", err), map[string]string{"component": serviceName}, started)
 	}
 	if service.Spec.ClusterIP == "" || service.Spec.ClusterIP == corev1.ClusterIPNone {
-		return check(target, adapter.OutcomeFail, "cert-manager webhook service has no cluster IP", map[string]string{"component": "cert-manager-webhook"}, started)
+		return check(target, adapter.OutcomeFail, "cert-manager webhook service has no cluster IP", map[string]string{"component": serviceName}, started)
 	}
-	return check(target, adapter.OutcomePass, "cert-manager webhook service is routable", map[string]string{"component": "cert-manager-webhook"}, started)
+	return check(target, adapter.OutcomePass, "cert-manager webhook service is routable", map[string]string{"component": serviceName}, started)
 }
 
-func (Adapter) checkValidatingWebhookConfiguration(ctx context.Context, c client.Client) adapter.CheckResult {
+func (Adapter) checkValidatingWebhookConfiguration(ctx context.Context, c client.Client, configName, serviceName, serviceNamespace string) adapter.CheckResult {
 	started := time.Now()
-	target := adapter.TargetRef{APIVersion: "admissionregistration.k8s.io/v1", Kind: "ValidatingWebhookConfiguration", Name: "cert-manager-webhook"}
+	target := adapter.TargetRef{APIVersion: "admissionregistration.k8s.io/v1", Kind: "ValidatingWebhookConfiguration", Name: configName}
 	var config admissionv1.ValidatingWebhookConfiguration
-	if err := c.Get(ctx, types.NamespacedName{Name: "cert-manager-webhook"}, &config); err != nil {
+	if err := c.Get(ctx, types.NamespacedName{Name: configName}, &config); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(target, adapter.OutcomeFail, "cert-manager validating webhook configuration is missing", map[string]string{"component": "cert-manager-webhook"}, started)
+			return check(target, adapter.OutcomeFail, "cert-manager validating webhook configuration is missing", map[string]string{"component": configName}, started)
 		}
-		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager validating webhook configuration: %v", err), map[string]string{"component": "cert-manager-webhook"}, started)
+		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager validating webhook configuration: %v", err), map[string]string{"component": configName}, started)
 	}
-	if err := validateWebhookClients(validatingWebhookClients(config.Webhooks)); err != nil {
-		return check(target, adapter.OutcomeFail, "cert-manager validating webhook configuration is not ready", map[string]string{"component": "cert-manager-webhook", "reason": err.Error()}, started)
+	if err := validateWebhookClients(validatingWebhookClients(config.Webhooks), serviceName, serviceNamespace); err != nil {
+		return check(target, adapter.OutcomeFail, "cert-manager validating webhook configuration is not ready", map[string]string{"component": configName, "reason": err.Error()}, started)
 	}
-	return check(target, adapter.OutcomePass, "cert-manager validating webhook configuration is ready", map[string]string{"component": "cert-manager-webhook"}, started)
+	return check(target, adapter.OutcomePass, "cert-manager validating webhook configuration is ready", map[string]string{"component": configName}, started)
 }
 
-func (Adapter) checkMutatingWebhookConfiguration(ctx context.Context, c client.Client) adapter.CheckResult {
+func (Adapter) checkMutatingWebhookConfiguration(ctx context.Context, c client.Client, configName, serviceName, serviceNamespace string) adapter.CheckResult {
 	started := time.Now()
-	target := adapter.TargetRef{APIVersion: "admissionregistration.k8s.io/v1", Kind: "MutatingWebhookConfiguration", Name: "cert-manager-webhook"}
+	target := adapter.TargetRef{APIVersion: "admissionregistration.k8s.io/v1", Kind: "MutatingWebhookConfiguration", Name: configName}
 	var config admissionv1.MutatingWebhookConfiguration
-	if err := c.Get(ctx, types.NamespacedName{Name: "cert-manager-webhook"}, &config); err != nil {
+	if err := c.Get(ctx, types.NamespacedName{Name: configName}, &config); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is missing", map[string]string{"component": "cert-manager-webhook"}, started)
+			return check(target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is missing", map[string]string{"component": configName}, started)
 		}
-		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager mutating webhook configuration: %v", err), map[string]string{"component": "cert-manager-webhook"}, started)
+		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager mutating webhook configuration: %v", err), map[string]string{"component": configName}, started)
 	}
-	if err := validateWebhookClients(mutatingWebhookClients(config.Webhooks)); err != nil {
-		return check(target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is not ready", map[string]string{"component": "cert-manager-webhook", "reason": err.Error()}, started)
+	if err := validateWebhookClients(mutatingWebhookClients(config.Webhooks), serviceName, serviceNamespace); err != nil {
+		return check(target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is not ready", map[string]string{"component": configName, "reason": err.Error()}, started)
 	}
-	return check(target, adapter.OutcomePass, "cert-manager mutating webhook configuration is ready", map[string]string{"component": "cert-manager-webhook"}, started)
+	return check(target, adapter.OutcomePass, "cert-manager mutating webhook configuration is ready", map[string]string{"component": configName}, started)
 }
 
 type webhookClient struct {
@@ -346,7 +372,7 @@ func mutatingWebhookClients(webhooks []admissionv1.MutatingWebhook) []webhookCli
 	return clients
 }
 
-func validateWebhookClients(clients []webhookClient) error {
+func validateWebhookClients(clients []webhookClient, serviceName, serviceNamespace string) error {
 	if len(clients) == 0 {
 		return fmt.Errorf("no webhooks configured")
 	}
@@ -354,7 +380,7 @@ func validateWebhookClients(clients []webhookClient) error {
 		if webhook.client.Service == nil {
 			return fmt.Errorf("webhook %q does not target a service", webhook.name)
 		}
-		if webhook.client.Service.Name != "cert-manager-webhook" || webhook.client.Service.Namespace != defaultNamespace {
+		if webhook.client.Service.Name != serviceName || webhook.client.Service.Namespace != serviceNamespace {
 			return fmt.Errorf("webhook %q targets service %s/%s", webhook.name, webhook.client.Service.Namespace, webhook.client.Service.Name)
 		}
 		if len(webhook.client.CABundle) == 0 {

@@ -13,6 +13,11 @@ spec:
     system_health:
       enabled: true
       thresholds:
+        controllerName: "cert-manager"
+        webhookName: "cert-manager-webhook"
+        cainjectorName: "cert-manager-cainjector"
+        webhookServiceName: "cert-manager-webhook"
+        webhookConfigName: "cert-manager-webhook"
         restartWarnCount: "3"
         webhookProbe: "true"
     issuer_health:

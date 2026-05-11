@@ -1,0 +1,340 @@
+/*
+SPDX-FileCopyrightText: 2026 Skaphos
+SPDX-License-Identifier: MIT
+*/
+
+// Package coredns provides the built-in CoreDNS addon adapter.
+package coredns
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/skaphos/fathom/pkg/adapter"
+)
+
+const (
+	Name                = "coredns"
+	Version             = "0.1.0"
+	FamilySystemHealth  = adapter.Family("system_health")
+	FamilyDNSResolution = adapter.Family("dns_resolution")
+
+	defaultNamespace        = "kube-system"
+	defaultDeploymentName   = "coredns"
+	defaultRestartWarnCount = int32(3)
+	defaultDNSServiceName   = "kube-dns"
+	defaultDNSTargets       = "kubernetes.default.svc.cluster.local"
+
+	thresholdRestartWarnCount = "restartWarnCount"
+	thresholdDeploymentName   = "deploymentName"
+	thresholdAutoscalerName   = "autoscalerName"
+	thresholdServiceName      = "serviceName"
+	thresholdTargets          = "targets"
+)
+
+type lookupHostFunc func(context.Context, string) ([]string, error)
+
+// Adapter implements CoreDNS system and DNS behavior checks.
+type Adapter struct {
+	lookupHost lookupHostFunc
+}
+
+// New returns the built-in CoreDNS adapter.
+func New() Adapter {
+	resolver := net.DefaultResolver
+	return Adapter{lookupHost: resolver.LookupHost}
+}
+
+func (a Adapter) withDefaults() Adapter {
+	if a.lookupHost == nil {
+		return New()
+	}
+	return a
+}
+
+func (Adapter) Name() string            { return Name }
+func (Adapter) Version() string         { return Version }
+func (Adapter) ContractVersion() string { return adapter.ContractVersion }
+
+func (Adapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth, FamilyDNSResolution}}
+}
+
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods;services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
+
+func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
+	a = a.withDefaults()
+	started := time.Now()
+	checks := []adapter.CheckResult{}
+	if systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
+		checks = append(checks, a.checkSystemHealth(ctx, req.Client, systemPolicy)...)
+	}
+	if dnsPolicy, enabled := familyPolicy(req.Policy, FamilyDNSResolution, true); enabled {
+		checks = append(checks, a.checkDNSResolution(ctx, dnsPolicy)...)
+	}
+	if len(checks) == 0 {
+		checks = append(checks, skipped(req.Target, "all CoreDNS check families are disabled by policy"))
+	}
+	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
+}
+
+func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
+	if policy == nil {
+		return adapter.FamilyPolicy{Enabled: defaultEnabled}, defaultEnabled
+	}
+	familyPolicy, ok := policy[family]
+	if !ok {
+		return adapter.FamilyPolicy{}, false
+	}
+	return familyPolicy, familyPolicy.Enabled
+}
+
+func (a Adapter) checkSystemHealth(ctx context.Context, c client.Client, policy adapter.FamilyPolicy) []adapter.CheckResult {
+	namespace := firstNamespace(policy)
+	deploymentName := stringThreshold(policy, thresholdDeploymentName, defaultDeploymentName)
+	serviceName := stringThreshold(policy, thresholdServiceName, defaultDNSServiceName)
+	restartWarnCount := int32Threshold(policy, thresholdRestartWarnCount, defaultRestartWarnCount)
+	checks := []adapter.CheckResult{}
+	deployment, check := a.checkDeployment(ctx, c, namespace, deploymentName)
+	checks = append(checks, check)
+	if deployment != nil {
+		checks = append(checks, a.checkPods(ctx, c, deployment, restartWarnCount)...)
+	}
+	if autoscalerName := stringThreshold(policy, thresholdAutoscalerName, ""); autoscalerName != "" {
+		autoscaler, check := a.checkDeployment(ctx, c, namespace, autoscalerName)
+		checks = append(checks, check)
+		if autoscaler != nil {
+			checks = append(checks, a.checkPods(ctx, c, autoscaler, restartWarnCount)...)
+		}
+	}
+	checks = append(checks, a.checkService(ctx, c, namespace, serviceName))
+	checks = append(checks, a.checkEndpointSlices(ctx, c, namespace, serviceName))
+	return checks
+}
+
+func (Adapter) checkDeployment(ctx context.Context, c client.Client, namespace, name string) (*appsv1.Deployment, adapter.CheckResult) {
+	started := time.Now()
+	target := adapter.TargetRef{APIVersion: "apps/v1", Kind: "Deployment", Namespace: namespace, Name: name}
+	var deployment appsv1.Deployment
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &deployment); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, check(target, adapter.OutcomeFail, "CoreDNS deployment is missing", map[string]string{"component": name}, started)
+		}
+		return nil, check(target, adapter.OutcomeError, fmt.Sprintf("failed to read CoreDNS deployment: %v", err), map[string]string{"component": name}, started)
+	}
+	desired := int32(1)
+	if deployment.Spec.Replicas != nil {
+		desired = *deployment.Spec.Replicas
+	}
+	if desired == 0 {
+		return &deployment, check(target, adapter.OutcomeWarn, "CoreDNS deployment is scaled to zero", map[string]string{"component": name}, started)
+	}
+	if !deploymentAvailable(&deployment) || deployment.Status.AvailableReplicas < desired {
+		return &deployment, check(target, adapter.OutcomeFail, "CoreDNS deployment is not fully available", map[string]string{"component": name, "desiredReplicas": strconv.FormatInt(int64(desired), 10), "availableReplicas": strconv.FormatInt(int64(deployment.Status.AvailableReplicas), 10)}, started)
+	}
+	return &deployment, check(target, adapter.OutcomePass, "CoreDNS deployment is available", map[string]string{"component": name}, started)
+}
+
+func deploymentAvailable(deployment *appsv1.Deployment) bool {
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == appsv1.DeploymentAvailable && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func (Adapter) checkPods(ctx context.Context, c client.Client, deployment *appsv1.Deployment, restartWarnCount int32) []adapter.CheckResult {
+	started := time.Now()
+	target := adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Namespace: deployment.Namespace, Name: deployment.Name}
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		return []adapter.CheckResult{check(target, adapter.OutcomeError, fmt.Sprintf("deployment has invalid pod selector: %v", err), nil, started)}
+	}
+	var pods corev1.PodList
+	if err := c.List(ctx, &pods, client.InNamespace(deployment.Namespace), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return []adapter.CheckResult{check(target, adapter.OutcomeError, fmt.Sprintf("failed to list CoreDNS pods: %v", err), nil, started)}
+	}
+	if len(pods.Items) == 0 {
+		return []adapter.CheckResult{check(target, adapter.OutcomeFail, "CoreDNS deployment has no matching pods", nil, started)}
+	}
+	checks := make([]adapter.CheckResult, 0, len(pods.Items))
+	for _, pod := range pods.Items {
+		if !podReady(&pod) {
+			checks = append(checks, check(podTarget(&pod), adapter.OutcomeFail, "CoreDNS pod is not ready", map[string]string{"phase": string(pod.Status.Phase)}, started))
+			continue
+		}
+		if restarts := maxRestartCount(&pod); restarts > restartWarnCount {
+			checks = append(checks, check(podTarget(&pod), adapter.OutcomeWarn, "CoreDNS pod restart count exceeds warning threshold", map[string]string{"restartCount": strconv.FormatInt(int64(restarts), 10), "restartWarnCount": strconv.FormatInt(int64(restartWarnCount), 10)}, started))
+			continue
+		}
+		checks = append(checks, check(podTarget(&pod), adapter.OutcomePass, "CoreDNS pod is ready", nil, started))
+	}
+	return checks
+}
+
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func maxRestartCount(pod *corev1.Pod) int32 {
+	var max int32
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.RestartCount > max {
+			max = status.RestartCount
+		}
+	}
+	return max
+}
+
+func podTarget(pod *corev1.Pod) adapter.TargetRef {
+	return adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name}
+}
+
+func (Adapter) checkService(ctx context.Context, c client.Client, namespace, serviceName string) adapter.CheckResult {
+	started := time.Now()
+	target := adapter.TargetRef{APIVersion: "v1", Kind: "Service", Namespace: namespace, Name: serviceName}
+	var service corev1.Service
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, &service); err != nil {
+		if apierrors.IsNotFound(err) {
+			return check(target, adapter.OutcomeFail, "CoreDNS service is missing", nil, started)
+		}
+		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read CoreDNS service: %v", err), nil, started)
+	}
+	if service.Spec.ClusterIP == "" || service.Spec.ClusterIP == corev1.ClusterIPNone {
+		return check(target, adapter.OutcomeFail, "CoreDNS service has no cluster IP", map[string]string{"clusterIP": service.Spec.ClusterIP}, started)
+	}
+	return check(target, adapter.OutcomePass, "CoreDNS service is routable", map[string]string{"clusterIP": service.Spec.ClusterIP}, started)
+}
+
+func (Adapter) checkEndpointSlices(ctx context.Context, c client.Client, namespace, serviceName string) adapter.CheckResult {
+	started := time.Now()
+	target := adapter.TargetRef{APIVersion: "discovery.k8s.io/v1", Kind: "EndpointSlice", Namespace: namespace, Name: serviceName}
+	var slices discoveryv1.EndpointSliceList
+	if err := c.List(ctx, &slices, client.InNamespace(namespace), client.MatchingLabels{"kubernetes.io/service-name": serviceName}); err != nil {
+		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to list CoreDNS EndpointSlices: %v", err), nil, started)
+	}
+	ready := 0
+	for _, slice := range slices.Items {
+		for _, endpoint := range slice.Endpoints {
+			if endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready {
+				ready++
+			}
+		}
+	}
+	if ready == 0 {
+		return check(target, adapter.OutcomeFail, "CoreDNS service has no ready endpoints", map[string]string{"endpointSlices": strconv.Itoa(len(slices.Items))}, started)
+	}
+	return check(target, adapter.OutcomePass, "CoreDNS service has ready endpoints", map[string]string{"readyEndpoints": strconv.Itoa(ready), "endpointSlices": strconv.Itoa(len(slices.Items))}, started)
+}
+
+func (a Adapter) checkDNSResolution(ctx context.Context, policy adapter.FamilyPolicy) []adapter.CheckResult {
+	targets := dnsTargets(policy)
+	checks := make([]adapter.CheckResult, 0, len(targets))
+	for _, name := range targets {
+		checks = append(checks, a.resolveTarget(ctx, name))
+	}
+	return checks
+}
+
+func (a Adapter) resolveTarget(ctx context.Context, name string) adapter.CheckResult {
+	started := time.Now()
+	target := adapter.TargetRef{Kind: "DNSName", Name: name}
+	addresses, err := a.lookupHost(ctx, name)
+	duration := time.Since(started)
+	details := map[string]string{"latencyMillis": strconv.FormatInt(duration.Milliseconds(), 10)}
+	if err != nil {
+		details["error"] = err.Error()
+		return check(target, adapter.OutcomeError, "DNS resolution failed", details, started)
+	}
+	if len(addresses) == 0 {
+		return check(target, adapter.OutcomeFail, "DNS resolution returned no addresses", details, started)
+	}
+	details["addresses"] = strings.Join(addresses, ",")
+	return check(target, adapter.OutcomePass, "DNS resolution succeeded", details, started)
+}
+
+func firstNamespace(policy adapter.FamilyPolicy) string {
+	if len(policy.Namespaces) == 0 {
+		return defaultNamespace
+	}
+	return policy.Namespaces[0]
+}
+
+func dnsTargets(policy adapter.FamilyPolicy) []string {
+	if policy.Thresholds == nil || policy.Thresholds[thresholdTargets] == "" {
+		return []string{defaultDNSTargets}
+	}
+	parts := strings.Split(policy.Thresholds[thresholdTargets], ",")
+	targets := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			targets = append(targets, part)
+		}
+	}
+	if len(targets) == 0 {
+		return []string{defaultDNSTargets}
+	}
+	return targets
+}
+
+func int32Threshold(policy adapter.FamilyPolicy, key string, defaultValue int32) int32 {
+	if policy.Thresholds == nil {
+		return defaultValue
+	}
+	value, ok := policy.Thresholds[key]
+	if !ok {
+		return defaultValue
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || parsed < 0 {
+		return defaultValue
+	}
+	return int32(parsed)
+}
+
+func stringThreshold(policy adapter.FamilyPolicy, key, defaultValue string) string {
+	if policy.Thresholds == nil {
+		return defaultValue
+	}
+	value := strings.TrimSpace(policy.Thresholds[key])
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+func skipped(target adapter.TargetRef, summary string) adapter.CheckResult {
+	return adapter.CheckResult{Family: FamilyDNSResolution, Outcome: adapter.OutcomeSkipped, TargetRef: target, Summary: summary, ObservedAt: time.Now()}
+}
+
+func check(target adapter.TargetRef, outcome adapter.Outcome, summary string, details map[string]string, started time.Time) adapter.CheckResult {
+	return adapter.CheckResult{Family: familyForTarget(target), Outcome: outcome, TargetRef: target, Summary: summary, Details: details, ObservedAt: time.Now(), Duration: time.Since(started)}
+}
+
+func familyForTarget(target adapter.TargetRef) adapter.Family {
+	if target.Kind == "DNSName" {
+		return FamilyDNSResolution
+	}
+	return FamilySystemHealth
+}

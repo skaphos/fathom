@@ -176,6 +176,37 @@ func TestRun_MissingCRDFails(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", "orders.acme.cert-manager.io", adapter.OutcomeFail, "missing")
 }
 
+func TestRun_SystemHealthSupportsCustomNames(t *testing.T) {
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			healthyDeployment("rke2-cert-manager"), readyPodNamed("rke2-cert-manager", "rke2-cert-manager"),
+			healthyDeployment("rke2-cert-manager-webhook"), readyPodNamed("rke2-cert-manager-webhook", "rke2-cert-manager-webhook"),
+			healthyDeployment("rke2-cert-manager-cainjector"), readyPodNamed("rke2-cert-manager-cainjector", "rke2-cert-manager-cainjector"),
+			webhookService("rke2-cert-manager-webhook"),
+			validatingWebhookConfigurationNamed("rke2-cert-manager-webhook", "rke2-cert-manager-webhook", defaultNamespace),
+			mutatingWebhookConfigurationNamed("rke2-cert-manager-webhook", "rke2-cert-manager-webhook", defaultNamespace),
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilySystemHealth: {Enabled: true, Thresholds: map[string]string{
+				thresholdControllerName: "rke2-cert-manager",
+				thresholdWebhookName:    "rke2-cert-manager-webhook",
+				thresholdCainjectorName: "rke2-cert-manager-cainjector",
+				thresholdWebhookService: "rke2-cert-manager-webhook",
+				thresholdWebhookConfig:  "rke2-cert-manager-webhook",
+				thresholdWebhookProbe:   "true",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Deployment", "rke2-cert-manager", adapter.OutcomePass, "available")
+	assertHasOutcome(t, result.Checks, "Deployment", "rke2-cert-manager-webhook", adapter.OutcomePass, "available")
+	assertHasOutcome(t, result.Checks, "Deployment", "rke2-cert-manager-cainjector", adapter.OutcomePass, "available")
+	assertHasOutcome(t, result.Checks, "Service", "rke2-cert-manager-webhook", adapter.OutcomePass, "routable")
+}
+
 func TestRun_IssuerHealthChecksIssuersAndClusterIssuers(t *testing.T) {
 	result, err := New().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t,
@@ -316,21 +347,25 @@ type clientObject interface {
 }
 
 func healthyObjects(includeWebhookService bool) []clientObject {
-	objects := make([]clientObject, 0, len(components)*2+len(crds)+1)
-	for _, component := range components {
+	objects := make([]clientObject, 0, len(defaultComponents)*2+len(crds)+1)
+	for _, component := range defaultComponents {
 		objects = append(objects, healthyDeployment(component), readyPod(component))
 	}
 	for _, crdName := range crds {
 		objects = append(objects, establishedCRD(crdName))
 	}
 	if includeWebhookService {
-		objects = append(objects, &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook", Namespace: defaultNamespace},
-			Spec:       corev1.ServiceSpec{ClusterIP: "10.0.0.10"},
-		})
+		objects = append(objects, webhookService("cert-manager-webhook"))
 		objects = append(objects, validatingWebhookConfiguration(), mutatingWebhookConfiguration())
 	}
 	return objects
+}
+
+func webhookService(name string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultNamespace},
+		Spec:       corev1.ServiceSpec{ClusterIP: "10.0.0.10"},
+	}
 }
 
 func healthyDeployment(name string) *appsv1.Deployment {
@@ -366,32 +401,40 @@ func readyPodNamed(name, component string) *corev1.Pod {
 }
 
 func validatingWebhookConfiguration() *admissionv1.ValidatingWebhookConfiguration {
+	return validatingWebhookConfigurationNamed("cert-manager-webhook", "cert-manager-webhook", defaultNamespace)
+}
+
+func validatingWebhookConfigurationNamed(configName, serviceName, serviceNamespace string) *admissionv1.ValidatingWebhookConfiguration {
 	return &admissionv1.ValidatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook"},
+		ObjectMeta: metav1.ObjectMeta{Name: configName},
 		Webhooks: []admissionv1.ValidatingWebhook{{
 			Name:         "webhook.cert-manager.io",
-			ClientConfig: webhookClientConfig(),
+			ClientConfig: webhookClientConfig(serviceName, serviceNamespace),
 		}},
 	}
 }
 
 func mutatingWebhookConfiguration() *admissionv1.MutatingWebhookConfiguration {
+	return mutatingWebhookConfigurationNamed("cert-manager-webhook", "cert-manager-webhook", defaultNamespace)
+}
+
+func mutatingWebhookConfigurationNamed(configName, serviceName, serviceNamespace string) *admissionv1.MutatingWebhookConfiguration {
 	return &admissionv1.MutatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook"},
+		ObjectMeta: metav1.ObjectMeta{Name: configName},
 		Webhooks: []admissionv1.MutatingWebhook{{
 			Name:         "webhook.cert-manager.io",
-			ClientConfig: webhookClientConfig(),
+			ClientConfig: webhookClientConfig(serviceName, serviceNamespace),
 		}},
 	}
 }
 
-func webhookClientConfig() admissionv1.WebhookClientConfig {
+func webhookClientConfig(serviceName, serviceNamespace string) admissionv1.WebhookClientConfig {
 	path := "/mutate"
 	return admissionv1.WebhookClientConfig{
 		CABundle: []byte("ca"),
 		Service: &admissionv1.ServiceReference{
-			Namespace: defaultNamespace,
-			Name:      "cert-manager-webhook",
+			Namespace: serviceNamespace,
+			Name:      serviceName,
 			Path:      &path,
 		},
 	}

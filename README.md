@@ -9,7 +9,8 @@ deployments, their matching pods, required cert-manager CRDs, and optionally the
 webhook Service plus admission webhook configuration. `issuer_health` checks
 `Issuer` and `ClusterIssuer` readiness. `certificate_health` checks Certificate
 readiness, renewal timing, expiry thresholds, issuer references, and secret
-linkage.
+linkage. Set the cert-manager name thresholds for distributions that rename the
+controller, webhook, cainjector, Service, or webhook configuration objects.
 
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
@@ -24,6 +25,11 @@ spec:
     system_health:
       enabled: true
       thresholds:
+        controllerName: "cert-manager"
+        webhookName: "cert-manager-webhook"
+        cainjectorName: "cert-manager-cainjector"
+        webhookServiceName: "cert-manager-webhook"
+        webhookConfigName: "cert-manager-webhook"
         restartWarnCount: "3"
         webhookProbe: "true"
     issuer_health:
@@ -35,6 +41,38 @@ spec:
       thresholds:
         warnDays: "30"
         failDays: "7"
+```
+
+The built-in CoreDNS adapter supports `system_health` and `dns_resolution`
+families. `system_health` checks the CoreDNS deployment, matching pods,
+`kube-dns` Service, EndpointSlices, and optionally a node-count autoscaler
+deployment. Set `deploymentName`, `serviceName`, and `autoscalerName` for
+distributions such as RKE2 that rename CoreDNS objects. `dns_resolution`
+performs active DNS lookups and records resolver latency/error details.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  name: coredns-health
+spec:
+  addonType: coredns
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        deploymentName: "coredns"
+        serviceName: "kube-dns"
+        restartWarnCount: "3"
+        autoscalerName: ""
+    dns_resolution:
+      enabled: true
+      thresholds:
+        targets: "kubernetes.default.svc.cluster.local"
 ```
 
 The built-in External Secrets Operator adapter supports `system_health` and

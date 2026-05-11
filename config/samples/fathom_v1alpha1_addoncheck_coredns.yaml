@@ -1,0 +1,27 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: coredns-sample
+spec:
+  addonType: coredns
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        deploymentName: "coredns"
+        serviceName: "kube-dns"
+        restartWarnCount: "3"
+        # Set this on distributions that deploy a CoreDNS node-count autoscaler,
+        # for example "rke2-coredns-autoscaler" on RKE2.
+        autoscalerName: ""
+    dns_resolution:
+      enabled: true
+      thresholds:
+        targets: "kubernetes.default.svc.cluster.local"
