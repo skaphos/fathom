@@ -9,26 +9,94 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// CheckTargetRef references a specialized check resource (AddonCheck,
+// DNSCheck, NodeHealthCheck, NodeCertificateCheck, ReachabilityCheck) whose
+// status a HealthCheck mirrors and surfaces for ClusterHealth aggregation.
+type CheckTargetRef struct {
+	// APIVersion of the target check resource. When empty, defaults to
+	// fathom.skaphos.io/v1alpha1.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
 
-// HealthCheckSpec defines the desired state of HealthCheck.
-type HealthCheckSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Kind of the target check resource (e.g., AddonCheck, DNSCheck).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Kind string `json:"kind"`
 
-	// Foo is an example field of HealthCheck. Edit healthcheck_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Name of the target check resource.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+
+	// Namespace of the target check resource. When empty, the HealthCheck's
+	// own namespace is used.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	Namespace string `json:"namespace,omitempty"`
 }
 
-// HealthCheckStatus defines the observed state of HealthCheck.
+// HealthCheckSpec defines the desired state of HealthCheck. A HealthCheck is
+// a thin wrapper that mirrors the status of a specialized check resource into
+// a uniform shape suitable for ClusterHealth aggregation. HealthCheck does not
+// execute checks itself.
+type HealthCheckSpec struct {
+	// CheckRef identifies the specialized check resource this HealthCheck wraps.
+	CheckRef CheckTargetRef `json:"checkRef"`
+
+	// Description is a human-readable purpose for this HealthCheck.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Description string `json:"description,omitempty"`
+
+	// Paused suspends mirroring of the referenced check's status into this
+	// HealthCheck. The most recent Status snapshot is preserved while paused.
+	// +optional
+	Paused bool `json:"paused,omitempty"`
+}
+
+// HealthCheckStatus defines the observed state of HealthCheck. The fields are
+// derived from the referenced check's status; consumers (notably
+// ClusterHealth) read this status without needing to understand any
+// specialized check schema.
 type HealthCheckStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration is the most recent metadata.generation reconciled.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions summarize the controller's view of the wrapped check.
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// Result is the outcome surfaced from the referenced check's most recent run.
+	// +optional
+	Result HealthReportResult `json:"result,omitempty"`
+
+	// Summary is a human-readable one-line outcome description.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Summary string `json:"summary,omitempty"`
+
+	// SourceObservedAt is when the referenced check last completed.
+	// +optional
+	SourceObservedAt *metav1.Time `json:"sourceObservedAt,omitempty"`
+
+	// LastReportName names the most recent HealthReport produced by the
+	// referenced check, when one exists.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	LastReportName string `json:"lastReportName,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.result`
+// +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=`.spec.checkRef.kind`
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.checkRef.name`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // HealthCheck is the Schema for the healthchecks API.
 type HealthCheck struct {

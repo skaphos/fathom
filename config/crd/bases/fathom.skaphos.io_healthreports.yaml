@@ -69,6 +69,8 @@ spec:
                     family:
                       description: Family is the adapter-defined check family that
                         produced this result.
+                      maxLength: 63
+                      minLength: 1
                       type: string
                     observedAt:
                       description: ObservedAt is when this check completed.
@@ -92,16 +94,21 @@ spec:
                       properties:
                         apiVersion:
                           description: APIVersion is the target object's API version.
+                          maxLength: 253
                           type: string
                         kind:
                           description: Kind is the target object's kind.
+                          maxLength: 63
                           type: string
                         name:
                           description: Name is the target object's name.
+                          maxLength: 253
+                          minLength: 1
                           type: string
                         namespace:
                           description: Namespace is the target object's namespace,
                             if namespaced.
+                          maxLength: 253
                           type: string
                       required:
                       - name
@@ -140,15 +147,20 @@ spec:
                 properties:
                   apiVersion:
                     description: APIVersion is the target object's API version.
+                    maxLength: 253
                     type: string
                   kind:
                     description: Kind is the target object's kind.
+                    maxLength: 63
                     type: string
                   name:
                     description: Name is the target object's name.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
                     description: Namespace is the target object's namespace, if namespaced.
+                    maxLength: 253
                     type: string
                 required:
                 - name

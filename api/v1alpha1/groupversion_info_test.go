@@ -117,7 +117,9 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 	})
 
 	t.Run("HealthCheck", func(t *testing.T) {
-		orig := &HealthCheck{Spec: HealthCheckSpec{Foo: "bar"}}
+		orig := &HealthCheck{Spec: HealthCheckSpec{
+			CheckRef: CheckTargetRef{Kind: "AddonCheck", Name: "cert-manager"},
+		}}
 		clone, ok := orig.DeepCopyObject().(*HealthCheck)
 		if !ok || clone == nil {
 			t.Fatalf("DeepCopyObject did not return *HealthCheck: %T", clone)
@@ -125,8 +127,8 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 		if clone == orig {
 			t.Fatalf("DeepCopy returned the same pointer")
 		}
-		if clone.Spec.Foo != "bar" {
-			t.Errorf("Spec.Foo = %q, want %q", clone.Spec.Foo, "bar")
+		if clone.Spec.CheckRef.Name != "cert-manager" {
+			t.Errorf("Spec.CheckRef.Name = %q, want %q", clone.Spec.CheckRef.Name, "cert-manager")
 		}
 		_ = orig.DeepCopy()
 		_ = orig.Spec.DeepCopy()
@@ -134,12 +136,14 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 	})
 
 	t.Run("HealthCheckList", func(t *testing.T) {
-		orig := &HealthCheckList{Items: []HealthCheck{{Spec: HealthCheckSpec{Foo: "a"}}}}
+		orig := &HealthCheckList{Items: []HealthCheck{{Spec: HealthCheckSpec{
+			CheckRef: CheckTargetRef{Kind: "AddonCheck", Name: "a"},
+		}}}}
 		clone, ok := orig.DeepCopyObject().(*HealthCheckList)
 		if !ok || clone == nil {
 			t.Fatalf("DeepCopyObject did not return *HealthCheckList: %T", clone)
 		}
-		if len(clone.Items) != 1 || clone.Items[0].Spec.Foo != "a" {
+		if len(clone.Items) != 1 || clone.Items[0].Spec.CheckRef.Name != "a" {
 			t.Errorf("unexpected clone: %+v", clone)
 		}
 		_ = orig.DeepCopy()
@@ -209,17 +213,21 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 // receiver-side input gracefully (they are no-ops in that case, but the
 // shape of the call site still counts toward coverage).
 func TestDeepCopyIntoExercise(t *testing.T) {
-	src := &HealthCheck{Spec: HealthCheckSpec{Foo: "x"}}
+	src := &HealthCheck{Spec: HealthCheckSpec{
+		CheckRef: CheckTargetRef{Kind: "AddonCheck", Name: "x"},
+	}}
 	dst := &HealthCheck{}
 	src.DeepCopyInto(dst)
-	if dst.Spec.Foo != "x" {
-		t.Errorf("DeepCopyInto did not copy Spec.Foo")
+	if dst.Spec.CheckRef.Name != "x" {
+		t.Errorf("DeepCopyInto did not copy Spec.CheckRef.Name")
 	}
 
-	srcList := &HealthCheckList{Items: []HealthCheck{{Spec: HealthCheckSpec{Foo: "y"}}}}
+	srcList := &HealthCheckList{Items: []HealthCheck{{Spec: HealthCheckSpec{
+		CheckRef: CheckTargetRef{Kind: "AddonCheck", Name: "y"},
+	}}}}
 	dstList := &HealthCheckList{}
 	srcList.DeepCopyInto(dstList)
-	if len(dstList.Items) != 1 || dstList.Items[0].Spec.Foo != "y" {
+	if len(dstList.Items) != 1 || dstList.Items[0].Spec.CheckRef.Name != "y" {
 		t.Errorf("DeepCopyInto did not copy Items")
 	}
 }

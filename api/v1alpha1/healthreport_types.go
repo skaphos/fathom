@@ -26,23 +26,30 @@ const (
 type HealthReportTargetRef struct {
 	// APIVersion is the target object's API version.
 	// +optional
+	// +kubebuilder:validation:MaxLength=253
 	APIVersion string `json:"apiVersion,omitempty"`
 
 	// Kind is the target object's kind.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	Kind string `json:"kind,omitempty"`
 
 	// Namespace is the target object's namespace, if namespaced.
 	// +optional
+	// +kubebuilder:validation:MaxLength=253
 	Namespace string `json:"namespace,omitempty"`
 
 	// Name is the target object's name.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
 }
 
 // HealthReportCheck records one adapter-emitted check result.
 type HealthReportCheck struct {
 	// Family is the adapter-defined check family that produced this result.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Family string `json:"family"`
 
 	// Result is this check's outcome.

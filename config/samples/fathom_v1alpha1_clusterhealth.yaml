@@ -4,6 +4,8 @@ metadata:
   labels:
     app.kubernetes.io/name: fathom
     app.kubernetes.io/managed-by: kustomize
-  name: clusterhealth-sample
+  name: platform
 spec:
-  # TODO(user): Add fields here
+  description: "Aggregate the worst-case Result across every HealthCheck in this namespace."
+  # An empty/omitted selector matches all HealthChecks in the same namespace
+  # as this ClusterHealth.

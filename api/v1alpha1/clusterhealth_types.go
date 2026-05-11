@@ -9,26 +9,87 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ClusterHealthSpec defines the desired state of ClusterHealth.
+// ClusterHealthSpec defines the desired state of ClusterHealth. ClusterHealth
+// is an aggregator: it rolls up the Status of selected HealthCheck resources
+// into a single worst-case Result for cluster-wide consumers (dashboards,
+// alerting, gates).
 type ClusterHealthSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Selector selects the HealthChecks whose status this aggregate rolls up.
+	// An empty or nil selector matches all HealthChecks in the same namespace
+	// as this ClusterHealth.
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
-	// Foo is an example field of ClusterHealth. Edit clusterhealth_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Description is a human-readable purpose for this aggregate.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Description string `json:"description,omitempty"`
+}
+
+// ClusterHealthChildSummary records one HealthCheck's contribution to the
+// aggregate. The aggregator never reads HealthReport history; it derives this
+// snapshot solely from HealthCheck.Status (per the AGENTS.md invariant).
+type ClusterHealthChildSummary struct {
+	// Name of the contributing HealthCheck.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+
+	// Result mirrors the contributing HealthCheck's Status.Result.
+	// +optional
+	Result HealthReportResult `json:"result,omitempty"`
+
+	// Summary mirrors the contributing HealthCheck's Status.Summary.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Summary string `json:"summary,omitempty"`
+
+	// ObservedAt mirrors the contributing HealthCheck's
+	// Status.SourceObservedAt, when present.
+	// +optional
+	ObservedAt *metav1.Time `json:"observedAt,omitempty"`
 }
 
 // ClusterHealthStatus defines the observed state of ClusterHealth.
 type ClusterHealthStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration is the most recent metadata.generation reconciled.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions summarize the controller's view of the aggregate.
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// Result is the worst-case roll-up across the selected HealthChecks.
+	// Empty when no HealthChecks match the selector.
+	// +optional
+	Result HealthReportResult `json:"result,omitempty"`
+
+	// MatchedCount is the number of HealthChecks selected for this aggregate.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MatchedCount int32 `json:"matchedCount,omitempty"`
+
+	// Children summarizes each selected HealthCheck's contribution.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Children []ClusterHealthChildSummary `json:"children,omitempty"`
+
+	// ObservedAt is when the aggregator last refreshed this status.
+	// +optional
+	ObservedAt *metav1.Time `json:"observedAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.result`
+// +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchedCount`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ClusterHealth is the Schema for the clusterhealths API.
 type ClusterHealth struct {
