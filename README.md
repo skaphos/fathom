@@ -36,3 +36,28 @@ spec:
         warnDays: "30"
         failDays: "7"
 ```
+
+The built-in External Secrets Operator adapter supports `system_health` and
+`secret_sync` families. `system_health` checks controller deployments, pods, and
+required ESO CRDs. `secret_sync` checks `ExternalSecret` readiness, stale refresh
+state, failure reasons, store references, and target secret linkage.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  name: external-secrets-health
+spec:
+  addonType: external-secrets
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      thresholds:
+        restartWarnCount: "3"
+    secret_sync:
+      enabled: true
+      thresholds:
+        staleMinutes: "60"
+```
