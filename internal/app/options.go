@@ -55,11 +55,18 @@ type Options struct {
 
 	// Zap is bound directly to flags (not Viper) because zap.Options uses
 	// the stdlib flag package and is not round-trippable via mapstructure.
+	// Its default is whatever zap.Options.BindFlags registers (Development
+	// defaults to false), not what DefaultOptions returns — Load overwrites
+	// opts.Zap with the flag-parsed value before returning.
 	Zap zap.Options `mapstructure:"-"`
 }
 
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
+//
+// Zap is intentionally left zero — its default is owned by zap.Options.BindFlags
+// (Development=false). Setting Zap here would be dead code since Load overwrites
+// opts.Zap with the flag-parsed value before returning.
 func DefaultOptions() Options {
 	return Options{
 		Metrics: MetricsOptions{
@@ -76,7 +83,6 @@ func DefaultOptions() Options {
 		LeaderElect:            false,
 		LeaderElectionID:       "2d3dbc4f.skaphos.io",
 		EnableHTTP2:            false,
-		Zap:                    zap.Options{Development: true},
 	}
 }
 
