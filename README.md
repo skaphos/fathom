@@ -48,7 +48,11 @@ families. `system_health` checks the CoreDNS deployment, matching pods,
 `kube-dns` Service, EndpointSlices, and optionally a node-count autoscaler
 deployment. Set `deploymentName`, `serviceName`, and `autoscalerName` for
 distributions such as RKE2 that rename CoreDNS objects. `dns_resolution`
-performs active DNS lookups and records resolver latency/error details.
+launches a short-lived probe Pod per target in the AddonCheck's namespace
+(per ADR-0003, so the resolver topology matches workloads rather than the
+operator pod) and records the per-target outcome plus resolver latency.
+Override `probeImage` if the default image tag is not pullable from your
+cluster.
 
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
@@ -73,6 +77,7 @@ spec:
       enabled: true
       thresholds:
         targets: "kubernetes.default.svc.cluster.local"
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.1.0"
 ```
 
 The built-in External Secrets Operator adapter supports `system_health` and

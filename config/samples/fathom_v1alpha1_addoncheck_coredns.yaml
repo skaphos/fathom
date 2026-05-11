@@ -25,3 +25,8 @@ spec:
       enabled: true
       thresholds:
         targets: "kubernetes.default.svc.cluster.local"
+        # The probe image is launched as a short-lived Pod per target so DNS
+        # resolution is observed from the AddonCheck's namespace network
+        # topology rather than the operator pod's. Override this for private
+        # registries or when pinning to a specific tag.
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.1.0"

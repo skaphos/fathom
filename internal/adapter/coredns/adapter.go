@@ -9,7 +9,6 @@ package coredns
 import (
 	"context"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -36,33 +36,38 @@ const (
 	defaultRestartWarnCount = int32(3)
 	defaultDNSServiceName   = "kube-dns"
 	defaultDNSTargets       = "kubernetes.default.svc.cluster.local"
+	// defaultProbeImage is a placeholder. The publish pipeline for the probe
+	// image is its own ticket; until that lands, the threshold below lets
+	// users override per-AddonCheck. A future operator-level flag will
+	// override this default cluster-wide.
+	defaultProbeImage    = "ghcr.io/skaphos/fathom-probe:v0.1.0"
+	defaultProbeTimeout  = 10 * time.Second
+	probePodNameMaxLabel = 30
 
 	thresholdRestartWarnCount = "restartWarnCount"
 	thresholdDeploymentName   = "deploymentName"
 	thresholdAutoscalerName   = "autoscalerName"
 	thresholdServiceName      = "serviceName"
 	thresholdTargets          = "targets"
+	thresholdProbeImage       = "probeImage"
 )
 
-type lookupHostFunc func(context.Context, string) ([]string, error)
+// dnsProbeLauncher is the surface the dns_resolution family needs from
+// probe.Launcher. The interface exists so unit tests can supply a fake
+// without a real client and without standing up a probe pod.
+type dnsProbeLauncher interface {
+	Run(ctx context.Context, req probe.Request) (probe.Result, error)
+}
 
 // Adapter implements CoreDNS system and DNS behavior checks.
 type Adapter struct {
-	lookupHost lookupHostFunc
+	// launcher is injected for testing. Production runs construct a real
+	// probe.Launcher per Run with the request's controller-runtime client.
+	launcher dnsProbeLauncher
 }
 
 // New returns the built-in CoreDNS adapter.
-func New() Adapter {
-	resolver := net.DefaultResolver
-	return Adapter{lookupHost: resolver.LookupHost}
-}
-
-func (a Adapter) withDefaults() Adapter {
-	if a.lookupHost == nil {
-		return New()
-	}
-	return a
-}
+func New() Adapter { return Adapter{} }
 
 func (Adapter) Name() string            { return Name }
 func (Adapter) Version() string         { return Version }
@@ -74,17 +79,17 @@ func (Adapter) Capabilities() adapter.Capabilities {
 
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods;services,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=create;delete
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
-	a = a.withDefaults()
 	started := time.Now()
 	checks := []adapter.CheckResult{}
 	if systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
 		checks = append(checks, a.checkSystemHealth(ctx, req.Client, systemPolicy)...)
 	}
 	if dnsPolicy, enabled := familyPolicy(req.Policy, FamilyDNSResolution, true); enabled {
-		checks = append(checks, a.checkDNSResolution(ctx, dnsPolicy)...)
+		checks = append(checks, a.checkDNSResolution(ctx, req, dnsPolicy)...)
 	}
 	if len(checks) == 0 {
 		checks = append(checks, skipped(req.Target, "all CoreDNS check families are disabled by policy"))
@@ -247,30 +252,107 @@ func (Adapter) checkEndpointSlices(ctx context.Context, c client.Client, namespa
 	return check(target, adapter.OutcomePass, "CoreDNS service has ready endpoints", map[string]string{"readyEndpoints": strconv.Itoa(ready), "endpointSlices": strconv.Itoa(len(slices.Items))}, started)
 }
 
-func (a Adapter) checkDNSResolution(ctx context.Context, policy adapter.FamilyPolicy) []adapter.CheckResult {
+// checkDNSResolution runs one probe pod per configured target and maps each
+// result back to a CheckResult. Per ADR-0003, resolving from inside a probe
+// pod (rather than from the operator pod's network namespace) is the only
+// way to assert workload-perspective DNS behavior.
+func (a Adapter) checkDNSResolution(ctx context.Context, req adapter.Request, policy adapter.FamilyPolicy) []adapter.CheckResult {
 	targets := dnsTargets(policy)
+	image := stringThreshold(policy, thresholdProbeImage, defaultProbeImage)
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = defaultProbeTimeout
+	}
+	launcher := a.launcher
+	if launcher == nil {
+		launcher = &probe.Launcher{Client: req.Client}
+	}
 	checks := make([]adapter.CheckResult, 0, len(targets))
 	for _, name := range targets {
-		checks = append(checks, a.resolveTarget(ctx, name))
+		checks = append(checks, runDNSProbe(ctx, launcher, image, req.Target.Namespace, name, timeout))
 	}
 	return checks
 }
 
-func (a Adapter) resolveTarget(ctx context.Context, name string) adapter.CheckResult {
+// runDNSProbe launches a single probe pod for one target and returns its
+// CheckResult. Probe-pod-create errors are surfaced as Outcome=Error;
+// probe-binary outcomes (Pass/Fail/Error) flow through unchanged.
+func runDNSProbe(ctx context.Context, launcher dnsProbeLauncher, image, namespace, target string, timeout time.Duration) adapter.CheckResult {
 	started := time.Now()
-	target := adapter.TargetRef{Kind: "DNSName", Name: name}
-	addresses, err := a.lookupHost(ctx, name)
+	targetRef := adapter.TargetRef{Kind: "DNSName", Name: target}
+	probeReq := probe.Request{
+		Name:      dnsProbePodName(target),
+		Namespace: namespace,
+		Image:     image,
+		Mode:      probe.ModeDNS,
+		Target:    target,
+		Timeout:   timeout,
+	}
+	result, err := launcher.Run(ctx, probeReq)
 	duration := time.Since(started)
-	details := map[string]string{"latencyMillis": strconv.FormatInt(duration.Milliseconds(), 10)}
+	details := map[string]string{
+		"latencyMillis": strconv.FormatInt(duration.Milliseconds(), 10),
+		"target":        target,
+	}
 	if err != nil {
 		details["error"] = err.Error()
-		return check(target, adapter.OutcomeError, "DNS resolution failed", details, started)
+		return check(targetRef, adapter.OutcomeError, "DNS probe pod execution failed", details, started)
 	}
-	if len(addresses) == 0 {
-		return check(target, adapter.OutcomeFail, "DNS resolution returned no addresses", details, started)
+	for k, v := range result.Details {
+		// Don't let probe-side details overwrite our latency stamp; the
+		// probe binary measured its own latency separately, surface both.
+		if k == "latencyMillis" {
+			details["probeLatencyMillis"] = v
+			continue
+		}
+		details[k] = v
 	}
-	details["addresses"] = strings.Join(addresses, ",")
-	return check(target, adapter.OutcomePass, "DNS resolution succeeded", details, started)
+	summary := result.Summary
+	if summary == "" {
+		summary = "DNS probe completed"
+	}
+	return check(targetRef, adapterOutcome(result.Outcome), summary, details, started)
+}
+
+// adapterOutcome maps a probe.Outcome (Pass/Fail/Error) to its adapter.Outcome
+// equivalent. Probe outcomes outside the documented set surface as
+// adapter.OutcomeError — we cannot trust an unrecognized result.
+func adapterOutcome(o probe.Outcome) adapter.Outcome {
+	switch o {
+	case probe.OutcomePass:
+		return adapter.OutcomePass
+	case probe.OutcomeFail:
+		return adapter.OutcomeFail
+	case probe.OutcomeError:
+		return adapter.OutcomeError
+	default:
+		return adapter.OutcomeError
+	}
+}
+
+// dnsProbePodName builds a DNS-1123-compliant Pod name from a probe target.
+// Length is bounded so the name + namespace stays within Kubernetes limits.
+// The nanosecond suffix avoids collisions when the same target is probed
+// from concurrent reconciles.
+func dnsProbePodName(target string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(target) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	sanitized := strings.Trim(b.String(), "-")
+	if len(sanitized) > probePodNameMaxLabel {
+		sanitized = sanitized[:probePodNameMaxLabel]
+		sanitized = strings.TrimRight(sanitized, "-")
+	}
+	if sanitized == "" {
+		sanitized = "target"
+	}
+	return fmt.Sprintf("fathom-dns-%s-%s", sanitized, strconv.FormatInt(time.Now().UnixNano(), 36))
 }
 
 func firstNamespace(policy adapter.FamilyPolicy) string {

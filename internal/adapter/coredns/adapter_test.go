@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,8 +23,53 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
+
+// fakeLauncher records every probe.Request it receives and returns a
+// pre-staged Result keyed by Request.Target. Unmapped targets fall back to
+// nextResult, which lets simple tests stage one result and richer tests
+// stage per-target outcomes.
+type fakeLauncher struct {
+	mu          sync.Mutex
+	calls       []probe.Request
+	byTarget    map[string]probe.Result
+	byTargetErr map[string]error
+	nextResult  probe.Result
+	nextErr     error
+}
+
+func (f *fakeLauncher) Run(_ context.Context, req probe.Request) (probe.Result, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, req)
+	if r, ok := f.byTarget[req.Target]; ok {
+		return r, f.byTargetErr[req.Target]
+	}
+	return f.nextResult, f.nextErr
+}
+
+func (f *fakeLauncher) callsForTarget(target string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c.Target == target {
+			n++
+		}
+	}
+	return n
+}
+
+// adapterWithLauncher wires a fake launcher into the unexported launcher
+// field. Production paths construct a real probe.Launcher{Client: req.Client}.
+func adapterWithLauncher(l dnsProbeLauncher) Adapter { return Adapter{launcher: l} }
+
+// passingDNSLauncher returns a fake that returns Pass for every probe.
+func passingDNSLauncher() *fakeLauncher {
+	return &fakeLauncher{nextResult: probe.Result{Outcome: probe.OutcomePass, Summary: "DNS resolution succeeded"}}
+}
 
 func TestAdapterMetadata(t *testing.T) {
 	a := New()
@@ -42,12 +89,8 @@ func TestAdapterMetadata(t *testing.T) {
 }
 
 func TestRun_SystemHealthAndDNSResolutionPass(t *testing.T) {
-	a := Adapter{lookupHost: func(_ context.Context, name string) ([]string, error) {
-		if name != defaultDNSTargets {
-			t.Fatalf("lookup target: got %q, want %q", name, defaultDNSTargets)
-		}
-		return []string{"10.96.0.1"}, nil
-	}}
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
 	result, err := a.Run(context.Background(), adapter.Request{Client: newFakeClient(t, healthyObjects()...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -57,10 +100,19 @@ func TestRun_SystemHealthAndDNSResolutionPass(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "Service", "kube-dns", adapter.OutcomePass, "routable")
 	assertHasOutcome(t, result.Checks, "EndpointSlice", "kube-dns", adapter.OutcomePass, "ready endpoints")
 	assertHasOutcome(t, result.Checks, "DNSName", defaultDNSTargets, adapter.OutcomePass, "succeeded")
+	if launcher.callsForTarget(defaultDNSTargets) != 1 {
+		t.Fatalf("default target probe count: got %d, want 1", launcher.callsForTarget(defaultDNSTargets))
+	}
 }
 
 func TestRun_DNSResolutionFailureIncludesError(t *testing.T) {
-	a := Adapter{lookupHost: func(context.Context, string) ([]string, error) { return nil, errors.New("no such host") }}
+	launcher := &fakeLauncher{
+		byTarget: map[string]probe.Result{
+			"svc-a": {Outcome: probe.OutcomeError, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
+			"svc-b": {Outcome: probe.OutcomeError, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
+		},
+	}
+	a := adapterWithLauncher(launcher)
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t),
 		Logger: logr.Discard(),
@@ -74,10 +126,114 @@ func TestRun_DNSResolutionFailureIncludesError(t *testing.T) {
 	assertHasDetail(t, result.Checks, "DNSName", "svc-a", "error", "no such host")
 }
 
+func TestRun_DNSLauncherErrorSurfacesAsError(t *testing.T) {
+	// The launcher itself failing (e.g. could not create probe pod) — distinct
+	// from the probe binary returning Outcome=Error. The adapter must surface
+	// this as adapter.OutcomeError with a clear summary.
+	launcher := &fakeLauncher{nextErr: errors.New("create probe pod: forbidden")}
+	a := adapterWithLauncher(launcher)
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{thresholdTargets: "svc-a"}}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "DNSName", "svc-a", adapter.OutcomeError, "probe pod execution failed")
+	assertHasDetail(t, result.Checks, "DNSName", "svc-a", "error", "create probe pod: forbidden")
+}
+
+func TestRun_DNSResolutionHonorsRequestTimeoutAndProbeImage(t *testing.T) {
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
+	customImage := "registry.example.com/fathom-probe:custom"
+	customTimeout := 7 * time.Second
+	_, err := a.Run(context.Background(), adapter.Request{
+		Client:  newFakeClient(t),
+		Logger:  logr.Discard(),
+		Timeout: customTimeout,
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true, Thresholds: map[string]string{
+			thresholdTargets:    "kubernetes.default",
+			thresholdProbeImage: customImage,
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(launcher.calls) != 1 {
+		t.Fatalf("launcher.calls: got %d, want 1", len(launcher.calls))
+	}
+	got := launcher.calls[0]
+	if got.Image != customImage {
+		t.Errorf("Request.Image: got %q, want %q", got.Image, customImage)
+	}
+	if got.Timeout != customTimeout {
+		t.Errorf("Request.Timeout: got %v, want %v", got.Timeout, customTimeout)
+	}
+	if got.Mode != probe.ModeDNS {
+		t.Errorf("Request.Mode: got %q, want %q", got.Mode, probe.ModeDNS)
+	}
+	if got.Target != "kubernetes.default" {
+		t.Errorf("Request.Target: got %q", got.Target)
+	}
+	if !strings.HasPrefix(got.Name, "fathom-dns-kubernetes-default-") {
+		t.Errorf("Request.Name: got %q, want fathom-dns-kubernetes-default-* prefix", got.Name)
+	}
+}
+
+func TestRun_DNSResolutionUsesAddonCheckNamespaceForProbePods(t *testing.T) {
+	launcher := passingDNSLauncher()
+	a := adapterWithLauncher(launcher)
+	_, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "tenant-platform", Name: "coredns"},
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilyDNSResolution: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(launcher.calls) != 1 || launcher.calls[0].Namespace != "tenant-platform" {
+		t.Errorf("probe pod namespace: got %#v", launcher.calls)
+	}
+}
+
+func TestDNSProbePodNameIsDNS1123Compliant(t *testing.T) {
+	cases := []struct {
+		in       string
+		mustHave string
+	}{
+		{"kubernetes.default.svc.cluster.local", "kubernetes-default-svc-cluster"},
+		{"UPPER.example.COM", "upper-example-com"},
+		{"!!!", "target"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := dnsProbePodName(tc.in)
+			if !strings.HasPrefix(got, "fathom-dns-") {
+				t.Errorf("missing fathom-dns prefix: %q", got)
+			}
+			if !strings.Contains(got, tc.mustHave) {
+				t.Errorf("name %q should contain %q", got, tc.mustHave)
+			}
+			if len(got) > 253 {
+				t.Errorf("name length %d exceeds DNS-1123 max", len(got))
+			}
+			for _, r := range got {
+				if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+					t.Errorf("non-DNS-1123 char %q in %q", r, got)
+					break
+				}
+			}
+		})
+	}
+}
+
 func TestRun_MissingDeploymentFails(t *testing.T) {
 	objects := healthyObjects()
 	objects = objects[1:]
-	a := Adapter{lookupHost: func(context.Context, string) ([]string, error) { return []string{"10.96.0.1"}, nil }}
+	a := adapterWithLauncher(passingDNSLauncher())
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, objects...),
 		Logger: logr.Discard(),
@@ -93,7 +249,7 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 	objects := healthyObjects()
 	pod := objects[1].(*corev1.Pod)
 	pod.Status.Conditions[0].Status = corev1.ConditionFalse
-	a := Adapter{lookupHost: func(context.Context, string) ([]string, error) { return []string{"10.96.0.1"}, nil }}
+	a := adapterWithLauncher(passingDNSLauncher())
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, objects...),
 		Logger: logr.Discard(),
@@ -108,7 +264,7 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 func TestRun_NoReadyEndpointSlicesFails(t *testing.T) {
 	objects := healthyObjects()
 	objects = objects[:len(objects)-1]
-	a := Adapter{lookupHost: func(context.Context, string) ([]string, error) { return []string{"10.96.0.1"}, nil }}
+	a := adapterWithLauncher(passingDNSLauncher())
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, objects...),
 		Logger: logr.Discard(),
@@ -121,7 +277,7 @@ func TestRun_NoReadyEndpointSlicesFails(t *testing.T) {
 }
 
 func TestRun_SystemHealthSupportsDistributionNamesAndAutoscaler(t *testing.T) {
-	a := Adapter{lookupHost: func(context.Context, string) ([]string, error) { return []string{"10.43.0.1"}, nil }}
+	a := adapterWithLauncher(passingDNSLauncher())
 	result, err := a.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t,
 			healthyDeploymentNamed("rke2-coredns", map[string]string{"k8s-app": "kube-dns"}),
