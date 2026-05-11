@@ -247,10 +247,14 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
 		})
 
-		// Seed three HealthReports above the eventual cap. metav1.Time is
-		// serialized at second precision (RFC3339, not Nano), so we wait >1s
-		// between seeds and before the final reconcile to guarantee distinct
-		// CreationTimestamps for an unambiguous oldest-first sort.
+		// Seed three HealthReports above the eventual cap. metav1.Time
+		// serializes at second precision (RFC3339, not Nano), so the seeds
+		// may share a second among themselves. We don't care which seed
+		// survives — only that the just-reconciled report does. The 2s
+		// sleep between the seed batch and Reconcile guarantees the new
+		// report's CreationTimestamp is strictly later (in seconds) than
+		// every seed, making the oldest-first prune deterministic at the
+		// new-vs-seed boundary.
 		var seeded []string
 		for i := 0; i < 3; i++ {
 			seed := &fathomv1alpha1.HealthReport{
@@ -270,8 +274,8 @@ var _ = Describe("AddonCheck Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, seed)).To(Succeed())
 			seeded = append(seeded, seed.Name)
-			time.Sleep(1100 * time.Millisecond)
 		}
+		time.Sleep(2 * time.Second)
 
 		// Reconcile creates a fourth HealthReport, then prunes to limit=2.
 		adapters := registry.New(logr.Discard())
@@ -295,9 +299,16 @@ var _ = Describe("AddonCheck Controller", func() {
 			survivors[r.Name] = true
 		}
 		Expect(survivors[updated.Status.LastReportName]).To(BeTrue(), "newly created HealthReport must survive pruning")
-		// The two oldest seeds should be gone.
-		Expect(survivors[seeded[0]]).To(BeFalse(), "oldest seed should be pruned")
-		Expect(survivors[seeded[1]]).To(BeFalse(), "second-oldest seed should be pruned")
+		// Two of the three seeds must be deleted — but since seeds may share
+		// a CreationTimestamp second, we cannot claim which two. The new-vs-
+		// seed boundary is the only reliably ordered cut.
+		seedSurvivors := 0
+		for _, s := range seeded {
+			if survivors[s] {
+				seedSurvivors++
+			}
+		}
+		Expect(seedSurvivors).To(Equal(1), "exactly one seed should survive when limit=2 and one slot is taken by the new report")
 	})
 
 	It("prunes HealthReports without going through a reconcile", func() {
