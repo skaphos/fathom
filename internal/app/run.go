@@ -10,7 +10,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
+	"sync/atomic"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -26,6 +28,19 @@ import (
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/controller"
 )
+
+// readyzCheck returns a [healthz.Checker] that returns nil only once synced has
+// been set. Used by [Run] to gate /readyz on informer cache sync rather than
+// letting the manager report Ready before its caches are populated — without
+// this, rolling-update traffic can route to a not-actually-ready replica.
+func readyzCheck(synced *atomic.Bool) healthz.Checker {
+	return func(_ *http.Request) error {
+		if !synced.Load() {
+			return errors.New("informers not synced")
+		}
+		return nil
+	}
+}
 
 // Setupper is anything that can register itself with a controller-runtime
 // Manager. The reconcilers in internal/controller already satisfy this.
@@ -176,10 +191,17 @@ func Run(
 		}
 	}
 
+	var cacheSynced atomic.Bool
+	go func() {
+		if mgr.GetCache().WaitForCacheSync(ctx) {
+			cacheSynced.Store(true)
+		}
+	}()
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("add healthz check: %w", err)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", readyzCheck(&cacheSynced)); err != nil {
 		return fmt.Errorf("add readyz check: %w", err)
 	}
 

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -157,6 +158,22 @@ func TestBuildManagerOptions_MissingWebhookCert_Errors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "webhook cert watcher") {
 		t.Errorf("error wrap: %v", err)
+	}
+}
+
+func TestReadyzCheck(t *testing.T) {
+	var synced atomic.Bool
+
+	check := readyzCheck(&synced)
+	if err := check(nil); err == nil {
+		t.Fatal("readyzCheck before sync: want error, got nil")
+	} else if !strings.Contains(err.Error(), "informers not synced") {
+		t.Errorf("readyzCheck before sync: error %q should name the unsynced state", err.Error())
+	}
+
+	synced.Store(true)
+	if err := check(nil); err != nil {
+		t.Fatalf("readyzCheck after sync: want nil, got %v", err)
 	}
 }
 
