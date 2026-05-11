@@ -12,3 +12,6 @@ spec:
   policy:
     system_health:
       enabled: true
+      thresholds:
+        restartWarnCount: "3"
+        webhookProbe: "true"

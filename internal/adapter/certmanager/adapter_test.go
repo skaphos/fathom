@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -70,13 +71,12 @@ func TestRun_WebhookProbeEnabledChecksService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(result.Checks) != 13 {
-		t.Fatalf("checks: got %d, want 13", len(result.Checks))
+	if len(result.Checks) != 15 {
+		t.Fatalf("checks: got %d, want 15", len(result.Checks))
 	}
-	last := result.Checks[len(result.Checks)-1]
-	if last.TargetRef.Kind != "Service" || last.TargetRef.Name != "cert-manager-webhook" || last.Outcome != adapter.OutcomePass {
-		t.Fatalf("webhook check: got %#v, want pass for webhook Service", last)
-	}
+	assertHasOutcome(t, result.Checks, "Service", "cert-manager-webhook", adapter.OutcomePass, "routable")
+	assertHasOutcome(t, result.Checks, "ValidatingWebhookConfiguration", "cert-manager-webhook", adapter.OutcomePass, "ready")
+	assertHasOutcome(t, result.Checks, "MutatingWebhookConfiguration", "cert-manager-webhook", adapter.OutcomePass, "ready")
 }
 
 func TestRun_SystemHealthDisabledSkips(t *testing.T) {
@@ -131,6 +131,38 @@ func TestRun_RestartAnomalyWarns(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeWarn, "restart count")
 }
 
+func TestRun_MultiReplicaDeploymentReportsEveryPod(t *testing.T) {
+	objects := healthyObjects(false)
+	deployment := objects[0].(*appsv1.Deployment)
+	replicas := int32(2)
+	deployment.Spec.Replicas = &replicas
+	deployment.Status.AvailableReplicas = 2
+	objects = append(objects, readyPodNamed("cert-manager-extra", "cert-manager"))
+
+	result, err := New().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objects...), Logger: logr.Discard()})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomePass, "ready")
+	assertHasOutcome(t, result.Checks, "Pod", "cert-manager-extra", adapter.OutcomePass, "ready")
+}
+
+func TestRun_WebhookProbeMissingConfigurationFails(t *testing.T) {
+	objects := healthyObjects(true)
+	objects = objects[:len(objects)-1]
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilySystemHealth: {Enabled: true, Thresholds: map[string]string{thresholdWebhookProbe: "true"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "MutatingWebhookConfiguration", "cert-manager-webhook", adapter.OutcomeFail, "missing")
+}
+
 func TestRun_MissingCRDFails(t *testing.T) {
 	objects := healthyObjects(false)
 	objects = objects[:len(objects)-1]
@@ -158,6 +190,9 @@ func newFakeClient(t *testing.T, objects ...clientObject) client.Client {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatalf("add client-go scheme: %v", err)
+	}
+	if err := admissionv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add admissionregistration scheme: %v", err)
 	}
 	if err := appsv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add apps scheme: %v", err)
@@ -190,6 +225,7 @@ func healthyObjects(includeWebhookService bool) []clientObject {
 			ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook", Namespace: defaultNamespace},
 			Spec:       corev1.ServiceSpec{ClusterIP: "10.0.0.10"},
 		})
+		objects = append(objects, validatingWebhookConfiguration(), mutatingWebhookConfiguration())
 	}
 	return objects
 }
@@ -213,11 +249,47 @@ func healthyDeployment(name string) *appsv1.Deployment {
 }
 
 func readyPod(component string) *corev1.Pod {
+	return readyPodNamed(component, component)
+}
+
+func readyPodNamed(name, component string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: component, Namespace: defaultNamespace, Labels: map[string]string{"app.kubernetes.io/name": component}},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultNamespace, Labels: map[string]string{"app.kubernetes.io/name": component}},
 		Status: corev1.PodStatus{
 			Conditions:        []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
 			ContainerStatuses: []corev1.ContainerStatus{{Name: component, RestartCount: 0}},
+		},
+	}
+}
+
+func validatingWebhookConfiguration() *admissionv1.ValidatingWebhookConfiguration {
+	return &admissionv1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook"},
+		Webhooks: []admissionv1.ValidatingWebhook{{
+			Name:         "webhook.cert-manager.io",
+			ClientConfig: webhookClientConfig(),
+		}},
+	}
+}
+
+func mutatingWebhookConfiguration() *admissionv1.MutatingWebhookConfiguration {
+	return &admissionv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cert-manager-webhook"},
+		Webhooks: []admissionv1.MutatingWebhook{{
+			Name:         "webhook.cert-manager.io",
+			ClientConfig: webhookClientConfig(),
+		}},
+	}
+}
+
+func webhookClientConfig() admissionv1.WebhookClientConfig {
+	path := "/mutate"
+	return admissionv1.WebhookClientConfig{
+		CABundle: []byte("ca"),
+		Service: &admissionv1.ServiceReference{
+			Namespace: defaultNamespace,
+			Name:      "cert-manager-webhook",
+			Path:      &path,
 		},
 	}
 }
