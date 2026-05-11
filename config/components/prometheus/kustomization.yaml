@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Kustomize component that overlays the Prometheus ServiceMonitor onto the
+# default render. Enable from an overlay (e.g. config/default/kustomization.yaml)
+# via:
+#
+#   components:
+#     - ../components/prometheus
+#
+# The ServiceMonitor scrapes the controller-manager-metrics-service over HTTPS.
+# By default it uses insecureSkipVerify: true because the metrics server's TLS
+# cert is self-signed by controller-runtime at startup. To use cert-manager-
+# issued certs, also uncomment the monitor_tls_patch.yaml patch below and
+# ensure cert-manager and the cert_metrics_manager_patch are wired up in the
+# overlay.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - monitor.yaml
+
+# [PROMETHEUS-WITH-CERTS] Replace the ServiceMonitor TLS config with a
+# cert-manager-backed configuration. Requires the metrics-server-cert Secret
+# (managed by cert-manager) to be present in the same namespace.
+#patches:
+#  - path: monitor_tls_patch.yaml
+#    target:
+#      kind: ServiceMonitor

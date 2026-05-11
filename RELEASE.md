@@ -66,6 +66,30 @@ Tag creation triggers `.github/workflows/release.yml`, which:
   commits and let it regenerate the next release PR.
 - Manual tag creation should be reserved for emergency recovery only.
 
+## Default Deployment Topology
+
+`config/default` is the source of `dist/install.yaml` and the OLM bundle. By
+default it renders:
+
+- The operator Namespace, RBAC, CRDs, and Deployment.
+- A `controller-manager-metrics-service` exposing `:8443` (HTTPS).
+- The Deployment with `--metrics-bind-address=:8443` injected by
+  `manager_metrics_patch.yaml`.
+
+It does **not** render a Prometheus `ServiceMonitor` by default. To opt in,
+uncomment the `components` block in `config/default/kustomization.yaml`:
+
+```yaml
+components:
+  - ../components/prometheus
+```
+
+The component lives at `config/components/prometheus/`. Its
+`monitor_tls_patch.yaml` switches the ServiceMonitor from `insecureSkipVerify:
+true` to a cert-manager-backed TLS configuration; enable it from the
+component's `kustomization.yaml` once cert-manager and the
+`cert_metrics_manager_patch` are wired up in the overlay.
+
 ## Notes
 
 - The release flow is aligned to `Taskfile.yml` targets (`docker-build`,

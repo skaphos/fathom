@@ -23,8 +23,8 @@ resources:
 #- ../webhook
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
 #- ../certmanager
-# [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
-#- ../prometheus
+# [PROMETHEUS] To enable the prometheus ServiceMonitor, add the prometheus
+# component to the components: list at the bottom of this file.
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
 # [NETWORK POLICY] Protect the /metrics endpoint and Webhook Server with NetworkPolicy.
@@ -47,6 +47,14 @@ patches:
 #- path: cert_metrics_manager_patch.yaml
 #  target:
 #    kind: Deployment
+
+# [PROMETHEUS] Opt into the Prometheus ServiceMonitor by uncommenting the
+# components block below. The component overlays a ServiceMonitor that scrapes
+# the controller-manager-metrics-service over HTTPS. See
+# config/components/prometheus/kustomization.yaml for the cert-manager-backed
+# TLS variant.
+#components:
+#  - ../components/prometheus
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
