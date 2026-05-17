@@ -168,7 +168,12 @@ var _ = Describe("Manager", Ordered, func() {
 				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
+				// controller-runtime emits structured JSON via zap in this
+				// project (see internal/app/run.go), so the legacy
+				// tab-separated `controller-runtime.metrics\tServing metrics
+				// server` format never appears — match the JSON message
+				// instead. SKA-427.
+				g.Expect(output).To(ContainSubstring(`"msg":"Serving metrics server"`),
 					"Metrics server not yet started")
 			}
 			Eventually(verifyMetricsServerStarted).Should(Succeed())
