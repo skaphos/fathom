@@ -285,6 +285,71 @@ func TestRun_CertificateHealthFailsNearExpiryAndWarnsOnPastRenewal(t *testing.T)
 	assertHasOutcome(t, result.Checks, "Certificate", "renewal-due-cert", adapter.OutcomeWarn, "renewal time")
 }
 
+// TestRun_FamilyAttribution locks the contract that every CheckResult is
+// tagged with the policy family that gated its execution. SKA-428: the
+// `check()` and `skipped()` helpers used to hardcode Family=system_health,
+// so checkIssuers/checkCertificates emissions (both Pass and empty-cluster
+// Skipped) showed up under the wrong family — breaking the join between
+// AddonCheck.spec.policy.<family> and HealthReport.spec.checks[].family.
+func TestRun_FamilyAttribution(t *testing.T) {
+	now := time.Now().UTC()
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t,
+			append(
+				healthyObjects(false),
+				readyIssuer("Issuer", defaultNamespace, "local-issuer"),
+				readyCertificate("healthy-cert", now.Add(60*24*time.Hour), now.Add(30*24*time.Hour)),
+			)...,
+		),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilySystemHealth: {Enabled: true},
+			FamilyIssuerHealth: {Enabled: true},
+			FamilyCertHealth:   {Enabled: true, Thresholds: map[string]string{thresholdWarnDays: "30", thresholdFailDays: "7"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// system_health emissions
+	assertFamily(t, result.Checks, "Deployment", "cert-manager", FamilySystemHealth)
+	assertFamily(t, result.Checks, "Deployment", "cert-manager-webhook", FamilySystemHealth)
+	assertFamily(t, result.Checks, "CustomResourceDefinition", "certificates.cert-manager.io", FamilySystemHealth)
+
+	// issuer_health emission must carry FamilyIssuerHealth, not the
+	// hardcoded FamilySystemHealth of the pre-SKA-428 contract.
+	assertFamily(t, result.Checks, "Issuer", "local-issuer", FamilyIssuerHealth)
+
+	// certificate_health emission must carry FamilyCertHealth.
+	assertFamily(t, result.Checks, "Certificate", "healthy-cert", FamilyCertHealth)
+}
+
+// TestRun_EmptyClusterSkippedFamilyAttribution covers the original SKA-428
+// reproducer: with issuer_health / certificate_health enabled and no
+// matching resources in the cluster, the synthesized Skipped entries
+// must carry the policy family, not system_health.
+func TestRun_EmptyClusterSkippedFamilyAttribution(t *testing.T) {
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, healthyObjects(false)...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilySystemHealth: {Enabled: true},
+			FamilyIssuerHealth: {Enabled: true},
+			FamilyCertHealth:   {Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	assertHasOutcome(t, result.Checks, "Issuer", "issuers", adapter.OutcomeSkipped, "no matching issuers")
+	assertFamily(t, result.Checks, "Issuer", "issuers", FamilyIssuerHealth)
+
+	assertHasOutcome(t, result.Checks, "Certificate", "certificates", adapter.OutcomeSkipped, "no matching certificates")
+	assertFamily(t, result.Checks, "Certificate", "certificates", FamilyCertHealth)
+}
+
 func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome, summaryContains string) {
 	t.Helper()
 	for _, check := range checks {
@@ -295,6 +360,27 @@ func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name str
 		}
 	}
 	t.Fatalf("missing %s/%s outcome %s containing %q in %#v", kind, name, outcome, summaryContains, checks)
+}
+
+// assertFamily asserts that every CheckResult matching (kind, name) is
+// tagged with the expected adapter family. Multiple matches are allowed
+// (e.g., Pod-level checks under a Deployment) and each must agree.
+func assertFamily(t *testing.T, checks []adapter.CheckResult, kind, name string, want adapter.Family) {
+	t.Helper()
+	matched := 0
+	for _, check := range checks {
+		if check.TargetRef.Kind != kind || check.TargetRef.Name != name {
+			continue
+		}
+		matched++
+		if check.Family != want {
+			t.Fatalf("family for %s/%s: got %q, want %q (outcome=%s summary=%q)",
+				kind, name, check.Family, want, check.Outcome, check.Summary)
+		}
+	}
+	if matched == 0 {
+		t.Fatalf("no checks matched %s/%s in %#v", kind, name, checks)
+	}
 }
 
 func assertNoKind(t *testing.T, checks []adapter.CheckResult, kind string) {

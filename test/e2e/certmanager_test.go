@@ -103,31 +103,24 @@ var _ = Describe("cert-manager AddonCheck", Ordered, func() {
 	It("should emit Skipped entries for empty Issuer and Certificate lists", func() {
 		// The helmfile fixture installs cert-manager but never creates
 		// Issuers, ClusterIssuers, or Certificates, so the adapter's
-		// empty-cluster contract is Skipped.
-		//
-		// Caveat: certmanager/adapter.go's `skipped()` helper hardcodes
-		// Family=system_health for every skipped entry, including the
-		// ones emitted by checkIssuers and checkCertificates. So the
-		// empty-cluster Skipped entries appear under family
-		// "system_health" rather than "issuer_health" / "certificate_health".
-		// This test asserts the actual emission contract; if the adapter
-		// is fixed to tag families correctly, update these assertions
-		// alongside the adapter change.
+		// empty-cluster contract is Skipped. SKA-428 ensures the Skipped
+		// entries are attributed to the policy family that gated them
+		// (issuer_health / certificate_health), not to system_health.
 		verify := func(g Gomega) {
 			report, err := latestHealthReport(certManagerSampleName, certManagerSampleNS)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to fetch latest HealthReport")
 
-			issuer := findCheck(report, "system_health", "Issuer", "issuers")
+			issuer := findCheck(report, "issuer_health", "Issuer", "issuers")
 			g.Expect(issuer).NotTo(BeNil(),
-				"empty-cluster Skipped entry for Issuer/issuers missing from HealthReport %q",
+				"empty-cluster Skipped entry for Issuer/issuers under family=issuer_health missing from HealthReport %q",
 				report.Metadata.Name)
 			g.Expect(issuer.Result).To(Equal("Skipped"),
 				"Issuer/issuers on empty cluster: got %q with summary %q",
 				issuer.Result, issuer.Summary)
 
-			cert := findCheck(report, "system_health", "Certificate", "certificates")
+			cert := findCheck(report, "certificate_health", "Certificate", "certificates")
 			g.Expect(cert).NotTo(BeNil(),
-				"empty-cluster Skipped entry for Certificate/certificates missing from HealthReport %q",
+				"empty-cluster Skipped entry for Certificate/certificates under family=certificate_health missing from HealthReport %q",
 				report.Metadata.Name)
 			g.Expect(cert.Result).To(Equal("Skipped"),
 				"Certificate/certificates on empty cluster: got %q with summary %q",
