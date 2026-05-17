@@ -51,12 +51,18 @@ var supportedAPIVersions = []string{"v1", "v1beta1"}
 
 var (
 	components = []string{"external-secrets", "external-secrets-webhook", "external-secrets-cert-controller"}
-	crds       = []string{
+	// crds enumerates the v1-graduated ESO resources Fathom validates.
+	// `pushsecrets.external-secrets.io`, `clusterpushsecrets.external-secrets.io`,
+	// and the `*.generators.external-secrets.io` family are intentionally
+	// excluded: ESO ships them as v1alpha1-only by design (not as a
+	// transitional state across 0.x → 2.x), so they would always trip the
+	// preferredServedVersion Warn without communicating real platform
+	// health. Re-add entries here only as ESO graduates them.
+	crds = []string{
 		externalSecretCRD,
 		"secretstores.external-secrets.io",
 		"clustersecretstores.external-secrets.io",
 		"clusterexternalsecrets.external-secrets.io",
-		"pushsecrets.external-secrets.io",
 	}
 )
 
