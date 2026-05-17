@@ -85,6 +85,24 @@ Fathom uses **cobra + viper** for runtime configuration. Precedence
 - envtest binaries are managed by `setup-envtest`; CI installs them automatically. Locally the `test` task bootstraps them in `bin/k8s/`.
 - Coverage gate: `scripts/check-coverage.sh` aggregates `coverage.out` per package against a configurable per-package minimum (`COVERAGE_MIN_DEFAULT`). The gate runs on Linux in CI. Ratchet thresholds upward as coverage improves; do not lower them to make a PR pass.
 
+### Run e2e after major changes
+
+Run `go -C tools tool task test-e2e` against a kind cluster after any change that touches operator runtime behavior. envtest auto-registers schemes and CRDs that real clusters do not — bugs that only surface at reconcile time (SKA-422 apiextensions scheme registration; SKA-423 ESO v1beta1 hardcoding) are caught only by e2e.
+
+Changes that **require** an e2e run before the PR is considered ready:
+
+- `internal/app/run.go` — scheme registration, manager construction.
+- `internal/adapter/*/adapter.go` — adapter `Run` and per-family check logic.
+- `internal/controller/*` — reconciler bodies and watch wiring.
+- `pkg/adapter/*` — adapter contract surface.
+- `api/v1alpha1/*_types.go` — CRD schema changes.
+- `internal/probe/*` — probe pod lifecycle / pod-builder changes.
+- `test/e2e/fixtures/*` — addon stack itself; the fixture change is the test.
+
+Changes that **do not** require e2e: test-only edits, comments, docs, CI/tooling, `Taskfile.yml` edits that don't affect runtime, generated files.
+
+If the local toolchain is missing required components (`kind`, `helm`, `helmfile`, a running Docker daemon), say so in the PR's test plan rather than silently skipping. CI integration for this flow is tracked in SKA-417; until that lands, e2e is a contributor-local responsibility.
+
 ## Commit & Pull Request Guidelines
 
 - All changes land via pull request. Never push directly to `main`.
