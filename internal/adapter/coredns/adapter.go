@@ -41,7 +41,7 @@ const (
 	// adapter.Request.ProbeImage is set. Keeping a non-empty fallback means a
 	// misconfigured operator produces a clear ImagePullBackOff against this
 	// reference instead of an empty Pod spec.
-	fallbackProbeImage   = "ghcr.io/skaphos/fathom-probe:v0.1.0"
+	fallbackProbeImage   = "ghcr.io/skaphos/fathom-probe:v0.0.2"
 	defaultProbeTimeout  = 10 * time.Second
 	probePodNameMaxLabel = 30
 

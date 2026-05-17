@@ -77,7 +77,7 @@ spec:
       enabled: true
       thresholds:
         targets: "kubernetes.default.svc.cluster.local"
-        probeImage: "ghcr.io/skaphos/fathom-probe:v0.1.0"
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.0.2"
 ```
 
 The built-in External Secrets Operator adapter supports `system_health` and

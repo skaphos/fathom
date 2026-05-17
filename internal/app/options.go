@@ -71,7 +71,7 @@ type Options struct {
 // with. Probe-using adapters fall back to this when neither a per-AddonCheck
 // threshold nor an operator-level --probe-image flag is set. Bumped in lockstep
 // with the probe-image publish pipeline.
-const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.1.0"
+const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.0.2"
 
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
