@@ -12,6 +12,7 @@ vars:
   ENVTEST_K8S_VERSION: "1.33"
   IMG: '{{.IMG | default "controller:latest"}}'
   PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
+  PROBE_PLATFORMS: '{{.PROBE_PLATFORMS | default "linux/amd64,linux/arm64"}}'
   VERSION: '{{.VERSION | default "0.0.1"}}'
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
@@ -140,6 +141,16 @@ tasks:
     desc: Build probe container image (PROBE_IMG={{.PROBE_IMG}})
     cmds:
       - docker build -f Dockerfile.probe -t {{.PROBE_IMG}} .
+
+  probe-docker-push:
+    desc: Push probe container image (PROBE_IMG={{.PROBE_IMG}})
+    cmds:
+      - docker push {{.PROBE_IMG}}
+
+  probe-docker-buildx-push:
+    desc: Multi-arch build + push probe image (PROBE_IMG={{.PROBE_IMG}}, PROBE_PLATFORMS={{.PROBE_PLATFORMS}})
+    cmds:
+      - docker buildx build --push --platform {{.PROBE_PLATFORMS}} -f Dockerfile.probe -t {{.PROBE_IMG}} .
 
   docker-push:
     desc: Push container image (IMG={{.IMG}})
