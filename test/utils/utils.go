@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
@@ -21,6 +22,11 @@ const (
 	prometheusOperatorVersion = "v0.77.1"
 	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
 		"releases/download/%s/bundle.yaml"
+
+	// E2EHelmfile is the project-relative path to the canonical addon-stack
+	// helmfile used by the e2e suite. Kept as a const so tests and helpers
+	// agree on the single source of truth for chart versions and values.
+	E2EHelmfile = "test/e2e/fixtures/helmfile.yaml"
 )
 
 func warnError(err error) {
@@ -45,6 +51,23 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// SyncAddons applies the addon stack defined by test/e2e/fixtures/helmfile.yaml
+// against the current kubeconfig context. The call is idempotent: re-running
+// against a cluster that already has the addons installed is a no-op for
+// helmfile, so the Ginkgo suite can safely call this from BeforeSuite even
+// when the Taskfile's e2e:cluster:addons step has already run.
+//
+// Requires `helmfile` and `helm` on PATH. Returns the combined stdout/stderr
+// of the helmfile invocation alongside any error.
+func SyncAddons() (string, error) {
+	projectDir, err := GetProjectDir()
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command("helmfile", "-f", filepath.Join(projectDir, E2EHelmfile), "sync")
+	return Run(cmd)
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.

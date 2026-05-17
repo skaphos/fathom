@@ -171,6 +171,9 @@ func TestInstallersFailWithoutToolchain(t *testing.T) {
 	if got := IsPrometheusCRDsInstalled(); got {
 		t.Errorf("IsPrometheusCRDsInstalled: expected false with empty PATH, got true")
 	}
+	if _, err := SyncAddons(); err == nil {
+		t.Errorf("SyncAddons: expected error with empty PATH, got nil")
+	}
 
 	// Uninstall* functions log via warnError and must not panic.
 	defer func() {
