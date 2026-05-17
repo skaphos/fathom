@@ -36,6 +36,7 @@ dist/
 .windsurf/
 .continue/
 .aider*
+.agents/
 
 # OS
 .DS_Store
