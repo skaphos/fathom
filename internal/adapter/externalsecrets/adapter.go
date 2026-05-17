@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,7 +27,7 @@ import (
 
 const (
 	Name               = "external-secrets"
-	Version            = "0.1.0"
+	Version            = "0.2.0"
 	FamilySystemHealth = adapter.Family("system_health")
 	FamilySecretSync   = adapter.Family("secret_sync")
 
@@ -36,12 +37,22 @@ const (
 
 	thresholdRestartWarnCount = "restartWarnCount"
 	thresholdStaleMinutes     = "staleMinutes"
+
+	externalSecretCRD = "externalsecrets.external-secrets.io"
+	externalSecretAPI = "external-secrets.io"
 )
+
+// supportedAPIVersions lists the external-secrets.io API versions Fathom
+// understands, in descending preference order. The adapter picks the
+// highest-priority version that the cluster's CRD actually serves. If
+// the cluster has graduated to v1, Fathom uses v1; if it still ships
+// only v1beta1 (e.g. ESO ≤ 0.10), Fathom falls back to v1beta1.
+var supportedAPIVersions = []string{"v1", "v1beta1"}
 
 var (
 	components = []string{"external-secrets", "external-secrets-webhook", "external-secrets-cert-controller"}
 	crds       = []string{
-		"externalsecrets.external-secrets.io",
+		externalSecretCRD,
 		"secretstores.external-secrets.io",
 		"clustersecretstores.external-secrets.io",
 		"clusterexternalsecrets.external-secrets.io",
@@ -206,13 +217,17 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 		}
 		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read External Secrets Operator CRD: %v", err), map[string]string{"crd": name}, started)
 	}
+	details := map[string]string{"crd": name}
 	if !crdEstablished(&crd) {
-		return check(target, adapter.OutcomeFail, "External Secrets Operator CRD is not established", map[string]string{"crd": name}, started)
+		return check(target, adapter.OutcomeFail, "External Secrets Operator CRD is not established", details, started)
 	}
-	if !crdServesV1Beta1(&crd) {
-		return check(target, adapter.OutcomeWarn, "External Secrets Operator CRD does not serve v1beta1", map[string]string{"crd": name}, started)
+	servedVersion, ok := preferredServedVersion(&crd)
+	if !ok {
+		details["expectedVersions"] = strings.Join(supportedAPIVersions, ",")
+		return check(target, adapter.OutcomeWarn, "External Secrets Operator CRD serves no supported version", details, started)
 	}
-	return check(target, adapter.OutcomePass, "External Secrets Operator CRD is established", map[string]string{"crd": name}, started)
+	details["version"] = servedVersion
+	return check(target, adapter.OutcomePass, "External Secrets Operator CRD is established", details, started)
 }
 
 func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {
@@ -224,33 +239,62 @@ func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {
 	return false
 }
 
-func crdServesV1Beta1(crd *apixv1.CustomResourceDefinition) bool {
-	for _, version := range crd.Spec.Versions {
-		if version.Name == "v1beta1" && version.Served {
-			return true
+// preferredServedVersion returns the highest-priority version (per
+// supportedAPIVersions) that the CRD actually serves. Adapters use it
+// to stay compatible across ESO releases: pre-0.11 only serves v1beta1,
+// 0.11+ serves both v1 and v1beta1, and a future release may drop
+// v1beta1 entirely.
+func preferredServedVersion(crd *apixv1.CustomResourceDefinition) (string, bool) {
+	served := make(map[string]bool, len(crd.Spec.Versions))
+	for _, v := range crd.Spec.Versions {
+		if v.Served {
+			served[v.Name] = true
 		}
 	}
-	return false
+	for _, candidate := range supportedAPIVersions {
+		if served[candidate] {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// resolveExternalSecretVersion picks the API version the adapter should
+// use when listing ExternalSecret resources, by reading the canonical
+// `externalsecrets.external-secrets.io` CRD and returning its
+// preferredServedVersion. Falls back to the highest-priority supported
+// version if the CRD is unreadable, so secret_sync still emits a clear
+// error against a missing/borked install instead of silently no-op'ing.
+func resolveExternalSecretVersion(ctx context.Context, c client.Client) string {
+	var crd apixv1.CustomResourceDefinition
+	if err := c.Get(ctx, types.NamespacedName{Name: externalSecretCRD}, &crd); err != nil {
+		return supportedAPIVersions[0]
+	}
+	if v, ok := preferredServedVersion(&crd); ok {
+		return v
+	}
+	return supportedAPIVersions[0]
 }
 
 func (Adapter) checkSecretSync(ctx context.Context, c client.Client, policy adapter.FamilyPolicy) []adapter.CheckResult {
 	checks := []adapter.CheckResult{}
+	apiVersion := externalSecretAPI + "/" + resolveExternalSecretVersion(ctx, c)
 	for _, namespace := range policyNamespaces(policy) {
 		var externalSecrets unstructured.UnstructuredList
-		externalSecrets.SetAPIVersion("external-secrets.io/v1beta1")
+		externalSecrets.SetAPIVersion(apiVersion)
 		externalSecrets.SetKind("ExternalSecretList")
 		listOpts := []client.ListOption{client.InNamespace(namespace)}
 		if policy.LabelSelector != nil {
 			selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
 			if err != nil {
-				checks = append(checks, check(adapter.TargetRef{APIVersion: "external-secrets.io/v1beta1", Kind: "ExternalSecret", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("ExternalSecret label selector is invalid: %v", err), nil, time.Now()))
+				checks = append(checks, check(adapter.TargetRef{APIVersion: apiVersion, Kind: "ExternalSecret", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("ExternalSecret label selector is invalid: %v", err), nil, time.Now()))
 				continue
 			}
 			listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
 		}
 		started := time.Now()
 		if err := c.List(ctx, &externalSecrets, listOpts...); err != nil {
-			checks = append(checks, check(adapter.TargetRef{APIVersion: "external-secrets.io/v1beta1", Kind: "ExternalSecret", Namespace: namespace, Name: "externalsecrets"}, adapter.OutcomeError, fmt.Sprintf("failed to list ExternalSecret resources: %v", err), nil, started))
+			checks = append(checks, check(adapter.TargetRef{APIVersion: apiVersion, Kind: "ExternalSecret", Namespace: namespace, Name: "externalsecrets"}, adapter.OutcomeError, fmt.Sprintf("failed to list ExternalSecret resources: %v", err), nil, started))
 			continue
 		}
 		for i := range externalSecrets.Items {
@@ -258,7 +302,7 @@ func (Adapter) checkSecretSync(ctx context.Context, c client.Client, policy adap
 		}
 	}
 	if len(checks) == 0 {
-		checks = append(checks, skipped(adapter.TargetRef{APIVersion: "external-secrets.io/v1beta1", Kind: "ExternalSecret", Name: "externalsecrets"}, "secret_sync found no matching ExternalSecret resources"))
+		checks = append(checks, skipped(adapter.TargetRef{APIVersion: apiVersion, Kind: "ExternalSecret", Name: "externalsecrets"}, "secret_sync found no matching ExternalSecret resources"))
 	}
 	return checks
 }
@@ -390,7 +434,7 @@ func check(target adapter.TargetRef, outcome adapter.Outcome, summary string, de
 }
 
 func familyForTarget(target adapter.TargetRef) adapter.Family {
-	if target.APIVersion == "external-secrets.io/v1beta1" && target.Kind == "ExternalSecret" {
+	if target.Kind == "ExternalSecret" && strings.HasPrefix(target.APIVersion, externalSecretAPI+"/") {
 		return FamilySecretSync
 	}
 	return FamilySystemHealth
