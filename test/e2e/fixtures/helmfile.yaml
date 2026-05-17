@@ -21,7 +21,7 @@ releases:
   - name: cert-manager
     namespace: cert-manager
     chart: jetstack/cert-manager
-    version: v1.16.3
+    version: v1.20.2
     createNamespace: true
     wait: true
     timeout: 600
@@ -47,8 +47,12 @@ releases:
 
   - name: external-secrets
     namespace: external-secrets
+    # ESO 2.x serves only external-secrets.io/v1 by default; v1beta1 is gated
+    # behind `crds.unsafeServeV1Beta1` and scheduled for removal in the chart.
+    # Fathom's adapter prefers v1 (with a v1beta1 fallback for older clusters)
+    # so the e2e fixture tracks the current stable chart.
     chart: external-secrets/external-secrets
-    version: 0.10.6
+    version: 2.5.0
     createNamespace: true
     wait: true
     timeout: 600
