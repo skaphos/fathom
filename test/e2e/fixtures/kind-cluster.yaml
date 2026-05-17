@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Kind cluster config for Fathom end-to-end testing.
+#
+# Pinned node image matches the envtest Kubernetes version (1.33) declared in
+# Taskfile.yml so unit and e2e suites resolve API objects against the same
+# server version. Bump kindest/node and ENVTEST_K8S_VERSION in lockstep.
+#
+# Single-node topology: every addon Fathom currently validates (CoreDNS,
+# cert-manager, external-secrets) is happy on one node, and a single node
+# keeps the spin-up under a minute on a developer laptop. Add a worker node
+# only when an addon under test requires real scheduling spread.
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: fathom-e2e
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.33.1
+    # The CoreDNS adapter's dns_resolution check launches probe Pods inside
+    # the cluster, so the default kindnet CNI + kube-proxy is sufficient.
+    # No extraMounts, port-forwards, or registry config needed for the
+    # current addon coverage.

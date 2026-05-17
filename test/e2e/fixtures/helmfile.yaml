@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Helmfile for the Fathom end-to-end addon stack.
+#
+# Installs the addons Fathom currently validates so the AddonCheck samples in
+# config/samples/ have something real to assert against. CoreDNS is preinstalled
+# by kind and is not managed from here.
+#
+# Apply with:
+#   helmfile -f test/e2e/fixtures/helmfile.yaml sync
+# or via the Taskfile:
+#   go -C tools tool task e2e:cluster:addons
+repositories:
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+
+releases:
+  - name: cert-manager
+    namespace: cert-manager
+    chart: jetstack/cert-manager
+    version: v1.16.3
+    createNamespace: true
+    wait: true
+    timeout: 600
+    values:
+      - installCRDs: true
+        # Resource defaults are small enough for a single-node kind cluster
+        # while still exercising the cert-manager addon family Fathom checks:
+        # controller, webhook, cainjector, plus the validating webhook config.
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        webhook:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+        cainjector:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+
+  - name: external-secrets
+    namespace: external-secrets
+    chart: external-secrets/external-secrets
+    version: 0.10.6
+    createNamespace: true
+    wait: true
+    timeout: 600
+    values:
+      - installCRDs: true
+        # Webhook is what Fathom's external-secrets system_health family
+        # exercises alongside the controller Deployment.
+        webhook:
+          create: true
+        certController:
+          create: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
