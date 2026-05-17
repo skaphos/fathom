@@ -29,4 +29,4 @@ spec:
         # resolution is observed from the AddonCheck's namespace network
         # topology rather than the operator pod's. Override this for private
         # registries or when pinning to a specific tag.
-        probeImage: "ghcr.io/skaphos/fathom-probe:v0.1.0"
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.0.2"

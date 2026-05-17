@@ -12,7 +12,7 @@ workflow that pushes operator, bundle, and catalog images to GHCR.
   may not reliably trigger the downstream tag-push workflow.
 - CI is green on `main`.
 - Images publish to `ghcr.io/skaphos/fathom-operator`,
-  `ghcr.io/skaphos/fathom-operator-bundle`, and
+  `ghcr.io/skaphos/fathom-probe`, `ghcr.io/skaphos/fathom-operator-bundle`, and
   `ghcr.io/skaphos/fathom-operator-catalog`. The release workflow authenticates
   with the built-in `GITHUB_TOKEN` and requires `packages: write`. The publishing
   actor must have permission to push to the `skaphos` GHCR namespace.
@@ -42,15 +42,20 @@ creates the `vX.Y.Z` tag.
 Tag creation triggers `.github/workflows/release.yml`, which:
 
 1. Builds and pushes the operator image (`fathom-operator:vX.Y.Z`) to GHCR.
-2. Generates `dist/install.yaml` from `config/default`.
-3. Builds and pushes the OLM bundle image.
-4. Builds and pushes the OLM catalog image (via `opm`).
-5. Creates a GitHub Release with `dist/install.yaml` attached and auto-generated
+2. Builds and pushes the probe image (`fathom-probe:vX.Y.Z`) to GHCR as a
+   multi-arch manifest (`linux/amd64`, `linux/arm64`) via `docker buildx`.
+3. Generates `dist/install.yaml` from `config/default`.
+4. Builds and pushes the OLM bundle image.
+5. Builds and pushes the OLM catalog image (via `opm`).
+6. Creates a GitHub Release with `dist/install.yaml` attached and auto-generated
    release notes.
 
 ## 5. Verify the Release
 
-- Confirm all three images exist under `ghcr.io/skaphos`.
+- Confirm all four images exist under `ghcr.io/skaphos` (operator, probe,
+  bundle, catalog).
+- Confirm `ghcr.io/skaphos/fathom-probe:vX.Y.Z` advertises both `linux/amd64`
+  and `linux/arm64` (`docker buildx imagetools inspect …`).
 - Confirm the GitHub Release exists with `install.yaml` attached.
 - Optionally install the bundle into a cluster via OLM:
 
@@ -76,6 +81,12 @@ default it renders:
 - The Deployment with `--metrics-bind-address=:8443` injected by
   `manager_metrics_patch.yaml`.
 
+The operator-side default probe image is `ghcr.io/skaphos/fathom-probe:vX.Y.Z`
+(same `vX.Y.Z` as the operator) and is launched on-demand by probe-using
+adapters such as the CoreDNS `dns_resolution` family. Override per-AddonCheck
+via the `probeImage` threshold or operator-wide via `--probe-image` /
+`FATHOM_PROBE_IMAGE` / `probe_image` config.
+
 It does **not** render a Prometheus `ServiceMonitor` by default. To opt in,
 uncomment the `components` block in `config/default/kustomization.yaml`:
 
@@ -90,9 +101,24 @@ true` to a cert-manager-backed TLS configuration; enable it from the
 component's `kustomization.yaml` once cert-manager and the
 `cert_metrics_manager_patch` are wired up in the overlay.
 
+## Probe Image / Default Drift Prevention
+
+The probe image tag the operator falls back to is hardcoded in two Go
+constants:
+
+- `DefaultProbeImage` in `internal/app/options.go`
+- `fallbackProbeImage` in `internal/adapter/coredns/adapter.go`
+
+Both must be bumped to `vX.Y.Z` in lockstep with the Release Please version
+bump. The Release Please PR is the gate — before merging it, update both
+constants (and the user-visible samples in `README.md` and
+`config/samples/`) to the version the PR is cutting. This is what keeps the
+operator's compiled-in default from referencing a probe image that does not
+exist in GHCR.
+
 ## Notes
 
 - The release flow is aligned to `Taskfile.yml` targets (`docker-build`,
-  `docker-push`, `build-installer`, `bundle`, `bundle-build`, `bundle-push`,
-  `catalog-build`, `catalog-push`).
+  `docker-push`, `probe-docker-buildx-push`, `build-installer`, `bundle`,
+  `bundle-build`, `bundle-push`, `catalog-build`, `catalog-push`).
 - No Homebrew cask publishing — Fathom is delivered as container/bundle images.
