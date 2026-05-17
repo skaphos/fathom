@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/adapter/crdutil"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -60,6 +61,12 @@ var (
 		"issuers.cert-manager.io",
 		"orders.acme.cert-manager.io",
 	}
+	// supportedAPIVersions lists the cert-manager.io API versions Fathom
+	// understands, in descending preference order. cert-manager has been
+	// stable at v1 since 1.6 (2021); the slice exists to make adapter
+	// version compatibility uniform across the codebase and to surface a
+	// drop-in shape when cert-manager eventually ships a v2 or beta.
+	supportedAPIVersions = []string{"v1"}
 )
 
 // Adapter implements cert-manager system health checks.
@@ -294,13 +301,17 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 		}
 		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager CRD: %v", err), map[string]string{"crd": name}, started)
 	}
-	if !crdEstablished(&crd) {
-		return check(target, adapter.OutcomeFail, "cert-manager CRD is not established", map[string]string{"crd": name}, started)
+	details := map[string]string{"crd": name}
+	if !crdutil.Established(&crd) {
+		return check(target, adapter.OutcomeFail, "cert-manager CRD is not established", details, started)
 	}
-	if !crdServesV1(&crd) {
-		return check(target, adapter.OutcomeFail, "cert-manager CRD does not serve v1", map[string]string{"crd": name}, started)
+	servedVersion, ok := crdutil.PreferredServedVersion(&crd, supportedAPIVersions)
+	if !ok {
+		details["expectedVersions"] = strings.Join(supportedAPIVersions, ",")
+		return check(target, adapter.OutcomeFail, "cert-manager CRD serves no supported version", details, started)
 	}
-	return check(target, adapter.OutcomePass, "cert-manager CRD is established", map[string]string{"crd": name}, started)
+	details["version"] = servedVersion
+	return check(target, adapter.OutcomePass, "cert-manager CRD is established", details, started)
 }
 
 func (Adapter) checkWebhookService(ctx context.Context, c client.Client, namespace, serviceName string) adapter.CheckResult {
@@ -680,24 +691,6 @@ func certificateDetails(obj *unstructured.Unstructured, condition map[string]any
 func stringAt(obj map[string]any, fields ...string) (string, bool) {
 	value, ok, _ := unstructured.NestedString(obj, fields...)
 	return value, ok
-}
-
-func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {
-	for _, condition := range crd.Status.Conditions {
-		if condition.Type == apixv1.Established {
-			return condition.Status == apixv1.ConditionTrue
-		}
-	}
-	return false
-}
-
-func crdServesV1(crd *apixv1.CustomResourceDefinition) bool {
-	for _, version := range crd.Spec.Versions {
-		if version.Name == "v1" && version.Served {
-			return true
-		}
-	}
-	return false
 }
 
 func webhookProbeEnabled(policy adapter.FamilyPolicy) bool {

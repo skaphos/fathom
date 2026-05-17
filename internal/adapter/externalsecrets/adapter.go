@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/adapter/crdutil"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -224,10 +225,10 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read External Secrets Operator CRD: %v", err), map[string]string{"crd": name}, started)
 	}
 	details := map[string]string{"crd": name}
-	if !crdEstablished(&crd) {
+	if !crdutil.Established(&crd) {
 		return check(target, adapter.OutcomeFail, "External Secrets Operator CRD is not established", details, started)
 	}
-	servedVersion, ok := preferredServedVersion(&crd)
+	servedVersion, ok := crdutil.PreferredServedVersion(&crd, supportedAPIVersions)
 	if !ok {
 		details["expectedVersions"] = strings.Join(supportedAPIVersions, ",")
 		return check(target, adapter.OutcomeWarn, "External Secrets Operator CRD serves no supported version", details, started)
@@ -236,39 +237,10 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 	return check(target, adapter.OutcomePass, "External Secrets Operator CRD is established", details, started)
 }
 
-func crdEstablished(crd *apixv1.CustomResourceDefinition) bool {
-	for _, condition := range crd.Status.Conditions {
-		if condition.Type == apixv1.Established {
-			return condition.Status == apixv1.ConditionTrue
-		}
-	}
-	return false
-}
-
-// preferredServedVersion returns the highest-priority version (per
-// supportedAPIVersions) that the CRD actually serves. Adapters use it
-// to stay compatible across ESO releases: pre-0.11 only serves v1beta1,
-// 0.11+ serves both v1 and v1beta1, and a future release may drop
-// v1beta1 entirely.
-func preferredServedVersion(crd *apixv1.CustomResourceDefinition) (string, bool) {
-	served := make(map[string]bool, len(crd.Spec.Versions))
-	for _, v := range crd.Spec.Versions {
-		if v.Served {
-			served[v.Name] = true
-		}
-	}
-	for _, candidate := range supportedAPIVersions {
-		if served[candidate] {
-			return candidate, true
-		}
-	}
-	return "", false
-}
-
 // resolveExternalSecretVersion picks the API version the adapter should
 // use when listing ExternalSecret resources, by reading the canonical
 // `externalsecrets.external-secrets.io` CRD and returning its
-// preferredServedVersion. Falls back to the highest-priority supported
+// preferred served version. Falls back to the highest-priority supported
 // version if the CRD is unreadable, so secret_sync still emits a clear
 // error against a missing/borked install instead of silently no-op'ing.
 func resolveExternalSecretVersion(ctx context.Context, c client.Client) string {
@@ -276,7 +248,7 @@ func resolveExternalSecretVersion(ctx context.Context, c client.Client) string {
 	if err := c.Get(ctx, types.NamespacedName{Name: externalSecretCRD}, &crd); err != nil {
 		return supportedAPIVersions[0]
 	}
-	if v, ok := preferredServedVersion(&crd); ok {
+	if v, ok := crdutil.PreferredServedVersion(&crd, supportedAPIVersions); ok {
 		return v
 	}
 	return supportedAPIVersions[0]

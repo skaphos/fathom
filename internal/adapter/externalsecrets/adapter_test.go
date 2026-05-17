@@ -173,33 +173,6 @@ func TestRun_WarnsWhenNoSupportedVersion(t *testing.T) {
 	assertHasDetail(t, result.Checks, "CustomResourceDefinition", externalSecretCRD, "expectedVersions", strings.Join(supportedAPIVersions, ","))
 }
 
-// TestPreferredServedVersion exercises the priority logic directly so a
-// regression in supportedAPIVersions ordering is caught even if the
-// integration tests don't.
-func TestPreferredServedVersion(t *testing.T) {
-	tests := []struct {
-		name   string
-		served []string
-		want   string
-		ok     bool
-	}{
-		{"v1 only", []string{"v1"}, "v1", true},
-		{"v1beta1 only", []string{"v1beta1"}, "v1beta1", true},
-		{"v1 preferred over v1beta1", []string{"v1beta1", "v1"}, "v1", true},
-		{"v1alpha1 only is unsupported", []string{"v1alpha1"}, "", false},
-		{"empty", nil, "", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			crd := establishedCRDWithVersions("any.example.io", tc.served...)
-			got, ok := preferredServedVersion(crd)
-			if got != tc.want || ok != tc.ok {
-				t.Fatalf("preferredServedVersion(%v) = (%q, %v), want (%q, %v)", tc.served, got, ok, tc.want, tc.ok)
-			}
-		})
-	}
-}
-
 // externalSecretWithVersion builds an ExternalSecret unstructured at a
 // caller-chosen apiVersion. The default `externalSecret` helper emits v1.
 func externalSecretWithVersion(name, version string, status map[string]any) *unstructured.Unstructured {
