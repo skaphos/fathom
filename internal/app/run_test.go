@@ -92,6 +92,30 @@ func TestNewScheme_RegistersFathomTypes(t *testing.T) {
 	}
 }
 
+// TestNewScheme_RegistersAPIExtensions guards the CRD-presence checks in the
+// cert-manager and external-secrets adapters, which Get CustomResourceDefinition
+// objects. envtest auto-registers apiextensions/v1 so unit tests against the
+// adapters pass even without explicit registration; real-cluster reconciles
+// surface "no kind is registered for the type v1.CustomResourceDefinition" if
+// NewScheme drops the AddToScheme call below.
+func TestNewScheme_RegistersAPIExtensions(t *testing.T) {
+	scheme, err := NewScheme()
+	if err != nil {
+		t.Fatalf("NewScheme: %v", err)
+	}
+	gvks := scheme.AllKnownTypes()
+	found := false
+	for gvk := range gvks {
+		if gvk.Group == "apiextensions.k8s.io" && gvk.Version == "v1" && gvk.Kind == "CustomResourceDefinition" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("apiextensions.k8s.io/v1 CustomResourceDefinition not registered in scheme")
+	}
+}
+
 func TestBuildManagerOptions_DefaultsHaveNoCertWatchers(t *testing.T) {
 	scheme, err := NewScheme()
 	if err != nil {

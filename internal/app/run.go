@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -63,6 +64,17 @@ func NewScheme() (*runtime.Scheme, error) {
 	}
 	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("add fathom v1alpha1 scheme: %w", err)
+	}
+	// apiextensions/v1 is required by the cert-manager and external-secrets
+	// adapters, which Get CustomResourceDefinition objects to verify the
+	// addon's CRDs are installed. client-go's default scheme does not
+	// include apiextensions, so we register it explicitly here. Without
+	// this every adapter that reads CRDs surfaces an Error outcome with:
+	//   no kind is registered for the type v1.CustomResourceDefinition
+	// in real-cluster reconciles, even though envtest unit tests pass
+	// because envtest auto-registers it.
+	if err := apiextensionsv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("add apiextensions v1 scheme: %w", err)
 	}
 	// +kubebuilder:scaffold:scheme
 	return scheme, nil

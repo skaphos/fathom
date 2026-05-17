@@ -123,6 +123,75 @@ func TestRun_FamiliesCanBeDisabled(t *testing.T) {
 	}
 }
 
+// TestRun_FallsBackToV1Beta1 covers ESO ≤ 0.10 clusters where the
+// CRDs only serve v1beta1. The adapter must Pass the CRD check (v1beta1
+// is still in supportedAPIVersions) and target ExternalSecret listings
+// at v1beta1 too.
+func TestRun_FallsBackToV1Beta1(t *testing.T) {
+	objects := readyDeploymentsAndPods()
+	for _, name := range crds {
+		objects = append(objects, establishedCRDWithVersions(name, "v1beta1"))
+	}
+	objects = append(objects, externalSecretWithVersion("legacy-secret", "v1beta1", map[string]any{
+		"conditions":  []any{map[string]any{"type": "Ready", "status": "True"}},
+		"refreshTime": time.Now().UTC().Format(time.RFC3339),
+	}))
+
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", "externalsecrets.external-secrets.io", adapter.OutcomePass, "established")
+	assertHasDetail(t, result.Checks, "CustomResourceDefinition", "externalsecrets.external-secrets.io", "version", "v1beta1")
+	assertHasOutcome(t, result.Checks, "ExternalSecret", "legacy-secret", adapter.OutcomePass, "ready")
+}
+
+// TestRun_WarnsWhenNoSupportedVersion covers the case where a CRD is
+// installed but only serves a version Fathom doesn't recognize (e.g. a
+// fresh ESO version that has dropped both v1 and v1beta1). The check
+// surfaces a Warn so the operator notices the regression without going
+// hard-fail on a still-running install.
+func TestRun_WarnsWhenNoSupportedVersion(t *testing.T) {
+	objects := readyDeploymentsAndPods()
+	objects = append(objects, establishedCRDWithVersions(externalSecretCRD, "v1alpha1"))
+	for _, name := range crds[1:] {
+		objects = append(objects, establishedCRDWithVersions(name, "v1"))
+	}
+
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilySystemHealth: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", externalSecretCRD, adapter.OutcomeWarn, "no supported version")
+	assertHasDetail(t, result.Checks, "CustomResourceDefinition", externalSecretCRD, "expectedVersions", strings.Join(supportedAPIVersions, ","))
+}
+
+// externalSecretWithVersion builds an ExternalSecret unstructured at a
+// caller-chosen apiVersion. The default `externalSecret` helper emits v1.
+func externalSecretWithVersion(name, version string, status map[string]any) *unstructured.Unstructured {
+	es := externalSecret(name, status)
+	es.SetAPIVersion("external-secrets.io/" + version)
+	return es
+}
+
+// readyDeploymentsAndPods returns just the workload objects (no CRDs),
+// so individual tests can attach their own CRD fixtures with custom
+// served-version sets.
+func readyDeploymentsAndPods() []clientObject {
+	objects := []clientObject{}
+	for _, c := range components {
+		objects = append(objects, healthyDeployment(c), readyPod(c))
+	}
+	return objects
+}
+
 func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome, summaryContains string) {
 	t.Helper()
 	for _, check := range checks {
@@ -209,12 +278,28 @@ func readyPod(component string) *corev1.Pod {
 }
 
 func establishedCRD(name string) *apixv1.CustomResourceDefinition {
+	return establishedCRDWithVersions(name, "v1")
+}
+
+// establishedCRDWithVersions builds a CRD whose Spec.Versions reflect
+// the named served versions (the first is also marked Storage). Used to
+// exercise the adapter's preferredServedVersion priority logic.
+func establishedCRDWithVersions(name string, served ...string) *apixv1.CustomResourceDefinition {
+	versions := make([]apixv1.CustomResourceDefinitionVersion, 0, len(served))
+	for i, v := range served {
+		versions = append(versions, apixv1.CustomResourceDefinitionVersion{
+			Name:    v,
+			Served:  true,
+			Storage: i == 0,
+			Schema:  &apixv1.CustomResourceValidation{OpenAPIV3Schema: &apixv1.JSONSchemaProps{Type: "object"}},
+		})
+	}
 	return &apixv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apixv1.CustomResourceDefinitionSpec{
 			Group:    "external-secrets.io",
 			Names:    apixv1.CustomResourceDefinitionNames{Plural: "tests", Kind: "Test"},
-			Versions: []apixv1.CustomResourceDefinitionVersion{{Name: "v1beta1", Served: true, Storage: true, Schema: &apixv1.CustomResourceValidation{OpenAPIV3Schema: &apixv1.JSONSchemaProps{Type: "object"}}}},
+			Versions: versions,
 			Scope:    apixv1.NamespaceScoped,
 		},
 		Status: apixv1.CustomResourceDefinitionStatus{Conditions: []apixv1.CustomResourceDefinitionCondition{{Type: apixv1.Established, Status: apixv1.ConditionTrue}}},
@@ -238,7 +323,7 @@ func notReadyExternalSecret(name string) *unstructured.Unstructured {
 
 func externalSecret(name string, status map[string]any) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "external-secrets.io/v1beta1",
+		"apiVersion": "external-secrets.io/v1",
 		"kind":       "ExternalSecret",
 		"metadata":   map[string]any{"name": name, "namespace": defaultNamespace},
 		"spec": map[string]any{
