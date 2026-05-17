@@ -62,17 +62,18 @@ var _ = Describe("CoreDNS AddonCheck", Ordered, func() {
 		if !CurrentSpecReport().Failed() {
 			return
 		}
-		dumpDiagnostics()
+		dumpAddonCheckDiagnostics(corednsSampleName, corednsNamespace)
 	})
 
 	It("should produce a HealthReport with dns_resolution Pass and latencyMillis", func() {
-		var latestReport corednsHealthReport
+		var latestReport healthReport
 		verify := func(g Gomega) {
 			report, err := latestHealthReport(corednsSampleName, corednsNamespace)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to fetch latest HealthReport")
 			latestReport = report
 
 			dnsCheck := findCheck(report, "dns_resolution", "DNSName", dnsResolutionTarget)
+			stopOnTerminalResult(dnsCheck, "dns_resolution", dnsResolutionTarget)
 			g.Expect(dnsCheck).NotTo(BeNil(),
 				"dns_resolution check for %q missing from HealthReport %q",
 				dnsResolutionTarget, report.Metadata.Name)
@@ -129,104 +130,3 @@ var _ = Describe("CoreDNS AddonCheck", Ordered, func() {
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
 })
-
-// dumpDiagnostics prints state useful for triaging a failed CoreDNS spec.
-func dumpDiagnostics() {
-	By("dumping controller-manager logs")
-	cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager",
-		"-n", namespace, "--tail=200")
-	if out, err := utils.Run(cmd); err == nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n%s\n", out)
-	}
-
-	By("dumping events in the AddonCheck namespace")
-	cmd = exec.Command("kubectl", "get", "events", "-n", corednsNamespace,
-		"--sort-by=.lastTimestamp")
-	if out, err := utils.Run(cmd); err == nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "%s events:\n%s\n", corednsNamespace, out)
-	}
-
-	By("dumping the CoreDNS AddonCheck and any HealthReports")
-	cmd = exec.Command("kubectl", "get", "addoncheck,healthreport",
-		"-n", corednsNamespace,
-		"-l", "fathom.skaphos.io/source-name="+corednsSampleName,
-		"-o", "yaml")
-	if out, err := utils.Run(cmd); err == nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "AddonCheck + HealthReports:\n%s\n", out)
-	}
-}
-
-// latestHealthReport returns the most-recently-created HealthReport owned by
-// the named AddonCheck, parsed into the subset we care about.
-func latestHealthReport(sourceName, ns string) (corednsHealthReport, error) {
-	cmd := exec.Command("kubectl", "get", "healthreport",
-		"-n", ns,
-		"-l", "fathom.skaphos.io/source-name="+sourceName,
-		"--sort-by=.metadata.creationTimestamp",
-		"-o", "json",
-	)
-	out, err := utils.Run(cmd)
-	if err != nil {
-		return corednsHealthReport{}, fmt.Errorf("kubectl get healthreport: %w", err)
-	}
-	var list healthReportList
-	if err := json.Unmarshal([]byte(out), &list); err != nil {
-		return corednsHealthReport{}, fmt.Errorf("unmarshal healthreport list: %w", err)
-	}
-	if len(list.Items) == 0 {
-		return corednsHealthReport{}, fmt.Errorf("no HealthReports yet for %s/%s", ns, sourceName)
-	}
-	return list.Items[len(list.Items)-1], nil
-}
-
-// findCheck returns the first CheckResult in the report matching the given
-// family/kind/name triple, or nil if none match.
-func findCheck(report corednsHealthReport, family, targetKind, targetName string) *corednsCheck {
-	for i := range report.Spec.Checks {
-		c := &report.Spec.Checks[i]
-		if c.Family == family && c.TargetRef.Kind == targetKind && c.TargetRef.Name == targetName {
-			return c
-		}
-	}
-	return nil
-}
-
-// corednsHealthReport mirrors the fields the CoreDNS spec asserts on. Lives
-// in this test file rather than reusing the API types so the spec stays
-// independent of api/v1alpha1 schema churn — the kubectl JSON output is the
-// stable interface here.
-type corednsHealthReport struct {
-	Metadata struct {
-		Name string `json:"name"`
-	} `json:"metadata"`
-	Spec struct {
-		Checks []corednsCheck `json:"checks"`
-	} `json:"spec"`
-}
-
-type corednsCheck struct {
-	Family    string            `json:"family"`
-	Result    string            `json:"result"`
-	Summary   string            `json:"summary"`
-	Details   map[string]string `json:"details"`
-	TargetRef struct {
-		APIVersion string `json:"apiVersion"`
-		Kind       string `json:"kind"`
-		Namespace  string `json:"namespace"`
-		Name       string `json:"name"`
-	} `json:"targetRef"`
-}
-
-type healthReportList struct {
-	Items []corednsHealthReport `json:"items"`
-}
-
-type eventList struct {
-	Items []struct {
-		InvolvedObject struct {
-			Kind      string `json:"kind"`
-			Name      string `json:"name"`
-			Namespace string `json:"namespace"`
-		} `json:"involvedObject"`
-	} `json:"items"`
-}
