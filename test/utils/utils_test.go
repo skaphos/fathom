@@ -154,13 +154,13 @@ func TestRunCapturesStdout(t *testing.T) {
 	}
 }
 
-// installersWithoutToolchain exercises the kubectl/kind wrappers in an
-// environment where neither tool is on PATH. Each wrapper should return a
-// non-nil error (or false, for the "is installed" probes) without panicking.
+// TestInstallersFailWithoutToolchain exercises the kubectl wrappers in an
+// environment where the tool is not on PATH. Each wrapper should return a
+// non-nil error (or false, for the "is installed" probe) without panicking.
 // The point is structural coverage of the wrappers themselves; the actual
 // install/uninstall flows are covered by the e2e suite.
 func TestInstallersFailWithoutToolchain(t *testing.T) {
-	// Point PATH at an empty directory so kubectl/kind cannot be found,
+	// Point PATH at an empty directory so kubectl cannot be found,
 	// regardless of what the host has installed.
 	empty := t.TempDir()
 	t.Setenv("PATH", empty)
@@ -168,17 +168,8 @@ func TestInstallersFailWithoutToolchain(t *testing.T) {
 	if err := InstallPrometheusOperator(); err == nil {
 		t.Errorf("InstallPrometheusOperator: expected error with empty PATH, got nil")
 	}
-	if err := InstallCertManager(); err == nil {
-		t.Errorf("InstallCertManager: expected error with empty PATH, got nil")
-	}
-	if err := LoadImageToKindClusterWithName("example/image:latest"); err == nil {
-		t.Errorf("LoadImageToKindClusterWithName: expected error with empty PATH, got nil")
-	}
 	if got := IsPrometheusCRDsInstalled(); got {
 		t.Errorf("IsPrometheusCRDsInstalled: expected false with empty PATH, got true")
-	}
-	if got := IsCertManagerCRDsInstalled(); got {
-		t.Errorf("IsCertManagerCRDsInstalled: expected false with empty PATH, got true")
 	}
 
 	// Uninstall* functions log via warnError and must not panic.
@@ -188,16 +179,6 @@ func TestInstallersFailWithoutToolchain(t *testing.T) {
 		}
 	}()
 	UninstallPrometheusOperator()
-	UninstallCertManager()
-}
-
-// LoadImageToKindClusterWithName honors KIND_CLUSTER; exercise that branch too.
-func TestLoadImageToKindClusterWithNameHonorsEnv(t *testing.T) {
-	t.Setenv("KIND_CLUSTER", "custom-cluster")
-	t.Setenv("PATH", t.TempDir())
-	if err := LoadImageToKindClusterWithName("example/image:latest"); err == nil {
-		t.Errorf("expected error with empty PATH, got nil")
-	}
 }
 
 func TestWarnErrorDoesNotPanic(t *testing.T) {

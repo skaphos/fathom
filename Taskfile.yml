@@ -17,7 +17,15 @@ vars:
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
   CATALOG_IMG: '{{.CATALOG_IMG | default (printf "%s-catalog:v%s" .IMAGE_TAG_BASE .VERSION)}}'
-  KIND_CLUSTER: '{{.KIND_CLUSTER | default "fathom-test-e2e"}}'
+  E2E_KIND_CLUSTER: '{{.E2E_KIND_CLUSTER | default "fathom-e2e"}}'
+  E2E_KIND_CONFIG: '{{.E2E_KIND_CONFIG | default "test/e2e/fixtures/kind-cluster.yaml"}}'
+  E2E_HELMFILE: '{{.E2E_HELMFILE | default "test/e2e/fixtures/helmfile.yaml"}}'
+  E2E_IMG: '{{.E2E_IMG | default "fathom-operator:e2e"}}'
+  # The probe image tag must match the operator's compiled-in DefaultProbeImage
+  # so kind's locally-loaded image satisfies the operator's pull request via
+  # IfNotPresent. Keep in lockstep with internal/app/options.go DefaultProbeImage
+  # and internal/adapter/coredns/adapter.go fallbackProbeImage.
+  E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.0.2"}}'
 
 tasks:
   default:
@@ -92,20 +100,17 @@ tasks:
         KUBEBUILDER_ASSETS="$ASSETS" go test $(go list ./... | grep -v /e2e) -coverprofile=coverage.out
 
   test-e2e:
-    desc: Run e2e tests against a Kind cluster (requires kind + docker)
+    desc: Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm + helmfile required)
     cmds:
       - task: manifests
       - task: generate
       - task: fmt
       - task: vet
-      - |
-        set -euo pipefail
-        command -v kind >/dev/null 2>&1 || { echo "kind not found in PATH" >&2; exit 1; }
-        if ! kind get clusters | grep -q "^{{.KIND_CLUSTER}}$"; then
-          kind create cluster --name {{.KIND_CLUSTER}}
-        fi
-        KIND_CLUSTER={{.KIND_CLUSTER}} go test ./test/e2e/ -v -ginkgo.v
-        kind delete cluster --name {{.KIND_CLUSTER}}
+      - task: e2e:cluster:up
+      - defer: {task: e2e:cluster:down}
+      - task: e2e:cluster:addons
+      - task: e2e:cluster:fathom
+      - go test ./test/e2e/ -v -ginkgo.v
 
   # --- Build ---
 
@@ -228,6 +233,63 @@ tasks:
     desc: Push the OLM catalog image
     cmds:
       - docker push {{.CATALOG_IMG}}
+
+  # --- End-to-end (local kind stack) ---
+
+  e2e:cluster:up:
+    desc: Create the e2e kind cluster from {{.E2E_KIND_CONFIG}}
+    cmds:
+      - |
+        set -euo pipefail
+        command -v kind >/dev/null 2>&1 || { echo "kind not found in PATH" >&2; exit 1; }
+        if kind get clusters | grep -qx "{{.E2E_KIND_CLUSTER}}"; then
+          echo "kind cluster {{.E2E_KIND_CLUSTER}} already exists; skipping create"
+        else
+          kind create cluster --name {{.E2E_KIND_CLUSTER}} --config {{.E2E_KIND_CONFIG}}
+        fi
+
+  e2e:cluster:addons:
+    desc: Install cert-manager + external-secrets via helmfile ({{.E2E_HELMFILE}})
+    cmds:
+      - |
+        set -euo pipefail
+        command -v helmfile >/dev/null 2>&1 || { echo "helmfile not found in PATH (https://github.com/helmfile/helmfile)" >&2; exit 1; }
+        command -v helm >/dev/null 2>&1 || { echo "helm not found in PATH" >&2; exit 1; }
+        kubectl config use-context kind-{{.E2E_KIND_CLUSTER}}
+        helmfile -f {{.E2E_HELMFILE}} sync
+
+  e2e:cluster:fathom:
+    desc: Build + load operator and probe images into kind, then deploy Fathom
+    cmds:
+      - task: docker-build
+        vars: {IMG: '{{.E2E_IMG}}'}
+      - task: probe-docker-build
+        vars: {PROBE_IMG: '{{.E2E_PROBE_IMG}}'}
+      - kind load docker-image {{.E2E_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      - kind load docker-image {{.E2E_PROBE_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      - task: install
+      - task: deploy
+        vars: {IMG: '{{.E2E_IMG}}'}
+
+  e2e:cluster:samples:
+    desc: Apply AddonCheck samples (CoreDNS, cert-manager, external-secrets)
+    cmds:
+      - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_coredns.yaml
+      - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck.yaml
+      - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml
+
+  e2e:cluster:down:
+    desc: Delete the e2e kind cluster
+    cmds:
+      - kind delete cluster --name {{.E2E_KIND_CLUSTER}}
+
+  e2e:up:
+    desc: Full local e2e stack — cluster + addons + Fathom + samples
+    cmds:
+      - task: e2e:cluster:up
+      - task: e2e:cluster:addons
+      - task: e2e:cluster:fathom
+      - task: e2e:cluster:samples
 
   # --- Housekeeping ---
 
