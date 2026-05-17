@@ -1,0 +1,74 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: fathom.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: AddonCheck is the Schema for the addonchecks API.
+      displayName: Addon Check
+      kind: AddonCheck
+      name: addonchecks.fathom.skaphos.io
+      version: v1alpha1
+    - description: ClusterHealth is the Schema for the clusterhealths API.
+      displayName: Cluster Health
+      kind: ClusterHealth
+      name: clusterhealths.fathom.skaphos.io
+      version: v1alpha1
+    - description: HealthCheck is the Schema for the healthchecks API.
+      displayName: Health Check
+      kind: HealthCheck
+      name: healthchecks.fathom.skaphos.io
+      version: v1alpha1
+    - description: HealthReport is the Schema for the healthreports API.
+      displayName: Health Report
+      kind: HealthReport
+      name: healthreports.fathom.skaphos.io
+      version: v1alpha1
+  description: |
+    Fathom is a Kubernetes operator that continuously validates the platform
+    integrity of a cluster. It reconciles HealthCheck and ClusterHealth custom
+    resources, runs pluggable addon checks (CoreDNS, cert-manager,
+    external-secrets, …), and persists HealthReport history for auditability.
+  displayName: Fathom
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - health
+  - monitoring
+  - observability
+  - kubernetes
+  - operator
+  - skaphos
+  links:
+  - name: Source
+    url: https://github.com/skaphos/fathom
+  - name: Documentation
+    url: https://github.com/skaphos/fathom#readme
+  maintainers:
+  - email: shawn.stratton@mface.net
+    name: Shawn Stratton
+  maturity: alpha
+  provider:
+    name: Skaphos
+    url: https://github.com/skaphos
+  version: 0.0.0
