@@ -56,7 +56,12 @@ tasks:
       - task: manifests
       - task: generate
       - |
-        if ! git diff --exit-code -- api/ config/; then
+        untracked_generated="$(git ls-files --others --exclude-standard -- api/ config/)"
+        if ! git diff --exit-code -- api/ config/ || [ -n "$untracked_generated" ]; then
+          if [ -n "$untracked_generated" ]; then
+            echo "::error::Untracked generated artifacts detected:" >&2
+            printf '%s\n' "$untracked_generated" >&2
+          fi
           echo "::error::Generated artifacts are stale. Run 'task manifests' and 'task generate' and commit the result." >&2
           exit 1
         fi
