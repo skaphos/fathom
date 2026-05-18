@@ -13,10 +13,12 @@ import (
 	"flag"
 	"fmt"
 	iofs "io/fs"
+	"net"
 	"strings"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -35,6 +37,12 @@ type MetricsOptions struct {
 	CertPath    string `mapstructure:"cert_path"`
 	CertName    string `mapstructure:"cert_name"`
 	CertKey     string `mapstructure:"cert_key"`
+	// AllowInsecure is an explicit opt-in to expose the metrics endpoint over
+	// plaintext HTTP on a cluster-routable port (BindAddress != "0" with
+	// Secure=false). Defaults to false: Validate rejects insecure-on-network
+	// otherwise. Intended for operators fronting the endpoint with a service
+	// mesh (mTLS, authz at the proxy).
+	AllowInsecure bool `mapstructure:"allow_insecure"`
 }
 
 // WebhookOptions configures the controller manager's webhook server.
@@ -82,10 +90,11 @@ const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.0.2"
 func DefaultOptions() Options {
 	return Options{
 		Metrics: MetricsOptions{
-			BindAddress: "0",
-			Secure:      true,
-			CertName:    "tls.crt",
-			CertKey:     "tls.key",
+			BindAddress:   "0",
+			Secure:        true,
+			CertName:      "tls.crt",
+			CertKey:       "tls.key",
+			AllowInsecure: false,
 		},
 		Webhook: WebhookOptions{
 			CertName: "tls.crt",
@@ -121,6 +130,40 @@ func (o *Options) Validate() error {
 	if o.HealthProbeBindAddress == "" {
 		errs = append(errs, errors.New("health_probe_bind_address must not be empty"))
 	}
+
+	// SKA-287: refuse to serve metrics in the clear on a cluster-routable port.
+	// "0" disables the metrics server entirely (no listener); any other value is
+	// a real bind address. Without Metrics.Secure, the filter-provider chain in
+	// run.go skips TokenReview/SubjectAccessReview, so anyone with network reach
+	// to the pod can scrape. AllowInsecure is the explicit opt-in for mesh-
+	// fronted deployments.
+	if o.Metrics.BindAddress != "0" && !o.Metrics.Secure && !o.Metrics.AllowInsecure {
+		errs = append(errs, errors.New(
+			"metrics.bind_address is set and metrics.secure=false: refusing to expose "+
+				"plaintext metrics on a cluster-routable port. Set metrics.secure=true, "+
+				"set metrics.bind_address=0, or set metrics.allow_insecure=true to opt in "+
+				"(e.g. when fronted by a service mesh)",
+		))
+	}
+
+	// SKA-299: surface address/ID syntax errors at Validate time instead of
+	// deferring them to mgr.Start.
+	if o.Metrics.BindAddress != "0" {
+		if _, _, err := net.SplitHostPort(o.Metrics.BindAddress); err != nil {
+			errs = append(errs, fmt.Errorf("metrics.bind_address %q is not a valid host:port: %w", o.Metrics.BindAddress, err))
+		}
+	}
+	if o.HealthProbeBindAddress != "" && o.HealthProbeBindAddress != "0" {
+		if _, _, err := net.SplitHostPort(o.HealthProbeBindAddress); err != nil {
+			errs = append(errs, fmt.Errorf("health_probe_bind_address %q is not a valid host:port (use \"0\" to disable): %w", o.HealthProbeBindAddress, err))
+		}
+	}
+	if o.LeaderElectionID != "" {
+		if msgs := validation.IsDNS1123Subdomain(o.LeaderElectionID); len(msgs) > 0 {
+			errs = append(errs, fmt.Errorf("leader_election_id %q is not a valid DNS-1123 subdomain: %s", o.LeaderElectionID, strings.Join(msgs, "; ")))
+		}
+	}
+
 	return errors.Join(errs...)
 }
 
@@ -141,6 +184,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service."},
 		{flagName: "metrics-secure", viperKey: "metrics.secure", isBool: true, boolDef: defaults.Metrics.Secure,
 			usage: "If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead."},
+		{flagName: "metrics-allow-insecure", viperKey: "metrics.allow_insecure", isBool: true, boolDef: defaults.Metrics.AllowInsecure,
+			usage: "Explicitly allow serving metrics over plaintext HTTP on a cluster-routable port (i.e. --metrics-secure=false with --metrics-bind-address not 0). Intended for service-mesh-fronted deployments. Off by default; Validate rejects insecure-on-network otherwise."},
 		{flagName: "metrics-cert-path", viperKey: "metrics.cert_path", stringDef: defaults.Metrics.CertPath,
 			usage: "The directory that contains the metrics server certificate."},
 		{flagName: "metrics-cert-name", viperKey: "metrics.cert_name", stringDef: defaults.Metrics.CertName,

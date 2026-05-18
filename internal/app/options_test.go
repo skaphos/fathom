@@ -298,6 +298,80 @@ func TestValidate(t *testing.T) {
 			},
 			wantErr: "health_probe_bind_address",
 		},
+		{
+			name: "insecure metrics on network port is rejected",
+			mutate: func(o *Options) {
+				o.Metrics.BindAddress = ":8080"
+				o.Metrics.Secure = false
+				o.Metrics.AllowInsecure = false
+			},
+			wantErr: "refusing to expose plaintext metrics",
+		},
+		{
+			name: "insecure metrics opt-in is honored",
+			mutate: func(o *Options) {
+				o.Metrics.BindAddress = ":8080"
+				o.Metrics.Secure = false
+				o.Metrics.AllowInsecure = true
+			},
+		},
+		{
+			name: "insecure metrics with bind_address=0 stays valid",
+			mutate: func(o *Options) {
+				o.Metrics.BindAddress = "0"
+				o.Metrics.Secure = false
+				o.Metrics.AllowInsecure = false
+			},
+		},
+		{
+			name: "secure metrics on network port stays valid",
+			mutate: func(o *Options) {
+				o.Metrics.BindAddress = ":8443"
+				o.Metrics.Secure = true
+			},
+		},
+		{
+			name: "malformed metrics bind address",
+			mutate: func(o *Options) {
+				o.Metrics.BindAddress = "not-a-host-port"
+				o.Metrics.Secure = true
+			},
+			wantErr: "metrics.bind_address",
+		},
+		{
+			name: "malformed health_probe bind address",
+			mutate: func(o *Options) {
+				o.HealthProbeBindAddress = "no-colon-here"
+			},
+			wantErr: "health_probe_bind_address",
+		},
+		{
+			name: "health_probe bind address \"0\" disables and skips check",
+			mutate: func(o *Options) {
+				o.HealthProbeBindAddress = "0"
+			},
+		},
+		{
+			name: "malformed leader_election_id",
+			mutate: func(o *Options) {
+				o.LeaderElectionID = "NotADns_Subdomain!"
+			},
+			wantErr: "leader_election_id",
+		},
+		{
+			name: "empty leader_election_id is skipped",
+			mutate: func(o *Options) {
+				o.LeaderElectionID = ""
+			},
+		},
+		{
+			name: "multiple errors are joined",
+			mutate: func(o *Options) {
+				o.HealthProbeBindAddress = ""
+				o.LeaderElectionID = "BAD!"
+			},
+			wantErr: "leader_election_id",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -317,5 +391,49 @@ func TestValidate(t *testing.T) {
 				t.Errorf("error %q does not contain %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestValidate_MultipleErrorsAccumulate confirms errors.Join still surfaces
+// every distinct failure in a single Validate pass (preserved invariant from
+// SKA-299) — important for ops teams diagnosing misconfigured ConfigMaps.
+func TestValidate_MultipleErrorsAccumulate(t *testing.T) {
+	opts := DefaultOptions()
+	opts.HealthProbeBindAddress = ""
+	opts.LeaderElectionID = "BAD!"
+	opts.Metrics.BindAddress = "bogus"
+
+	err := opts.Validate()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	for _, want := range []string{"health_probe_bind_address", "leader_election_id", "metrics.bind_address"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("joined error %q is missing %q", err.Error(), want)
+		}
+	}
+}
+
+// TestLoad_MetricsAllowInsecureFlag confirms the new --metrics-allow-insecure
+// flag is wired through the flag→viper→Options pipeline. Together with the
+// Validate insecure-metrics test cases this end-to-ends the SKA-287 opt-in.
+func TestLoad_MetricsAllowInsecureFlag(t *testing.T) {
+	fs, zapOpts := newTestFlags(t)
+	if err := fs.Parse([]string{
+		"--metrics-allow-insecure=true",
+		"--metrics-bind-address=:8080",
+		"--metrics-secure=false",
+	}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got, err := Load(fs, *zapOpts, "", false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !got.Metrics.AllowInsecure {
+		t.Error("Metrics.AllowInsecure should be true after --metrics-allow-insecure=true")
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("Validate with allow_insecure=true: %v", err)
 	}
 }
