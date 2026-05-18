@@ -375,8 +375,27 @@ func policyNamespaces(policy adapter.FamilyPolicy) []string {
 	return policy.Namespaces
 }
 
+// int32Threshold parses a policy threshold into an int32 with an explicit
+// bit-size bound. Mirrors the coredns adapter's pattern; the previous
+// implementation deferred to intThreshold (returning host-sized int) and
+// then truncated the result with int32(), which silently lost the high
+// bits when a user supplied a value > math.MaxInt32 on a 64-bit platform.
+// strconv.ParseInt with bitSize=32 rejects out-of-range values so the
+// returned int32 is always correct or the default. (CodeQL
+// go/incorrect-integer-conversion.)
 func int32Threshold(policy adapter.FamilyPolicy, key string, defaultValue int32) int32 {
-	return int32(intThreshold(policy, key, int(defaultValue)))
+	if policy.Thresholds == nil {
+		return defaultValue
+	}
+	value, ok := policy.Thresholds[key]
+	if !ok {
+		return defaultValue
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || parsed < 0 {
+		return defaultValue
+	}
+	return int32(parsed)
 }
 
 func intThreshold(policy adapter.FamilyPolicy, key string, defaultValue int) int {
