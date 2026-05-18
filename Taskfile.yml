@@ -50,6 +50,22 @@ tasks:
     cmds:
       - '{{.CONTROLLER_GEN}} object:headerFile="hack/boilerplate.go.txt" paths="./..."'
 
+  verify-generated:
+    desc: Re-run generators and fail if anything changed (CI gate against stale codegen)
+    cmds:
+      - task: manifests
+      - task: generate
+      - |
+        untracked_generated="$(git ls-files --others --exclude-standard -- api/ config/)"
+        if ! git diff --exit-code -- api/ config/ || [ -n "$untracked_generated" ]; then
+          if [ -n "$untracked_generated" ]; then
+            echo "::error::Untracked generated artifacts detected:" >&2
+            printf '%s\n' "$untracked_generated" >&2
+          fi
+          echo "::error::Generated artifacts are stale. Run 'task manifests' and 'task generate' and commit the result." >&2
+          exit 1
+        fi
+
   # --- Quality ---
 
   fmt:
