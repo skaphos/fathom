@@ -35,6 +35,18 @@ const pollHeadroom = 60 * time.Second
 // under typical load, short enough not to wedge a shutting-down operator.
 const cleanupTimeout = 5 * time.Second
 
+// notFoundTolerance caps how many consecutive NotFound errors we accept
+// from the poll loop before declaring the probe pod truly gone. SKA-429:
+// a Get can return NotFound transiently for two reasons that have nothing
+// to do with the pod being deleted: a cached client whose watch hasn't
+// propagated the Create's ADDED event yet, and a brand-new pod that was
+// scheduled, ran, and reached terminal phase faster than our first poll
+// could observe it. At the default 500ms poll cadence, 3 retries gives
+// the watch ~1.5s to catch up before we surface the disappearance —
+// long enough to absorb realistic lag, short enough that a genuinely
+// deleted pod still fails fast.
+const notFoundTolerance = 3
+
 // Launcher creates a hardened probe pod (per Pod()), waits for it to reach a
 // terminal phase, parses the JSON Result the probe binary wrote to its
 // termination message, and then deletes the pod. It is the lifecycle layer
@@ -90,6 +102,16 @@ func (l *Launcher) Run(ctx context.Context, req Request) (Result, error) {
 
 // waitForCompletion polls the probe pod until it reaches Succeeded or Failed
 // or the deadline expires. It returns the latest Pod state observed.
+//
+// NotFound handling separates two distinct cases that look identical to a
+// single Get call:
+//   - "Never observed": no prior poll has seen the pod. Usually a cached
+//     client whose watch hasn't propagated the Create yet. Tolerated up to
+//     notFoundTolerance consecutive failures.
+//   - "Observed terminal, then vanished": a prior poll captured the pod
+//     with a terminated container and a non-empty termination message.
+//     The probe completed, we have its result; promote the last observation
+//     and stop polling (SKA-429).
 func (l *Launcher) waitForCompletion(ctx context.Context, pod *corev1.Pod, probeTimeout time.Duration) (*corev1.Pod, error) {
 	interval := l.PollInterval
 	if interval <= 0 {
@@ -103,17 +125,29 @@ func (l *Launcher) waitForCompletion(ctx context.Context, pod *corev1.Pod, probe
 	defer cancel()
 
 	key := client.ObjectKeyFromObject(pod)
-	var observed corev1.Pod
+	var lastObserved *corev1.Pod
+	consecutiveNotFound := 0
 	err := wait.PollUntilContextCancel(pollCtx, interval, true, func(ctx context.Context) (bool, error) {
+		var observed corev1.Pod
 		if err := l.Client.Get(ctx, key, &observed); err != nil {
-			if apierrors.IsNotFound(err) {
-				// Someone (or something) deleted the pod out from under us.
-				// Treat as a terminal not-found so the caller can surface it
-				// rather than spinning until the deadline.
+			if !apierrors.IsNotFound(err) {
+				return false, err
+			}
+			// If a prior poll already captured a terminated container with a
+			// termination message, the probe finished and we have its result.
+			// Subsequent disappearance can only confirm that — promote the
+			// last observation and stop polling.
+			if hasTerminationMessage(lastObserved) {
+				return true, nil
+			}
+			consecutiveNotFound++
+			if consecutiveNotFound > notFoundTolerance {
 				return false, fmt.Errorf("probe pod %s/%s disappeared during poll", pod.Namespace, pod.Name)
 			}
-			return false, err
+			return false, nil
 		}
+		consecutiveNotFound = 0
+		lastObserved = observed.DeepCopy()
 		switch observed.Status.Phase {
 		case corev1.PodSucceeded, corev1.PodFailed:
 			return true, nil
@@ -123,7 +157,27 @@ func (l *Launcher) waitForCompletion(ctx context.Context, pod *corev1.Pod, probe
 	if err != nil {
 		return nil, fmt.Errorf("wait for probe pod %s/%s: %w", pod.Namespace, pod.Name, err)
 	}
-	return &observed, nil
+	if lastObserved == nil {
+		// PollUntilContextCancel returned success but we never captured an
+		// observation. Defensive — shouldn't be reachable since the only
+		// paths that return true also write lastObserved (either directly,
+		// or via the hasTerminationMessage branch which requires lastObserved
+		// to be non-nil).
+		return nil, fmt.Errorf("wait for probe pod %s/%s: completed without observation", pod.Namespace, pod.Name)
+	}
+	return lastObserved, nil
+}
+
+// hasTerminationMessage reports whether the pod's first container reached a
+// terminated state with a non-empty termination message — the signal that
+// the probe binary wrote its JSON Result before exiting. A nil pod or a
+// pod with no container statuses returns false.
+func hasTerminationMessage(pod *corev1.Pod) bool {
+	if pod == nil || len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+	cs := pod.Status.ContainerStatuses[0]
+	return cs.State.Terminated != nil && cs.State.Terminated.Message != ""
 }
 
 // extractResult reads the probe's JSON Result from the first container's

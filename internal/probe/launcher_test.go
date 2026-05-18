@@ -10,14 +10,17 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func newFakeClient(t *testing.T) client.Client {
@@ -239,6 +242,149 @@ func TestLauncherRun_InvalidRequestReturnsError(t *testing.T) {
 	_, err := l.Run(context.Background(), bad)
 	if err == nil || !strings.Contains(err.Error(), "build probe pod") {
 		t.Fatalf("Run: want build error, got %v", err)
+	}
+}
+
+// TestLauncherRun_TerminatedThenDeletedReturnsResult exercises the SKA-429
+// race: kubelet writes the terminated container state (with a non-empty
+// termination message) before transitioning the pod's overall phase to
+// Succeeded, the pod is deleted between polls, and the launcher's next
+// Get returns NotFound. The launcher must promote the captured observation
+// — the probe finished and we have its result — rather than surface the
+// disappearance as a terminal error.
+func TestLauncherRun_TerminatedThenDeletedReturnsResult(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add to scheme: %v", err)
+	}
+	var getCount atomic.Int32
+	intercepted := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&corev1.Pod{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				pod, isPod := obj.(*corev1.Pod)
+				if !isPod {
+					return cl.Get(ctx, key, obj, opts...)
+				}
+				switch getCount.Add(1) {
+				case 1:
+					// First poll: container has terminated with a non-empty
+					// termination message but the pod's phase is still
+					// Running (kubelet hasn't propagated the phase change).
+					pod.ObjectMeta.Name = key.Name
+					pod.ObjectMeta.Namespace = key.Namespace
+					pod.Status = corev1.PodStatus{
+						Phase: corev1.PodRunning,
+						ContainerStatuses: []corev1.ContainerStatus{{
+							Name: "probe",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode: 0,
+									Reason:   "Completed",
+									Message:  `{"outcome":"Pass","summary":"DNS resolution succeeded"}`,
+								},
+							},
+						}},
+					}
+					return nil
+				default:
+					// Subsequent polls: pod has been deleted (kubelet GC,
+					// eviction, ttl controller) before phase reached
+					// Succeeded.
+					return apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, key.Name)
+				}
+			},
+		}).
+		Build()
+
+	l := &Launcher{Client: intercepted, PollInterval: 5 * time.Millisecond}
+	req := dnsRequest("probe-vanish-after-terminal")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := l.Run(ctx, req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Outcome != OutcomePass {
+		t.Errorf("Outcome = %q, want %q", result.Outcome, OutcomePass)
+	}
+	if !strings.Contains(result.Summary, "DNS resolution succeeded") {
+		t.Errorf("Summary = %q", result.Summary)
+	}
+}
+
+// TestLauncherRun_TransientNotFoundIsTolerated mimics the most likely
+// root cause of SKA-429: the client's cache hasn't propagated the Create
+// before the first poll fires, so the initial Get returns NotFound. After
+// a small number of polls the cache catches up and the pod is observable.
+// The launcher must tolerate the transient NotFound and complete normally.
+func TestLauncherRun_TransientNotFoundIsTolerated(t *testing.T) {
+	c := newFakeClient(t)
+	var notFoundsRemaining atomic.Int32
+	notFoundsRemaining.Store(2) // tolerate at least 1, drop below tolerance
+	intercepted := fake.NewClientBuilder().
+		WithScheme(c.Scheme()).
+		WithStatusSubresource(&corev1.Pod{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, isPod := obj.(*corev1.Pod); isPod && notFoundsRemaining.Load() > 0 {
+					notFoundsRemaining.Add(-1)
+					return apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, key.Name)
+				}
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	l := &Launcher{Client: intercepted, PollInterval: 5 * time.Millisecond}
+	req := dnsRequest("probe-cache-lag")
+
+	simulateKubelet(t, intercepted, req.Name, req.Namespace, corev1.PodSucceeded,
+		`{"outcome":"Pass","summary":"DNS resolution succeeded"}`, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := l.Run(ctx, req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Outcome != OutcomePass {
+		t.Errorf("Outcome = %q, want %q", result.Outcome, OutcomePass)
+	}
+}
+
+// TestLauncherRun_PersistentNotFoundFails confirms the tolerance has an
+// upper bound: if Get keeps returning NotFound and we never observed the
+// pod, the launcher must surface the disappearance after the tolerance
+// window expires, not block until the deadline.
+func TestLauncherRun_PersistentNotFoundFails(t *testing.T) {
+	c := newFakeClient(t)
+	intercepted := fake.NewClientBuilder().
+		WithScheme(c.Scheme()).
+		WithStatusSubresource(&corev1.Pod{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, isPod := obj.(*corev1.Pod); isPod {
+					return apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, key.Name)
+				}
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	l := &Launcher{Client: intercepted, PollInterval: 5 * time.Millisecond}
+	req := dnsRequest("probe-truly-gone")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := l.Run(ctx, req)
+	if err == nil {
+		t.Fatal("Run: want disappeared error, got nil")
+	}
+	if !strings.Contains(err.Error(), "disappeared during poll") {
+		t.Errorf("Run: error %q should mention disappearance", err.Error())
 	}
 }
 
