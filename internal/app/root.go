@@ -8,6 +8,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -49,7 +52,15 @@ func NewRootCommand() *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			ctx = signalAwareContext(ctx)
+			// signal.NotifyContext merges parent cancellation with
+			// SIGINT/SIGTERM. Unlike the prior ctrl.SetupSignalHandler
+			// wrapper, a second signal does not hard-exit the process
+			// while the manager shuts down — Kubernetes will SIGKILL
+			// after terminationGracePeriodSeconds if shutdown stalls,
+			// so the impatient-Ctrl+C escape hatch isn't load-bearing
+			// for production. (SKA-300.)
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			return Run(ctx, cfg, opts, nil)
 		},
 	}
@@ -59,21 +70,4 @@ func NewRootCommand() *cobra.Command {
 	RegisterFlags(cmd.PersistentFlags(), &zapOpts)
 
 	return cmd
-}
-
-// signalAwareContext returns a context that is cancelled either when the
-// parent ctx is done or when SIGINT/SIGTERM is received. Wrapping
-// ctrl.SetupSignalHandler this way lets callers (such as tests) supply their
-// own cancellable parent.
-func signalAwareContext(parent context.Context) context.Context {
-	signalCtx := ctrl.SetupSignalHandler()
-	merged, cancel := context.WithCancel(parent)
-	go func() {
-		select {
-		case <-signalCtx.Done():
-			cancel()
-		case <-merged.Done():
-		}
-	}()
-	return merged
 }
