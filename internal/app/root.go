@@ -8,6 +8,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -49,7 +52,8 @@ func NewRootCommand() *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			ctx = signalAwareContext(ctx)
+			ctx, stop := signalContext(ctx)
+			defer stop()
 			return Run(ctx, cfg, opts, nil)
 		},
 	}
@@ -61,19 +65,19 @@ func NewRootCommand() *cobra.Command {
 	return cmd
 }
 
-// signalAwareContext returns a context that is cancelled either when the
-// parent ctx is done or when SIGINT/SIGTERM is received. Wrapping
-// ctrl.SetupSignalHandler this way lets callers (such as tests) supply their
-// own cancellable parent.
-func signalAwareContext(parent context.Context) context.Context {
-	signalCtx := ctrl.SetupSignalHandler()
-	merged, cancel := context.WithCancel(parent)
-	go func() {
-		select {
-		case <-signalCtx.Done():
-			cancel()
-		case <-merged.Done():
-		}
-	}()
-	return merged
+// signalContext is a thin wrapper over signal.NotifyContext that the operator
+// RunE uses to merge parent cancellation with the conventional shutdown
+// signals (SIGINT/SIGTERM). Factored out as the testable seam for the
+// startup/shutdown wiring; SKA-300 traded the hand-rolled goroutine for
+// the stdlib primitive but kept this seam so tests can exercise the
+// parent-cancel and signal-cancel handoff without driving NewRootCommand
+// end-to-end (which would need a kubeconfig).
+//
+// Behavior delta vs the prior ctrl.SetupSignalHandler wrapper: a second
+// signal does not hard-exit the process while the manager shuts down.
+// Kubernetes SIGKILLs after terminationGracePeriodSeconds if shutdown
+// stalls, so the impatient-Ctrl+C escape hatch isn't load-bearing for
+// production.
+func signalContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 }
