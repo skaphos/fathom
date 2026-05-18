@@ -321,6 +321,52 @@ func notReadyExternalSecret(name string) *unstructured.Unstructured {
 	})
 }
 
+// TestInt32Threshold_RejectsOverflowingValue locks the post-CodeQL contract
+// that int32Threshold falls back to the default when the policy threshold
+// would overflow int32. Before the fix, intThreshold returned a host-sized
+// int and int32() silently truncated the high bits.
+func TestInt32Threshold_RejectsOverflowingValue(t *testing.T) {
+	tests := []struct {
+		name      string
+		threshold string
+		want      int32
+	}{
+		{"in-range value preserved", "42", 42},
+		{"int32 boundary preserved", "2147483647", 2147483647},
+		{"overflow past int32 falls back", "2147483648", 7}, // 2^31, just over MaxInt32
+		{"far overflow falls back", "9999999999", 7},        // 10x int32
+		{"negative falls back", "-1", 7},
+		{"non-numeric falls back", "not-a-number", 7},
+		{"empty threshold falls back", "", 7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := adapter.FamilyPolicy{
+				Thresholds: map[string]string{"restartWarnCount": tc.threshold},
+			}
+			got := int32Threshold(policy, "restartWarnCount", 7)
+			if got != tc.want {
+				t.Errorf("int32Threshold(%q) = %d, want %d", tc.threshold, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInt32Threshold_NilThresholdsReturnsDefault(t *testing.T) {
+	got := int32Threshold(adapter.FamilyPolicy{}, "restartWarnCount", 7)
+	if got != 7 {
+		t.Errorf("int32Threshold on nil Thresholds = %d, want 7", got)
+	}
+}
+
+func TestInt32Threshold_MissingKeyReturnsDefault(t *testing.T) {
+	policy := adapter.FamilyPolicy{Thresholds: map[string]string{"other": "1"}}
+	got := int32Threshold(policy, "restartWarnCount", 7)
+	if got != 7 {
+		t.Errorf("int32Threshold on missing key = %d, want 7", got)
+	}
+}
+
 func externalSecret(name string, status map[string]any) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "external-secrets.io/v1",

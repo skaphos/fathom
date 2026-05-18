@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Minimum privilege for every job in this workflow. All jobs only need to
+# read repository contents (checkout, upload-artifact within the same run,
+# step-summary writes). No job calls APIs that need contents:write,
+# pull-requests, or issues scopes. (CodeQL actions/missing-workflow-permissions.)
+permissions:
+  contents: read
+
 jobs:
   dco:
     name: DCO
