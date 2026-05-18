@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.3](https://github.com/skaphos/fathom/compare/v0.0.2...v0.0.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* **adapter/certmanager:** thread family through check/skipped helpers (SKA-428) ([#28](https://github.com/skaphos/fathom/issues/28)) ([53d3c93](https://github.com/skaphos/fathom/commit/53d3c93fb0578fe3422cc05788f11ebfecc26cda))
+* **probe:** tolerate transient NotFound and promote terminal observation (SKA-429) ([#29](https://github.com/skaphos/fathom/issues/29)) ([3bb2442](https://github.com/skaphos/fathom/commit/3bb2442e3bbcb76e774dbf7f5f5f409364649a45))
+* scheme + ESO v1 adapter for real-cluster CRD reconciles ([#22](https://github.com/skaphos/fathom/issues/22)) ([255a550](https://github.com/skaphos/fathom/commit/255a550763191ebb31b36a554ecba799c247b475))
+* **security:** close CodeQL alerts on int32 overflow and missing workflow permissions ([#32](https://github.com/skaphos/fathom/issues/32)) ([f4872b4](https://github.com/skaphos/fathom/commit/f4872b4acb275499fbc01ae7719e2f6a3a6a9b64))
+
 ## [0.0.2](https://github.com/skaphos/fathom/compare/v0.0.1...v0.0.2) (2026-05-17)
 
 
