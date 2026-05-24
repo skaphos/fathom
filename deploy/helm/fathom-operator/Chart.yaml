@@ -1,0 +1,25 @@
+apiVersion: v2
+name: fathom-operator
+description: |
+  Fathom is a Kubernetes operator (skaphos.io domain) that reconciles
+  HealthCheck, ClusterHealth, and AddonCheck custom resources and persists
+  HealthReport history. It launches short-lived probe pods to assess addon
+  health. This chart installs the operator, its CRDs, and RBAC. The probe is
+  not a long-running workload — it is launched on demand by the operator and
+  configured via probeImage.
+type: application
+kubeVersion: ">=1.27.0-0"
+version: 0.1.0
+appVersion: "0.0.3"
+home: https://github.com/skaphos/fathom
+sources:
+  - https://github.com/skaphos/fathom
+keywords:
+  - fathom
+  - operator
+  - health
+  - kubernetes
+  - skaphos
+maintainers:
+  - name: Skaphos
+    url: https://github.com/skaphos

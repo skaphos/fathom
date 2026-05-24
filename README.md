@@ -1,6 +1,32 @@
 # fathom
 Kubernetes platform integrity validation operator and CLI.
 
+## Install via Helm
+
+Fathom ships an OCI-only Helm chart published to GHCR. Install the operator,
+its CRDs, and RBAC with:
+
+```sh
+helm install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
+  --version X.Y.Z \
+  -n fathom-system --create-namespace
+```
+
+Replace `X.Y.Z` with a released chart version (plain semver, no leading `v`).
+The chart installs the four `fathom.skaphos.io` CRDs from its native `crds/`
+directory — Helm installs CRDs on first install only and never upgrades or
+removes them, so apply new CRDs with `kubectl` before a breaking `helm upgrade`.
+
+The probe is not a separate Deployment; the operator launches it as short-lived
+pods. Point at a specific probe build with `--set probeImage.tag=vX.Y.Z`
+(defaults to the chart's appVersion). Metrics are served over HTTPS on `:8443`
+using controller-runtime's built-in authn/authz filter; see
+`deploy/helm/fathom-operator/values.yaml` for the full value reference.
+
+The chart sources its CRDs and the manager ClusterRole rules from `config/`
+(kustomize stays the source of truth). Regenerate the derived bits with
+`go -C tools tool task helm:sync`.
+
 ## AddonCheck Example
 
 The built-in cert-manager adapter supports `system_health`, `issuer_health`, and

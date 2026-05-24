@@ -1,0 +1,59 @@
+{{- if and .Values.rbac.create .Values.metrics.secure (ne .Values.metrics.bindAddress "0") -}}
+{{/*
+Secure metrics use controller-runtime's built-in authn/authz filter (no
+kube-rbac-proxy). The operator must be able to create TokenReviews and
+SubjectAccessReviews to authenticate and authorize scrapers. Mirrors
+config/rbac/metrics_auth_role.yaml. Gated on secure metrics being served.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-metrics-auth
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-metrics-auth
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fathom-operator.fullname" . }}-metrics-auth
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fathom-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+{{/*
+Allows clients holding this role to scrape /metrics. Mirrors
+config/rbac/metrics_reader_role.yaml. Not bound by this chart — bind it to the
+scraper's identity (e.g. a Prometheus ServiceAccount) out of band.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-metrics-reader
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs:
+      - "/metrics"
+    verbs:
+      - get
+{{- end }}

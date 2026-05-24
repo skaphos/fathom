@@ -26,6 +26,7 @@ vars:
   # IfNotPresent. Keep in lockstep with internal/app/options.go DefaultProbeImage
   # and internal/adapter/coredns/adapter.go fallbackProbeImage.
   E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.0.2"}}'
+  HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
 
 tasks:
   default:
@@ -55,16 +56,38 @@ tasks:
     cmds:
       - task: manifests
       - task: generate
+      - task: helm:sync
       - |
-        untracked_generated="$(git ls-files --others --exclude-standard -- api/ config/)"
-        if ! git diff --exit-code -- api/ config/ || [ -n "$untracked_generated" ]; then
+        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml"
+        untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
+        if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
           fi
-          echo "::error::Generated artifacts are stale. Run 'task manifests' and 'task generate' and commit the result." >&2
+          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', and 'task helm:sync' and commit the result." >&2
           exit 1
         fi
+
+  # --- Helm chart (derived from config/; kustomize stays source of truth) ---
+
+  helm:sync:
+    desc: Regenerate the chart's derived CRDs and manager RBAC rules from config/
+    cmds:
+      # CRDs: Helm-native crds/ dir is installed as-is (never upgraded by Helm).
+      - task: manifests
+      - rm -f {{.HELM_CHART_DIR}}/crds/*.yaml
+      - cp config/crd/bases/*.yaml {{.HELM_CHART_DIR}}/crds/
+      # Manager RBAC rules: extract just the `rules:` list (no metadata) so the
+      # clusterrole template can embed it via .Files.Get. No yq dependency —
+      # print the lines after `rules:` up to the next top-level key. List items
+      # start with `-`, so they are never mistaken for a key. Deterministic
+      # everywhere (incl. CI): role.yaml is itself controller-gen output.
+      - |
+        set -euo pipefail
+        out="{{.HELM_CHART_DIR}}/files/manager-rules.yaml"
+        mkdir -p "$(dirname "$out")"
+        awk 'f && /^[A-Za-z]/ {f=0} /^rules:/ {f=1; next} f' config/rbac/role.yaml > "$out"
 
   # --- Quality ---
 

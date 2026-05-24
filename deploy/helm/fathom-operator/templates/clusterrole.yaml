@@ -1,0 +1,29 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-manager
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+rules:
+  {{/*
+  Manager rules are DERIVED from config/rbac/role.yaml via `task helm:sync`.
+  Never hand-edit files/manager-rules.yaml — kustomize is the source of truth.
+  */}}
+  {{- .Files.Get "files/manager-rules.yaml" | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-manager
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fathom-operator.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fathom-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

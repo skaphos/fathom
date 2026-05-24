@@ -1,0 +1,84 @@
+name: charts
+
+on:
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - "config/crd/**"
+      - ".github/workflows/charts.yaml"
+      - ".github/ct.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "deploy/helm/**"
+      - "config/crd/**"
+      - ".github/workflows/charts.yaml"
+      - ".github/ct.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.8.0
+
+      - name: Run ct lint
+        run: ct lint --config .github/ct.yaml
+
+  install:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.8.0
+
+      - name: Build local operator image
+        run: go -C tools tool task docker-build IMG=fathom-operator:ci
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          wait: 120s
+
+      - name: Load local image into kind
+        run: |
+          CLUSTER_NAME=$(kind get clusters | head -1)
+          kind load docker-image fathom-operator:ci --name "$CLUSTER_NAME"
+
+      - name: Run ct install
+        run: ct install --config .github/ct.yaml

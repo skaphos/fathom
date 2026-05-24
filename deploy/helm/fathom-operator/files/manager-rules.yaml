@@ -1,0 +1,119 @@
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - clusterissuers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - external-secrets.io
+  resources:
+  - externalsecrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - addonchecks
+  - clusterhealths
+  - healthchecks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - addonchecks/finalizers
+  - clusterhealths/finalizers
+  - healthchecks/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - addonchecks/status
+  - clusterhealths/status
+  - healthchecks/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - healthreports
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch

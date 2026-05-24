@@ -1,0 +1,49 @@
+fathom-operator {{ .Chart.AppVersion }} installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Operator image: {{ include "fathom-operator.image" . }}
+Probe image:    {{ include "fathom-operator.probeImage" . }}
+  (launched on demand as short-lived pods by the operator; passed via --probe-image)
+
+CRDs:
+  addonchecks, clusterhealths, healthchecks, healthreports (fathom.skaphos.io)
+  installed from the chart's crds/ directory. Helm installs CRDs on first
+  install only and never upgrades or deletes them. For breaking schema changes,
+  apply the new CRD with kubectl before `helm upgrade`.
+
+Metrics:
+{{- if eq .Values.metrics.bindAddress "0" }}
+  Disabled (metrics.bindAddress=0).
+{{- else if .Values.metrics.secure }}
+  Served over HTTPS on {{ .Values.metrics.bindAddress }} with the
+  controller-runtime authn/authz filter (TokenReview + SubjectAccessReview).
+{{- if .Values.rbac.create }}
+  Scrapers need the {{ include "fathom-operator.fullname" . }}-metrics-reader
+  ClusterRole bound to their identity.
+{{- else }}
+  rbac.create=false: the operator's TokenReview/SubjectAccessReview ClusterRole
+  and the metrics-reader ClusterRole are NOT created by this chart. Provision
+  both out-of-band, or scraping (and operator startup) will fail.
+{{- end }}
+{{- else if .Values.metrics.allowInsecure }}
+  *** WARNING *** plaintext HTTP metrics on {{ .Values.metrics.bindAddress }}
+  (metrics.secure=false, metrics.allowInsecure=true). Only safe behind a
+  service mesh that enforces authn/authz.
+{{- else }}
+  metrics.secure=false on a routable port without metrics.allowInsecure — the
+  operator will refuse to start. Set metrics.secure=true (recommended),
+  metrics.bindAddress=0, or metrics.allowInsecure=true.
+{{- end }}
+
+Leader election:
+{{- if .Values.leaderElect }}
+  Enabled (lease {{ .Values.leaderElectionID }}).
+  {{- if .Values.rbac.create }} Namespaced Role+RoleBinding created.
+  {{- else }} rbac.create=false: provision the lease Role+RoleBinding out-of-band.
+  {{- end }}
+{{- else }}
+  Disabled. Keep replicaCount at 1.
+{{- end }}
+
+Verify the deployment:
+  kubectl --namespace {{ .Release.Namespace }} rollout status deploy/{{ include "fathom-operator.fullname" . }}
+  kubectl --namespace {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }} -f

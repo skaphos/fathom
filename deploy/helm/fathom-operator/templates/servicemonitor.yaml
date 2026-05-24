@@ -1,0 +1,41 @@
+{{- /*
+Only meaningful when metrics are actually served and exposed by a Service:
+gate on serviceMonitor.enabled AND a real bind address AND the metrics Service.
+*/ -}}
+{{- if and .Values.metrics.serviceMonitor.enabled (ne .Values.metrics.bindAddress "0") .Values.metrics.service.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}
+  namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "fathom-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  endpoints:
+    - port: metrics
+      scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      {{- if .Values.metrics.secure }}
+      # Secure metrics use controller-runtime's authn/authz filter; the scraper
+      # authenticates with its ServiceAccount token. tlsConfig is taken verbatim
+      # from metrics.serviceMonitor.tlsConfig (default insecureSkipVerify: true
+      # for the self-signed serving cert; set caFile/serverName for a CA-signed
+      # metrics certificate).
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      {{- with .Values.metrics.serviceMonitor.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+{{- end }}
