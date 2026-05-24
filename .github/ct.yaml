@@ -4,8 +4,8 @@ chart-dirs:
 target-branch: main
 helm-extra-args: --timeout 3m
 validate-maintainers: false
-# Install in a fixed namespace so the workflow can pre-create any fixtures the
-# chart needs. ct does not delete the namespace when set explicitly — just the
-# release (identified via release-label).
-namespace: fathom-system
-release-label: app.kubernetes.io/instance
+# No explicit namespace: ct creates an ephemeral namespace per release and
+# deletes it afterward. The chart needs no pre-staged fixtures (ct-values
+# disables secure metrics, so no serving cert/secret is required), so the
+# fixed-namespace mode (which requires the namespace to pre-exist) is
+# unnecessary and would fail the install.
