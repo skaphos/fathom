@@ -83,6 +83,11 @@ Fathom uses **cobra + viper** for runtime configuration. Precedence
 - New behavior must ship with direct test coverage. Bug fixes should add a regression test that fails before the fix.
 - Prefer table-driven tests for branching logic. Mock injection seams (`managerFactory` in `internal/app/run.go`, the `Setupper` interface for controllers) exist precisely so unit tests don't need envtest.
 - envtest binaries are managed by `setup-envtest`; CI installs them automatically. Locally the `test` task bootstraps them in `bin/k8s/`.
+- The Kubernetes version used for testing (envtest + e2e) must be kept in lockstep with the `k8s.io/*` module versions declared in `go.mod` (and the `sigs.k8s.io/controller-runtime` version). When bumping the client libraries, update these together:
+  - `ENVTEST_K8S_VERSION` in `Taskfile.yml`
+  - `kindest/node` image in `test/e2e/fixtures/kind-cluster.yaml`
+  - `kubernetesVersion` in `docs/.crd-ref-docs.yaml`
+  See the comments in `kind-cluster.yaml` and `test/e2e/fixtures/README.md` for the explicit "bump in lockstep" policy. Mismatches can hide API compatibility issues.
 - Coverage gate: `scripts/check-coverage.sh` aggregates `coverage.out` per package against a configurable per-package minimum (`COVERAGE_MIN_DEFAULT`). The gate runs on Linux in CI. Ratchet thresholds upward as coverage improves; do not lower them to make a PR pass.
 
 ### Run e2e after major changes
@@ -98,6 +103,7 @@ Changes that **require** an e2e run before the PR is considered ready:
 - `api/v1alpha1/*_types.go` — CRD schema changes.
 - `internal/probe/*` — probe pod lifecycle / pod-builder changes.
 - `test/e2e/fixtures/*` — addon stack itself; the fixture change is the test.
+- Bumping `ENVTEST_K8S_VERSION`, the `kindest/node` image, or the `kubernetesVersion` used for CRD docs — these must stay aligned with `go.mod` k8s.io modules (see Testing Guidelines).
 
 Changes that **do not** require e2e: test-only edits, comments, docs, CI/tooling, `Taskfile.yml` edits that don't affect runtime, generated files.
 
