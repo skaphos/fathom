@@ -9,6 +9,7 @@ vars:
   GOIMPORTS_RUNNER: go run golang.org/x/tools/cmd/goimports@v0.42.0
   STATICCHECK_RUNNER: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0
   GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4
+  CRD_REF_DOCS: go -C tools tool github.com/elastic/crd-ref-docs
   ENVTEST_K8S_VERSION: "1.33"
   IMG: '{{.IMG | default "controller:latest"}}'
   PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
@@ -57,15 +58,16 @@ tasks:
       - task: manifests
       - task: generate
       - task: helm:sync
+      - task: docs:api-ref
       - |
-        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml"
+        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml docs/reference/api.md"
         untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
         if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
           fi
-          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', and 'task helm:sync' and commit the result." >&2
+          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
 
@@ -88,6 +90,23 @@ tasks:
         out="{{.HELM_CHART_DIR}}/files/manager-rules.yaml"
         mkdir -p "$(dirname "$out")"
         awk 'f && /^[A-Za-z]/ {f=0} /^rules:/ {f=1; next} f' config/rbac/role.yaml > "$out"
+
+  # --- Docs ---
+
+  docs:api-ref:
+    desc: Regenerate the CRD API reference (docs/reference/api.md) from api/v1alpha1 doc comments
+    cmds:
+      - mkdir -p docs/reference
+      # `go -C tools tool` changes cwd into tools/, so pass repo-root-anchored
+      # absolute paths captured from the task's working directory.
+      - |
+        set -euo pipefail
+        root="$(pwd)"
+        {{.CRD_REF_DOCS}} \
+          --source-path="$root/api/v1alpha1" \
+          --config="$root/docs/.crd-ref-docs.yaml" \
+          --renderer=markdown \
+          --output-path="$root/docs/reference/api.md"
 
   # --- Quality ---
 

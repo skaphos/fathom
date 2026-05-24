@@ -123,7 +123,7 @@ If the local toolchain is missing required components (`kind`, `helm`, `helmfile
   - `docs:`, `test:`, `ci:`, `chore:`, `refactor:` → no bump by default
   - `!` in the type or a `BREAKING CHANGE:` footer → major bump
 - If you squash-merge, the squash commit message must also follow Conventional Commit format.
-- PRs should include: summary, motivation, the exact tests/checks that were run with their outcomes, and doc updates (`README.md`, `DESIGN.md`, `RELEASE.md`) when behavior changes.
+- PRs should include: summary, motivation, the exact tests/checks that were run with their outcomes, and doc updates (`README.md`, `docs/architecture.md`, the `docs/reference/` pages, `RELEASE.md`) when behavior changes. The CRD API reference (`docs/reference/api.md`) is generated — run `go -C tools tool task docs:api-ref` (enforced by `verify-generated`); never hand-edit it.
 
 ## Documentation Expectations
 

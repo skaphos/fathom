@@ -156,3 +156,13 @@ workloads: no service account token, non-root UID, read-only root filesystem,
 all capabilities dropped, no privilege escalation, runtime-default seccomp, and
 small CPU/memory requests. It also supports pod anti-affinity so future network
 checks can place client/server probe Pods on different nodes.
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/README.md):
+
+- [Architecture](docs/architecture.md) — CRD model, the AddonCheck → HealthCheck → ClusterHealth aggregation chain, reconcilers, adapter contract, probe-pod model.
+- [API reference](docs/reference/api.md) — generated CRD reference for `fathom.skaphos.io/v1alpha1`.
+- [Configuration reference](docs/reference/configuration.md) — every flag, env var, and config-file key.
+- [Code map](docs/code-map.md) — internal package tour for contributors.
+- [Architecture Decision Records](docs/adr/) — ADR-0001 … ADR-0004.

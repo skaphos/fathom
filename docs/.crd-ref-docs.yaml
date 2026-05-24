@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Configuration for elastic/crd-ref-docs. Drives the generated CRD API
+# reference at docs/reference/api.md (regenerated via `task docs:api-ref`).
+# Field descriptions come from the doc comments on the Go types in
+# api/v1alpha1 — keep those comments accurate, they double as CRD descriptions.
+
+processor:
+  # Status is part of the documented contract for these CRDs (consumers read
+  # HealthCheck.status / ClusterHealth.status), so it is intentionally NOT
+  # ignored. Only strip the embedded TypeMeta noise that controller-gen inlines.
+  ignoreFields:
+    - "TypeMeta$"
+  ignoreGroupVersions: []
+
+render:
+  # Emit the Kubernetes core types as plain identifiers rather than dangling
+  # links to nonexistent anchors.
+  kubernetesVersion: "1.33"
