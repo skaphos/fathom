@@ -3,7 +3,7 @@
 #
 # Kind cluster config for Fathom end-to-end testing.
 #
-# Pinned node image matches the envtest Kubernetes version (1.33) declared in
+# Pinned node image matches the envtest Kubernetes version (1.36) declared in
 # Taskfile.yml so unit and e2e suites resolve API objects against the same
 # server version. Bump kindest/node and ENVTEST_K8S_VERSION in lockstep.
 #
@@ -16,7 +16,7 @@ kind: Cluster
 name: fathom-e2e
 nodes:
   - role: control-plane
-    image: kindest/node:v1.33.1
+    image: kindest/node:v1.36.0
     # The CoreDNS adapter's dns_resolution check launches probe Pods inside
     # the cluster, so the default kindnet CNI + kube-proxy is sufficient.
     # No extraMounts, port-forwards, or registry config needed for the

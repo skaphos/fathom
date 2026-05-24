@@ -17,4 +17,4 @@ processor:
 render:
   # Emit the Kubernetes core types as plain identifiers rather than dangling
   # links to nonexistent anchors.
-  kubernetesVersion: "1.33"
+  kubernetesVersion: "1.36"
