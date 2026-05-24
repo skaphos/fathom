@@ -9,11 +9,6 @@ for and the key entrypoints to start reading from. For the design rationale see
 [architecture.md](architecture.md); for the CRD field reference see
 [reference/api.md](reference/api.md).
 
-> The repository also ships a knowledge graph under `graphify-out/`. Its
-> `GRAPH_REPORT.md` lists "god nodes" (most-connected functions) and community
-> clusters, and `graphify query "<question>"` traverses extracted + inferred
-> edges. Use it as a deeper, queryable map when this page is not enough.
-
 ## Top-level layout
 
 | Path | Responsibility |
