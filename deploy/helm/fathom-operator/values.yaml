@@ -64,6 +64,12 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
+    # Passed verbatim to the ServiceMonitor endpoint when metrics.secure=true
+    # (ignored for plaintext metrics). Default trusts the self-signed serving
+    # cert; for a CA-signed metrics cert set caFile/serverName and flip
+    # insecureSkipVerify to false.
+    tlsConfig:
+      insecureSkipVerify: true
 
 healthProbe:
   bindAddress: ":8081"

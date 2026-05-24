@@ -31,6 +31,19 @@
 
     "metrics": {
       "type": "object",
+      "$comment": "A metrics serving-cert path is only useful if a Secret backs it; require a non-empty certSecretName whenever certPath is set. Keyed on minLength because values.yaml defaults certSecretName to \"\" (always present).",
+      "allOf": [
+        {
+          "if": {
+            "required": ["certPath"],
+            "properties": {"certPath": {"minLength": 1}}
+          },
+          "then": {
+            "required": ["certSecretName"],
+            "properties": {"certSecretName": {"minLength": 1}}
+          }
+        }
+      ],
       "properties": {
         "bindAddress":   {"type": "string"},
         "secure":        {"type": "boolean"},
@@ -53,7 +66,8 @@
             "namespace":     {"type": "string"},
             "interval":      {"type": "string"},
             "scrapeTimeout": {"type": "string"},
-            "labels":        {"type": "object"}
+            "labels":        {"type": "object"},
+            "tlsConfig":     {"type": "object"}
           }
         }
       }

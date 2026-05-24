@@ -41,10 +41,10 @@ spec:
             {{- if .Values.metrics.allowInsecure }}
             - --metrics-allow-insecure
             {{- end }}
-            {{- with .Values.metrics.certPath }}
-            - --metrics-cert-path={{ . }}
-            - --metrics-cert-name={{ $.Values.metrics.certName }}
-            - --metrics-cert-key={{ $.Values.metrics.certKey }}
+            {{- if and .Values.metrics.certPath .Values.metrics.certSecretName }}
+            - --metrics-cert-path={{ .Values.metrics.certPath }}
+            - --metrics-cert-name={{ .Values.metrics.certName }}
+            - --metrics-cert-key={{ .Values.metrics.certKey }}
             {{- end }}
             - --health-probe-bind-address={{ .Values.healthProbe.bindAddress }}
             - --leader-elect={{ .Values.leaderElect }}
@@ -62,12 +62,12 @@ spec:
           ports:
             {{- if ne .Values.metrics.bindAddress "0" }}
             - name: metrics
-              containerPort: {{ trimPrefix ":" .Values.metrics.bindAddress | int }}
+              containerPort: {{ include "fathom-operator.port" .Values.metrics.bindAddress | int }}
               protocol: TCP
             {{- end }}
             {{- if and (ne .Values.healthProbe.bindAddress "") (ne .Values.healthProbe.bindAddress "0") }}
             - name: health
-              containerPort: {{ trimPrefix ":" .Values.healthProbe.bindAddress | int }}
+              containerPort: {{ include "fathom-operator.port" .Values.healthProbe.bindAddress | int }}
               protocol: TCP
             {{- end }}
           env:

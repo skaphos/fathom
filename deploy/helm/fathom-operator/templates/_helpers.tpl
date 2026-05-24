@@ -57,3 +57,13 @@ tag convention as the operator image.
 {{- define "fathom-operator.probeImage" -}}
 {{- printf "%s:%s" .Values.probeImage.repository (.Values.probeImage.tag | default (printf "v%s" .Chart.AppVersion)) -}}
 {{- end -}}
+
+{{/*
+Extract the numeric port from a controller-runtime bind address. options.go
+validates these as host:port, so values may be ":8443", "0.0.0.0:8443",
+"8443", or "[::1]:8443" — split on ":" and take the last segment rather than
+assuming the ":<port>" shorthand. Caller pipes the result through `int`.
+*/}}
+{{- define "fathom-operator.port" -}}
+{{- splitList ":" (toString .) | last -}}
+{{- end -}}

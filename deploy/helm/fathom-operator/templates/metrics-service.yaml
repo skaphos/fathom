@@ -10,7 +10,10 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - name: https
+    # Scheme-neutral name: the listener may serve HTTPS (metrics.secure=true)
+    # or plaintext HTTP (secure=false + allowInsecure). The ServiceMonitor
+    # picks the scheme from metrics.secure and references this port by name.
+    - name: metrics
       port: {{ .Values.metrics.service.port }}
       targetPort: metrics
       protocol: TCP
