@@ -5,7 +5,7 @@ Thanks for contributing to Fathom.
 ## Development Setup
 
 - Go version: see `go.mod`.
-- Tool versions: see `.tool-versions` (Go, golangci-lint, operator-sdk).
+- Tool versions: see `.tool-versions` (Go, operator-sdk). Most other tools (golangci-lint, controller-gen, etc.) are pinned in `Taskfile.yml` and invoked via `go run`.
 - Run task targets without installing Task globally:
   - `go -C tools tool task --list`
 
