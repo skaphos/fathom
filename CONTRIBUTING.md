@@ -6,6 +6,10 @@ Thanks for contributing to Fathom.
 
 - Go version: see `go.mod`.
 - Tool versions: see `.tool-versions` (Go, operator-sdk). Most other tools (golangci-lint, controller-gen, etc.) are pinned in `Taskfile.yml` and invoked via `go run`.
+- Kubernetes test + documentation versions must be kept in lockstep with the `k8s.io/*` modules in `go.mod` (see the comments in `test/e2e/fixtures/kind-cluster.yaml`):
+  - `ENVTEST_K8S_VERSION` in `Taskfile.yml`
+  - `kindest/node` image in `test/e2e/fixtures/kind-cluster.yaml`
+  - `kubernetesVersion` in `docs/.crd-ref-docs.yaml`
 - Run task targets without installing Task globally:
   - `go -C tools tool task --list`
 
