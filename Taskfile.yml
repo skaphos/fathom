@@ -71,7 +71,15 @@ tasks:
   fmt:
     desc: Format code
     cmds:
-      - '{{.GOIMPORTS_RUNNER}} -w .'
+      # Exclude controller-gen output: zz_generated*.go files carry a
+      # "DO NOT EDIT" header and are owned by the generator. goimports would
+      # otherwise add a redundant `v1` alias to version-suffixed import paths
+      # (e.g. apimachinery .../meta/v1) that controller-gen deliberately omits,
+      # which fights the `verify-generated` gate. golangci-lint already skips
+      # generated files (formatters exclusions: generated: lax), so this keeps
+      # `fmt` and `lint` consistent. gofmt (go fmt) is alias-neutral, so the
+      # generated files stay gofmt-clean below.
+      - "{{.GOIMPORTS_RUNNER}} -w $(find . -type f -name '*.go' -not -name 'zz_generated*.go' -not -path './bin/*')"
       - go fmt ./...
 
   vet:
