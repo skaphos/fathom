@@ -62,7 +62,7 @@ PRs should include:
 - Summary of what changed
 - Why the change is needed
 - Testing performed (commands and results)
-- Docs updates when behavior changes (`README.md`, `DESIGN.md`)
+- Docs updates when behavior changes (`README.md`, `docs/architecture.md`, and the `docs/reference/` pages)
 
 ## Safety Expectations
 
