@@ -1,0 +1,18 @@
+# Values for `ct install` in CI. The operator image is built locally and
+# loaded into kind as fathom-operator:ci (see .github/workflows/charts.yaml).
+# The probe image is never pulled during ct install (probe pods are launched
+# on demand, not at startup), so its tag is cosmetic here.
+image:
+  repository: fathom-operator
+  tag: ci
+  pullPolicy: IfNotPresent
+probeImage:
+  repository: ghcr.io/skaphos/fathom-probe
+  tag: ci
+# Disable secure metrics for the smoke install: the authn/authz filter needs a
+# serving certificate that the kustomize/cert-manager path normally provides,
+# which is out of scope for a bare `ct install`. Disabling the metrics listener
+# keeps the pod healthy without a cert.
+metrics:
+  bindAddress: "0"
+leaderElect: true

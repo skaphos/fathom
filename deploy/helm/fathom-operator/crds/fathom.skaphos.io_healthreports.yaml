@@ -1,0 +1,180 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: healthreports.fathom.skaphos.io
+spec:
+  group: fathom.skaphos.io
+  names:
+    kind: HealthReport
+    listKind: HealthReportList
+    plural: healthreports
+    singular: healthreport
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: HealthReport is the Schema for the healthreports API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: HealthReportSpec defines the desired state of HealthReport.
+            properties:
+              adapterName:
+                description: AdapterName is the adapter identity that produced this
+                  report.
+                type: string
+              adapterVersion:
+                description: AdapterVersion is the adapter implementation version.
+                type: string
+              addonType:
+                description: AddonType is the AddonCheck addon type used to select
+                  the adapter.
+                type: string
+              checks:
+                description: Checks are the individual observations produced by the
+                  adapter.
+                items:
+                  description: HealthReportCheck records one adapter-emitted check
+                    result.
+                  properties:
+                    details:
+                      additionalProperties:
+                        type: string
+                      description: Details is adapter-defined structured context for
+                        the check.
+                      type: object
+                    duration:
+                      description: Duration is how long this check took.
+                      type: string
+                    family:
+                      description: Family is the adapter-defined check family that
+                        produced this result.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    observedAt:
+                      description: ObservedAt is when this check completed.
+                      format: date-time
+                      type: string
+                    result:
+                      description: Result is this check's outcome.
+                      enum:
+                      - Pass
+                      - Warn
+                      - Fail
+                      - Error
+                      - Skipped
+                      - Unknown
+                      type: string
+                    summary:
+                      description: Summary is a human-readable one-line outcome description.
+                      type: string
+                    targetRef:
+                      description: TargetRef is the observed resource for this check.
+                      properties:
+                        apiVersion:
+                          description: APIVersion is the target object's API version.
+                          maxLength: 253
+                          type: string
+                        kind:
+                          description: Kind is the target object's kind.
+                          maxLength: 63
+                          type: string
+                        name:
+                          description: Name is the target object's name.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                        namespace:
+                          description: Namespace is the target object's namespace,
+                            if namespaced.
+                          maxLength: 253
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - family
+                  - observedAt
+                  - result
+                  - targetRef
+                  type: object
+                type: array
+              contractVersion:
+                description: ContractVersion is the adapter contract version used
+                  for this run.
+                type: string
+              duration:
+                description: Duration is the total adapter run duration.
+                type: string
+              observedAt:
+                description: ObservedAt is when the adapter run completed.
+                format: date-time
+                type: string
+              result:
+                description: Result is the aggregate outcome across all checks.
+                enum:
+                - Pass
+                - Warn
+                - Fail
+                - Error
+                - Skipped
+                - Unknown
+                type: string
+              sourceRef:
+                description: SourceRef identifies the check resource that produced
+                  this report.
+                properties:
+                  apiVersion:
+                    description: APIVersion is the target object's API version.
+                    maxLength: 253
+                    type: string
+                  kind:
+                    description: Kind is the target object's kind.
+                    maxLength: 63
+                    type: string
+                  name:
+                    description: Name is the target object's name.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace is the target object's namespace, if namespaced.
+                    maxLength: 253
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - observedAt
+            - result
+            - sourceRef
+            type: object
+          status:
+            description: HealthReportStatus defines the observed state of HealthReport.
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

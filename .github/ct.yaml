@@ -1,0 +1,11 @@
+# chart-testing configuration. https://github.com/helm/chart-testing
+chart-dirs:
+  - deploy/helm
+target-branch: main
+helm-extra-args: --timeout 3m
+validate-maintainers: false
+# Install in a fixed namespace so the workflow can pre-create any fixtures the
+# chart needs. ct does not delete the namespace when set explicitly — just the
+# release (identified via release-label).
+namespace: fathom-system
+release-label: app.kubernetes.io/instance

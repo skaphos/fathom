@@ -1,0 +1,135 @@
+# Default values for fathom-operator.
+# values.schema.json validates inputs at render time.
+
+# -- Operator container image. Tag defaults to "v<.Chart.AppVersion>"
+# (fathom image tags carry a leading v); set tag explicitly to override.
+image:
+  repository: ghcr.io/skaphos/fathom-operator
+  tag: ""              # defaults to v{{ .Chart.AppVersion }}
+  pullPolicy: IfNotPresent
+
+# -- Probe container image. The probe is NOT a Deployment — the operator
+# launches it as short-lived pods (see internal/probe) and passes this image
+# via --probe-image. Tag defaults to "v<.Chart.AppVersion>" to track the
+# operator release; set tag explicitly to pin a different probe build.
+probeImage:
+  repository: ghcr.io/skaphos/fathom-probe
+  tag: ""              # defaults to v{{ .Chart.AppVersion }}
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Controller replica count. Keep at 1 unless leaderElect is enabled;
+# multiple replicas without leader election run duplicate reconcilers.
+replicaCount: 1
+
+# -- Leader election. Uses coordination.k8s.io leases. When enabled the chart
+# adds a namespaced Role+RoleBinding granting lease/configmap/event access.
+leaderElect: false
+# Resource name used for the leader-election lease. Must be a DNS-1123
+# subdomain. Matches the operator's built-in default.
+leaderElectionID: "2d3dbc4f.skaphos.io"
+
+# -- Enable HTTP/2 on the metrics and webhook servers. Off by default
+# (mitigates HTTP/2 rapid-reset style CVEs).
+enableHTTP2: false
+
+# -- Metrics server. Fathom serves metrics with controller-runtime's built-in
+# authn/authz filter (TokenReview + SubjectAccessReview) — there is no
+# kube-rbac-proxy sidecar.
+metrics:
+  # Bind address. ":8443" serves HTTPS; "0" disables the metrics server.
+  bindAddress: ":8443"
+  # Serve over HTTPS with the authn/authz filter. Strongly recommended.
+  secure: true
+  # Explicit opt-in to serve plaintext metrics on a cluster-routable port
+  # (secure=false with bindAddress != "0"). Only for service-mesh-fronted
+  # deployments; the operator refuses insecure-on-network otherwise.
+  allowInsecure: false
+  # Optional metrics serving certificate, mounted from a Secret. When set,
+  # the operator reads tls.crt/tls.key from this directory.
+  certPath: ""        # e.g. /tmp/k8s-metrics-server/metrics-certs
+  certName: tls.crt
+  certKey: tls.key
+  certSecretName: ""  # Secret mounted at certPath when both are set
+  service:
+    # Create a ClusterIP Service exposing the HTTPS metrics port.
+    enabled: true
+    port: 8443
+  serviceMonitor:
+    enabled: false
+    namespace: ""        # defaults to release namespace
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+healthProbe:
+  bindAddress: ":8081"
+
+# -- Optional config file. When enabled the chart renders a ConfigMap from
+# `config` and mounts it at /etc/fathom/config.yaml. Viper reads it with
+# lower precedence than flags/env. Leave disabled to rely on flags only.
+config:
+  enabled: false
+  # Arbitrary viper-keyed config (e.g. metrics: {bind_address: ":8443"}).
+  data: {}
+
+# -- RBAC granted to the operator's ServiceAccount.
+rbac:
+  # Create the manager ClusterRole + binding. The rules are DERIVED from
+  # config/rbac/role.yaml via `task helm:sync` (files/manager-rules.yaml).
+  create: true
+
+# -- ServiceAccount for the operator.
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Resource requests / limits.
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# -- Pod- and container-level security context. Matches the kustomize default
+# (runAsNonRoot uid 65532, read-only root fs, drop ALL caps, RuntimeDefault).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: health
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraArgs: []
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []

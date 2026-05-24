@@ -1,0 +1,12 @@
+{{- if .Values.config.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml .Values.config.data | nindent 4 }}
+{{- end }}

@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fathom-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        {{- include "fathom-operator.labels" . | nindent 8 }}
+        control-plane: controller-manager
+      {{- if .Values.config.enabled }}
+      annotations:
+        checksum/config: {{ toYaml .Values.config.data | sha256sum }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "fathom-operator.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: {{ include "fathom-operator.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /manager
+          args:
+            - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+            - --metrics-secure={{ .Values.metrics.secure }}
+            {{- if .Values.metrics.allowInsecure }}
+            - --metrics-allow-insecure
+            {{- end }}
+            {{- with .Values.metrics.certPath }}
+            - --metrics-cert-path={{ . }}
+            - --metrics-cert-name={{ $.Values.metrics.certName }}
+            - --metrics-cert-key={{ $.Values.metrics.certKey }}
+            {{- end }}
+            - --health-probe-bind-address={{ .Values.healthProbe.bindAddress }}
+            - --leader-elect={{ .Values.leaderElect }}
+            {{- if .Values.leaderElect }}
+            - --leader-election-id={{ .Values.leaderElectionID }}
+            {{- end }}
+            - --enable-http2={{ .Values.enableHTTP2 }}
+            - --probe-image={{ include "fathom-operator.probeImage" . }}
+            {{- if .Values.config.enabled }}
+            - --config=/etc/fathom/config.yaml
+            {{- end }}
+            {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            {{- if ne .Values.metrics.bindAddress "0" }}
+            - name: metrics
+              containerPort: {{ trimPrefix ":" .Values.metrics.bindAddress | int }}
+              protocol: TCP
+            {{- end }}
+            {{- if and (ne .Values.healthProbe.bindAddress "") (ne .Values.healthProbe.bindAddress "0") }}
+            - name: health
+              containerPort: {{ trimPrefix ":" .Values.healthProbe.bindAddress | int }}
+              protocol: TCP
+            {{- end }}
+          env:
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.config.enabled }}
+            - name: config
+              mountPath: /etc/fathom
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.metrics.certPath .Values.metrics.certSecretName }}
+            - name: metrics-certs
+              mountPath: {{ .Values.metrics.certPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.config.enabled }}
+        - name: config
+          configMap:
+            name: {{ include "fathom-operator.fullname" . }}-config
+        {{- end }}
+        {{- if and .Values.metrics.certPath .Values.metrics.certSecretName }}
+        - name: metrics-certs
+          secret:
+            secretName: {{ .Values.metrics.certSecretName }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10
