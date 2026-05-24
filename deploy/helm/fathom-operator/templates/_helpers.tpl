@@ -38,7 +38,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "fathom-operator.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
-{{- default "default" .Values.serviceAccount.name -}}
+{{- /* Refuse to silently fall back to "default": binding the manager
+       ClusterRole to the namespace default SA would over-grant every
+       workload using it. Require an explicit, pre-existing SA name. */ -}}
+{{- required "serviceAccount.name is required when serviceAccount.create=false (otherwise the manager RBAC would bind to the namespace's \"default\" ServiceAccount and over-grant it)." .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
 
@@ -60,8 +63,9 @@ tag convention as the operator image.
 
 {{/*
 Extract the numeric port from a controller-runtime bind address. options.go
-validates these as host:port, so values may be ":8443", "0.0.0.0:8443",
-"8443", or "[::1]:8443" — split on ":" and take the last segment rather than
+validates these as host:port (net.SplitHostPort), so values look like ":8443",
+"0.0.0.0:8443", or "[::1]:8443" (or "0" to disable) — note a bare "8443" is
+rejected by the operator. Split on ":" and take the last segment rather than
 assuming the ":<port>" shorthand. Caller pipes the result through `int`.
 */}}
 {{- define "fathom-operator.port" -}}

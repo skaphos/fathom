@@ -74,6 +74,10 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- /* HTTP probes target the health port; only render them when the
+                 health server is actually enabled (bindAddress not "0"/""),
+                 otherwise the pod would fail probes and crash-loop. */}}
+          {{- if and (ne .Values.healthProbe.bindAddress "0") (ne .Values.healthProbe.bindAddress "") }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -81,6 +85,7 @@ spec:
           {{- with .Values.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

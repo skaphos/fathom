@@ -110,6 +110,7 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           set -euo pipefail
+          mkdir -p dist/charts
           helm package deploy/helm/fathom-operator \
             --version "${VERSION}" \
             --app-version "${VERSION}" \

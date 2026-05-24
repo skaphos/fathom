@@ -16,8 +16,14 @@ Metrics:
 {{- else if .Values.metrics.secure }}
   Served over HTTPS on {{ .Values.metrics.bindAddress }} with the
   controller-runtime authn/authz filter (TokenReview + SubjectAccessReview).
+{{- if .Values.rbac.create }}
   Scrapers need the {{ include "fathom-operator.fullname" . }}-metrics-reader
   ClusterRole bound to their identity.
+{{- else }}
+  rbac.create=false: the operator's TokenReview/SubjectAccessReview ClusterRole
+  and the metrics-reader ClusterRole are NOT created by this chart. Provision
+  both out-of-band, or scraping (and operator startup) will fail.
+{{- end }}
 {{- else if .Values.metrics.allowInsecure }}
   *** WARNING *** plaintext HTTP metrics on {{ .Values.metrics.bindAddress }}
   (metrics.secure=false, metrics.allowInsecure=true). Only safe behind a
@@ -30,7 +36,10 @@ Metrics:
 
 Leader election:
 {{- if .Values.leaderElect }}
-  Enabled (lease {{ .Values.leaderElectionID }}). Namespaced Role+RoleBinding created.
+  Enabled (lease {{ .Values.leaderElectionID }}).
+  {{- if .Values.rbac.create }} Namespaced Role+RoleBinding created.
+  {{- else }} rbac.create=false: provision the lease Role+RoleBinding out-of-band.
+  {{- end }}
 {{- else }}
   Disabled. Keep replicaCount at 1.
 {{- end }}

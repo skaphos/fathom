@@ -25,8 +25,9 @@ fullnameOverride: ""
 # multiple replicas without leader election run duplicate reconcilers.
 replicaCount: 1
 
-# -- Leader election. Uses coordination.k8s.io leases. When enabled the chart
-# adds a namespaced Role+RoleBinding granting lease/configmap/event access.
+# -- Leader election. Uses coordination.k8s.io leases. When enabled (and
+# rbac.create=true) the chart adds a namespaced Role+RoleBinding granting
+# lease/configmap/event access; with rbac.create=false, provision it yourself.
 leaderElect: false
 # Resource name used for the leader-election lease. Must be a DNS-1123
 # subdomain. Matches the operator's built-in default.
