@@ -16,10 +16,12 @@ permissions:
 jobs:
   dco:
     name: DCO
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
       - name: Verify Signed-off-by on PR commits
@@ -44,11 +46,13 @@ jobs:
 
   reuse:
     name: REUSE
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v6.2.0
         with:
           # Pinned so CI doesn't pick up a new Python minor mid-stream;
           # ratchet manually when intentionally upgrading.
@@ -62,10 +66,12 @@ jobs:
 
   generated:
     name: Verify Generated
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
       - name: Re-run generators and check for drift
@@ -73,10 +79,12 @@ jobs:
 
   lint:
     name: Lint
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
       - name: Run lint task
@@ -84,10 +92,12 @@ jobs:
 
   test:
     name: Test
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
       - name: Run test task
@@ -96,7 +106,7 @@ jobs:
         run: ./scripts/check-coverage.sh coverage.out
       - name: Upload coverage artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: coverage-${{ github.sha }}
           path: coverage.out
@@ -105,10 +115,12 @@ jobs:
 
   quality:
     name: Static Analysis
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
       - name: Run staticcheck task
@@ -118,6 +130,8 @@ jobs:
 
   build:
     name: Build
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     needs: [dco, reuse, generated, lint, test, quality]
     # `dco` is skipped on push events (PR-only). GitHub Actions normally
@@ -135,8 +149,8 @@ jobs:
         (needs.dco.result == 'success' || needs.dco.result == 'skipped')
       }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
       - name: Run build task
@@ -144,6 +158,8 @@ jobs:
 
   summary:
     name: CI Summary
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     needs: [dco, reuse, generated, lint, test, quality, build]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
