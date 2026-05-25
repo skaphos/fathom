@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -75,6 +76,12 @@ type AddonCheckReconciler struct {
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
 // the registry is available to the reconciler.
 func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		metrics.RecordReconcile("AddonCheck", outcome, time.Since(start))
+	}()
+
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
 	var check fathomv1alpha1.AddonCheck
@@ -200,6 +207,36 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	if result.Duration == 0 {
 		result.Duration = time.Since(started)
 	}
+
+	// Record adapter execution metrics (SKA-290)
+	outcome := "pass"
+	if runErr != nil {
+		outcome = "error"
+	} else if len(result.Checks) > 0 {
+		// Simple first-cut: use the worst outcome from the checks.
+		// Can be refined later.
+		for _, c := range result.Checks {
+			if c.Outcome == adapter.OutcomeFail || c.Outcome == adapter.OutcomeError {
+				outcome = string(c.Outcome)
+				break
+			}
+			if c.Outcome == adapter.OutcomeWarn && outcome == "pass" {
+				outcome = string(c.Outcome)
+			}
+		}
+	}
+
+	// Record per enabled family so the histogram has proper per-family
+	// cardinality (SKA-290).
+	for f := range addonCheckPolicy(check) {
+		metrics.RecordAdapterRun(
+			selectedAdapter.Name(),
+			string(f),
+			outcome,
+			result.Duration,
+		)
+	}
+
 
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
 	if r.Scheme != nil {

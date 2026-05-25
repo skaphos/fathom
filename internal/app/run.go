@@ -33,6 +33,7 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/externalsecrets"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -173,6 +174,7 @@ func BuildAdapterRegistry(logger logr.Logger, adapters ...adapter.Adapter) (*reg
 		if err := adapterRegistry.Register(a); err != nil {
 			return nil, fmt.Errorf("register built-in adapter %q: %w", adapterName(a), err)
 		}
+		metrics.AdapterRegistered.WithLabelValues(a.Name()).Set(1)
 	}
 	return adapterRegistry, nil
 }
