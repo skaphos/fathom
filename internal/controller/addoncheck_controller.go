@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -75,6 +76,12 @@ type AddonCheckReconciler struct {
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
 // the registry is available to the reconciler.
 func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		metrics.RecordReconcile("AddonCheck", outcome, time.Since(start))
+	}()
+
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
 	var check fathomv1alpha1.AddonCheck
