@@ -226,9 +226,16 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		}
 	}
 
+	// Compute a representative family label from the policy for better cardinality
+	family := "overall"
+	for f := range addonCheckPolicy(check) {
+		family = string(f)
+		break // use the first enabled family as the representative label
+	}
+
 	metrics.AdapterRunDuration.WithLabelValues(
 		selectedAdapter.Name(),
-		"overall", // placeholder; can be per-family in follow-up
+		family,
 		outcome,
 	).Observe(result.Duration.Seconds())
 

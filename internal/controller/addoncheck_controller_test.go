@@ -129,12 +129,21 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		adapterFound := false
+		familyLabelImproved := false
 		for _, mf := range adapterMfs {
 			if mf.GetName() == "fathom_adapter_run_duration_seconds" {
 				adapterFound = true
+				for _, m := range mf.GetMetric() {
+					for _, lp := range m.GetLabel() {
+						if lp.GetName() == "family" && lp.GetValue() != "overall" {
+							familyLabelImproved = true
+						}
+					}
+				}
 			}
 		}
 		Expect(adapterFound).To(BeTrue(), "expected fathom_adapter_run_duration_seconds to be recorded")
+		Expect(familyLabelImproved).To(BeTrue(), "expected family label to be something other than the old 'overall' placeholder")
 	})
 
 	It("sets Ready false when paused", func() {
