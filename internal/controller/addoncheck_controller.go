@@ -226,18 +226,16 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		}
 	}
 
-	// Compute a representative family label from the policy for better cardinality
-	family := "overall"
+	// Record per enabled family so the histogram has proper per-family
+	// cardinality (SKA-290).
 	for f := range addonCheckPolicy(check) {
-		family = string(f)
-		break // use the first enabled family as the representative label
+		metrics.RecordAdapterRun(
+			selectedAdapter.Name(),
+			string(f),
+			outcome,
+			result.Duration,
+		)
 	}
-
-	metrics.AdapterRunDuration.WithLabelValues(
-		selectedAdapter.Name(),
-		family,
-		outcome,
-	).Observe(result.Duration.Seconds())
 
 
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
