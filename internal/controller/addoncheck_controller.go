@@ -208,6 +208,31 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		result.Duration = time.Since(started)
 	}
 
+	// Record adapter execution metrics (SKA-290)
+	outcome := "pass"
+	if runErr != nil {
+		outcome = "error"
+	} else if len(result.Checks) > 0 {
+		// Simple first-cut: use the worst outcome from the checks.
+		// Can be refined later.
+		for _, c := range result.Checks {
+			if c.Outcome == adapter.OutcomeFail || c.Outcome == adapter.OutcomeError {
+				outcome = string(c.Outcome)
+				break
+			}
+			if c.Outcome == adapter.OutcomeWarn && outcome == "pass" {
+				outcome = string(c.Outcome)
+			}
+		}
+	}
+
+	metrics.AdapterRunDuration.WithLabelValues(
+		selectedAdapter.Name(),
+		"overall", // placeholder; can be per-family in follow-up
+		outcome,
+	).Observe(result.Duration.Seconds())
+
+
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
 	if r.Scheme != nil {
 		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
