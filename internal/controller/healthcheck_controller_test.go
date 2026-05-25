@@ -16,7 +16,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	"github.com/skaphos/fathom/internal/metrics"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 )
 
@@ -89,6 +91,33 @@ var _ = Describe("HealthCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		Expect(ready.Reason).To(Equal("TargetMirrored"))
+
+		// Smoke test: the reconciler now records metrics via RecordReconcile.
+		// We mainly verify it doesn't panic and that we can interact with the metric.
+		metrics.ReconcileTotal.Reset()
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-mirror-pass", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// After the reconcile we should be able to see at least the series we just created.
+		// Using Gather from the controller-runtime registry (where our metrics live).
+		mfs, err := ctrlmetrics.Registry.Gather()
+		Expect(err).NotTo(HaveOccurred())
+
+		found := false
+		for _, mf := range mfs {
+			if mf.GetName() == "fathom_reconcile_total" {
+				for _, m := range mf.GetMetric() {
+					for _, lp := range m.GetLabel() {
+						if lp.GetName() == "kind" && lp.GetValue() == "HealthCheck" {
+							found = true
+						}
+					}
+				}
+			}
+		}
+		Expect(found).To(BeTrue(), "expected to find a fathom_reconcile_total series for kind=HealthCheck")
 	})
 
 	It("records TargetNotFound when the referenced AddonCheck does not exist", func() {
