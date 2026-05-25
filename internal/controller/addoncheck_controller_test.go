@@ -119,6 +119,22 @@ var _ = Describe("AddonCheck Controller", func() {
 			}
 		}
 		Expect(found).To(BeTrue(), "expected fathom_reconcile_total series for kind=AddonCheck")
+
+		// Smoke test for adapter execution metrics (SKA-290)
+		metrics.AdapterRunDuration.Reset()
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		adapterMfs, err := ctrlmetrics.Registry.Gather()
+		Expect(err).NotTo(HaveOccurred())
+
+		adapterFound := false
+		for _, mf := range adapterMfs {
+			if mf.GetName() == "fathom_adapter_run_duration_seconds" {
+				adapterFound = true
+			}
+		}
+		Expect(adapterFound).To(BeTrue(), "expected fathom_adapter_run_duration_seconds to be recorded")
 	})
 
 	It("sets Ready false when paused", func() {
