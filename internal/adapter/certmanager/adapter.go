@@ -144,7 +144,23 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 		checks = append(checks, a.checkCertificates(ctx, req.Client, certPolicy)...)
 	}
 
-	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
+	duration := time.Since(started)
+
+	// Record per family that was actually executed
+	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
+		outcome := worstOutcome(checks)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), outcome, duration)
+	}
+	if _, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
+		outcome := worstOutcome(checks)
+		metrics.RecordAdapterRun(Name, string(FamilyIssuerHealth), outcome, duration)
+	}
+	if _, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
+		outcome := worstOutcome(checks)
+		metrics.RecordAdapterRun(Name, string(FamilyCertHealth), outcome, duration)
+	}
+
+	return adapter.Result{Checks: checks, Duration: duration}, nil
 }
 
 func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
@@ -719,4 +735,20 @@ func check(family adapter.Family, target adapter.TargetRef, outcome adapter.Outc
 		ObservedAt: time.Now(),
 		Duration:   time.Since(started),
 	}
+}
+
+// worstOutcome returns a simple string outcome based on the checks.
+// Pragmatic implementation for the adapter metrics (SKA-290).
+func worstOutcome(checks []adapter.CheckResult) string {
+	for _, c := range checks {
+		if c.Outcome == adapter.OutcomeError || c.Outcome == adapter.OutcomeFail {
+			return string(c.Outcome)
+		}
+	}
+	for _, c := range checks {
+		if c.Outcome == adapter.OutcomeWarn {
+			return string(c.Outcome)
+		}
+	}
+	return "pass"
 }

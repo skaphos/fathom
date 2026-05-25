@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/skaphos/fathom/internal/adapter/crdutil"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -98,7 +99,20 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 	if len(checks) == 0 {
 		checks = append(checks, skipped(req.Target, "all External Secrets Operator check families are disabled by policy"))
 	}
-	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
+
+	duration := time.Since(started)
+
+	// Record per family that was actually executed
+	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
+		outcome := worstOutcome(checks)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), outcome, duration)
+	}
+	if _, enabled := familyPolicy(req.Policy, FamilySecretSync, true); enabled {
+		outcome := worstOutcome(checks)
+		metrics.RecordAdapterRun(Name, string(FamilySecretSync), outcome, duration)
+	}
+
+	return adapter.Result{Checks: checks, Duration: duration}, nil
 }
 
 func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
@@ -435,4 +449,20 @@ func familyForTarget(target adapter.TargetRef) adapter.Family {
 		return FamilySecretSync
 	}
 	return FamilySystemHealth
+}
+
+// worstOutcome returns a simple string outcome based on the checks.
+// Pragmatic implementation for the adapter metrics (SKA-290).
+func worstOutcome(checks []adapter.CheckResult) string {
+	for _, c := range checks {
+		if c.Outcome == adapter.OutcomeError || c.Outcome == adapter.OutcomeFail {
+			return string(c.Outcome)
+		}
+	}
+	for _, c := range checks {
+		if c.Outcome == adapter.OutcomeWarn {
+			return string(c.Outcome)
+		}
+	}
+	return "pass"
 }
