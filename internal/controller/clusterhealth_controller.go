@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"sort"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/skaphos/fathom/internal/metrics"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 )
 
@@ -47,6 +49,12 @@ type ClusterHealthReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=clusterhealths/finalizers,verbs=update
 
 func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		metrics.RecordReconcile("ClusterHealth", outcome, time.Since(start))
+	}()
+
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
 	var ch fathomv1alpha1.ClusterHealth
