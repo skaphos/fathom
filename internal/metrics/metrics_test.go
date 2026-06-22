@@ -11,20 +11,29 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// Adapter outcome label values mirror pkg/adapter.Outcome ("Pass"/"Warn"/
+// "Fail"/"Error"); these tests use the same casing the adapters emit so the
+// documented label set matches production.
+//
+// Each test that writes to the package-level collectors Resets them first so
+// the suite stays order-independent (the collectors are process-global).
+
 func TestMetricsAreValidCollectors(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	require.NoError(t, reg.Register(ReconcileTotal))
-	require.NoError(t, reg.Register(ReconcileDuration))
-	require.NoError(t, reg.Register(AdapterRunDuration))
-	require.NoError(t, reg.Register(AdapterRegistered))
+	for _, c := range []prometheus.Collector{ReconcileTotal, ReconcileDuration, AdapterRunDuration, AdapterRegistered} {
+		if err := reg.Register(c); err != nil {
+			t.Fatalf("register collector: %v", err)
+		}
+	}
 }
 
 func TestReconcileMetrics(t *testing.T) {
+	ReconcileTotal.Reset()
+	ReconcileDuration.Reset()
+
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(ReconcileTotal, ReconcileDuration)
 
@@ -36,7 +45,9 @@ func TestReconcileMetrics(t *testing.T) {
 	ReconcileDuration.WithLabelValues("AddonCheck").Observe(1.234)
 
 	mfs, err := reg.Gather()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
 
 	var totalCount float64
 	for _, mf := range mfs {
@@ -46,31 +57,43 @@ func TestReconcileMetrics(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, 5.0, totalCount)
+	if totalCount != 5.0 {
+		t.Errorf("fathom_reconcile_total sum = %v, want 5", totalCount)
+	}
 }
 
 func TestAdapterMetrics(t *testing.T) {
+	AdapterRunDuration.Reset()
+	AdapterRegistered.Reset()
+
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(AdapterRunDuration, AdapterRegistered)
 
-	AdapterRunDuration.WithLabelValues("coredns", "dns_resolution", "pass").Observe(0.015)
-	AdapterRunDuration.WithLabelValues("cert-manager", "system_health", "fail").Observe(2.7)
+	AdapterRunDuration.WithLabelValues("coredns", "dns_resolution", "Pass").Observe(0.015)
+	AdapterRunDuration.WithLabelValues("cert-manager", "system_health", "Fail").Observe(2.7)
 
 	AdapterRegistered.WithLabelValues("coredns").Set(1)
 	AdapterRegistered.WithLabelValues("cert-manager").Set(1)
 	AdapterRegistered.WithLabelValues("external-secrets").Set(1)
 
 	var m dto.Metric
-	err := AdapterRegistered.WithLabelValues("coredns").Write(&m)
-	require.NoError(t, err)
-	assert.Equal(t, 1.0, *m.Gauge.Value)
+	if err := AdapterRegistered.WithLabelValues("coredns").Write(&m); err != nil {
+		t.Fatalf("write gauge: %v", err)
+	}
+	if got := m.GetGauge().GetValue(); got != 1.0 {
+		t.Errorf("fathom_adapter_registered{adapter=coredns} = %v, want 1", got)
+	}
 }
 
 func TestMetricsCanBeUsedFromOtherPackages(t *testing.T) {
-	// This test documents the intended usage pattern from reconcilers and adapters.
-	// We just exercise the vars to ensure they are exported and usable.
+	// Documents the intended usage from reconcilers and adapters: the vars are
+	// exported and writable. Reset first so this does not perturb other tests.
+	ReconcileTotal.Reset()
+	AdapterRunDuration.Reset()
+	AdapterRegistered.Reset()
+
 	ReconcileTotal.WithLabelValues("ClusterHealth", "success").Inc()
-	AdapterRunDuration.WithLabelValues("external-secrets", "system_health", "pass").Observe(0.5)
+	AdapterRunDuration.WithLabelValues("external-secrets", "system_health", "Pass").Observe(0.5)
 	AdapterRegistered.WithLabelValues("external-secrets").Set(1)
 }
 
@@ -80,11 +103,13 @@ func TestRecordAdapterRunHelper(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(AdapterRunDuration)
 
-	RecordAdapterRun("coredns", "dns_resolution", "pass", 42*time.Millisecond)
-	RecordAdapterRun("cert-manager", "system_health", "fail", 1*time.Second)
+	RecordAdapterRun("coredns", "dns_resolution", "Pass", 42*time.Millisecond)
+	RecordAdapterRun("cert-manager", "system_health", "Fail", 1*time.Second)
 
 	mfs, err := reg.Gather()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
 
 	var total uint64
 	for _, mf := range mfs {
@@ -94,21 +119,24 @@ func TestRecordAdapterRunHelper(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, uint64(2), total)
+	if total != 2 {
+		t.Errorf("adapter run histogram sample count = %d, want 2", total)
+	}
 }
 
 func TestRecordReconcileHelper(t *testing.T) {
 	ReconcileTotal.Reset()
 	ReconcileDuration.Reset()
 
-	// Simulate what a reconciler would do
 	RecordReconcile("HealthCheck", "success", 123*time.Millisecond)
 	RecordReconcile("AddonCheck", "error", 2*time.Second)
 
 	mfs, err := ctrlmetrics.Registry.Gather()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
 
-	total := float64(0)
+	var total float64
 	for _, mf := range mfs {
 		if mf.GetName() == "fathom_reconcile_total" {
 			for _, m := range mf.GetMetric() {
@@ -116,5 +144,7 @@ func TestRecordReconcileHelper(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, 2.0, total)
+	if total != 2.0 {
+		t.Errorf("fathom_reconcile_total sum = %v, want 2", total)
+	}
 }

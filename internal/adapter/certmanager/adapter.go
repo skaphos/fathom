@@ -109,6 +109,12 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 	if len(namespaces) == 0 {
 		namespaces = []string{defaultNamespace}
 	}
+
+	// Per-family timing for fathom_adapter_run_duration_seconds: time each
+	// family independently so a multi-family run does not observe the same
+	// wall-clock duration more than once (SKA-290).
+	var issuerDur, certDur time.Duration
+	systemStart := time.Now()
 	if enabled {
 		restartWarnCount := restartWarnCount(systemPolicy)
 
@@ -137,27 +143,32 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 			}
 		}
 	}
+	systemDur := time.Since(systemStart)
 	if issuerPolicy, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
+		issuerStart := time.Now()
 		checks = append(checks, a.checkIssuers(ctx, req.Client, issuerPolicy)...)
+		issuerDur = time.Since(issuerStart)
 	}
 	if certPolicy, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
+		certStart := time.Now()
 		checks = append(checks, a.checkCertificates(ctx, req.Client, certPolicy)...)
+		certDur = time.Since(certStart)
 	}
 
-	duration := time.Since(started)
-
-	// Record per family that was actually executed
+	// Record per family that ran, with that family's own duration. FamilyOutcome
+	// considers only that family's checks, so one family's failure does not
+	// taint another's metric (SKA-290).
 	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), familyOutcome(checks, FamilySystemHealth), duration)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), string(adapter.FamilyOutcome(checks, FamilySystemHealth)), systemDur)
 	}
 	if _, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
-		metrics.RecordAdapterRun(Name, string(FamilyIssuerHealth), familyOutcome(checks, FamilyIssuerHealth), duration)
+		metrics.RecordAdapterRun(Name, string(FamilyIssuerHealth), string(adapter.FamilyOutcome(checks, FamilyIssuerHealth)), issuerDur)
 	}
 	if _, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
-		metrics.RecordAdapterRun(Name, string(FamilyCertHealth), familyOutcome(checks, FamilyCertHealth), duration)
+		metrics.RecordAdapterRun(Name, string(FamilyCertHealth), string(adapter.FamilyOutcome(checks, FamilyCertHealth)), certDur)
 	}
 
-	return adapter.Result{Checks: checks, Duration: duration}, nil
+	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
 }
 
 func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
@@ -732,25 +743,4 @@ func check(family adapter.Family, target adapter.TargetRef, outcome adapter.Outc
 		ObservedAt: time.Now(),
 		Duration:   time.Since(started),
 	}
-}
-
-// familyOutcome returns the worst outcome among checks belonging to family,
-// as a fathom_adapter_run_duration_seconds{outcome} label value. Families are
-// independent — a failure in one must not taint another family's metric — so
-// only that family's checks are considered. Values use adapter.Outcome casing
-// ("Pass"/"Warn"/"Fail"/"Error") for a consistent label set (SKA-290).
-func familyOutcome(checks []adapter.CheckResult, family adapter.Family) string {
-	worst := adapter.OutcomePass
-	for _, c := range checks {
-		if c.Family != family {
-			continue
-		}
-		switch c.Outcome {
-		case adapter.OutcomeError, adapter.OutcomeFail:
-			return string(c.Outcome)
-		case adapter.OutcomeWarn:
-			worst = adapter.OutcomeWarn
-		}
-	}
-	return string(worst)
 }

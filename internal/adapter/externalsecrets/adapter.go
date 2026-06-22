@@ -90,27 +90,25 @@ func (Adapter) Capabilities() adapter.Capabilities {
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
 	started := time.Now()
 	checks := []adapter.CheckResult{}
+	// Record fathom_adapter_run_duration_seconds per family inside its own
+	// branch, timing and labelling each family independently (SKA-290).
 	if systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		checks = append(checks, a.checkSystemHealth(ctx, req.Client, systemPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkSystemHealth(ctx, req.Client, systemPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), string(adapter.FamilyOutcome(familyChecks, FamilySystemHealth)), time.Since(familyStart))
 	}
 	if syncPolicy, enabled := familyPolicy(req.Policy, FamilySecretSync, true); enabled {
-		checks = append(checks, a.checkSecretSync(ctx, req.Client, syncPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkSecretSync(ctx, req.Client, syncPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilySecretSync), string(adapter.FamilyOutcome(familyChecks, FamilySecretSync)), time.Since(familyStart))
 	}
 	if len(checks) == 0 {
 		checks = append(checks, skipped(req.Target, "all External Secrets Operator check families are disabled by policy"))
 	}
 
-	duration := time.Since(started)
-
-	// Record per family that was actually executed
-	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), familyOutcome(checks, FamilySystemHealth), duration)
-	}
-	if _, enabled := familyPolicy(req.Policy, FamilySecretSync, true); enabled {
-		metrics.RecordAdapterRun(Name, string(FamilySecretSync), familyOutcome(checks, FamilySecretSync), duration)
-	}
-
-	return adapter.Result{Checks: checks, Duration: duration}, nil
+	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
 }
 
 func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
@@ -447,25 +445,4 @@ func familyForTarget(target adapter.TargetRef) adapter.Family {
 		return FamilySecretSync
 	}
 	return FamilySystemHealth
-}
-
-// familyOutcome returns the worst outcome among checks belonging to family,
-// as a fathom_adapter_run_duration_seconds{outcome} label value. Families are
-// independent — a failure in one must not taint another family's metric — so
-// only that family's checks are considered. Values use adapter.Outcome casing
-// ("Pass"/"Warn"/"Fail"/"Error") for a consistent label set (SKA-290).
-func familyOutcome(checks []adapter.CheckResult, family adapter.Family) string {
-	worst := adapter.OutcomePass
-	for _, c := range checks {
-		if c.Family != family {
-			continue
-		}
-		switch c.Outcome {
-		case adapter.OutcomeError, adapter.OutcomeFail:
-			return string(c.Outcome)
-		case adapter.OutcomeWarn:
-			worst = adapter.OutcomeWarn
-		}
-	}
-	return string(worst)
 }
