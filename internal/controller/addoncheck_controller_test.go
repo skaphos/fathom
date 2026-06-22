@@ -33,9 +33,14 @@ func (fakeAddonAdapter) ContractVersion() string { return adapter.ContractVersio
 func (fakeAddonAdapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{AddonTypes: []string{"cert-manager"}, Families: []adapter.Family{"system_health"}}
 }
-func (fakeAddonAdapter) Run(_ context.Context, req adapter.Request) (adapter.Result, error) {
+func (f fakeAddonAdapter) Run(_ context.Context, req adapter.Request) (adapter.Result, error) {
+	duration := 25 * time.Millisecond
+	// Mirror real adapters: self-instrument fathom_adapter_run_duration_seconds
+	// per executed family (SKA-290 / SKA-504). The controller no longer records
+	// this metric, so the fake must, for the controller metrics test to observe it.
+	metrics.RecordAdapterRun(f.Name(), "system_health", "pass", duration)
 	return adapter.Result{
-		Duration: 25 * time.Millisecond,
+		Duration: duration,
 		Checks: []adapter.CheckResult{{
 			Family:  adapter.Family("system_health"),
 			Outcome: adapter.OutcomePass,

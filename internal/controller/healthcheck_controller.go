@@ -49,14 +49,17 @@ type HealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
 
-func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	start := time.Now()
 	defer func() {
 		// Record at the very end so we capture the full duration of the reconcile,
-		// including any status updates or error paths.
+		// including any status updates or error paths. outcome distinguishes a
+		// returned error from a clean reconcile (requeue/no-op refinements can
+		// come later).
 		outcome := "success"
-		// For now we use a simple outcome model. This can be refined later
-		// (e.g. "requeue", "no-op", more granular error types).
+		if err != nil {
+			outcome = "error"
+		}
 		metrics.RecordReconcile("HealthCheck", outcome, time.Since(start))
 	}()
 

@@ -75,10 +75,13 @@ type AddonCheckReconciler struct {
 // Reconcile records that the AddonCheck spec has been observed. Adapter
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
 // the registry is available to the reconciler.
-func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	start := time.Now()
 	defer func() {
 		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
 		metrics.RecordReconcile("AddonCheck", outcome, time.Since(start))
 	}()
 
@@ -208,34 +211,10 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		result.Duration = time.Since(started)
 	}
 
-	// Record adapter execution metrics (SKA-290)
-	outcome := "pass"
-	if runErr != nil {
-		outcome = "error"
-	} else if len(result.Checks) > 0 {
-		// Simple first-cut: use the worst outcome from the checks.
-		// Can be refined later.
-		for _, c := range result.Checks {
-			if c.Outcome == adapter.OutcomeFail || c.Outcome == adapter.OutcomeError {
-				outcome = string(c.Outcome)
-				break
-			}
-			if c.Outcome == adapter.OutcomeWarn && outcome == "pass" {
-				outcome = string(c.Outcome)
-			}
-		}
-	}
-
-	// Record per enabled family so the histogram has proper per-family
-	// cardinality (SKA-290).
-	for f := range addonCheckPolicy(check) {
-		metrics.RecordAdapterRun(
-			selectedAdapter.Name(),
-			string(f),
-			outcome,
-			result.Duration,
-		)
-	}
+	// fathom_adapter_run_duration_seconds is recorded by each adapter's Run()
+	// per executed family — the adapter owns the accurate per-family outcome
+	// and duration. The controller deliberately does not record it here;
+	// doing so double-counts the histogram. See SKA-290 / SKA-504.
 
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
 	if r.Scheme != nil {
