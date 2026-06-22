@@ -237,7 +237,6 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		)
 	}
 
-
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
 	if r.Scheme != nil {
 		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {

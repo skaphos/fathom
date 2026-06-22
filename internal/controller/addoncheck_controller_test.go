@@ -16,8 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
@@ -97,41 +97,64 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(paused).NotTo(BeNil())
 		Expect(paused.Status).To(Equal(metav1.ConditionTrue))
 		Expect(paused.Reason).To(Equal("Paused"))
+	})
 
-		// Smoke test for AddonCheckReconciler instrumentation (SKA-290)
+	It("records reconcile and adapter execution metrics (SKA-290)", func() {
+		// A paused check or one with no adapter never reaches runAddonCheck,
+		// so adapter metrics are exercised here with a non-paused check, a
+		// registered adapter, and a policy with an enabled family — the only
+		// path on which RecordAdapterRun fires (once per enabled family).
+		typeNamespacedName := types.NamespacedName{
+			Name:      "addoncheck-metrics",
+			Namespace: "default",
+		}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typeNamespacedName.Name,
+				Namespace: typeNamespacedName.Namespace,
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "cert-manager",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					"system_health": {Enabled: true},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		controllerReconciler := &AddonCheckReconciler{
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
+			Adapters: adapters,
+		}
+
 		metrics.ReconcileTotal.Reset()
-		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		metrics.AdapterRunDuration.Reset()
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
 		mfs, err := ctrlmetrics.Registry.Gather()
 		Expect(err).NotTo(HaveOccurred())
 
-		found := false
+		reconcileFound := false
+		adapterFound := false
+		familyLabelImproved := false
 		for _, mf := range mfs {
-			if mf.GetName() == "fathom_reconcile_total" {
+			switch mf.GetName() {
+			case "fathom_reconcile_total":
 				for _, m := range mf.GetMetric() {
 					for _, lp := range m.GetLabel() {
 						if lp.GetName() == "kind" && lp.GetValue() == "AddonCheck" {
-							found = true
+							reconcileFound = true
 						}
 					}
 				}
-			}
-		}
-		Expect(found).To(BeTrue(), "expected fathom_reconcile_total series for kind=AddonCheck")
-
-		// Smoke test for adapter execution metrics (SKA-290)
-		metrics.AdapterRunDuration.Reset()
-		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
-		Expect(err).NotTo(HaveOccurred())
-
-		adapterMfs, err := ctrlmetrics.Registry.Gather()
-		Expect(err).NotTo(HaveOccurred())
-
-		adapterFound := false
-		familyLabelImproved := false
-		for _, mf := range adapterMfs {
-			if mf.GetName() == "fathom_adapter_run_duration_seconds" {
+			case "fathom_adapter_run_duration_seconds":
 				adapterFound = true
 				for _, m := range mf.GetMetric() {
 					for _, lp := range m.GetLabel() {
@@ -142,6 +165,7 @@ var _ = Describe("AddonCheck Controller", func() {
 				}
 			}
 		}
+		Expect(reconcileFound).To(BeTrue(), "expected fathom_reconcile_total series for kind=AddonCheck")
 		Expect(adapterFound).To(BeTrue(), "expected fathom_adapter_run_duration_seconds to be recorded")
 		Expect(familyLabelImproved).To(BeTrue(), "expected family label to be something other than the old 'overall' placeholder")
 	})
