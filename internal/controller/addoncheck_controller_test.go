@@ -38,7 +38,7 @@ func (f fakeAddonAdapter) Run(_ context.Context, req adapter.Request) (adapter.R
 	// Mirror real adapters: self-instrument fathom_adapter_run_duration_seconds
 	// per executed family (SKA-290 / SKA-504). The controller no longer records
 	// this metric, so the fake must, for the controller metrics test to observe it.
-	metrics.RecordAdapterRun(f.Name(), "system_health", "pass", duration)
+	metrics.RecordAdapterRun(f.Name(), "system_health", string(adapter.OutcomePass), duration)
 	return adapter.Result{
 		Duration: duration,
 		Checks: []adapter.CheckResult{{

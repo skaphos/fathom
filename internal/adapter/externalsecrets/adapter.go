@@ -104,12 +104,10 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 
 	// Record per family that was actually executed
 	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		outcome := worstOutcome(checks)
-		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), outcome, duration)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), familyOutcome(checks, FamilySystemHealth), duration)
 	}
 	if _, enabled := familyPolicy(req.Policy, FamilySecretSync, true); enabled {
-		outcome := worstOutcome(checks)
-		metrics.RecordAdapterRun(Name, string(FamilySecretSync), outcome, duration)
+		metrics.RecordAdapterRun(Name, string(FamilySecretSync), familyOutcome(checks, FamilySecretSync), duration)
 	}
 
 	return adapter.Result{Checks: checks, Duration: duration}, nil
@@ -451,18 +449,23 @@ func familyForTarget(target adapter.TargetRef) adapter.Family {
 	return FamilySystemHealth
 }
 
-// worstOutcome returns a simple string outcome based on the checks.
-// Pragmatic implementation for the adapter metrics (SKA-290).
-func worstOutcome(checks []adapter.CheckResult) string {
+// familyOutcome returns the worst outcome among checks belonging to family,
+// as a fathom_adapter_run_duration_seconds{outcome} label value. Families are
+// independent — a failure in one must not taint another family's metric — so
+// only that family's checks are considered. Values use adapter.Outcome casing
+// ("Pass"/"Warn"/"Fail"/"Error") for a consistent label set (SKA-290).
+func familyOutcome(checks []adapter.CheckResult, family adapter.Family) string {
+	worst := adapter.OutcomePass
 	for _, c := range checks {
-		if c.Outcome == adapter.OutcomeError || c.Outcome == adapter.OutcomeFail {
+		if c.Family != family {
+			continue
+		}
+		switch c.Outcome {
+		case adapter.OutcomeError, adapter.OutcomeFail:
 			return string(c.Outcome)
+		case adapter.OutcomeWarn:
+			worst = adapter.OutcomeWarn
 		}
 	}
-	for _, c := range checks {
-		if c.Outcome == adapter.OutcomeWarn {
-			return string(c.Outcome)
-		}
-	}
-	return "pass"
+	return string(worst)
 }
