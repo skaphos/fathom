@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/skaphos/fathom/internal/adapter/crdutil"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -89,15 +90,24 @@ func (Adapter) Capabilities() adapter.Capabilities {
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
 	started := time.Now()
 	checks := []adapter.CheckResult{}
+	// Record fathom_adapter_run_duration_seconds per family inside its own
+	// branch, timing and labelling each family independently (SKA-290).
 	if systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		checks = append(checks, a.checkSystemHealth(ctx, req.Client, systemPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkSystemHealth(ctx, req.Client, systemPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), string(adapter.FamilyOutcome(familyChecks, FamilySystemHealth)), time.Since(familyStart))
 	}
 	if syncPolicy, enabled := familyPolicy(req.Policy, FamilySecretSync, true); enabled {
-		checks = append(checks, a.checkSecretSync(ctx, req.Client, syncPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkSecretSync(ctx, req.Client, syncPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilySecretSync), string(adapter.FamilyOutcome(familyChecks, FamilySecretSync)), time.Since(familyStart))
 	}
 	if len(checks) == 0 {
 		checks = append(checks, skipped(req.Target, "all External Secrets Operator check families are disabled by policy"))
 	}
+
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
 }
 

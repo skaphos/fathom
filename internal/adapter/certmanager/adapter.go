@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/skaphos/fathom/internal/adapter/crdutil"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -108,6 +109,12 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 	if len(namespaces) == 0 {
 		namespaces = []string{defaultNamespace}
 	}
+
+	// Per-family timing for fathom_adapter_run_duration_seconds: time each
+	// family independently so a multi-family run does not observe the same
+	// wall-clock duration more than once (SKA-290).
+	var issuerDur, certDur time.Duration
+	systemStart := time.Now()
 	if enabled {
 		restartWarnCount := restartWarnCount(systemPolicy)
 
@@ -136,11 +143,29 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 			}
 		}
 	}
+	systemDur := time.Since(systemStart)
 	if issuerPolicy, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
+		issuerStart := time.Now()
 		checks = append(checks, a.checkIssuers(ctx, req.Client, issuerPolicy)...)
+		issuerDur = time.Since(issuerStart)
 	}
 	if certPolicy, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
+		certStart := time.Now()
 		checks = append(checks, a.checkCertificates(ctx, req.Client, certPolicy)...)
+		certDur = time.Since(certStart)
+	}
+
+	// Record per family that ran, with that family's own duration. FamilyOutcome
+	// considers only that family's checks, so one family's failure does not
+	// taint another's metric (SKA-290).
+	if _, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), string(adapter.FamilyOutcome(checks, FamilySystemHealth)), systemDur)
+	}
+	if _, ok := familyPolicy(req.Policy, FamilyIssuerHealth, false); ok {
+		metrics.RecordAdapterRun(Name, string(FamilyIssuerHealth), string(adapter.FamilyOutcome(checks, FamilyIssuerHealth)), issuerDur)
+	}
+	if _, ok := familyPolicy(req.Policy, FamilyCertHealth, false); ok {
+		metrics.RecordAdapterRun(Name, string(FamilyCertHealth), string(adapter.FamilyOutcome(checks, FamilyCertHealth)), certDur)
 	}
 
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil

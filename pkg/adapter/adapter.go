@@ -195,6 +195,28 @@ func (o Outcome) Valid() bool {
 	return false
 }
 
+// FamilyOutcome returns the worst Outcome among the checks belonging to family,
+// ranking Fail/Error above Warn above Pass. Families are independent: only that
+// family's checks are considered, so a failure in one family does not taint
+// another family's verdict. Checks for other families are ignored; a family
+// with no checks yields OutcomePass. This is the canonical per-family roll-up
+// adapters use for the fathom_adapter_run_duration_seconds{outcome} label.
+func FamilyOutcome(checks []CheckResult, family Family) Outcome {
+	worst := OutcomePass
+	for _, c := range checks {
+		if c.Family != family {
+			continue
+		}
+		switch c.Outcome {
+		case OutcomeError, OutcomeFail:
+			return c.Outcome
+		case OutcomeWarn:
+			worst = OutcomeWarn
+		}
+	}
+	return worst
+}
+
 // TargetRef identifies a Kubernetes object without depending on a specific
 // runtime.Object instance. Sufficient for HealthReport persistence.
 type TargetRef struct {

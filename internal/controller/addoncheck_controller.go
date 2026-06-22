@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -74,7 +75,16 @@ type AddonCheckReconciler struct {
 // Reconcile records that the AddonCheck spec has been observed. Adapter
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
 // the registry is available to the reconciler.
-func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.RecordReconcile("AddonCheck", outcome, time.Since(start))
+	}()
+
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
 	var check fathomv1alpha1.AddonCheck
@@ -200,6 +210,11 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	if result.Duration == 0 {
 		result.Duration = time.Since(started)
 	}
+
+	// fathom_adapter_run_duration_seconds is recorded by each adapter's Run()
+	// per executed family — the adapter owns the accurate per-family outcome
+	// and duration. The controller deliberately does not record it here;
+	// doing so double-counts the histogram. See SKA-290 / SKA-504.
 
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
 	if r.Scheme != nil {

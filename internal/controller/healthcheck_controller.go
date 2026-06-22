@@ -8,6 +8,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 )
 
 const (
@@ -47,7 +49,20 @@ type HealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
 
-func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	start := time.Now()
+	defer func() {
+		// Record at the very end so we capture the full duration of the reconcile,
+		// including any status updates or error paths. outcome distinguishes a
+		// returned error from a clean reconcile (requeue/no-op refinements can
+		// come later).
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.RecordReconcile("HealthCheck", outcome, time.Since(start))
+	}()
+
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
 	var hc fathomv1alpha1.HealthCheck

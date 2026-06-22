@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -87,15 +88,24 @@ func (Adapter) Capabilities() adapter.Capabilities {
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
 	started := time.Now()
 	checks := []adapter.CheckResult{}
+	// Record fathom_adapter_run_duration_seconds per family inside its own
+	// branch, timing and labelling each family independently (SKA-290).
 	if systemPolicy, enabled := familyPolicy(req.Policy, FamilySystemHealth, true); enabled {
-		checks = append(checks, a.checkSystemHealth(ctx, req.Client, systemPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkSystemHealth(ctx, req.Client, systemPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilySystemHealth), string(adapter.FamilyOutcome(familyChecks, FamilySystemHealth)), time.Since(familyStart))
 	}
 	if dnsPolicy, enabled := familyPolicy(req.Policy, FamilyDNSResolution, true); enabled {
-		checks = append(checks, a.checkDNSResolution(ctx, req, dnsPolicy)...)
+		familyStart := time.Now()
+		familyChecks := a.checkDNSResolution(ctx, req, dnsPolicy)
+		checks = append(checks, familyChecks...)
+		metrics.RecordAdapterRun(Name, string(FamilyDNSResolution), string(adapter.FamilyOutcome(familyChecks, FamilyDNSResolution)), time.Since(familyStart))
 	}
 	if len(checks) == 0 {
 		checks = append(checks, skipped(req.Target, "all CoreDNS check families are disabled by policy"))
 	}
+
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
 }
 

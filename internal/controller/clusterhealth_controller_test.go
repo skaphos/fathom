@@ -15,9 +15,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 )
 
 var _ = Describe("ClusterHealth Controller", func() {
@@ -83,6 +85,30 @@ var _ = Describe("ClusterHealth Controller", func() {
 		ready := apiMeta.FindStatusCondition(got.Status.Conditions, clusterHealthConditionReady)
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+
+		// Smoke test for ClusterHealth reconciler instrumentation
+		metrics.ReconcileTotal.Reset()
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "ch-all-pass", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		mfs, err := ctrlmetrics.Registry.Gather()
+		Expect(err).NotTo(HaveOccurred())
+
+		found := false
+		for _, mf := range mfs {
+			if mf.GetName() == "fathom_reconcile_total" {
+				for _, m := range mf.GetMetric() {
+					for _, lp := range m.GetLabel() {
+						if lp.GetName() == "kind" && lp.GetValue() == "ClusterHealth" {
+							found = true
+						}
+					}
+				}
+			}
+		}
+		Expect(found).To(BeTrue(), "expected fathom_reconcile_total series for kind=ClusterHealth")
 	})
 
 	It("rolls up the worst-severity Result when HealthChecks disagree", func() {
