@@ -1,2 +1,20 @@
 resources:
 - manager.yaml
+
+# Image transformer for the manager container (SKA-295).
+#
+# manager.yaml references the placeholder name `controller`; this maps it to the
+# published operator image. Releases MUST deploy by *digest*, not a mutable tag.
+# The deploy/release flow injects the concrete reference via the `IMG` variable,
+# e.g.:
+#
+#   IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \
+#     go -C tools tool task deploy        # or build-installer / bundle
+#
+# which runs `kustomize edit set image controller=$IMG` against this entry. The
+# `newTag: latest` default below is for local development only; never publish a
+# release that resolves the manager image by tag.
+images:
+- name: controller
+  newName: ghcr.io/skaphos/fathom-operator
+  newTag: latest

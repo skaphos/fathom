@@ -1,5 +1,8 @@
+# syntax=docker/dockerfile:1.7
 # Build the manager binary
-FROM golang:1.26 AS builder
+# Base image pinned by digest for reproducible, tamper-evident builds (SKA-295).
+# Refresh with `go -C tools tool task images:refresh`.
+FROM golang:1.26.4@sha256:32c0e6e5c4f6707717051091b4d0b077464a679eaab563e11474efc5328e2aa5 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -8,8 +11,10 @@ WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
-RUN go mod download
+# and so that source changes don't invalidate our downloaded layer.
+# BuildKit cache mounts keep the module and build caches out of image layers (SKA-305).
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
 # Copy the go source
 COPY cmd/main.go cmd/main.go
@@ -22,11 +27,13 @@ COPY pkg/ pkg/
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+# Runtime base pinned by digest (SKA-295); refresh with `go -C tools tool task images:refresh`.
+FROM gcr.io/distroless/static:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
