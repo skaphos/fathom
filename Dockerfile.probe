@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Build the probe binary.
 # Base image pinned by digest for reproducible, tamper-evident builds (SKA-295).
 # Refresh with `go -C tools tool task images:refresh`.
@@ -8,11 +9,14 @@ ARG TARGETARCH
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
-RUN go mod download
+# BuildKit cache mounts keep the module and build caches out of image layers (SKA-305).
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
 COPY cmd/probe/ cmd/probe/
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -buildid=" -o probe ./cmd/probe
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -buildid=" -o probe ./cmd/probe
 
 # Package only the static probe binary.
 FROM scratch
