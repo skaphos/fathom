@@ -81,6 +81,10 @@ the viper key by the rule above.
 | `--leader-election-id` | `leader_election_id` | `FATHOM_LEADER_ELECTION_ID` | `2d3dbc4f.skaphos.io` | Name of the lease resource used for leader election (must be a DNS-1123 subdomain). |
 | `--enable-http2` | `enable_http2` | `FATHOM_ENABLE_HTTP2` | `false` | Enable HTTP/2 for the metrics and webhook servers. Off by default to mitigate CVE-2023-44487 / CVE-2023-39325. |
 | `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.0.2` | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |
+| `--tracing-enabled` | `tracing.enabled` | `FATHOM_TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead). See [Tracing](#tracing). |
+| `--tracing-otlp-endpoint` | `tracing.otlp_endpoint` | `FATHOM_TRACING_OTLP_ENDPOINT` | _(empty)_ | OTLP/gRPC collector endpoint (`host:port`). Empty uses the OTel SDK default (`localhost:4317`) and the standard `OTEL_EXPORTER_OTLP_*` env vars. |
+| `--tracing-sampling-ratio` | `tracing.sampling_ratio` | `FATHOM_TRACING_SAMPLING_RATIO` | `1.0` | Head-based trace sampling probability in `[0,1]` for a parent-based ratio sampler. `1.0` samples every root span. |
+| `--tracing-insecure` | `tracing.insecure` | `FATHOM_TRACING_INSECURE` | `false` | Disable transport security (plaintext gRPC) to the OTLP collector. Intended for in-cluster collectors fronted by a service mesh. |
 
 > Note: the zap logging flags (e.g. `--zap-log-level`, `--zap-devel`) are also
 > registered, but they are bound directly to `zap.Options` via the stdlib `flag`
@@ -98,6 +102,7 @@ inconsistent configuration, including:
 - A `metrics.bind_address` or `health_probe_bind_address` that is not a valid
   `host:port` (use `0` to disable; SKA-299).
 - A `leader_election_id` that is not a valid DNS-1123 subdomain.
+- A `tracing.sampling_ratio` outside the range `[0,1]` (SKA-293).
 
 ## Probe Image Default
 
@@ -115,6 +120,31 @@ The hardcoded fallback (also `ghcr.io/skaphos/fathom-probe:v0.0.2`) lives in the
 CoreDNS adapter so a probe-using check still has an image when neither the
 operator default nor a per-check override is set. Operators running a private
 GHCR mirror set `--probe-image` once instead of on every `AddonCheck`.
+
+## Tracing
+
+When `--tracing-enabled` is set, the operator installs an OpenTelemetry
+TracerProvider and exports spans over OTLP/gRPC (SKA-293). It emits:
+
+- one span per reconcile (`healthcheck.reconcile`, `clusterhealth.reconcile`,
+  `addoncheck.reconcile`), tagged with `fathom.kind`, `fathom.namespace`, and
+  `fathom.name`, and the `Error` status when the reconcile returns an error; and
+- one span per adapter run (`<adapter>.run`, e.g. `coredns.run`), tagged with
+  `fathom.adapter`, the aggregate `fathom.outcome`, and
+  `fathom.adapter.check_count`. Adapter-run spans nest under the AddonCheck
+  reconcile span via context propagation.
+
+Sampling is parent-based on top of a `TraceIDRatioBased` head sampler
+(`--tracing-sampling-ratio`), so child spans follow their root's sampling
+decision. When tracing is **disabled** (the default) a no-op provider is
+installed and no exporter is created, so span creation on the reconcile and
+adapter-run hot paths costs effectively nothing.
+
+The `service.name` resource attribute is always `fathom`; `service.version`
+reflects the operator's build version. The exporter dials the collector lazily,
+so enabling tracing without a reachable collector does not block startup — spans
+are buffered and dropped if export keeps failing. On shutdown the provider is
+flushed with a bounded timeout so a slow collector cannot stall process exit.
 
 ## Adding a New Option
 

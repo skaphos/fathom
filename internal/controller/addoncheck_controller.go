@@ -21,6 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
@@ -65,6 +68,11 @@ type AddonCheckReconciler struct {
 	// Empty when no operator default is configured; adapters then fall back to
 	// per-AddonCheck thresholds or their own hardcoded default.
 	ProbeImage string
+
+	// Tracer creates the per-Reconcile span. Optional: a nil Tracer falls back
+	// to the global provider (a no-op unless tracing is enabled). The adapter
+	// Run span nests under this reconcile span via the context.
+	Tracer trace.Tracer
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
@@ -76,6 +84,13 @@ type AddonCheckReconciler struct {
 // dispatch and HealthReport creation are wired in follow-up SKA-46 work once
 // the registry is available to the reconciler.
 func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "addoncheck.reconcile", trace.WithAttributes(
+		attribute.String("fathom.kind", "AddonCheck"),
+		attribute.String("fathom.namespace", req.Namespace),
+		attribute.String("fathom.name", req.Name),
+	))
+	defer func() { endReconcileSpan(span, err) }()
+
 	start := time.Now()
 	defer func() {
 		outcome := "success"

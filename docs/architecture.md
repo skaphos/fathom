@@ -316,6 +316,12 @@ The manager is constructed in `internal/app/run.go`:
   (`filters.WithAuthenticationAndAuthorization`) is installed so scrapes require
   a valid token with RBAC. `Options.Validate` refuses to serve plaintext metrics
   on a cluster-routable port unless `metrics.allow_insecure` is set (SKA-287).
+- **Tracing:** optional OpenTelemetry spans around each reconcile and adapter
+  run, exported via OTLP/gRPC (SKA-293). Off by default — `tracing.Init`
+  installs a no-op provider when `tracing.enabled` is false, so the hot paths
+  carry ~zero overhead. When enabled, a parent-based ratio sampler and a batch
+  exporter are wired, and the provider is flushed with a bounded timeout on
+  shutdown. See [reference/configuration.md](reference/configuration.md#tracing).
 - **HTTP/2:** disabled by default to mitigate CVE-2023-44487 / CVE-2023-39325;
   re-enable with `--enable-http2`.
 - **Leader election:** on by default (SKA-303); disable with

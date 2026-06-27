@@ -16,6 +16,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -52,10 +53,30 @@ type WebhookOptions struct {
 	CertKey  string `mapstructure:"cert_key"`
 }
 
+// TracingOptions configures OpenTelemetry trace export for the operator
+// (SKA-293). When Enabled is false the operator installs a no-op tracer
+// provider and never builds an exporter, so the reconcile/adapter hot paths
+// carry ~zero tracing overhead.
+type TracingOptions struct {
+	// Enabled turns on span creation and OTLP export. Off by default.
+	Enabled bool `mapstructure:"enabled"`
+	// OTLPEndpoint is the gRPC OTLP collector endpoint (host:port). Empty
+	// defers to the OTel SDK default (localhost:4317) and the standard
+	// OTEL_EXPORTER_OTLP_* environment variables.
+	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+	// SamplingRatio is the head-based sampling probability in [0,1] applied by
+	// a parent-based TraceIDRatioBased sampler. 1.0 samples every root span.
+	SamplingRatio float64 `mapstructure:"sampling_ratio"`
+	// Insecure disables transport security (plaintext gRPC) to the collector.
+	// Intended for in-cluster collectors fronted by a service mesh.
+	Insecure bool `mapstructure:"insecure"`
+}
+
 // Options is the resolved runtime configuration for the operator.
 type Options struct {
 	Metrics                MetricsOptions `mapstructure:"metrics"`
 	Webhook                WebhookOptions `mapstructure:"webhook"`
+	Tracing                TracingOptions `mapstructure:"tracing"`
 	HealthProbeBindAddress string         `mapstructure:"health_probe_bind_address"`
 	LeaderElect            bool           `mapstructure:"leader_elect"`
 	LeaderElectionID       string         `mapstructure:"leader_election_id"`
@@ -99,6 +120,11 @@ func DefaultOptions() Options {
 		Webhook: WebhookOptions{
 			CertName: "tls.crt",
 			CertKey:  "tls.key",
+		},
+		Tracing: TracingOptions{
+			Enabled:       false,
+			SamplingRatio: 1.0,
+			Insecure:      false,
 		},
 		HealthProbeBindAddress: ":8081",
 		// SKA-303: default leader election on so a multi-replica deployment that
@@ -166,11 +192,20 @@ func (o *Options) Validate() error {
 		}
 	}
 
+	// SKA-293: a sampling ratio outside [0,1] is almost certainly a typo. The
+	// SDK would clamp it silently; rejecting it surfaces the mistake.
+	if o.Tracing.SamplingRatio < 0 || o.Tracing.SamplingRatio > 1 {
+		errs = append(errs, fmt.Errorf("tracing.sampling_ratio %v is out of range; must be between 0 and 1", o.Tracing.SamplingRatio))
+	}
+
 	return errors.Join(errs...)
 }
 
 // flagBinding pairs a flag name with its corresponding Viper key. Keeping them
 // in one table guarantees flags, env vars, and config file keys stay in sync.
+//
+// At most one of isBool/isFloat is set; otherwise the binding registers a
+// string flag with stringDef as its default.
 type flagBinding struct {
 	flagName  string
 	viperKey  string
@@ -178,6 +213,8 @@ type flagBinding struct {
 	stringDef string
 	boolDef   bool
 	isBool    bool
+	floatDef  float64
+	isFloat   bool
 }
 
 func bindings(defaults Options) []flagBinding {
@@ -210,6 +247,14 @@ func bindings(defaults Options) []flagBinding {
 			usage: "If set, HTTP/2 will be enabled for the metrics and webhook servers."},
 		{flagName: "probe-image", viperKey: "probe_image", stringDef: defaults.ProbeImage,
 			usage: "Container image used by adapters that launch probe pods. Per-AddonCheck thresholds still override this."},
+		{flagName: "tracing-enabled", viperKey: "tracing.enabled", isBool: true, boolDef: defaults.Tracing.Enabled,
+			usage: "Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead)."},
+		{flagName: "tracing-otlp-endpoint", viperKey: "tracing.otlp_endpoint", stringDef: defaults.Tracing.OTLPEndpoint,
+			usage: "OTLP/gRPC collector endpoint (host:port) for trace export. Empty uses the OTel SDK default (localhost:4317) and the standard OTEL_EXPORTER_OTLP_* env vars."},
+		{flagName: "tracing-sampling-ratio", viperKey: "tracing.sampling_ratio", isFloat: true, floatDef: defaults.Tracing.SamplingRatio,
+			usage: "Head-based trace sampling probability in [0,1] for a parent-based ratio sampler. 1.0 samples every root span."},
+		{flagName: "tracing-insecure", viperKey: "tracing.insecure", isBool: true, boolDef: defaults.Tracing.Insecure,
+			usage: "Disable transport security (plaintext gRPC) to the OTLP collector. Intended for in-cluster collectors fronted by a service mesh."},
 	}
 }
 
@@ -219,9 +264,12 @@ func bindings(defaults Options) []flagBinding {
 func RegisterFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 	defaults := DefaultOptions()
 	for _, b := range bindings(defaults) {
-		if b.isBool {
+		switch {
+		case b.isBool:
 			fs.Bool(b.flagName, b.boolDef, b.usage)
-		} else {
+		case b.isFloat:
+			fs.Float64(b.flagName, b.floatDef, b.usage)
+		default:
 			fs.String(b.flagName, b.stringDef, b.usage)
 		}
 	}
@@ -248,9 +296,12 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 
 	defaults := DefaultOptions()
 	for _, b := range bindings(defaults) {
-		if b.isBool {
+		switch {
+		case b.isBool:
 			v.SetDefault(b.viperKey, b.boolDef)
-		} else {
+		case b.isFloat:
+			v.SetDefault(b.viperKey, b.floatDef)
+		default:
 			v.SetDefault(b.viperKey, b.stringDef)
 		}
 		if f := fs.Lookup(b.flagName); f != nil {
@@ -274,7 +325,13 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 	}
 
 	opts := defaults
-	if err := v.Unmarshal(&opts); err != nil {
+	// WeaklyTypedInput lets scalar options arrive as strings (the only shape an
+	// environment variable can take) and still decode into bool/float fields —
+	// e.g. FATHOM_TRACING_ENABLED=true or FATHOM_TRACING_SAMPLING_RATIO=0.5.
+	// viper applies its default decode hooks first, so this only relaxes scalar
+	// coercion; it leaves nested struct/slice decoding untouched.
+	weaklyTyped := func(c *mapstructure.DecoderConfig) { c.WeaklyTypedInput = true }
+	if err := v.Unmarshal(&opts, weaklyTyped); err != nil {
 		return Options{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 	opts.Zap = zapOpts

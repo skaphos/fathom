@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"runtime/debug"
 	"sync/atomic"
+	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,6 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel"
+
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/certmanager"
 	"github.com/skaphos/fathom/internal/adapter/coredns"
@@ -34,8 +38,13 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
 	"github.com/skaphos/fathom/internal/metrics"
+	"github.com/skaphos/fathom/internal/tracing"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
+
+// tracingShutdownTimeout bounds the graceful flush of buffered spans on operator
+// shutdown so a slow or unreachable collector cannot stall process exit.
+const tracingShutdownTimeout = 5 * time.Second
 
 // readyzCheck returns a [healthz.Checker] that returns nil only once synced has
 // been set. Used by [Run] to gate /readyz on informer cache sync rather than
@@ -154,15 +163,19 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve a reconciler tracer from the global provider Run installed. When
+	// tracing is disabled the provider is a no-op, so this is effectively free.
+	tracer := otel.Tracer(controller.TracerScope)
 	return []Setupper{
 		&controller.AddonCheckReconciler{
 			Client:     mgr.GetClient(),
 			Scheme:     mgr.GetScheme(),
 			Adapters:   adapterRegistry,
 			ProbeImage: opts.ProbeImage,
+			Tracer:     tracer,
 		},
-		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
-		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
+		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
+		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
 	}, nil
 }
 
@@ -196,6 +209,19 @@ var managerFactory = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, er
 	return ctrl.NewManager(cfg, opts)
 }
 
+// operatorVersion returns the operator's build version for the tracing
+// service.version resource attribute. It reads the main module version embedded
+// by the Go toolchain, falling back to "dev" for ad-hoc local builds — which
+// the toolchain reports as "(devel)" (or "" when build info is unavailable).
+func operatorVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "dev"
+}
+
 // Run starts the operator. It blocks until ctx is cancelled or the manager
 // returns. cfg is the Kubernetes REST config to talk to the API server;
 // controllersFor returns the reconcilers to register against the built manager
@@ -219,6 +245,28 @@ func Run(
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts.Zap)))
+	setupLog := ctrl.Log.WithName("setup")
+
+	// Install the global tracer provider before controllers and adapters are
+	// constructed so the tracers they obtain from it are wired correctly. When
+	// tracing is disabled this installs a no-op provider with no exporter.
+	tracingShutdown, err := tracing.Init(ctx, tracing.Config{
+		Enabled:        opts.Tracing.Enabled,
+		OTLPEndpoint:   opts.Tracing.OTLPEndpoint,
+		SamplingRatio:  opts.Tracing.SamplingRatio,
+		Insecure:       opts.Tracing.Insecure,
+		ServiceVersion: operatorVersion(),
+	})
+	if err != nil {
+		return fmt.Errorf("init tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+		defer cancel()
+		if err := tracingShutdown(shutdownCtx); err != nil {
+			setupLog.Error(err, "tracing provider shutdown failed")
+		}
+	}()
 
 	scheme, err := NewScheme()
 	if err != nil {

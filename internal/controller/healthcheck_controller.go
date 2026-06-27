@@ -24,6 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/metrics"
 )
@@ -42,6 +45,10 @@ const (
 type HealthCheckReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+
+	// Tracer creates the per-Reconcile span. Optional: a nil Tracer falls back
+	// to the global provider (a no-op unless tracing is enabled).
+	Tracer trace.Tracer
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks,verbs=get;list;watch;create;update;patch;delete
@@ -50,6 +57,13 @@ type HealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
 
 func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "healthcheck.reconcile", trace.WithAttributes(
+		attribute.String("fathom.kind", "HealthCheck"),
+		attribute.String("fathom.namespace", req.Namespace),
+		attribute.String("fathom.name", req.Name),
+	))
+	defer func() { endReconcileSpan(span, err) }()
+
 	start := time.Now()
 	defer func() {
 		// Record at the very end so we capture the full duration of the reconcile,

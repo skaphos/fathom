@@ -21,10 +21,20 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
+
+// tracer is the OpenTelemetry instrumentation scope for the CoreDNS adapter.
+// It draws from the global provider, so it is a no-op unless the operator
+// enabled tracing (SKA-293).
+var tracer = otel.Tracer("github.com/skaphos/fathom/internal/adapter/coredns")
 
 const (
 	Name                = "coredns"
@@ -85,7 +95,11 @@ func (Adapter) Capabilities() adapter.Capabilities {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=create;delete
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 
-func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, error) {
+func (a Adapter) Run(ctx context.Context, req adapter.Request) (result adapter.Result, err error) {
+	ctx, span := tracer.Start(ctx, Name+".run")
+	span.SetAttributes(attribute.String("fathom.adapter", Name))
+	defer func() { endAdapterRunSpan(span, result, err) }()
+
 	started := time.Now()
 	checks := []adapter.CheckResult{}
 	// Record fathom_adapter_run_duration_seconds per family inside its own
@@ -107,6 +121,31 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (adapter.Result, 
 	}
 
 	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
+}
+
+// endAdapterRunSpan annotates span with the check count and a per-family
+// outcome (the same adapter.FamilyOutcome roll-up the per-family metrics use),
+// records err, and ends the span. Only families that actually produced checks
+// are tagged, so a disabled family is not mislabeled as a passing one. Mirrors
+// the per-adapter helper style already used in this package.
+func endAdapterRunSpan(span trace.Span, result adapter.Result, err error) {
+	span.SetAttributes(attribute.Int("fathom.adapter.check_count", len(result.Checks)))
+	seen := map[adapter.Family]struct{}{}
+	for _, c := range result.Checks {
+		if _, ok := seen[c.Family]; ok {
+			continue
+		}
+		seen[c.Family] = struct{}{}
+		span.SetAttributes(attribute.String(
+			"fathom.outcome."+string(c.Family),
+			string(adapter.FamilyOutcome(result.Checks, c.Family)),
+		))
+	}
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
 }
 
 func familyPolicy(policy map[adapter.Family]adapter.FamilyPolicy, family adapter.Family, defaultEnabled bool) (adapter.FamilyPolicy, bool) {
