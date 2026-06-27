@@ -13,7 +13,7 @@ the Go e2e suite under `test/e2e/` will eventually drive automatically.
 
 | File | Purpose |
 | ---- | ------- |
-| `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned to `v1.36.0` (matches `ENVTEST_K8S_VERSION` in `Taskfile.yml`). |
+| `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned by digest to `v1.36.1` (matches `ENVTEST_K8S_VERSION` 1.36 in `Taskfile.yml`; kind only publishes specific patch tags per release, so use a real one). |
 | `helmfile.yaml` | Installs cert-manager + external-secrets via their official charts. CoreDNS is preinstalled by kind and is not managed here. |
 
 The AddonCheck samples used by this stack live in `config/samples/`:
@@ -27,7 +27,7 @@ The AddonCheck samples used by this stack live in `config/samples/`:
 Install the following on `PATH`:
 
 - `docker` (or Podman with the docker shim)
-- `kind` (≥ v0.24)
+- `kind` (≥ v0.32 — earlier releases don't ship the `kindest/node:v1.36.1` image)
 - `kubectl`
 - `helm` (v3)
 - [`helmfile`](https://github.com/helmfile/helmfile/releases) (v0.x)

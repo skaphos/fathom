@@ -64,11 +64,15 @@ jobs:
       - name: Create kind cluster
         # kind-action bundles a known-good kind + kubectl and tears the cluster
         # down in its post step, so no cluster leaks between re-runs. The config
-        # pins the node image (kindest/node:v1.36.0) in lockstep with envtest;
+        # pins the node image (kindest/node:v1.36.1, by digest) in lockstep with envtest;
         # cluster_name matches the Taskfile default E2E_KIND_CLUSTER so the
         # e2e:cluster:* sub-tasks target the same cluster/context.
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
+          # kind v0.32.0 is the release that ships the kindest/node:v1.36.1
+          # image pinned in the config below; the action default (v0.31.0)
+          # predates it and cannot provision a 1.36.1 node.
+          version: v0.32.0
           config: test/e2e/fixtures/kind-cluster.yaml
           cluster_name: fathom-e2e
           wait: 120s
