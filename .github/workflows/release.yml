@@ -215,6 +215,13 @@ jobs:
           subject-digest: ${{ steps.bundle.outputs.digest }}
           push-to-registry: true
 
+      - name: Attest OLM catalog provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.vars.outputs.catalog_name }}
+          subject-digest: ${{ steps.catalog.outputs.digest }}
+          push-to-registry: true
+
       - name: Attest Helm chart provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
