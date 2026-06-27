@@ -200,7 +200,8 @@ func (o Outcome) Valid() bool {
 // family's checks are considered, so a failure in one family does not taint
 // another family's verdict. Checks for other families are ignored; a family
 // with no checks yields OutcomePass. This is the canonical per-family roll-up
-// adapters use for the fathom_adapter_run_duration_seconds{outcome} label.
+// adapters use for the fathom_adapter_run_duration_seconds{outcome} label and
+// for per-family tracing span attributes.
 func FamilyOutcome(checks []CheckResult, family Family) Outcome {
 	worst := OutcomePass
 	for _, c := range checks {

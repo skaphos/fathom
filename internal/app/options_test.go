@@ -46,6 +46,9 @@ func TestDefaultOptions_MatchFlagDefaults(t *testing.T) {
 	if got.Webhook != want.Webhook {
 		t.Errorf("Webhook: got %+v, want %+v", got.Webhook, want.Webhook)
 	}
+	if got.Tracing != want.Tracing {
+		t.Errorf("Tracing: got %+v, want %+v", got.Tracing, want.Tracing)
+	}
 	if got.HealthProbeBindAddress != want.HealthProbeBindAddress {
 		t.Errorf("HealthProbeBindAddress: got %q, want %q", got.HealthProbeBindAddress, want.HealthProbeBindAddress)
 	}
@@ -371,6 +374,26 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "tracing sampling ratio above 1 is rejected",
+			mutate: func(o *Options) {
+				o.Tracing.SamplingRatio = 1.5
+			},
+			wantErr: "tracing.sampling_ratio",
+		},
+		{
+			name: "tracing sampling ratio below 0 is rejected",
+			mutate: func(o *Options) {
+				o.Tracing.SamplingRatio = -0.1
+			},
+			wantErr: "tracing.sampling_ratio",
+		},
+		{
+			name: "tracing sampling ratio at bounds is valid",
+			mutate: func(o *Options) {
+				o.Tracing.SamplingRatio = 0
+			},
+		},
+		{
 			name: "multiple errors are joined",
 			mutate: func(o *Options) {
 				o.HealthProbeBindAddress = ""
@@ -417,6 +440,94 @@ func TestValidate_MultipleErrorsAccumulate(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("joined error %q is missing %q", err.Error(), want)
 		}
+	}
+}
+
+// TestLoad_TracingFlags confirms the SKA-293 tracing flags (including the
+// float64 --tracing-sampling-ratio) flow through the flag→viper→Options
+// pipeline, exercising the float branch added to bindings()/RegisterFlags/Load.
+func TestLoad_TracingFlags(t *testing.T) {
+	fs, zapOpts := newTestFlags(t)
+	if err := fs.Parse([]string{
+		"--tracing-enabled=true",
+		"--tracing-otlp-endpoint=collector.observability:4317",
+		"--tracing-sampling-ratio=0.25",
+		"--tracing-insecure=true",
+	}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got, err := Load(fs, *zapOpts, "", false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := TracingOptions{
+		Enabled:       true,
+		OTLPEndpoint:  "collector.observability:4317",
+		SamplingRatio: 0.25,
+		Insecure:      true,
+	}
+	if got.Tracing != want {
+		t.Errorf("Tracing: got %+v, want %+v", got.Tracing, want)
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("Validate with tracing flags: %v", err)
+	}
+}
+
+// TestLoad_TracingEnvAndConfig confirms env vars (which arrive as strings)
+// decode into the bool/float tracing fields via WeaklyTypedInput, and that env
+// still beats config per the precedence rules.
+func TestLoad_TracingEnvAndConfig(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "fathom.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+tracing:
+  enabled: false
+  sampling_ratio: 0.1
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv("FATHOM_TRACING_ENABLED", "true")
+	t.Setenv("FATHOM_TRACING_SAMPLING_RATIO", "0.5")
+
+	fs, zapOpts := newTestFlags(t)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got, err := Load(fs, *zapOpts, configPath, true)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !got.Tracing.Enabled {
+		t.Error("Tracing.Enabled: env true should beat config false")
+	}
+	if got.Tracing.SamplingRatio != 0.5 {
+		t.Errorf("Tracing.SamplingRatio: got %v, want 0.5 (env beats config)", got.Tracing.SamplingRatio)
+	}
+}
+
+// TestLoad_TracingSamplingRatioFromConfig confirms a config-file float decodes
+// when no env/flag overrides it (the config-beats-default precedence rung).
+func TestLoad_TracingSamplingRatioFromConfig(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "fathom.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+tracing:
+  sampling_ratio: 0.75
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	fs, zapOpts := newTestFlags(t)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got, err := Load(fs, *zapOpts, configPath, true)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Tracing.SamplingRatio != 0.75 {
+		t.Errorf("Tracing.SamplingRatio: got %v, want 0.75", got.Tracing.SamplingRatio)
 	}
 }
 
