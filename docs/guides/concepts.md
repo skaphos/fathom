@@ -50,14 +50,15 @@ rest are projection and history layers.
 | Kind | What you use it for | Drives work? |
 | --- | --- | --- |
 | **`AddonCheck`** | Declare a check against one add-on (cert-manager, CoreDNS, External Secrets, Cilium). Selects an adapter via `spec.addonType`. | Yes — via its adapter |
-| **`NodeCertificateCheck`** | Declare an on-disk certificate-expiry scan across your nodes. | Yes — via the node-agent DaemonSet |
+| **`NodeCertificateCheck`** *(feature-gated — see note below)* | Declare an on-disk certificate-expiry scan across your nodes. | Yes — via the node-agent DaemonSet |
 | **`HealthCheck`** | Wrap one check and mirror its status into a uniform shape so it can be aggregated. | No |
 | **`ClusterHealth`** | Aggregate many `HealthCheck`s into one worst-case verdict. | No |
 | **`HealthReport`** | Immutable, per-run history record. Created for you; you read it, you don't write it. | n/a |
 
 A good way to hold it in your head:
 
-- **`AddonCheck` / `NodeCertificateCheck`** are the *sensors*.
+- **`AddonCheck`** (and **`NodeCertificateCheck`**, on builds that include it)
+  are the *sensors*.
 - **`HealthCheck`** is an *adapter plug* that gives every sensor a uniform
   shape.
 - **`ClusterHealth`** is the *dashboard light* — one verdict.

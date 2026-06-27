@@ -21,7 +21,7 @@ Task-oriented guides for installing and using Fathom live in
 | [Getting started](guides/getting-started.md) | Install the operator and go from an empty cluster to one cluster-wide verdict in ~15 minutes. |
 | [Concepts](guides/concepts.md) | The platform-team mental model: the resource kinds, what drives work vs. aggregates, and result severity. |
 | [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the four built-in adapters — families, thresholds, roll-up, troubleshooting. |
-| [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. |
+| [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Feature-gated — ships with the `NodeCertificateCheck` feature; not in every build.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
 
 ## Reference & internals

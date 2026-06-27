@@ -63,8 +63,9 @@ There is no periodic timer yet. In practice this means:
 
 This is a known limitation tracked in the
 [architecture reference](../architecture.md#known-limitations).
-`NodeCertificateCheck` is the exception that *does* honor `interval` — see its
-[guide](node-certificate-checks.md).
+`NodeCertificateCheck` — a feature-gated kind not present in every build (see
+its [guide](node-certificate-checks.md#availability)) — is the exception that
+*does* honor `interval`.
 
 ## Adapter catalog
 
@@ -247,9 +248,9 @@ spec: {}   # empty selector matches all HealthChecks in this namespace
 - Aggregation is **same-namespace** in this build. Keep the checks you want
   rolled up together in one namespace.
 
-> In this build, `HealthCheck` can only wrap `AddonCheck`
-> (`checkRef.kind: AddonCheck`). `NodeCertificateCheck` reports its own status
-> directly and is not yet aggregated through `HealthCheck`/`ClusterHealth`.
+> `HealthCheck` can only wrap `AddonCheck` (`checkRef.kind: AddonCheck`). The
+> feature-gated `NodeCertificateCheck` kind, where present, reports its own
+> status directly and is not aggregated through `HealthCheck`/`ClusterHealth`.
 
 ## Troubleshooting
 

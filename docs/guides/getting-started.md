@@ -16,8 +16,9 @@ this guide top-to-bottom and pick up the model as you go.
 
 ## Prerequisites
 
-- A Kubernetes cluster you can reach with `kubectl` (v1.30+; Fathom is tested
-  against the version pinned in the repo's e2e fixtures).
+- A Kubernetes cluster you can reach with `kubectl`. Fathom is tested against
+  the Kubernetes version pinned in the repo's e2e fixtures (currently v1.36);
+  recent releases are expected to work.
 - `kubectl` configured for that cluster's context.
 - [Helm](https://helm.sh/) v3.8+ (the operator ships as an OCI chart, which
   requires OCI support — standard in v3.8 and later).
@@ -119,8 +120,9 @@ the outcome to `status`, and records the run as an immutable `HealthReport`.
 > To force a fresh run, edit the spec (any generation-changing edit re-runs the
 > adapter). Periodic requeue is a tracked limitation; see
 > [Add-on checks → Run cadence](addon-checks.md#run-cadence-and-the-interval-caveat).
-> `NodeCertificateCheck` *does* honor `interval` — see
-> [Node certificate checks](node-certificate-checks.md).
+> `NodeCertificateCheck` — a feature-gated kind not present in every build (see
+> its [Availability note](node-certificate-checks.md#availability)) — *does*
+> honor `interval`.
 
 ## 3. Read the result
 
@@ -221,8 +223,9 @@ AddonCheck ──runs──▶ status + HealthReport (history)
 - **[Add-on checks](addon-checks.md)** — every built-in adapter
   (cert-manager, CoreDNS, External Secrets, Cilium), their families, and the
   threshold knobs.
-- **[Node certificate checks](node-certificate-checks.md)** — scan on-disk
-  X.509 certificates on every node and alert before they expire.
+- **[Node certificate checks](node-certificate-checks.md)** — *(feature-gated;
+  see its Availability note)* scan on-disk X.509 certificates on every node and
+  alert before they expire.
 - **[Monitoring & alerting](monitoring.md)** — scrape Fathom's metrics, wire
   tracing, and alert on results.
 - **[Configuration reference](../reference/configuration.md)** — every operator

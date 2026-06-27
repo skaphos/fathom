@@ -22,7 +22,8 @@ kubectl -n fathom-system get clusterhealth
 kubectl -n fathom-system get addoncheck
 kubectl -n fathom-system describe addoncheck cert-manager-system-health
 
-# Node certificates (printer columns show result + coverage):
+# Node certificates — feature-gated kind; only on builds that include
+# NodeCertificateCheck (printer columns show result + coverage):
 kubectl -n fathom-system get nodecertificatecheck
 
 # History / detail for any check:
@@ -82,6 +83,9 @@ controller-runtime and Go metrics are exposed alongside them):
 | `fathom_adapter_registered` | gauge | `adapter` | `1` for each adapter registered at startup — confirms the operator loaded the adapters you expect. |
 
 ### Node-agent metric
+
+> Applies only to builds that include the feature-gated `NodeCertificateCheck`
+> kind — see [Node certificate checks → Availability](node-certificate-checks.md#availability).
 
 Each node-agent (from a `NodeCertificateCheck`) exports an expiry gauge on its
 own metrics endpoint:

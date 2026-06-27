@@ -207,7 +207,7 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Getting started](docs/guides/getting-started.md) — install the operator and reach one cluster-wide verdict in ~15 minutes.
 - [Concepts](docs/guides/concepts.md) — the mental model for using Fathom.
 - [Add-on checks](docs/guides/addon-checks.md) — configure checks for cert-manager, CoreDNS, External Secrets, and Cilium.
-- [Node certificate checks](docs/guides/node-certificate-checks.md) — scan on-disk certificates on every node.
+- [Node certificate checks](docs/guides/node-certificate-checks.md) — scan on-disk certificates on every node *(feature-gated; ships with the `NodeCertificateCheck` feature)*.
 - [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing, alerts, and deployment gates.
 
 Reference and internals:
