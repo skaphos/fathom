@@ -198,6 +198,45 @@ all capabilities dropped, no privilege escalation, runtime-default seccomp, and
 small CPU/memory requests. It also supports pod anti-affinity so future network
 checks can place client/server probe Pods on different nodes.
 
+## Node Certificate Checks
+
+A `NodeCertificateCheck` continuously scans **on-disk X.509 certificates on each
+node** and reports time-to-expiry before an expiring certificate can take the
+cluster down. The operator runs the scan via a dedicated, hardened node-agent
+DaemonSet (`cmd/node-agent`, built from `Dockerfile.node-agent` — its own image,
+distinct from the operator and probe images). Each agent reads the configured
+paths over **read-only `hostPath` mounts**, exports a
+`fathom_node_certificate_expiry_days` gauge, and publishes a per-node result
+that the operator rolls up into a `HealthReport`.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeCertificateCheck
+metadata:
+  name: node-certificates
+spec:
+  # Omit paths to use the built-in, distribution-agnostic default set
+  # (kubeadm/k3s/RKE2/etcd/kubelet locations); paths absent on a node are
+  # skipped, never failed. Or pin explicit files/directories:
+  paths:
+    - /etc/kubernetes/pki
+    - /etc/kubernetes/admin.conf
+    - /var/lib/kubelet/pki
+  warnDays: 30      # <= this many days to expiry -> Warn
+  criticalDays: 7   # <= this many days (or expired) -> Fail
+  interval: 1h
+```
+
+The agent defaults to non-root (uid 65532); it reads world-readable certificate
+files (e.g. kubeadm's `*.crt`, mode `0644`) and silently skips root-only
+material it cannot read (e.g. `etcd` keys). Configure the DaemonSet image once,
+cluster-wide, via `--node-agent-image` / `FATHOM_NODE_AGENT_IMAGE`. Build it
+with:
+
+```sh
+go -C tools tool task node-agent-docker-build NODE_AGENT_IMG=example.com/fathom-node-agent:latest
+```
+
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/README.md):

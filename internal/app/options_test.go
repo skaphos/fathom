@@ -222,6 +222,52 @@ probe_image: registry.example.com/probe:from-config
 	})
 }
 
+func TestLoad_NodeAgentImagePrecedence(t *testing.T) {
+	t.Run("default when nothing set", func(t *testing.T) {
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, "", false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.NodeAgentImage != DefaultNodeAgentImage {
+			t.Errorf("NodeAgentImage: got %q, want default %q", got.NodeAgentImage, DefaultNodeAgentImage)
+		}
+	})
+
+	t.Run("env beats default", func(t *testing.T) {
+		t.Setenv("FATHOM_NODE_AGENT_IMAGE", "registry.example.com/node-agent:from-env")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, "", false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.NodeAgentImage != "registry.example.com/node-agent:from-env" {
+			t.Errorf("NodeAgentImage: got %q", got.NodeAgentImage)
+		}
+	})
+
+	t.Run("flag beats env", func(t *testing.T) {
+		t.Setenv("FATHOM_NODE_AGENT_IMAGE", "registry.example.com/node-agent:from-env")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse([]string{"--node-agent-image=registry.example.com/node-agent:from-flag"}); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, "", false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.NodeAgentImage != "registry.example.com/node-agent:from-flag" {
+			t.Errorf("NodeAgentImage: got %q", got.NodeAgentImage)
+		}
+	})
+}
+
 func TestLoad_MissingDefaultConfig_Ignored(t *testing.T) {
 	fs, zapOpts := newTestFlags(t)
 	if err := fs.Parse(nil); err != nil {

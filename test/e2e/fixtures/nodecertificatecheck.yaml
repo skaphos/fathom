@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# E2E fixture: scans explicit, world-readable kubeadm control-plane certificate
+# files that exist on the kind node (apiserver.crt and ca.crt are mode 0644, so
+# the non-root node-agent reads them). A short interval keeps the spec fast.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeCertificateCheck
+metadata:
+  name: nodecert-e2e
+  namespace: default
+spec:
+  paths:
+    - /etc/kubernetes/pki/apiserver.crt
+    - /etc/kubernetes/pki/ca.crt
+  warnDays: 30
+  criticalDays: 7
+  interval: 30s
+  timeout: 20s

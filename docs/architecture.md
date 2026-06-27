@@ -45,18 +45,21 @@ short-lived pods (see [Probe-pod model](#probe-pod-model)).
 
 ## The CRD Model
 
-All four kinds live in `api/v1alpha1` and the group `fathom.skaphos.io`. The
+All kinds live in `api/v1alpha1` and the group `fathom.skaphos.io`. The
 generated, field-level reference is in [reference/api.md](reference/api.md); this
 section is the conceptual overview.
 
 | Kind | File | Role | Executes checks? |
 | --- | --- | --- | --- |
 | `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
+| `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
 | `HealthCheck` | `api/v1alpha1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
 | `ClusterHealth` | `api/v1alpha1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
-| `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one adapter run. | n/a |
+| `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
 
-`AddonCheck` is the only kind that drives work. `HealthCheck` and
+`AddonCheck` and `NodeCertificateCheck` are the kinds that drive work
+(`AddonCheck` in-process via an adapter; `NodeCertificateCheck` on each node via
+the node-agent DaemonSet). `HealthCheck` and
 `ClusterHealth` are projection/aggregation layers; `HealthReport` is the audit
 trail.
 
@@ -199,12 +202,45 @@ adapter level is forced to `Error`.
   `matchedCount`; and `observedAt` set to the latest child `SourceObservedAt`
   (input freshness, not wall-clock — wall-clock would defeat the no-op guard).
 
+### NodeCertificateCheckReconciler
+
+`internal/controller/nodecertificatecheck_controller.go`
+
+- **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`
+  and `RoleBinding`, and the `fathom-node-agent-role` `ClusterRole` (created at
+  runtime so its name survives kustomize/OLM name prefixing); creates
+  `HealthReport` objects and writes `NodeCertificateCheck.status`. All owned
+  objects live in the check's namespace and are owner-referenced for cascading
+  garbage collection.
+- **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
+  `ServiceAccount` / `RoleBinding` (`Owns`), and per-node report `ConfigMap`s by
+  label (`Watches`), so a fresh node report triggers a roll-up.
+- **Execution model:** unlike the in-process adapters, on-disk certificate
+  scanning must run **on each node**. The reconciler provisions a hardened,
+  read-only node-agent `DaemonSet` (`cmd/node-agent`, its own dedicated image —
+  see below). Each agent scans the configured certificate paths over read-only
+  `hostPath` mounts and publishes a per-node report `ConfigMap`
+  (`<check>-<node>`, labelled `source-kind=NodeCertificateCheck`). The operator
+  reads those ConfigMaps, rolls them into one `HealthReport` (one check per
+  `(node, certificate)`, worst-case aggregate), and mirrors the result into
+  `status` (`lastResult`, `lastReportName`, `reportingNodes`/`desiredNodes`).
+- **Thresholds:** a certificate within `spec.criticalDays` (default `7`) of
+  expiry — or already expired — is `Fail`; within `spec.warnDays` (default `30`)
+  is `Warn`. Each agent also exports a `fathom_node_certificate_expiry_days`
+  gauge for alerting.
+- **Paused:** when `spec.paused`, the agent `DaemonSet` is removed and the last
+  status snapshot is preserved (`Ready=False / Paused`).
+
 ### Requeue / interval handling
 
-None of the three reconcilers returns a `RequeueAfter`. Re-reconciliation is
-event-driven: spec edits (generation change), owned-object changes, and the
-cross-resource watches above. See [Known limitations](#known-limitations) for
-what this means for `spec.interval`.
+The three projection/aggregation reconcilers (`AddonCheck`, `HealthCheck`,
+`ClusterHealth`) do not return a `RequeueAfter`; their re-reconciliation is
+event-driven (spec edits, owned-object changes, cross-resource watches). The
+`NodeCertificateCheckReconciler` is the exception: it requeues after
+`spec.interval` (default `1h`) to refresh the rolled-up report, in addition to
+the ConfigMap-watch events its agents generate. See
+[Known limitations](#known-limitations) for what event-driven reconciliation
+means for `spec.interval` on the other kinds.
 
 ## The In-Process Adapter Contract
 

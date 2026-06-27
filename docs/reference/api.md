@@ -17,6 +17,8 @@ Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API gro
 - [HealthCheckList](#healthchecklist)
 - [HealthReport](#healthreport)
 - [HealthReportList](#healthreportlist)
+- [NodeCertificateCheck](#nodecertificatecheck)
+- [NodeCertificateCheckList](#nodecertificatechecklist)
 
 
 
@@ -463,5 +465,96 @@ _Appears in:_
 | `kind` _string_ | Kind is the target object's kind. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
 | `namespace` _string_ | Namespace is the target object's namespace, if namespaced. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 | `name` _string_ | Name is the target object's name. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+
+
+#### NodeCertificateCheck
+
+
+
+NodeCertificateCheck is the Schema for the nodecertificatechecks API.
+
+
+
+_Appears in:_
+- [NodeCertificateCheckList](#nodecertificatechecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `NodeCertificateCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[NodeCertificateCheckSpec](#nodecertificatecheckspec)_ |  |  |  |
+| `status` _[NodeCertificateCheckStatus](#nodecertificatecheckstatus)_ |  |  |  |
+
+
+#### NodeCertificateCheckList
+
+
+
+NodeCertificateCheckList contains a list of NodeCertificateCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `NodeCertificateCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[NodeCertificateCheck](#nodecertificatecheck) array_ |  |  |  |
+
+
+#### NodeCertificateCheckSpec
+
+
+
+NodeCertificateCheckSpec defines the desired state of NodeCertificateCheck.
+
+A NodeCertificateCheck scans on-disk X.509 certificates on every selected
+node and reports time-to-expiry before an expiring certificate can take the
+cluster down. The operator runs the scan via a hardened, read-only node-agent
+DaemonSet (one pod per node); each agent publishes its per-node result, and
+the operator rolls those up into a single HealthReport and mirrors the
+aggregate into Status.
+
+
+
+_Appears in:_
+- [NodeCertificateCheck](#nodecertificatecheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `paths` _string array_ | Paths is the set of on-disk certificate locations each node-agent scans.<br />Every entry is an absolute path to either a PEM-encoded certificate file<br />(read directly) or a directory (scanned recursively, to a bounded depth,<br />for *.crt, *.pem, and *.cert files). Files ending in .conf or .kubeconfig<br />are parsed as kubeconfigs and their embedded client/CA certificates are<br />extracted. Paths that do not exist on a node — or that the non-root agent<br />cannot read — are reported as Skipped, never Fail or Error. When empty, a<br />distribution-agnostic default set covering common kubeadm, k3s/RKE2, etcd,<br />and kubelet certificate locations is used. The operator mounts the parent<br />directory of each configured path into the agent read-only; a configured<br />directory absent on a node is created empty by the kubelet (hostPath<br />DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions. |  | MaxItems: 64 <br />Optional: \{\} <br /> |
+| `warnDays` _integer_ | WarnDays is the days-to-expiry threshold at or below which a certificate<br />is reported as Warn. Must be greater than or equal to CriticalDays. | 30 | Minimum: 0 <br />Optional: \{\} <br /> |
+| `criticalDays` _integer_ | CriticalDays is the days-to-expiry threshold at or below which a<br />certificate is reported as Fail. A certificate already past its notAfter<br />time is always Fail regardless of this value. | 7 | Minimum: 0 <br />Optional: \{\} <br /> |
+| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#toleration-v1-core) array_ | Tolerations are applied to the agent DaemonSet so it can schedule onto<br />tainted nodes. When nil, a default toleration set is applied so the agent<br />also lands on control-plane nodes (where kubeadm certificates live). Set<br />an explicit empty list to apply no tolerations. |  | Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which each node-agent re-scans its<br />certificates and the operator refreshes the rolled-up HealthReport.<br />Defaults to 1h when unset. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single node-agent scan pass. Defaults to 30s when unset. |  | Optional: \{\} <br /> |
+| `paused` _boolean_ | Paused stops the operator from running the agent DaemonSet and refreshing<br />reports. The agent DaemonSet is removed while paused; the most recent<br />Status snapshot is preserved. |  | Optional: \{\} <br /> |
+| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />After each new HealthReport the controller deletes the oldest reports<br />beyond the limit. The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### NodeCertificateCheckStatus
+
+
+
+NodeCertificateCheckStatus defines the observed state of NodeCertificateCheck.
+
+
+
+_Appears in:_
+- [NodeCertificateCheck](#nodecertificatecheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the operator last rolled up a HealthReport from<br />the node-agent results. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes from the<br />most recent roll-up. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent roll-up. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
+| `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
 
 

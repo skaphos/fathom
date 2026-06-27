@@ -53,6 +53,7 @@ spec:
             {{- end }}
             - --enable-http2={{ .Values.enableHTTP2 }}
             - --probe-image={{ include "fathom-operator.probeImage" . }}
+            - --node-agent-image={{ include "fathom-operator.nodeAgentImage" . }}
             {{- if .Values.config.enabled }}
             - --config=/etc/fathom/config.yaml
             {{- end }}

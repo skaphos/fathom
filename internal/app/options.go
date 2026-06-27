@@ -88,6 +88,12 @@ type Options struct {
 	// GHCR mirror set this once instead of on every AddonCheck.
 	ProbeImage string `mapstructure:"probe_image"`
 
+	// NodeAgentImage is the container image the NodeCertificateCheck controller
+	// uses for the node-agent DaemonSet it manages (cmd/node-agent). It is a
+	// dedicated, purpose-built image distinct from the operator and probe
+	// images. Operators running a private GHCR mirror set this once.
+	NodeAgentImage string `mapstructure:"node_agent_image"`
+
 	// Zap is bound directly to flags (not Viper) because zap.Options uses
 	// the stdlib flag package and is not round-trippable via mapstructure.
 	// Its default is whatever zap.Options.BindFlags registers (Development
@@ -101,6 +107,12 @@ type Options struct {
 // threshold nor an operator-level --probe-image flag is set. Bumped in lockstep
 // with the probe-image publish pipeline.
 const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.0.2"
+
+// DefaultNodeAgentImage is the published node-agent image this build of Fathom
+// ships with. The NodeCertificateCheck controller uses it for its managed
+// DaemonSet unless overridden by --node-agent-image. Bumped in lockstep with
+// the node-agent-image publish pipeline.
+const DefaultNodeAgentImage = "ghcr.io/skaphos/fathom-node-agent:v0.0.2"
 
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
@@ -133,6 +145,7 @@ func DefaultOptions() Options {
 		LeaderElectionID: "2d3dbc4f.skaphos.io",
 		EnableHTTP2:      false,
 		ProbeImage:       DefaultProbeImage,
+		NodeAgentImage:   DefaultNodeAgentImage,
 	}
 }
 
@@ -247,6 +260,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "If set, HTTP/2 will be enabled for the metrics and webhook servers."},
 		{flagName: "probe-image", viperKey: "probe_image", stringDef: defaults.ProbeImage,
 			usage: "Container image used by adapters that launch probe pods. Per-AddonCheck thresholds still override this."},
+		{flagName: "node-agent-image", viperKey: "node_agent_image", stringDef: defaults.NodeAgentImage,
+			usage: "Container image used by the NodeCertificateCheck controller for its managed node-agent DaemonSet. A dedicated image, distinct from the operator and probe images."},
 		{flagName: "tracing-enabled", viperKey: "tracing.enabled", isBool: true, boolDef: defaults.Tracing.Enabled,
 			usage: "Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead)."},
 		{flagName: "tracing-otlp-endpoint", viperKey: "tracing.otlp_endpoint", stringDef: defaults.Tracing.OTLPEndpoint,
