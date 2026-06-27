@@ -211,10 +211,13 @@ var managerFactory = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, er
 
 // operatorVersion returns the operator's build version for the tracing
 // service.version resource attribute. It reads the main module version embedded
-// by the Go toolchain, falling back to "dev" for ad-hoc local builds.
+// by the Go toolchain, falling back to "dev" for ad-hoc local builds — which
+// the toolchain reports as "(devel)" (or "" when build info is unavailable).
 func operatorVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
-		return info.Main.Version
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
 	}
 	return "dev"
 }

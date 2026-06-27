@@ -14,12 +14,17 @@ import (
 )
 
 // restoreGlobalProvider snapshots and restores the process-global tracer
-// provider so these tests do not leak the no-op/SDK provider they install into
-// the rest of the suite.
+// provider AND text-map propagator (Init sets both) so these tests do not leak
+// the no-op/SDK provider or the propagator they install into the rest of the
+// suite, which would otherwise make other tests order-dependent.
 func restoreGlobalProvider(t *testing.T) {
 	t.Helper()
-	prev := otel.GetTracerProvider()
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	prevTP := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTP)
+		otel.SetTextMapPropagator(prevProp)
+	})
 }
 
 func TestInit_DisabledInstallsNoopProvider(t *testing.T) {
