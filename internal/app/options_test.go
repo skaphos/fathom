@@ -35,6 +35,11 @@ func TestDefaultOptions_MatchFlagDefaults(t *testing.T) {
 	}
 
 	want := DefaultOptions()
+	// SKA-303: leader election defaults on. Assert the concrete value (not just
+	// got==want) so this fails if the in-code default ever regresses to false.
+	if !want.LeaderElect {
+		t.Errorf("DefaultOptions().LeaderElect: got false, want true")
+	}
 	if got.Metrics != want.Metrics {
 		t.Errorf("Metrics: got %+v, want %+v", got.Metrics, want.Metrics)
 	}
@@ -113,7 +118,7 @@ metrics:
   secure: false
 webhook:
   cert_path: /etc/webhook
-leader_elect: true
+leader_elect: false
 leader_election_id: custom.example.com
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -137,8 +142,9 @@ leader_election_id: custom.example.com
 	if got.Webhook.CertPath != "/etc/webhook" {
 		t.Errorf("Webhook.CertPath: got %q, want /etc/webhook", got.Webhook.CertPath)
 	}
-	if !got.LeaderElect {
-		t.Errorf("LeaderElect: got false, want true")
+	// Config sets leader_elect: false, which must override the true default.
+	if got.LeaderElect {
+		t.Errorf("LeaderElect: got true, want false (config should override the true default)")
 	}
 	if got.LeaderElectionID != "custom.example.com" {
 		t.Errorf("LeaderElectionID: got %q, want custom.example.com", got.LeaderElectionID)

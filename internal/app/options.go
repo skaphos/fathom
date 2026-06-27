@@ -101,10 +101,12 @@ func DefaultOptions() Options {
 			CertKey:  "tls.key",
 		},
 		HealthProbeBindAddress: ":8081",
-		LeaderElect:            false,
-		LeaderElectionID:       "2d3dbc4f.skaphos.io",
-		EnableHTTP2:            false,
-		ProbeImage:             DefaultProbeImage,
+		// SKA-303: default leader election on so a multi-replica deployment that
+		// drops the --leader-elect arg can't silently run duplicate reconcilers.
+		LeaderElect:      true,
+		LeaderElectionID: "2d3dbc4f.skaphos.io",
+		EnableHTTP2:      false,
+		ProbeImage:       DefaultProbeImage,
 	}
 }
 
