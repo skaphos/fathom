@@ -196,7 +196,9 @@ tasks:
       - task: generate
       - task: fmt
       - task: vet
-      - go run ./cmd/main.go
+      # Leader election defaults on (SKA-303); disable it for single-process
+      # local dev so the manager starts without contending for a lease.
+      - go run ./cmd/main.go --leader-elect=false
 
   docker-build:
     desc: Build container image (IMG={{.IMG}})

@@ -77,7 +77,7 @@ the viper key by the rule above.
 | `--webhook-cert-name` | `webhook.cert_name` | `FATHOM_WEBHOOK_CERT_NAME` | `tls.crt` | Webhook certificate file name. |
 | `--webhook-cert-key` | `webhook.cert_key` | `FATHOM_WEBHOOK_CERT_KEY` | `tls.key` | Webhook key file name. |
 | `--health-probe-bind-address` | `health_probe_bind_address` | `FATHOM_HEALTH_PROBE_BIND_ADDRESS` | `:8081` | Address the health probe endpoint (`/healthz`, `/readyz`) binds to. `0` disables it. |
-| `--leader-elect` | `leader_elect` | `FATHOM_LEADER_ELECT` | `false` | Enable leader election so only one manager replica is active. |
+| `--leader-elect` | `leader_elect` | `FATHOM_LEADER_ELECT` | `true` | Enable leader election so only one manager replica is active. On by default; set `--leader-elect=false` for single-process local runs. |
 | `--leader-election-id` | `leader_election_id` | `FATHOM_LEADER_ELECTION_ID` | `2d3dbc4f.skaphos.io` | Name of the lease resource used for leader election (must be a DNS-1123 subdomain). |
 | `--enable-http2` | `enable_http2` | `FATHOM_ENABLE_HTTP2` | `false` | Enable HTTP/2 for the metrics and webhook servers. Off by default to mitigate CVE-2023-44487 / CVE-2023-39325. |
 | `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.0.2` | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |

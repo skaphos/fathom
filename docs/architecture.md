@@ -318,8 +318,9 @@ The manager is constructed in `internal/app/run.go`:
   on a cluster-routable port unless `metrics.allow_insecure` is set (SKA-287).
 - **HTTP/2:** disabled by default to mitigate CVE-2023-44487 / CVE-2023-39325;
   re-enable with `--enable-http2`.
-- **Leader election:** off by default; enable with `--leader-elect`. The lease
-  name is `leader_election_id` (default `2d3dbc4f.skaphos.io`).
+- **Leader election:** on by default (SKA-303); disable with
+  `--leader-elect=false` for single-process local runs. The lease name is
+  `leader_election_id` (default `2d3dbc4f.skaphos.io`).
 - **Readiness:** `/readyz` is gated on informer cache sync (`readyzCheck`) so a
   not-yet-synced replica is not routed traffic during a rolling update;
   `/healthz` is a plain liveness ping.
