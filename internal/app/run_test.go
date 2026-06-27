@@ -255,6 +255,13 @@ func TestBuiltInAdapters_IncludesCertManager(t *testing.T) {
 	if got.Name() != "external-secrets" {
 		t.Fatalf("adapter name: got %q, want external-secrets", got.Name())
 	}
+	got, err = adapterRegistry.Lookup("cilium")
+	if err != nil {
+		t.Fatalf("Lookup(cilium): %v", err)
+	}
+	if got.Name() != "cilium" {
+		t.Fatalf("adapter name: got %q, want cilium", got.Name())
+	}
 }
 
 func TestReadyzCheck(t *testing.T) {

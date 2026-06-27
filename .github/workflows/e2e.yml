@@ -75,9 +75,13 @@ jobs:
           version: v0.32.0
           config: test/e2e/fixtures/kind-cluster.yaml
           cluster_name: fathom-e2e
-          wait: 120s
+          # Do not wait for node Ready here: kindnet is disabled
+          # (networking.disableDefaultCNI), so the node stays NotReady until the
+          # next step installs Cilium as the CNI. Waiting would time out before a
+          # CNI exists; helmfile's wait:true on the Cilium release gates readiness.
+          wait: "0s"
 
-      - name: Install addon stack (cert-manager + external-secrets)
+      - name: Install addon stack (Cilium CNI + cert-manager + external-secrets)
         run: go -C tools tool task e2e:cluster:addons
 
       - name: Build, load, and deploy Fathom

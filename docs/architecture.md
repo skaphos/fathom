@@ -259,12 +259,20 @@ and a set of families:
 | `cert-manager` | `internal/adapter/certmanager` | `system_health`, `issuer_health`, `certificate_health` |
 | `coredns` | `internal/adapter/coredns` | `system_health`, `dns_resolution` |
 | `external-secrets` | `internal/adapter/externalsecrets` | `system_health`, `secret_sync` |
+| `cilium` | `internal/adapter/cilium` | `control_plane_health`, `agent_health`, `crd_health` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`
 registers `apiextensions/v1`; see [Runtime shape](#runtime-shape)). Per-family
 threshold keys are documented inline in each adapter and demonstrated in the
 top-level `README.md` examples.
+
+The `cilium` adapter differs from the others in how it treats a missing add-on:
+when Cilium is not installed at all (the `cilium-operator` Deployment, the
+`cilium` agent DaemonSet, and the core Cilium CRDs are all absent) it reports
+`Skipped` (which rolls up green) rather than `Fail`, so a `cilium` AddonCheck
+stays quiet on clusters that may or may not run Cilium. A workload that exists
+but is unhealthy still reports `Fail`.
 
 ## Probe-Pod Model
 
