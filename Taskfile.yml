@@ -362,7 +362,7 @@ tasks:
         fi
 
   e2e:cluster:addons:
-    desc: Install cert-manager + external-secrets via helmfile ({{.E2E_HELMFILE}})
+    desc: Install Cilium (CNI) + cert-manager + external-secrets via helmfile ({{.E2E_HELMFILE}})
     cmds:
       - |
         set -euo pipefail
@@ -385,11 +385,12 @@ tasks:
         vars: {IMG: '{{.E2E_IMG}}'}
 
   e2e:cluster:samples:
-    desc: Apply AddonCheck samples (CoreDNS, cert-manager, external-secrets)
+    desc: Apply AddonCheck samples (CoreDNS, cert-manager, external-secrets, Cilium)
     cmds:
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_coredns.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml
+      - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_cilium.yaml
 
   e2e:cluster:down:
     desc: Delete the e2e kind cluster

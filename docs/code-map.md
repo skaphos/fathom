@@ -101,8 +101,8 @@ The public, importable contract (see
 - `registry/registry.go` — `Registry` keyed by add-on type. `New`, `Register`
   (runs `EnsureCompatible`, rejects nil/empty/conflicting adapters, idempotent
   re-registration), `Lookup` (`ErrNotFound`), `Capabilities`.
-- `certmanager/`, `coredns/`, `externalsecrets/` — built-in adapters. Each
-  exposes `New()` and implements the contract; families are listed in
+- `certmanager/`, `coredns/`, `externalsecrets/`, `cilium/` — built-in adapters.
+  Each exposes `New()` and implements the contract; families are listed in
   [architecture.md](architecture.md#built-in-adapters). The CoreDNS adapter is
   the one that launches probe pods (`dns_resolution`) and owns
   `resolveProbeImage`.
@@ -132,7 +132,7 @@ kustomize is the source of truth for all deployable YAML.
 | `config/components/` | Opt-in overlays (e.g. Prometheus ServiceMonitor). |
 | `config/network-policy/` | NetworkPolicy for metrics traffic. |
 | `config/manifests/`, `config/scorecard/` | OLM bundle + scorecard scaffolding. |
-| `config/samples/` | Example `AddonCheck` CRs (cert-manager, CoreDNS, ESO). |
+| `config/samples/` | Example `AddonCheck` CRs (cert-manager, CoreDNS, ESO, Cilium). |
 
 ## `test/`
 

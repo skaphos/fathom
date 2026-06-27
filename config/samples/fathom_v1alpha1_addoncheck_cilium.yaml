@@ -1,0 +1,31 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: cilium-sample
+spec:
+  addonType: cilium
+  interval: 5m
+  timeout: 30s
+  policy:
+    # cilium-operator Deployment (control plane) readiness.
+    control_plane_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        restartWarnCount: "3"
+        # operatorDeploymentName: cilium-operator   # override for non-standard installs
+    # cilium agent DaemonSet readiness across nodes.
+    agent_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        restartWarnCount: "3"
+        # agentDaemonSetName: cilium                 # override for non-standard installs
+    # Core Cilium CustomResourceDefinitions are established and served.
+    crd_health:
+      enabled: true

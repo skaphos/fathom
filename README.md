@@ -131,6 +131,47 @@ spec:
         staleMinutes: "60"
 ```
 
+The built-in Cilium (CNI baseline) adapter supports `control_plane_health`,
+`agent_health`, and `crd_health` families. `control_plane_health` checks the
+`cilium-operator` Deployment and its pods. `agent_health` checks the `cilium`
+agent DaemonSet and its pods. `crd_health` checks that the core Cilium
+CustomResourceDefinitions are established and serve a supported version (`v2` /
+`v2alpha1`). Unlike the cert-manager and External Secrets adapters, which `Fail`
+when a required component is missing, the Cilium adapter reports `Skipped` (which
+rolls up green) when Cilium is not installed at all — the operator Deployment,
+agent DaemonSet, and CRDs are all absent — so a `cilium` AddonCheck stays quiet
+on clusters that may or may not run Cilium. A workload that exists but is
+unhealthy still reports `Fail`. Set `operatorDeploymentName` and
+`agentDaemonSetName` for non-standard installs.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  name: cilium-health
+spec:
+  addonType: cilium
+  interval: 5m
+  timeout: 30s
+  policy:
+    control_plane_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        operatorDeploymentName: "cilium-operator"
+        restartWarnCount: "3"
+    agent_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        agentDaemonSetName: "cilium"
+        restartWarnCount: "3"
+    crd_health:
+      enabled: true
+```
+
 ## Probe Pods
 
 Fathom has a shared lightweight probe-pod path under `internal/probe` plus a
