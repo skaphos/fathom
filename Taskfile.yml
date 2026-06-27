@@ -262,6 +262,7 @@ tasks:
           [ -f "$file" ] || return 0
           grep -qF "$ref@sha256:" "$file" || return 0
           digest="$(resolve "$ref")"
+          printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "error: invalid digest for $ref: $digest" >&2; exit 1; }
           esc="$(printf '%s' "$ref" | sed 's/\./\\./g')"
           sed -i.bak -E "s#${esc}@sha256:[0-9a-f]+#${ref}@${digest}#g" "$file"
           rm -f "$file.bak"

@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-# Runtime base pinned by digest (SKA-295); refresh with `task images:refresh`.
+# Runtime base pinned by digest (SKA-295); refresh with `go -C tools tool task images:refresh`.
 FROM gcr.io/distroless/static:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
 WORKDIR /
 COPY --from=builder /workspace/manager .
