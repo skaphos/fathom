@@ -1,0 +1,124 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+name: e2e
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref. e2e is the most expensive workflow
+# (kind cluster + two image builds + the addon stack), so cancelling in-flight
+# runs on a force-push or rapid PR pushes reclaims runner minutes. main is
+# included; if two pushes land back-to-back only the newest is validated, which
+# is acceptable for a post-merge signal.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimum privilege: the job only reads repository contents (checkout) and
+# uploads artifacts within the same run. No API needs write scopes.
+permissions:
+  contents: read
+
+env:
+  # Pinned so a new helmfile release cannot change e2e behaviour behind our
+  # backs; bump deliberately. Verified against the upstream checksums file.
+  HELMFILE_VERSION: "1.6.0"
+
+jobs:
+  e2e:
+    name: kind e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+
+      - name: Install helmfile
+        # No upstream action is SHA-pinnable for helmfile, so install the
+        # release binary directly and verify it against the published
+        # checksums file before putting it on PATH.
+        run: |
+          set -euo pipefail
+          tarball="helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz"
+          base="https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}"
+          curl -fsSLO "${base}/${tarball}"
+          curl -fsSLO "${base}/helmfile_${HELMFILE_VERSION}_checksums.txt"
+          grep " ${tarball}$" "helmfile_${HELMFILE_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "${tarball}" helmfile
+          sudo install -m 0755 helmfile /usr/local/bin/helmfile
+          rm -f "${tarball}" "helmfile_${HELMFILE_VERSION}_checksums.txt" helmfile
+          helmfile --version
+
+      - name: Create kind cluster
+        # kind-action bundles a known-good kind + kubectl and tears the cluster
+        # down in its post step, so no cluster leaks between re-runs. The config
+        # pins the node image (kindest/node:v1.36.0) in lockstep with envtest;
+        # cluster_name matches the Taskfile default E2E_KIND_CLUSTER so the
+        # e2e:cluster:* sub-tasks target the same cluster/context.
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          config: test/e2e/fixtures/kind-cluster.yaml
+          cluster_name: fathom-e2e
+          wait: 120s
+
+      - name: Install addon stack (cert-manager + external-secrets)
+        run: go -C tools tool task e2e:cluster:addons
+
+      - name: Build, load, and deploy Fathom
+        # Builds the operator + probe images, loads them into kind, installs
+        # CRDs, and deploys the operator into fathom-system.
+        run: go -C tools tool task e2e:cluster:fathom
+
+      - name: Run e2e suite
+        # The cluster, addons, and operator are already in place, so invoke the
+        # Ginkgo suite directly rather than `task test-e2e` (which would create
+        # and tear down its own cluster). BeforeSuite re-syncs the addon stack
+        # idempotently.
+        run: go test ./test/e2e/ -v -ginkgo.v
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          set +e
+          out=e2e-diagnostics
+          mkdir -p "$out"
+          kubectl get nodes -o wide                              > "$out/nodes.txt"            2>&1
+          kubectl get all -A -o wide                             > "$out/all-resources.txt"    2>&1
+          kubectl get events -A --sort-by=.lastTimestamp         > "$out/events.txt"           2>&1
+          kubectl describe pods -A                               > "$out/describe-pods.txt"    2>&1
+
+          crds="addonchecks.fathom.skaphos.io,healthchecks.fathom.skaphos.io,clusterhealths.fathom.skaphos.io,healthreports.fathom.skaphos.io"
+          kubectl get "$crds" -A -o yaml                         > "$out/fathom-crs.yaml"      2>&1
+          kubectl describe "$crds" -A                            > "$out/fathom-crs-describe.txt" 2>&1
+
+          # Controller + addon pod logs (current and, where present, previous).
+          for ns in fathom-system cert-manager external-secrets kube-system; do
+            mkdir -p "$out/logs/$ns"
+            for pod in $(kubectl get pods -n "$ns" -o name 2>/dev/null); do
+              name=$(basename "$pod")
+              kubectl logs -n "$ns" "$pod" --all-containers --tail=5000            > "$out/logs/$ns/$name.log"          2>&1
+              kubectl logs -n "$ns" "$pod" --all-containers --previous --tail=5000 > "$out/logs/$ns/$name.previous.log" 2>&1
+            done
+          done
+          echo "diagnostics collected under $out"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
