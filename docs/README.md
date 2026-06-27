@@ -11,14 +11,27 @@ resources, runs adapter-defined checks against the cluster, records each run as
 an immutable `HealthReport`, mirrors per-check status through `HealthCheck`, and
 rolls everything up into a single cluster-wide verdict on `ClusterHealth`.
 
-## Contents
+## Guides — for platform teams
+
+Task-oriented guides for installing and using Fathom live in
+[guides/](guides/README.md):
+
+| Guide | What it covers |
+| --- | --- |
+| [Getting started](guides/getting-started.md) | Install the operator and go from an empty cluster to one cluster-wide verdict in ~15 minutes. |
+| [Concepts](guides/concepts.md) | The platform-team mental model: the resource kinds, what drives work vs. aggregates, and result severity. |
+| [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the four built-in adapters — families, thresholds, roll-up, troubleshooting. |
+| [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. |
+| [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
+
+## Reference & internals
 
 | Document | What it covers |
 | --- | --- |
 | [architecture.md](architecture.md) | The CRD model, the AddonCheck → HealthCheck → ClusterHealth aggregation chain, what each reconciler owns and watches, the adapter contract, the probe-pod model, and the runtime shape. |
 | [code-map.md](code-map.md) | A module-by-module tour of the source tree for new contributors. |
 | [reference/configuration.md](reference/configuration.md) | Every operator option (flag / env var / config file / default) and the precedence rules. |
-| [reference/api.md](reference/api.md) | Generated CRD API reference for all four `fathom.skaphos.io/v1alpha1` kinds. |
+| [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
 
 ## Architecture Decision Records
 

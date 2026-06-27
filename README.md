@@ -200,7 +200,17 @@ checks can place client/server probe Pods on different nodes.
 
 ## Documentation
 
-Full documentation lives in [`docs/`](docs/README.md):
+Full documentation lives in [`docs/`](docs/README.md).
+
+**New here? Platform teams should start with the guides:**
+
+- [Getting started](docs/guides/getting-started.md) — install the operator and reach one cluster-wide verdict in ~15 minutes.
+- [Concepts](docs/guides/concepts.md) — the mental model for using Fathom.
+- [Add-on checks](docs/guides/addon-checks.md) — configure checks for cert-manager, CoreDNS, External Secrets, and Cilium.
+- [Node certificate checks](docs/guides/node-certificate-checks.md) — scan on-disk certificates on every node.
+- [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing, alerts, and deployment gates.
+
+Reference and internals:
 
 - [Architecture](docs/architecture.md) — CRD model, the AddonCheck → HealthCheck → ClusterHealth aggregation chain, reconcilers, adapter contract, probe-pod model.
 - [API reference](docs/reference/api.md) — generated CRD reference for `fathom.skaphos.io/v1alpha1`.
