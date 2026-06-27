@@ -228,6 +228,50 @@ tasks:
     cmds:
       - docker push {{.IMG}}
 
+  images:refresh:
+    desc: |
+      Re-resolve and rewrite the pinned base-image digests in Dockerfile and
+      Dockerfile.probe (SKA-295). For each `FROM` pin it reads the
+      human-readable tag, resolves the current multi-arch index digest from the
+      registry, and rewrites the trailing `@sha256:...` in place (the tag is
+      kept). Prefers `crane`, falls back to `docker buildx imagetools`. Safe to
+      run ad hoc or on a schedule (e.g. a weekly CI job) to track upstream base
+      updates. After running, review the diff and open a PR.
+    cmds:
+      - |
+        set -eu
+
+        # Resolve the multi-arch index digest ("sha256:...") for a name:tag ref.
+        resolve() {
+          ref="$1"
+          if command -v crane >/dev/null 2>&1; then
+            crane digest "$ref"
+          elif command -v docker >/dev/null 2>&1 \
+            && docker buildx imagetools inspect "$ref" --format '{{`{{.Manifest.Digest}}`}}' >/dev/null 2>&1; then
+            docker buildx imagetools inspect "$ref" --format '{{`{{.Manifest.Digest}}`}}'
+          else
+            echo "error: need 'crane' or 'docker buildx' to resolve $ref" >&2
+            exit 1
+          fi
+        }
+
+        # Repin every "<ref>@sha256:<old>" occurrence in $file with the freshly
+        # resolved digest. Portable across GNU and BSD/macOS sed (sed -i.bak).
+        repin() {
+          file="$1"; ref="$2"
+          [ -f "$file" ] || return 0
+          grep -qF "$ref@sha256:" "$file" || return 0
+          digest="$(resolve "$ref")"
+          esc="$(printf '%s' "$ref" | sed 's/\./\\./g')"
+          sed -i.bak -E "s#${esc}@sha256:[0-9a-f]+#${ref}@${digest}#g" "$file"
+          rm -f "$file.bak"
+          echo "repinned $ref -> $digest in $file"
+        }
+
+        repin Dockerfile       golang:1.26.4
+        repin Dockerfile       gcr.io/distroless/static:nonroot
+        repin Dockerfile.probe golang:1.26.4
+
   build-installer:
     desc: Render consolidated install.yaml under dist/
     cmds:

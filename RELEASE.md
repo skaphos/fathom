@@ -101,6 +101,36 @@ true` to a cert-manager-backed TLS configuration; enable it from the
 component's `kustomization.yaml` once cert-manager and the
 `cert_metrics_manager_patch` are wired up in the overlay.
 
+## Image Pinning and Deploy-by-Digest Contract
+
+Container builds are hardened for reproducibility and supply-chain integrity:
+
+- **Base images are pinned by digest** (SKA-295). `Dockerfile` pins the
+  `golang` builder and the `gcr.io/distroless/static:nonroot` runtime;
+  `Dockerfile.probe` pins the `golang` builder (its runtime is `scratch`). The
+  readable tag is retained alongside the digest (`golang:1.26.4@sha256:...`).
+  Refresh the digests with `go -C tools tool task images:refresh`, which
+  re-resolves each multi-arch index digest (via `crane` or
+  `docker buildx imagetools`) and rewrites the pins in place. Run it ad hoc or
+  on a schedule and review the diff in a PR.
+- **BuildKit cache mounts** (SKA-305) keep the Go module and build caches out of
+  image layers. Both Dockerfiles declare `# syntax=docker/dockerfile:1.7`, so
+  builds require BuildKit (the default for modern `docker build` / `buildx`).
+
+**Releases MUST deploy the manager by digest, never by a mutable tag.** The
+`config/manager/kustomization.yaml` `images:` transformer maps the placeholder
+name `controller` to `ghcr.io/skaphos/fathom-operator`. At release/deploy time,
+inject the published digest via the `IMG` variable so kustomize pins it:
+
+```bash
+IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \
+  go -C tools tool task build-installer   # or deploy / bundle
+```
+
+This makes `dist/install.yaml` and the OLM bundle reference an immutable,
+content-addressed manager image. The `newTag: latest` default in the
+transformer is for local development only.
+
 ## Probe Image / Default Drift Prevention
 
 The probe image tag the operator falls back to is hardcoded in two Go
