@@ -63,7 +63,7 @@ There is no periodic timer yet. In practice this means:
 
 This is a known limitation tracked in the
 [architecture reference](../architecture.md#known-limitations).
-`NodeCertificateCheck` — a feature-gated kind not present in every build (see
+`NodeCertificateCheck` — a newer kind not present in older builds (see
 its [guide](node-certificate-checks.md#availability)) — is the exception that
 *does* honor `interval`.
 
@@ -249,7 +249,7 @@ spec: {}   # empty selector matches all HealthChecks in this namespace
   rolled up together in one namespace.
 
 > `HealthCheck` can only wrap `AddonCheck` (`checkRef.kind: AddonCheck`). The
-> feature-gated `NodeCertificateCheck` kind, where present, reports its own
+> newer `NodeCertificateCheck` kind, where present, reports its own
 > status directly and is not aggregated through `HealthCheck`/`ClusterHealth`.
 
 ## Troubleshooting

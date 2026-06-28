@@ -120,7 +120,7 @@ the outcome to `status`, and records the run as an immutable `HealthReport`.
 > To force a fresh run, edit the spec (any generation-changing edit re-runs the
 > adapter). Periodic requeue is a tracked limitation; see
 > [Add-on checks → Run cadence](addon-checks.md#run-cadence-and-the-interval-caveat).
-> `NodeCertificateCheck` — a feature-gated kind not present in every build (see
+> `NodeCertificateCheck` — a newer kind not present in older builds (see
 > its [Availability note](node-certificate-checks.md#availability)) — *does*
 > honor `interval`.
 
@@ -223,7 +223,7 @@ AddonCheck ──runs──▶ status + HealthReport (history)
 - **[Add-on checks](addon-checks.md)** — every built-in adapter
   (cert-manager, CoreDNS, External Secrets, Cilium), their families, and the
   threshold knobs.
-- **[Node certificate checks](node-certificate-checks.md)** — *(feature-gated;
+- **[Node certificate checks](node-certificate-checks.md)** — *(newer kind;
   see its Availability note)* scan on-disk X.509 certificates on every node and
   alert before they expire.
 - **[Monitoring & alerting](monitoring.md)** — scrape Fathom's metrics, wire

@@ -50,7 +50,7 @@ rest are projection and history layers.
 | Kind | What you use it for | Drives work? |
 | --- | --- | --- |
 | **`AddonCheck`** | Declare a check against one add-on (cert-manager, CoreDNS, External Secrets, Cilium). Selects an adapter via `spec.addonType`. | Yes — via its adapter |
-| **`NodeCertificateCheck`** *(feature-gated — see note below)* | Declare an on-disk certificate-expiry scan across your nodes. | Yes — via the node-agent DaemonSet |
+| **`NodeCertificateCheck`** *(newer kind — see note below)* | Declare an on-disk certificate-expiry scan across your nodes. | Yes — via the node-agent DaemonSet |
 | **`HealthCheck`** | Wrap one check and mirror its status into a uniform shape so it can be aggregated. | No |
 | **`ClusterHealth`** | Aggregate many `HealthCheck`s into one worst-case verdict. | No |
 | **`HealthReport`** | Immutable, per-run history record. Created for you; you read it, you don't write it. | n/a |
