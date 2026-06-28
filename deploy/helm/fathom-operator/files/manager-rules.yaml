@@ -3,6 +3,7 @@
   resources:
   - configmaps
   verbs:
+  - create
   - get
   - list
   - update

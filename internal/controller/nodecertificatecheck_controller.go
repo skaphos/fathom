@@ -97,7 +97,12 @@ type NodeCertificateCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;update
+// The node-agent ServiceAccount needs create/get/update on its own report
+// ConfigMap; the operator grants that via the runtime fathom-node-agent-role
+// ClusterRole. RBAC escalation prevention requires the operator to already hold
+// every verb it confers, so the manager must also hold create (not just
+// get;list;watch;update) on configmaps.
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch
