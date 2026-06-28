@@ -16,7 +16,5 @@ resources:
 # release that resolves the manager image by tag.
 images:
 - name: controller
-  newName: fathom-operator
-  newTag: e2e
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
+  newName: ghcr.io/skaphos/fathom-operator
+  newTag: latest

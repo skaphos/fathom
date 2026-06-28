@@ -230,6 +230,19 @@ func TestScanPermissionDeniedIsSkippedNotError(t *testing.T) {
 	if got := Scan(ScanOptions{Paths: []string{sub}, Now: fixedNow}); len(got) != 1 || got[0].Outcome != OutcomeSkipped {
 		t.Fatalf("unreadable dir: want 1 Skipped, got %+v", got)
 	}
+
+	// A configured file whose parent directory is not searchable cannot even be
+	// stat'd (the os.Stat in scanPath fails with EACCES). That is a permission
+	// verdict too and must be Skipped, never Error.
+	noexec := filepath.Join(dir, "noexec")
+	inner := writeFile(t, noexec, "inner.crt", makeCertPEM(t, "z", fixedNow.Add(100*24*time.Hour), nil))
+	if err := os.Chmod(noexec, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(noexec, 0o755) })
+	if got := Scan(ScanOptions{Paths: []string{inner}, Now: fixedNow}); len(got) != 1 || got[0].Outcome != OutcomeSkipped {
+		t.Fatalf("unstattable file (non-searchable parent): want 1 Skipped, got %+v", got)
+	}
 }
 
 func TestScanDefaultsWhenNoPaths(t *testing.T) {

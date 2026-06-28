@@ -42,9 +42,12 @@ type ScanOptions struct {
 }
 
 // Scan reads and classifies every certificate found under opts.Paths. It never
-// returns an error: unreadable or unparsable paths surface as CertResults with
-// OutcomeError, and paths that simply do not exist are omitted. Results are
-// returned in a deterministic order (by path, then source).
+// returns an error. Unparsable certificates and genuine (non-permission) read
+// failures surface as CertResults with OutcomeError; paths the non-root agent
+// lacks permission to read surface as OutcomeSkipped (so a root-only cert never
+// dominates a healthy node's aggregate); and paths that simply do not exist are
+// omitted entirely. Results are returned in a deterministic order (by path,
+// then source).
 func Scan(opts ScanOptions) []CertResult {
 	now := opts.Now
 	if now.IsZero() {
@@ -75,6 +78,12 @@ func scanPath(p string, th Thresholds, now time.Time) []CertResult {
 			// Absent paths are expected across distributions; stay silent so
 			// the report is not flooded with Skipped entries.
 			return nil
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			// The parent directory is not searchable by the non-root agent, so
+			// we cannot even stat the path. That is a permission verdict, not a
+			// certificate error: Skipped, consistent with scanDir/scanCertFile.
+			return []CertResult{skippedResult(p, "file", permissionDeniedSummary)}
 		}
 		return []CertResult{errorResult(p, "file", fmt.Sprintf("cannot stat path: %v", err))}
 	}

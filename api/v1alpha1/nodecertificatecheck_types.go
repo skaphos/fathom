@@ -24,8 +24,9 @@ type NodeCertificateCheckSpec struct {
 	// (read directly) or a directory (scanned recursively, to a bounded depth,
 	// for *.crt, *.pem, and *.cert files). Files ending in .conf or .kubeconfig
 	// are parsed as kubeconfigs and their embedded client/CA certificates are
-	// extracted. Paths that do not exist on a node — or that the non-root agent
-	// cannot read — are reported as Skipped, never Fail or Error. When empty, a
+	// extracted. Paths the non-root agent cannot read are reported as Skipped,
+	// never Fail or Error; paths that do not exist on a node are omitted from the
+	// report entirely, so absent distribution defaults do not flood it. When empty, a
 	// distribution-agnostic default set covering common kubeadm, k3s/RKE2, etcd,
 	// and kubelet certificate locations is used. The operator mounts the parent
 	// directory of each configured path into the agent read-only; a configured
