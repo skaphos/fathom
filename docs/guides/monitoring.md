@@ -92,7 +92,7 @@ own metrics endpoint:
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
-| `fathom_node_certificate_expiry_days` | gauge | `node`, `path`, `subject`, `issuer` | **Days until each certificate expires.** The cleanest signal for proactive cert-expiry alerts. |
+| `fathom_node_certificate_expiry_days` | gauge | `node`, `path` | **Days until each certificate expires.** The cleanest signal for proactive cert-expiry alerts. Labeled only by node and path — certificate subject/issuer DNs are kept off this unauthenticated endpoint (and out of the label cardinality) and live in the `HealthReport` detail instead. |
 
 The node-agents are a DaemonSet the controller creates at runtime, so how you
 scrape them depends on your Prometheus setup — a `PodMonitor` selecting the
@@ -139,7 +139,7 @@ groups:
           severity: warning
         annotations:
           summary: "Certificate on {{ $labels.node }} expires in <= 14 days"
-          description: "{{ $labels.path }} ({{ $labels.subject }})"
+          description: "{{ $labels.path }} on {{ $labels.node }}"
       - alert: NodeCertificateExpiringCritical
         expr: min by (node, path) (fathom_node_certificate_expiry_days) <= 3
         for: 10m
