@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -308,6 +309,82 @@ func TestDeepCopy_HealthReportList(t *testing.T) {
 	copy := orig.DeepCopy()
 	deepCopyContract(t, "HealthReportList", orig, copy)
 	runtimeObjectContract(t, "HealthReportList", orig)
+}
+
+// fullyPopulatedNodeCertificateCheck returns a NodeCertificateCheck with every
+// optional slice/map/pointer field non-nil so the generated DeepCopy exercises
+// every branch (notably the corev1.Toleration slice and the threshold pointers).
+func fullyPopulatedNodeCertificateCheck() *NodeCertificateCheck {
+	warn := int32(30)
+	critical := int32(7)
+	interval := metav1.Duration{Duration: time.Hour}
+	timeout := metav1.Duration{Duration: 30 * time.Second}
+	historyLimit := int32(10)
+	lastRun := metav1.NewTime(time.Unix(1_700_000_200, 0))
+	return &NodeCertificateCheck{
+		TypeMeta:   metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "NodeCertificateCheck"},
+		ObjectMeta: metav1.ObjectMeta{Name: "node-certs", Namespace: "fathom-system"},
+		Spec: NodeCertificateCheckSpec{
+			Paths:        []string{"/etc/kubernetes/pki", "/etc/kubernetes/admin.conf"},
+			WarnDays:     &warn,
+			CriticalDays: &critical,
+			NodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			Tolerations: []corev1.Toleration{{
+				Key:      "node-role.kubernetes.io/control-plane",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			}},
+			Interval:     &interval,
+			Timeout:      &timeout,
+			HistoryLimit: &historyLimit,
+		},
+		Status: NodeCertificateCheckStatus{
+			Conditions: []metav1.Condition{{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: lastRun,
+				Reason:             "Reporting",
+			}},
+			LastRunTime:    &lastRun,
+			LastResult:     "Warn",
+			LastReportName: "node-certs-abc12",
+			DesiredNodes:   3,
+			ReportingNodes: 3,
+		},
+	}
+}
+
+func TestDeepCopy_NodeCertificateCheck(t *testing.T) {
+	orig := fullyPopulatedNodeCertificateCheck()
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "NodeCertificateCheck", orig, copy)
+
+	copy.Spec.NodeSelector["kubernetes.io/os"] = "windows"
+	if orig.Spec.NodeSelector["kubernetes.io/os"] == "windows" {
+		t.Fatal("NodeCertificateCheck.DeepCopy: nested NodeSelector map share detected")
+	}
+	copy.Spec.Tolerations[0].Key = "mutated"
+	if orig.Spec.Tolerations[0].Key == "mutated" {
+		t.Fatal("NodeCertificateCheck.DeepCopy: Tolerations slice share detected")
+	}
+
+	runtimeObjectContract(t, "NodeCertificateCheck", orig)
+}
+
+func TestDeepCopy_NodeCertificateCheckList(t *testing.T) {
+	orig := &NodeCertificateCheckList{
+		TypeMeta: metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "NodeCertificateCheckList"},
+		Items:    []NodeCertificateCheck{*fullyPopulatedNodeCertificateCheck()},
+	}
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "NodeCertificateCheckList", orig, copy)
+
+	copy.Items[0].Spec.Paths[0] = "mutated"
+	if orig.Items[0].Spec.Paths[0] == "mutated" {
+		t.Fatal("NodeCertificateCheckList.DeepCopy: Items slice share detected")
+	}
+
+	runtimeObjectContract(t, "NodeCertificateCheckList", orig)
 }
 
 // TestDeepCopy_LeafTypesDirect covers the leaf helper types whose DeepCopy

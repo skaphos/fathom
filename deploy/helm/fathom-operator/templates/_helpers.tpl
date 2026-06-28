@@ -71,3 +71,12 @@ assuming the ":<port>" shorthand. Caller pipes the result through `int`.
 {{- define "fathom-operator.port" -}}
 {{- splitList ":" (toString .) | last -}}
 {{- end -}}
+
+{{/*
+Node-agent image reference passed to the operator via --node-agent-image. A
+dedicated image distinct from the operator and probe images; same leading-v tag
+convention.
+*/}}
+{{- define "fathom-operator.nodeAgentImage" -}}
+{{- printf "%s:%s" .Values.nodeAgent.image.repository (.Values.nodeAgent.image.tag | default (printf "v%s" .Chart.AppVersion)) -}}
+{{- end -}}

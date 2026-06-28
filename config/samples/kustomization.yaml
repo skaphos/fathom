@@ -7,4 +7,5 @@ resources:
 - fathom_v1alpha1_healthcheck.yaml
 - fathom_v1alpha1_clusterhealth.yaml
 - fathom_v1alpha1_healthreport.yaml
+- fathom_v1alpha1_nodecertificatecheck.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

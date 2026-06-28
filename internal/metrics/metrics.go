@@ -59,12 +59,33 @@ var (
 	)
 )
 
+// Node-agent metrics are set by the node-agent DaemonSet (cmd/node-agent), which
+// imports this package and serves ctrlmetrics.Registry on its own metrics port.
+// In the operator process the gauge is registered but never set, so it emits no
+// series there.
+var (
+	// NodeCertificateExpiryDays reports days-until-expiry for each on-disk
+	// certificate a node-agent scans. Negative once a certificate has expired.
+	// Labelled only by node and certificate path: the agent's /metrics endpoint
+	// is unauthenticated, so the sensitive subject/issuer distinguished names are
+	// deliberately NOT exposed here — they live in the HealthReport instead. This
+	// also keeps label cardinality bounded.
+	NodeCertificateExpiryDays = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_node_certificate_expiry_days",
+			Help: "Days until on-disk certificate expiry on a node (negative once expired), by node and path.",
+		},
+		[]string{"node", "path"},
+	)
+)
+
 func init() {
 	ctrlmetrics.Registry.MustRegister(
 		ReconcileTotal,
 		ReconcileDuration,
 		AdapterRunDuration,
 		AdapterRegistered,
+		NodeCertificateExpiryDays,
 	)
 }
 

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Scans on-disk X.509 certificates on every node and reports time-to-expiry.
+# With no spec.paths the agent uses its distribution-agnostic default set
+# (kubeadm/k3s/RKE2/etcd/kubelet locations); paths absent on a node are skipped.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeCertificateCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: node-certificates
+spec:
+  # warnDays/criticalDays default to 30/7; a certificate expiring within
+  # criticalDays (or already expired) is Fail, within warnDays is Warn.
+  warnDays: 30
+  criticalDays: 7
+  # How often each node-agent re-scans and the operator refreshes the report.
+  interval: 1h
+  timeout: 30s
+  historyLimit: 10
+  # paths: []   # omit to use the built-in default set, or pin explicit paths:
+  # paths:
+  #   - /etc/kubernetes/pki
+  #   - /etc/kubernetes/admin.conf
+  #   - /var/lib/kubelet/pki

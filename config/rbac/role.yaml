@@ -7,12 +7,34 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
   - delete
   - get
   - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -43,6 +65,17 @@ rules:
   - apps
   resources:
   - daemonsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
   - deployments
   verbs:
   - get
@@ -102,6 +135,7 @@ rules:
   - addonchecks/finalizers
   - clusterhealths/finalizers
   - healthchecks/finalizers
+  - nodecertificatechecks/finalizers
   verbs:
   - update
 - apiGroups:
@@ -110,6 +144,7 @@ rules:
   - addonchecks/status
   - clusterhealths/status
   - healthchecks/status
+  - nodecertificatechecks/status
   verbs:
   - get
   - patch
@@ -123,4 +158,37 @@ rules:
   - delete
   - get
   - list
+  - watch
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - nodecertificatechecks
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch

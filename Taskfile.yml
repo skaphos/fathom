@@ -14,6 +14,8 @@ vars:
   IMG: '{{.IMG | default "controller:latest"}}'
   PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
   PROBE_PLATFORMS: '{{.PROBE_PLATFORMS | default "linux/amd64,linux/arm64"}}'
+  NODE_AGENT_IMG: '{{.NODE_AGENT_IMG | default "fathom-node-agent:latest"}}'
+  NODE_AGENT_PLATFORMS: '{{.NODE_AGENT_PLATFORMS | default "linux/amd64,linux/arm64"}}'
   VERSION: '{{.VERSION | default "0.0.1"}}'
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
@@ -27,6 +29,11 @@ vars:
   # IfNotPresent. Keep in lockstep with internal/app/options.go DefaultProbeImage
   # and internal/adapter/coredns/adapter.go fallbackProbeImage.
   E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.0.2"}}'
+  # The node-agent image tag must match the operator's compiled-in
+  # DefaultNodeAgentImage so kind's locally-loaded image satisfies the
+  # NodeCertificateCheck controller's IfNotPresent pull. Keep in lockstep with
+  # internal/app/options.go DefaultNodeAgentImage.
+  E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.0.2"}}'
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
 
 tasks:
@@ -225,6 +232,26 @@ tasks:
     cmds:
       - docker buildx build --push --platform {{.PROBE_PLATFORMS}} -f Dockerfile.probe -t {{.PROBE_IMG}} .
 
+  node-agent-build:
+    desc: Build node-agent binary
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o bin/node-agent ./cmd/node-agent
+
+  node-agent-docker-build:
+    desc: Build node-agent container image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}})
+    cmds:
+      - docker build -f Dockerfile.node-agent -t {{.NODE_AGENT_IMG}} .
+
+  node-agent-docker-push:
+    desc: Push node-agent container image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}})
+    cmds:
+      - docker push {{.NODE_AGENT_IMG}}
+
+  node-agent-docker-buildx-push:
+    desc: Multi-arch build + push node-agent image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}}, NODE_AGENT_PLATFORMS={{.NODE_AGENT_PLATFORMS}})
+    cmds:
+      - docker buildx build --push --platform {{.NODE_AGENT_PLATFORMS}} -f Dockerfile.node-agent -t {{.NODE_AGENT_IMG}} .
+
   docker-push:
     desc: Push container image (IMG={{.IMG}})
     cmds:
@@ -372,25 +399,29 @@ tasks:
         helmfile -f {{.E2E_HELMFILE}} sync
 
   e2e:cluster:fathom:
-    desc: Build + load operator and probe images into kind, then deploy Fathom
+    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom
     cmds:
       - task: docker-build
         vars: {IMG: '{{.E2E_IMG}}'}
       - task: probe-docker-build
         vars: {PROBE_IMG: '{{.E2E_PROBE_IMG}}'}
+      - task: node-agent-docker-build
+        vars: {NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG}}'}
       - kind load docker-image {{.E2E_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_PROBE_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      - kind load docker-image {{.E2E_NODE_AGENT_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - task: install
       - task: deploy
         vars: {IMG: '{{.E2E_IMG}}'}
 
   e2e:cluster:samples:
-    desc: Apply AddonCheck samples (CoreDNS, cert-manager, external-secrets, Cilium)
+    desc: Apply check samples (CoreDNS, cert-manager, external-secrets, Cilium, node-certificates)
     cmds:
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_coredns.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_cilium.yaml
+      - kubectl apply -f config/samples/fathom_v1alpha1_nodecertificatecheck.yaml
 
   e2e:cluster:down:
     desc: Delete the e2e kind cluster

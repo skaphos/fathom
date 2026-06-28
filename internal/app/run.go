@@ -177,6 +177,12 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 		},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
+		&controller.NodeCertificateCheckReconciler{
+			Client:         mgr.GetClient(),
+			Scheme:         mgr.GetScheme(),
+			NodeAgentImage: opts.NodeAgentImage,
+			Tracer:         tracer,
+		},
 	}, nil
 }
 

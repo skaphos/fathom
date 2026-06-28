@@ -1,0 +1,290 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: nodecertificatechecks.fathom.skaphos.io
+spec:
+  group: fathom.skaphos.io
+  names:
+    kind: NodeCertificateCheck
+    listKind: NodeCertificateCheckList
+    plural: nodecertificatechecks
+    singular: nodecertificatecheck
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.lastResult
+      name: Result
+      type: string
+    - jsonPath: .status.reportingNodes
+      name: Reporting
+      type: integer
+    - jsonPath: .status.desiredNodes
+      name: Desired
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NodeCertificateCheck is the Schema for the nodecertificatechecks
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              NodeCertificateCheckSpec defines the desired state of NodeCertificateCheck.
+
+              A NodeCertificateCheck scans on-disk X.509 certificates on every selected
+              node and reports time-to-expiry before an expiring certificate can take the
+              cluster down. The operator runs the scan via a hardened, read-only node-agent
+              DaemonSet (one pod per node); each agent publishes its per-node result, and
+              the operator rolls those up into a single HealthReport and mirrors the
+              aggregate into Status.
+            properties:
+              criticalDays:
+                default: 7
+                description: |-
+                  CriticalDays is the days-to-expiry threshold at or below which a
+                  certificate is reported as Fail. A certificate already past its notAfter
+                  time is always Fail regardless of this value.
+                format: int32
+                minimum: 0
+                type: integer
+              historyLimit:
+                default: 10
+                description: |-
+                  HistoryLimit caps the number of HealthReports retained for this check.
+                  After each new HealthReport the controller deletes the oldest reports
+                  beyond the limit. The minimum of 1 keeps Status.LastReportName valid.
+                format: int32
+                minimum: 1
+                type: integer
+              interval:
+                description: |-
+                  Interval is the cadence at which each node-agent re-scans its
+                  certificates and the operator refreshes the rolled-up HealthReport.
+                  Defaults to 1h when unset.
+                type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: |-
+                  NodeSelector restricts which nodes run the agent DaemonSet. An empty
+                  selector targets every node.
+                type: object
+              paths:
+                description: |-
+                  Paths is the set of on-disk certificate locations each node-agent scans.
+                  Every entry is an absolute path to either a PEM-encoded certificate file
+                  (read directly) or a directory (scanned recursively, to a bounded depth,
+                  for *.crt, *.pem, and *.cert files). Files ending in .conf or .kubeconfig
+                  are parsed as kubeconfigs and their embedded client/CA certificates are
+                  extracted. Paths the non-root agent cannot read are reported as Skipped,
+                  never Fail or Error; paths that do not exist on a node are omitted from the
+                  report entirely, so absent distribution defaults do not flood it. When empty, a
+                  distribution-agnostic default set covering common kubeadm, k3s/RKE2, etcd,
+                  and kubelet certificate locations is used. The operator mounts the parent
+                  directory of each configured path into the agent read-only; a configured
+                  directory absent on a node is created empty by the kubelet (hostPath
+                  DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions.
+                items:
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
+              paused:
+                description: |-
+                  Paused stops the operator from running the agent DaemonSet and refreshing
+                  reports. The agent DaemonSet is removed while paused; the most recent
+                  Status snapshot is preserved.
+                type: boolean
+              timeout:
+                description: Timeout bounds a single node-agent scan pass. Defaults
+                  to 30s when unset.
+                type: string
+              tolerations:
+                description: |-
+                  Tolerations are applied to the agent DaemonSet so it can schedule onto
+                  tainted nodes. When nil, a default toleration set is applied so the agent
+                  also lands on control-plane nodes (where kubeadm certificates live). Set
+                  an explicit empty list to apply no tolerations.
+                items:
+                  description: |-
+                    The pod this Toleration is attached to tolerates any taint that matches
+                    the triple <key,value,effect> using the matching operator <operator>.
+                  properties:
+                    effect:
+                      description: |-
+                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                      type: string
+                    operator:
+                      description: |-
+                        Operator represents a key's relationship to the value.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Exists is equivalent to wildcard for value, so that a pod can
+                        tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                      type: string
+                    tolerationSeconds:
+                      description: |-
+                        TolerationSeconds represents the period of time the toleration (which must be
+                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                        negative values will be treated as 0 (evict immediately) by the system.
+                      format: int64
+                      type: integer
+                    value:
+                      description: |-
+                        Value is the taint value the toleration matches to.
+                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                      type: string
+                  type: object
+                type: array
+              warnDays:
+                default: 30
+                description: |-
+                  WarnDays is the days-to-expiry threshold at or below which a certificate
+                  is reported as Warn. Must be greater than or equal to CriticalDays.
+                format: int32
+                minimum: 0
+                type: integer
+            type: object
+          status:
+            description: NodeCertificateCheckStatus defines the observed state of
+              NodeCertificateCheck.
+            properties:
+              conditions:
+                description: |-
+                  Conditions summarize whether the controller accepted the spec and whether
+                  the agent DaemonSet is rolled out and reporting.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredNodes:
+                description: |-
+                  DesiredNodes is the number of nodes the agent DaemonSet targets
+                  (DaemonSet status DesiredNumberScheduled).
+                format: int32
+                type: integer
+              lastReportName:
+                description: LastReportName names the HealthReport created for the
+                  most recent roll-up.
+                maxLength: 253
+                type: string
+              lastResult:
+                description: |-
+                  LastResult is the aggregate result across all reporting nodes from the
+                  most recent roll-up.
+                enum:
+                - Pass
+                - Warn
+                - Fail
+                - Error
+                - Skipped
+                - Unknown
+                type: string
+              lastRunTime:
+                description: |-
+                  LastRunTime records when the operator last rolled up a HealthReport from
+                  the node-agent results.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent metadata.generation reconciled by
+                  the controller.
+                format: int64
+                type: integer
+              reportingNodes:
+                description: |-
+                  ReportingNodes is the number of nodes that have published a scan result
+                  the operator consumed in the most recent roll-up.
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -31,4 +31,7 @@ resources:
 - healthcheck_admin_role.yaml
 - healthcheck_editor_role.yaml
 - healthcheck_viewer_role.yaml
+- nodecertificatecheck_admin_role.yaml
+- nodecertificatecheck_editor_role.yaml
+- nodecertificatecheck_viewer_role.yaml
 
