@@ -3,23 +3,27 @@ SPDX-FileCopyrightText: 2026 Skaphos
 SPDX-License-Identifier: MIT
 */
 
-package adapter
+package adapter_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/skaphos/fathom/pkg/adapter"
+)
 
 func TestOutcomeValid(t *testing.T) {
 	tests := []struct {
-		outcome Outcome
+		outcome adapter.Outcome
 		want    bool
 	}{
-		{OutcomePass, true},
-		{OutcomeWarn, true},
-		{OutcomeFail, true},
-		{OutcomeError, true},
-		{OutcomeSkipped, true},
-		{Outcome(""), false},
-		{Outcome("pass"), false}, // case-sensitive by design
-		{Outcome("Unknown"), false},
+		{adapter.OutcomePass, true},
+		{adapter.OutcomeWarn, true},
+		{adapter.OutcomeFail, true},
+		{adapter.OutcomeError, true},
+		{adapter.OutcomeSkipped, true},
+		{adapter.Outcome(""), false},
+		{adapter.Outcome("pass"), false}, // case-sensitive by design
+		{adapter.Outcome("Unknown"), false},
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.outcome), func(t *testing.T) {
@@ -31,33 +35,33 @@ func TestOutcomeValid(t *testing.T) {
 }
 
 func TestFamilyOutcome(t *testing.T) {
-	const fam = Family("system_health")
-	const other = Family("dns_resolution")
-	check := func(family Family, o Outcome) CheckResult {
-		return CheckResult{Family: family, Outcome: o}
+	const fam = adapter.Family("system_health")
+	const other = adapter.Family("dns_resolution")
+	check := func(family adapter.Family, o adapter.Outcome) adapter.CheckResult {
+		return adapter.CheckResult{Family: family, Outcome: o}
 	}
 
 	tests := []struct {
 		name   string
-		checks []CheckResult
-		want   Outcome
+		checks []adapter.CheckResult
+		want   adapter.Outcome
 	}{
-		{"no checks at all", nil, OutcomePass},
-		{"family has no checks", []CheckResult{check(other, OutcomeFail)}, OutcomePass},
-		{"all pass", []CheckResult{check(fam, OutcomePass), check(fam, OutcomePass)}, OutcomePass},
-		{"warn outranks pass", []CheckResult{check(fam, OutcomePass), check(fam, OutcomeWarn)}, OutcomeWarn},
-		{"fail outranks warn", []CheckResult{check(fam, OutcomeWarn), check(fam, OutcomeFail)}, OutcomeFail},
-		{"error counts as worst", []CheckResult{check(fam, OutcomePass), check(fam, OutcomeError)}, OutcomeError},
+		{"no checks at all", nil, adapter.OutcomePass},
+		{"family has no checks", []adapter.CheckResult{check(other, adapter.OutcomeFail)}, adapter.OutcomePass},
+		{"all pass", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomePass)}, adapter.OutcomePass},
+		{"warn outranks pass", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomeWarn)}, adapter.OutcomeWarn},
+		{"fail outranks warn", []adapter.CheckResult{check(fam, adapter.OutcomeWarn), check(fam, adapter.OutcomeFail)}, adapter.OutcomeFail},
+		{"error counts as worst", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomeError)}, adapter.OutcomeError},
 		{
 			// A failure in another family must not taint this family's verdict.
 			name:   "other family failure ignored",
-			checks: []CheckResult{check(fam, OutcomePass), check(other, OutcomeError)},
-			want:   OutcomePass,
+			checks: []adapter.CheckResult{check(fam, adapter.OutcomePass), check(other, adapter.OutcomeError)},
+			want:   adapter.OutcomePass,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := FamilyOutcome(tc.checks, fam); got != tc.want {
+			if got := adapter.FamilyOutcome(tc.checks, fam); got != tc.want {
 				t.Fatalf("FamilyOutcome(%v, %q) = %q, want %q", tc.checks, fam, got, tc.want)
 			}
 		})
