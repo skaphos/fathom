@@ -31,6 +31,9 @@ type AddonCheckFamilyPolicy struct {
 }
 
 // AddonCheckSpec defines the desired state of AddonCheck.
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) > duration('0s')",message="timeout must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) > duration('0s')",message="interval must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
 type AddonCheckSpec struct {
 	// AddonType selects the adapter responsible for this check, such as
 	// cert-manager, coredns, or external-secrets.

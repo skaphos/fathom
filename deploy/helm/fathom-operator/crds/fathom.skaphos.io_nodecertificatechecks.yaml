@@ -175,6 +175,18 @@ spec:
                 minimum: 0
                 type: integer
             type: object
+            x-kubernetes-validations:
+            - message: warnDays must be greater than or equal to criticalDays
+              rule: self.warnDays >= self.criticalDays
+            - message: each path must be absolute (start with /)
+              rule: '!has(self.paths) || self.paths.all(p, p.startsWith(''/''))'
+            - message: timeout must be a positive duration
+              rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
+            - message: interval must be a positive duration
+              rule: '!has(self.interval) || duration(self.interval) > duration(''0s'')'
+            - message: timeout must not exceed interval
+              rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
+                <= duration(self.interval)'
           status:
             description: NodeCertificateCheckStatus defines the observed state of
               NodeCertificateCheck.

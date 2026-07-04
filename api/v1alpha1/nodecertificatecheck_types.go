@@ -18,6 +18,11 @@ import (
 // DaemonSet (one pod per node); each agent publishes its per-node result, and
 // the operator rolls those up into a single HealthReport and mirrors the
 // aggregate into Status.
+// +kubebuilder:validation:XValidation:rule="self.warnDays >= self.criticalDays",message="warnDays must be greater than or equal to criticalDays"
+// +kubebuilder:validation:XValidation:rule="!has(self.paths) || self.paths.all(p, p.startsWith('/'))",message="each path must be absolute (start with /)"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) > duration('0s')",message="timeout must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) > duration('0s')",message="interval must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
 type NodeCertificateCheckSpec struct {
 	// Paths is the set of on-disk certificate locations each node-agent scans.
 	// Every entry is an absolute path to either a PEM-encoded certificate file
