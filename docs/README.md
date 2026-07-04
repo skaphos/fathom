@@ -47,9 +47,10 @@ The architecturally significant decisions are recorded as ADRs:
 Living planning docs for in-flight epics (draft; not stable references):
 
 - [design/addon-adapters-implementation-plan.md](design/addon-adapters-implementation-plan.md)
-  — implementation plan for the Addon Adapters epic (Waves 2–4): the adapter
-  archetypes, the per-adapter playbook, cross-cutting enablers, and wave-by-wave
-  sequencing.
+  — implementation plan for the Addon Adapters epic (Waves 2–4): a declarative-first
+  adapter engine with a Go escape hatch, periodic + on-demand execution, explicit
+  absence semantics, per-addon least-privilege clients, version detection, and the
+  reframed enabler/sequencing plan.
 
 ## Other repository docs
 
