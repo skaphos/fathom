@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -37,6 +38,27 @@ const (
 	addonCheckConditionReady    = "Ready"
 
 	defaultAddonCheckTimeout = 30 * time.Second
+
+	// defaultAddonCheckInterval is the cadence at which an AddonCheck's adapter
+	// re-runs when Spec.Interval is unset. Periodic re-execution is what keeps a
+	// HealthReport current: without it a check runs once and its result goes
+	// stale the moment the underlying addon degrades.
+	defaultAddonCheckInterval = 5 * time.Minute
+
+	// annotationRunNow forces an immediate adapter run, out of band from the
+	// interval, whenever its value changes. The controller records the consumed
+	// value in Status.LastRunTrigger so a given trigger fires exactly once —
+	// callers (beaconctl's on-demand run, SKA-45) must therefore write a fresh
+	// value each time (e.g. a timestamp or nonce), not a constant.
+	annotationRunNow = "fathom.skaphos.io/run-now"
+
+	// addonCheckMaxConcurrentReconciles bounds how many AddonChecks reconcile in
+	// parallel. Adapter Run is synchronous and may block up to spec.timeout
+	// (probe pods, admission dry-runs, network I/O), so the default single
+	// worker would serialize every check and let periodic runs slip past their
+	// interval under load. A small pool keeps per-check cadence honest without
+	// hammering the API server.
+	addonCheckMaxConcurrentReconciles = 4
 
 	// defaultHealthReportHistoryLimit matches the +kubebuilder:default=10 on
 	// AddonCheckSpec.HistoryLimit. It is duplicated here so the reconciler can
@@ -80,9 +102,10 @@ type AddonCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
 
-// Reconcile records that the AddonCheck spec has been observed. Adapter
-// dispatch and HealthReport creation are wired in follow-up SKA-46 work once
-// the registry is available to the reconciler.
+// Reconcile resolves the AddonCheck's adapter and, when the check is due (first
+// sight, a spec change, an elapsed interval, or a new run-now trigger), runs the
+// adapter and records a HealthReport plus status. It requeues one interval out so
+// the result tracks the addon's live state.
 func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "addoncheck.reconcile", trace.WithAttributes(
 		attribute.String("fathom.kind", "AddonCheck"),
@@ -138,21 +161,57 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	})
 	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
 
-	if adapterReady && (check.Status.LastRunTime == nil || previousObservedGeneration != check.Generation) {
+	interval := addonCheckInterval(&check)
+	runNow := check.Annotations[annotationRunNow]
+	if adapterReady && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
+		// Record the consumed trigger so the same annotation value does not
+		// re-run the adapter on every subsequent reconcile. Only overwrite on a
+		// non-empty value: a periodic/generation run with no run-now annotation
+		// must not clear a previously consumed token (which would let that same
+		// token fire again once re-applied).
+		if runNow != "" {
+			check.Status.LastRunTrigger = runNow
+		}
+	}
+
+	// A ready AddonCheck is requeued one interval out so its HealthReport tracks
+	// the addon's live state instead of freezing at first sight. This requeue
+	// must survive the no-status-change fast path below, or periodic execution
+	// stalls after the first run. Paused / adapterless checks are left to a
+	// spec change (generation bump) to wake them.
+	result = ctrl.Result{}
+	if adapterReady {
+		result.RequeueAfter = interval
 	}
 
 	if equality.Semantic.DeepEqual(before, &check.Status) {
-		return ctrl.Result{}, nil
+		return result, nil
 	}
 	if err := r.Status().Update(ctx, &check); err != nil {
 		return ctrl.Result{}, err
 	}
 	log.V(1).Info("updated AddonCheck status")
 
-	return ctrl.Result{}, nil
+	return result, nil
+}
+
+// addonCheckDueForRun reports whether the adapter should run this reconcile: on
+// first sight, on a spec (generation) change, when the on-demand run-now trigger
+// carries a new value, or when Interval has elapsed since the last run.
+func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGeneration int64, runNow string, interval time.Duration) bool {
+	switch {
+	case check.Status.LastRunTime == nil:
+		return true
+	case previousObservedGeneration != check.Generation:
+		return true
+	case runNow != "" && runNow != check.Status.LastRunTrigger:
+		return true
+	default:
+		return time.Since(check.Status.LastRunTime.Time) >= interval
+	}
 }
 
 func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
@@ -232,22 +291,40 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	// doing so double-counts the histogram. See SKA-290 / SKA-504.
 
 	report := healthReportForAddonCheck(check, selectedAdapter, result, observedAt, runErr)
-	if r.Scheme != nil {
-		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
+	newResult := string(report.Spec.Result)
+
+	// Persist a HealthReport only when the aggregate result changes (or on the
+	// first run). Periodic re-runs that observe the same result refresh liveness
+	// via LastRunTime without flooding history with identical reports: this keeps
+	// HealthReport a record of state transitions (ADR-0002) and bounds etcd churn
+	// now that execution is periodic. LastReportName therefore points at the
+	// report capturing the current result; LastRunTime tracks the latest poll.
+	resultChanged := check.Status.LastReportName == "" || newResult != check.Status.LastResult
+	if resultChanged {
+		if r.Scheme != nil {
+			if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
+				return err
+			}
+		}
+		if err := r.Create(ctx, report); err != nil {
 			return err
 		}
+		r.pruneHealthReportHistory(ctx, log, check)
+		check.Status.LastReportName = report.Name
 	}
-	if err := r.Create(ctx, report); err != nil {
-		return err
-	}
-	r.pruneHealthReportHistory(ctx, log, check)
 
 	check.Status.LastRunTime = &observedAt
-	check.Status.LastReportName = report.Name
-	check.Status.LastResult = string(report.Spec.Result)
+	check.Status.LastResult = newResult
+
+	// An adapter Run error reports a genuine health condition (the adapter could
+	// not determine state — e.g. the API server was unreachable), not a
+	// controller malfunction. It is surfaced as an Error result/condition and
+	// retried on the normal interval, never propagated as a reconcile error:
+	// the interval already bounds retry frequency, and treating it as a reconcile
+	// failure would spam error logs/metrics and delay recovery detection.
 	readyStatus := metav1.ConditionTrue
 	readyReason := "RunCompleted"
-	readyMessage := "AddonCheck adapter run completed and a HealthReport was created."
+	readyMessage := "AddonCheck adapter run completed."
 	if runErr != nil {
 		readyStatus = metav1.ConditionFalse
 		readyReason = "AdapterRunFailed"
@@ -313,6 +390,13 @@ func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
 		return check.Spec.Timeout.Duration
 	}
 	return defaultAddonCheckTimeout
+}
+
+func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
+	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
+		return check.Spec.Interval.Duration
+	}
+	return defaultAddonCheckInterval
 }
 
 func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {
@@ -469,5 +553,6 @@ func (r *AddonCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.AddonCheck{}).
 		Named("addoncheck").
+		WithOptions(controller.Options{MaxConcurrentReconciles: addonCheckMaxConcurrentReconciles}).
 		Complete(r)
 }

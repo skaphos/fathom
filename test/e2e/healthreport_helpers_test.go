@@ -174,3 +174,22 @@ func addonCheckReadyTrue(name, ns string) (bool, error) {
 	}
 	return false, nil
 }
+
+// addonCheckLastResult returns the named AddonCheck's status.lastResult — the
+// aggregate result of its most recent adapter run — or "" if unset.
+func addonCheckLastResult(name, ns string) (string, error) {
+	cmd := exec.Command("kubectl", "get", "addoncheck", name, "-n", ns, "-o", "json")
+	out, err := utils.Run(cmd)
+	if err != nil {
+		return "", fmt.Errorf("kubectl get addoncheck: %w", err)
+	}
+	var ac struct {
+		Status struct {
+			LastResult string `json:"lastResult"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(out), &ac); err != nil {
+		return "", fmt.Errorf("unmarshal addoncheck: %w", err)
+	}
+	return ac.Status.LastResult, nil
+}

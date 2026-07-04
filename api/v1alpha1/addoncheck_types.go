@@ -40,7 +40,8 @@ type AddonCheckSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	AddonType string `json:"addonType"`
 
-	// Interval is the desired cadence between successful check runs.
+	// Interval is the cadence at which the adapter re-runs and the HealthReport
+	// is refreshed. Defaults to 5m when unset.
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 
@@ -91,6 +92,13 @@ type AddonCheckStatus struct {
 	// LastReportName names the HealthReport created for the most recent run.
 	// +optional
 	LastReportName string `json:"lastReportName,omitempty"`
+
+	// LastRunTrigger records the value of the fathom.skaphos.io/run-now
+	// annotation most recently consumed to force an adapter run. The controller
+	// re-runs the adapter whenever the annotation value differs from this, then
+	// stores it here so a given on-demand trigger fires exactly once.
+	// +optional
+	LastRunTrigger string `json:"lastRunTrigger,omitempty"`
 }
 
 // +kubebuilder:object:root=true
