@@ -1,0 +1,18 @@
+# Values for `ct install` in CI, exercising the leaderElect=false opt-out.
+# The default chart now ships leaderElect=true (see ct-values.yaml, which
+# covers the enabled path), so this variant guards the opt-out render:
+# --leader-elect=false (and no --leader-election-id) and no namespaced lease Role+RoleBinding.
+# Image/metrics settings mirror ct-values.yaml so the smoke install stays cheap
+# (operator image built locally into kind; metrics listener disabled to avoid
+# needing a serving cert).
+image:
+  repository: fathom-operator
+  tag: ci
+  pullPolicy: IfNotPresent
+probeImage:
+  repository: ghcr.io/skaphos/fathom-probe
+  tag: ci
+metrics:
+  bindAddress: "0"
+replicaCount: 1
+leaderElect: false

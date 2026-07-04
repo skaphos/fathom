@@ -31,14 +31,20 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# -- Controller replica count. Keep at 1 unless leaderElect is enabled;
-# multiple replicas without leader election run duplicate reconcilers.
+# -- Controller replica count. HA is opt-in: raise this only alongside
+# leaderElect=true (the default), otherwise multiple replicas run duplicate
+# reconcilers. A single replica with leaderElect=true is harmless — it just
+# acquires the lease.
 replicaCount: 1
 
-# -- Leader election. Uses coordination.k8s.io leases. When enabled (and
+# -- Leader election. Uses coordination.k8s.io leases. On by default to match
+# the operator's built-in --leader-elect default (a deployment that scales up
+# without it would silently run duplicate reconcilers). When enabled (and
 # rbac.create=true) the chart adds a namespaced Role+RoleBinding granting
 # lease/configmap/event access; with rbac.create=false, provision it yourself.
-leaderElect: false
+# Set to false only for single-replica local/dev runs where the lease is
+# unwanted overhead.
+leaderElect: true
 # Resource name used for the leader-election lease. Must be a DNS-1123
 # subdomain. Matches the operator's built-in default.
 leaderElectionID: "2d3dbc4f.skaphos.io"
