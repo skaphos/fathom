@@ -143,6 +143,14 @@ spec:
             required:
             - addonType
             type: object
+            x-kubernetes-validations:
+            - message: timeout must be a positive duration
+              rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
+            - message: interval must be a positive duration
+              rule: '!has(self.interval) || duration(self.interval) > duration(''0s'')'
+            - message: timeout must not exceed interval
+              rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
+                <= duration(self.interval)'
           status:
             description: AddonCheckStatus defines the observed state of AddonCheck.
             properties:
