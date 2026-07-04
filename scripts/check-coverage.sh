@@ -25,14 +25,18 @@ if [[ ! -f "$profile" ]]; then
   exit 1
 fi
 
-# skip_pkg lists packages excluded from the gate. Reasons must be explicit.
-# Remove an entry only when you are also raising real coverage on it.
+# skip_pkg lists packages excluded from the gate. It is intentionally empty:
+# every package under ./... (minus e2e) is held to the coverage threshold.
+# internal/controller was previously skipped while its reconcilers were
+# kubebuilder stubs; the reconcilers are now real and tested (~81% coverage),
+# so the skip is gone (SKA-302).
+#
+# Do NOT add a skip to make a red PR pass — raise real coverage instead. A
+# genuinely justified skip must cite a tracking issue AND update the guard test
+# scripts/coverage_gate_test.go, so the skip list cannot grow silently.
 skip_pkg() {
   local pkg="$1"
   case "$pkg" in
-    # internal/controller currently holds kubebuilder scaffold reconcilers
-    # (Reconcile is a stub). Re-enable once real reconciliation lands.
-    github.com/skaphos/fathom/internal/controller) return 0 ;;
     *) return 1 ;;
   esac
 }
