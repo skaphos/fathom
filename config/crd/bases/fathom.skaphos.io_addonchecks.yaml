@@ -56,8 +56,9 @@ spec:
                 minimum: 1
                 type: integer
               interval:
-                description: Interval is the desired cadence between successful check
-                  runs.
+                description: |-
+                  Interval is the cadence at which the adapter re-runs and the HealthReport
+                  is refreshed. Defaults to 5m when unset.
                 type: string
               paused:
                 description: Paused prevents the controller from starting new adapter

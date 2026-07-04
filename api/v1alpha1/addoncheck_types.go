@@ -40,7 +40,8 @@ type AddonCheckSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	AddonType string `json:"addonType"`
 
-	// Interval is the desired cadence between successful check runs.
+	// Interval is the cadence at which the adapter re-runs and the HealthReport
+	// is refreshed. Defaults to 5m when unset.
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 

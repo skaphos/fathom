@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -56,6 +57,54 @@ func (f fakeAddonAdapter) Run(_ context.Context, req adapter.Request) (adapter.R
 			Duration:   10 * time.Millisecond,
 		}},
 	}, nil
+}
+
+// programmableAdapter is a stateful test adapter: it counts Run invocations and
+// returns a configurable outcome, so tests can prove the reconciler re-ran the
+// adapter (runCount) independently of whether a HealthReport was written — the
+// controller only persists a report when the result changes.
+type programmableAdapter struct {
+	mu      sync.Mutex
+	runs    int
+	outcome adapter.Outcome
+}
+
+func (a *programmableAdapter) Name() string            { return "prog-cert-manager" }
+func (a *programmableAdapter) Version() string         { return "0.0.1" }
+func (a *programmableAdapter) ContractVersion() string { return adapter.ContractVersion }
+func (a *programmableAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{"cert-manager"}, Families: []adapter.Family{"system_health"}}
+}
+
+func (a *programmableAdapter) Run(_ context.Context, _ adapter.Request) (adapter.Result, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.runs++
+	outcome := a.outcome
+	if outcome == "" {
+		outcome = adapter.OutcomePass
+	}
+	return adapter.Result{
+		Duration: time.Millisecond,
+		Checks: []adapter.CheckResult{{
+			Family:    adapter.Family("system_health"),
+			Outcome:   outcome,
+			TargetRef: adapter.TargetRef{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "cert-manager", Name: "cert-manager"},
+			Summary:   "programmed outcome",
+		}},
+	}, nil
+}
+
+func (a *programmableAdapter) runCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.runs
+}
+
+func (a *programmableAdapter) setOutcome(o adapter.Outcome) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.outcome = o
 }
 
 // healthReportCount returns how many HealthReports the given AddonCheck has
@@ -371,7 +420,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(result.RequeueAfter).To(BeZero())
 	})
 
-	It("re-runs once the interval has elapsed since the last run", func() {
+	It("re-runs once the interval has elapsed, refreshing liveness without a duplicate report", func() {
 		name := types.NamespacedName{Name: "addoncheck-interval-elapsed", Namespace: "default"}
 		resource := &fathomv1alpha1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
@@ -380,12 +429,14 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
 
+		prog := &programmableAdapter{}
 		adapters := registry.New(logr.Discard())
-		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		Expect(adapters.Register(prog)).To(Succeed())
 		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
 
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(prog.runCount()).To(Equal(1))
 		Expect(healthReportCount(ctx, name)).To(Equal(1))
 
 		// Backdate the last run beyond the interval to simulate elapsed time.
@@ -397,10 +448,13 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(prog.runCount()).To(Equal(2))              // the adapter re-ran
+		Expect(healthReportCount(ctx, name)).To(Equal(1)) // same result -> no duplicate report
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastRunTime.Time).To(BeTemporally(">", past.Time)) // liveness refreshed
 	})
 
-	It("does not re-run within the interval", func() {
+	It("does not re-run within the interval but keeps requeuing", func() {
 		name := types.NamespacedName{Name: "addoncheck-within-interval", Namespace: "default"}
 		resource := &fathomv1alpha1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
@@ -409,15 +463,22 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
 
+		prog := &programmableAdapter{}
 		adapters := registry.New(logr.Discard())
-		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		Expect(adapters.Register(prog)).To(Succeed())
 		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
 
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(prog.runCount()).To(Equal(1))
+
+		// A reconcile within the interval must not re-run, but MUST still requeue
+		// one interval out — the requeue has to survive the no-status-change fast
+		// path, or periodic execution stalls after the first run.
+		result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(1))
+		Expect(prog.runCount()).To(Equal(1))
+		Expect(result.RequeueAfter).To(Equal(defaultAddonCheckInterval))
 	})
 
 	It("runs immediately when the run-now annotation changes, once per value", func() {
@@ -429,14 +490,15 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
 
+		prog := &programmableAdapter{}
 		adapters := registry.New(logr.Discard())
-		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		Expect(adapters.Register(prog)).To(Succeed())
 		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
 
 		// First reconcile: initial run.
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(1))
+		Expect(prog.runCount()).To(Equal(1))
 
 		// A new run-now value forces an out-of-band run.
 		updated := &fathomv1alpha1.AddonCheck{}
@@ -446,12 +508,12 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(prog.runCount()).To(Equal(2))
 
 		// Same value, still within the interval: no further run.
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(prog.runCount()).To(Equal(2))
 
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("token-1"))
@@ -470,14 +532,15 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
 
+		prog := &programmableAdapter{}
 		adapters := registry.New(logr.Discard())
-		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		Expect(adapters.Register(prog)).To(Succeed())
 		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
 
 		// First reconcile consumes token "tok".
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(1))
+		Expect(prog.runCount()).To(Equal(1))
 		updated := &fathomv1alpha1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("tok"))
@@ -494,7 +557,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		// Periodic re-run must run again but NOT clear the consumed token.
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(prog.runCount()).To(Equal(2))
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("tok"))
 
@@ -504,7 +567,43 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(prog.runCount()).To(Equal(2))
+	})
+
+	It("refreshes the result and records a transition report when addon state changes", func() {
+		name := types.NamespacedName{Name: "addoncheck-refresh", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
+
+		prog := &programmableAdapter{outcome: adapter.OutcomePass}
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(prog)).To(Succeed())
+		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
+
+		// Healthy: first run -> Pass, one report.
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(healthReportCount(ctx, name)).To(Equal(1))
+
+		// Addon degrades; a periodic re-run (no spec edit) must flip the result
+		// and record the transition as a new HealthReport.
+		prog.setOutcome(adapter.OutcomeFail)
+		past := metav1.NewTime(time.Now().Add(-time.Hour))
+		updated.Status.LastRunTime = &past
+		Expect(k8sClient.Status().Update(ctx, updated)).To(Succeed())
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(healthReportCount(ctx, name)).To(Equal(2)) // transition recorded
 	})
 
 	DescribeTable("addonCheckDueForRun",
