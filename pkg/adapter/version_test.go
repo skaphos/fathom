@@ -3,6 +3,11 @@ SPDX-FileCopyrightText: 2026 Skaphos
 SPDX-License-Identifier: MIT
 */
 
+// This file is an in-package (white-box) test — package `adapter`, not the
+// external `adapter_test` used for the public API in adapter_test.go — because
+// it exercises unexported internals: the semver parser (parseVersion) and the
+// version type. See the test-package convention in AGENTS.md.
+
 package adapter
 
 import (

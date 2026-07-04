@@ -83,6 +83,7 @@ Fathom uses **cobra + viper** for runtime configuration. Precedence
 
 - Frameworks: Ginkgo v2 + Gomega for envtest and e2e suites; `testing` (stdlib) for plain unit tests in `internal/app`.
 - Unit tests live next to source as `*_test.go`. Suite bootstraps follow `*_suite_test.go`.
+- Test-package convention: default to an **external** `_test` package (`package foo_test`) so tests exercise the public API — this is the rule for `pkg/*` and library-style packages (e.g. `pkg/adapter`, `internal/adapter/registry`, `internal/adapter/crdutil`). Use an **in-package** white-box test (`package foo`) only when the test genuinely needs unexported access. The two may coexist in one directory: in `pkg/adapter`, the public contract is tested from `adapter_test` (`adapter_test.go`) while the unexported semver parser is tested in-package (`version_test.go`). Don't add a white-box test just to skip the package qualifier.
 - New behavior must ship with direct test coverage. Bug fixes should add a regression test that fails before the fix.
 - Prefer table-driven tests for branching logic. Mock injection seams (`managerFactory` in `internal/app/run.go`, the `Setupper` interface for controllers) exist precisely so unit tests don't need envtest.
 - envtest binaries are managed by `setup-envtest`; CI installs them automatically. Locally the `test` task bootstraps them in `bin/k8s/`.
