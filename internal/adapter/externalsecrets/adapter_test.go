@@ -173,6 +173,38 @@ func TestRun_WarnsWhenNoSupportedVersion(t *testing.T) {
 	assertHasDetail(t, result.Checks, "CustomResourceDefinition", externalSecretCRD, "expectedVersions", strings.Join(supportedAPIVersions, ","))
 }
 
+// TestRun_ExcludesV1alpha1OnlyPushSecretCRDs guards the intentional exclusion
+// of the PushSecret CRDs from the system_health CRD list (SKA-423). ESO ships
+// pushsecrets/clusterpushsecrets as v1alpha1-only by design, so validating
+// them against supportedAPIVersions {v1,v1beta1} would emit a permanent,
+// meaningless "serves no supported version" Warn. Even with both CRDs present
+// and established in the cluster, the adapter must not produce any check for
+// them; re-adding either to `crds` will fail this test.
+func TestRun_ExcludesV1alpha1OnlyPushSecretCRDs(t *testing.T) {
+	objects := healthySystemObjects()
+	// Present and established, but v1alpha1-only — exactly how ESO ships them.
+	objects = append(objects,
+		establishedCRDWithVersions("pushsecrets.external-secrets.io", "v1alpha1"),
+		establishedCRDWithVersions("clusterpushsecrets.external-secrets.io", "v1alpha1"),
+	)
+
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilySystemHealth: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The v1alpha1-only CRDs are deliberately not validated (no spurious Warn).
+	assertNoCheckFor(t, result.Checks, "CustomResourceDefinition", "pushsecrets.external-secrets.io")
+	assertNoCheckFor(t, result.Checks, "CustomResourceDefinition", "clusterpushsecrets.external-secrets.io")
+	// Sanity: the core CRD Fathom does validate still reports, so the test
+	// can't pass trivially if the crds list were emptied.
+	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", externalSecretCRD, adapter.OutcomePass, "established")
+}
+
 // externalSecretWithVersion builds an ExternalSecret unstructured at a
 // caller-chosen apiVersion. The default `externalSecret` helper emits v1.
 func externalSecretWithVersion(name, version string, status map[string]any) *unstructured.Unstructured {
@@ -215,6 +247,17 @@ func assertHasDetail(t *testing.T, checks []adapter.CheckResult, kind, name, key
 		}
 	}
 	t.Fatalf("missing %s/%s in %#v", kind, name, checks)
+}
+
+// assertNoCheckFor fails if any check targets the given kind/name, asserting a
+// resource is deliberately not validated by the adapter.
+func assertNoCheckFor(t *testing.T, checks []adapter.CheckResult, kind, name string) {
+	t.Helper()
+	for _, check := range checks {
+		if check.TargetRef.Kind == kind && check.TargetRef.Name == name {
+			t.Fatalf("unexpected check for %s/%s: %#v", kind, name, check)
+		}
+	}
 }
 
 func newFakeClient(t *testing.T, objects ...clientObject) client.Client {
