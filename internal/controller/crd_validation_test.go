@@ -51,6 +51,12 @@ var _ = Describe("CRD schema validation", func() {
 			Expect(err.Error()).To(ContainSubstring("timeout must be a positive duration"))
 		})
 
+		It("rejects a zero interval", func() {
+			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(0)}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("interval must be a positive duration"))
+		})
+
 		It("rejects a timeout greater than the interval", func() {
 			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
 				Interval: dur(30 * time.Second), Timeout: dur(time.Minute),
@@ -90,6 +96,34 @@ var _ = Describe("CRD schema validation", func() {
 			}))
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("each path must be absolute"))
+		})
+
+		It("accepts a positive timeout within the interval", func() {
+			obj := newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				WarnDays: i32(30), CriticalDays: i32(7),
+				Interval: dur(time.Hour), Timeout: dur(30 * time.Second),
+			})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		})
+
+		It("rejects a zero timeout", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Timeout: dur(0)}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("timeout must be a positive duration"))
+		})
+
+		It("rejects a zero interval", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Interval: dur(0)}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("interval must be a positive duration"))
+		})
+
+		It("rejects a timeout greater than the interval", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				Interval: dur(30 * time.Second), Timeout: dur(time.Minute),
+			}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("timeout must not exceed interval"))
 		})
 	})
 })
