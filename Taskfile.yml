@@ -353,6 +353,10 @@ tasks:
 
   bundle-build:
     desc: Build the OLM bundle image
+    # Depends on `bundle`: `operator-sdk generate bundle` produces bundle.Dockerfile
+    # (and bundle/), which are generated artifacts not tracked in git. Without this,
+    # `task bundle-build` on a clean clone fails with "bundle.Dockerfile: no such file".
+    deps: [bundle]
     cmds:
       - docker build -f bundle.Dockerfile -t {{.BUNDLE_IMG}} .
 
