@@ -65,8 +65,8 @@ func healthReportCount(ctx context.Context, source types.NamespacedName) int {
 	ExpectWithOffset(1, k8sClient.List(ctx, &reports,
 		client.InNamespace(source.Namespace),
 		client.MatchingLabels{
-			"fathom.skaphos.io/source-kind": "AddonCheck",
-			"fathom.skaphos.io/source-name": source.Name,
+			labelHealthReportSourceKind: "AddonCheck",
+			labelHealthReportSourceName: source.Name,
 		},
 	)).To(Succeed())
 	return len(reports.Items)
@@ -455,6 +455,56 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("token-1"))
+	})
+
+	It("preserves a consumed run-now token across a periodic re-run", func() {
+		name := types.NamespacedName{Name: "addoncheck-runnow-preserve", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name.Name,
+				Namespace:   name.Namespace,
+				Annotations: map[string]string{annotationRunNow: "tok"},
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
+
+		// First reconcile consumes token "tok".
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(healthReportCount(ctx, name)).To(Equal(1))
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastRunTrigger).To(Equal("tok"))
+
+		// Remove the annotation and backdate the last run so the next reconcile
+		// re-runs on the interval with no run-now present.
+		updated.Annotations = map[string]string{}
+		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		past := metav1.NewTime(time.Now().Add(-time.Hour))
+		updated.Status.LastRunTime = &past
+		Expect(k8sClient.Status().Update(ctx, updated)).To(Succeed())
+
+		// Periodic re-run must run again but NOT clear the consumed token.
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(healthReportCount(ctx, name)).To(Equal(2))
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastRunTrigger).To(Equal("tok"))
+
+		// Re-applying the same, already-consumed token must NOT re-trigger, and
+		// we are within the interval, so no new run happens.
+		updated.Annotations = map[string]string{annotationRunNow: "tok"}
+		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(healthReportCount(ctx, name)).To(Equal(2))
 	})
 
 	DescribeTable("addonCheckDueForRun",

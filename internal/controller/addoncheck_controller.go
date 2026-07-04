@@ -157,8 +157,13 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 		// Record the consumed trigger so the same annotation value does not
-		// re-run the adapter on every subsequent reconcile.
-		check.Status.LastRunTrigger = runNow
+		// re-run the adapter on every subsequent reconcile. Only overwrite on a
+		// non-empty value: a periodic/generation run with no run-now annotation
+		// must not clear a previously consumed token (which would let that same
+		// token fire again once re-applied).
+		if runNow != "" {
+			check.Status.LastRunTrigger = runNow
+		}
 	}
 
 	// A ready AddonCheck is requeued one interval out so its HealthReport tracks
