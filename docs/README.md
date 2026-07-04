@@ -42,6 +42,16 @@ The architecturally significant decisions are recorded as ADRs:
 - [ADR-0003 — Probe-pod model for active in-cluster checks](adr/0003-probe-pod-model.md)
 - [ADR-0004 — HealthCheck as a thin wrapper](adr/0004-healthcheck-as-wrapper.md)
 
+## Design & planning
+
+Living planning docs for in-flight epics (draft; not stable references):
+
+- [design/addon-adapters-implementation-plan.md](design/addon-adapters-implementation-plan.md)
+  — implementation plan for the Addon Adapters epic (Waves 2–4): a declarative-first
+  adapter engine with a Go escape hatch, periodic + on-demand execution, explicit
+  absence semantics, per-addon least-privilege clients, version detection, and the
+  reframed enabler/sequencing plan.
+
 ## Other repository docs
 
 - [`../README.md`](../README.md) — install via Helm and per-adapter `AddonCheck`
