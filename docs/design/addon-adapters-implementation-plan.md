@@ -20,7 +20,7 @@ checks (SKA-49/48) are out of scope.
 
 ## 0. Decisions that shape this plan
 
-1. **Execution is periodic *and* on-demand.** Checks re-run on `spec.Interval` and
+1. **Execution is periodic *and* on-demand.** Checks re-run on `spec.interval` and
    on an explicit command trigger — not only when the spec changes.
 2. **Declarative-first.** One declarative adapter driven by an `AddonDefinition`
    covers the regular addons; a full Go adapter is the escape hatch for cases the
@@ -61,19 +61,19 @@ These are the current-code facts the target architecture must fix:
 
 - **[correction] Checks don't re-run.** `runAddonCheck` fires only when
   `LastRunTime == nil || observedGeneration != Generation`
-  (`addoncheck_controller.go:141`); there is **no `RequeueAfter`** and
-  **`spec.Interval` is unused**. Today an AddonCheck runs once and then never again
+  (`internal/controller/addoncheck_controller.go:141`); there is **no `RequeueAfter`** and
+  **`spec.interval` is unused**. Today an AddonCheck runs once and then never again
   until its spec is edited — a degraded addon keeps its last green report. This is
   the single most important thing to fix (Decision 1).
 - **[correction] Absence is handled inconsistently, and "rolls up green" is false.**
   cert-manager / external-secrets / CoreDNS emit **Fail** on NotFound; only Cilium
   emits **Skipped**. The persisted verdict for an all-Skipped run is **`Skipped`**
-  (severity table `Pass(1) < Skipped(2) < …`, `healthreport_types.go:35-52`),
+  (severity table `Pass(1) < Skipped(2) < …`, `api/v1alpha1/healthreport_types.go:35-52`),
   **never `Pass`**. The Cilium package comment "rolls up green" is wrong about the
   persisted result; only the *metrics* layer (`FamilyOutcome`) relabels absent
   families as `Pass`. Decision 3 replaces this with an explicit model.
 - **[correction] The adapter client is not scoped.** Every adapter is handed the
-  controller's own `r.Client` (`addoncheck_controller.go:217`); all RBAC markers
+  controller's own `r.Client` (`internal/controller/addoncheck_controller.go:217`); all RBAC markers
   aggregate into a single `manager-role` ClusterRole on one ServiceAccount. The
   contract's "least-privilege scoped client" comment is aspirational. Decision 4
   makes it real.
@@ -166,12 +166,12 @@ that type, else the declarative engine bound to the matching definition.
 
 ### 2.2 Execution model (Decision 1)
 
-- **Periodic:** consume `spec.Interval` (add a sane default, e.g. 5m) and return
+- **Periodic:** consume `spec.interval` (add a sane default, e.g. 5m) and return
   `RequeueAfter: interval` from `Reconcile`; run when `now - LastRunTime >= interval`.
 - **On spec change:** keep the generation-triggered immediate run.
 - **On demand:** an explicit trigger — an annotation (`fathom.skaphos.io/run-now`)
   or the beaconctl `run-now` verb (SKA-45) — forces a run regardless of interval.
-- **Bounded & single-flight:** honor `spec.Timeout`; never overlap runs for the
+- **Bounded & single-flight:** honor `spec.timeout`; never overlap runs for the
   same AddonCheck; back off on adapter `error`.
 
 ### 2.3 Absence semantics (Decision 3)
@@ -239,7 +239,7 @@ Ordered by dependency. Each is its own PR.
 
 | # | Work | Ticket | Notes |
 | --- | --- | --- | --- |
-| P0-A | **Periodic + on-demand execution** — consume `spec.Interval` (+ default), `RequeueAfter`, run-now trigger | **new (blocker)** | Nothing else matters until checks re-run. |
+| P0-A | **Periodic + on-demand execution** — consume `spec.interval` (+ default), `RequeueAfter`, run-now trigger | **new (blocker)** | Nothing else matters until checks re-run. |
 | P0-B | **Declarative engine + evaluator library + `AddonDefinition` schema** (embedded catalog) | **SKA-523 reframed** | Was "shared kit"; now the engine. Migrate the 4 existing adapters onto it (each its own e2e-gated PR — see §6). |
 | P0-C | **Absence semantics** — `required`/`optional`, `Absent` reason + status count | **new** | Ends the NotFound inconsistency. |
 | P0-D | **Definition/policy validation + status conditions** | **SKA-54** | Largely CEL on the `AddonDefinition`/policy + engine checks (unknown family, bad thresholds → `Accepted=False`). |
