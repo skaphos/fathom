@@ -38,6 +38,18 @@ const (
 
 	defaultAddonCheckTimeout = 30 * time.Second
 
+	// defaultAddonCheckInterval is the cadence at which an AddonCheck's adapter
+	// re-runs when Spec.Interval is unset. Periodic re-execution is what keeps a
+	// HealthReport current: without it a check runs once and its result goes
+	// stale the moment the underlying addon degrades.
+	defaultAddonCheckInterval = 5 * time.Minute
+
+	// annotationRunNow forces an immediate adapter run, out of band from the
+	// interval, whenever its value changes. The controller records the consumed
+	// value in Status.LastRunTrigger so a given trigger fires exactly once. This
+	// is the wire contract for beaconctl's on-demand run (SKA-45).
+	annotationRunNow = "fathom.skaphos.io/run-now"
+
 	// defaultHealthReportHistoryLimit matches the +kubebuilder:default=10 on
 	// AddonCheckSpec.HistoryLimit. It is duplicated here so the reconciler can
 	// fall back when an in-memory AddonCheck has not been round-tripped through
@@ -138,21 +150,52 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	})
 	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
 
-	if adapterReady && (check.Status.LastRunTime == nil || previousObservedGeneration != check.Generation) {
+	interval := addonCheckInterval(&check)
+	runNow := check.Annotations[annotationRunNow]
+	if adapterReady && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
+		// Record the consumed trigger so the same annotation value does not
+		// re-run the adapter on every subsequent reconcile.
+		check.Status.LastRunTrigger = runNow
+	}
+
+	// A ready AddonCheck is requeued one interval out so its HealthReport tracks
+	// the addon's live state instead of freezing at first sight. This requeue
+	// must survive the no-status-change fast path below, or periodic execution
+	// stalls after the first run. Paused / adapterless checks are left to a
+	// spec change (generation bump) to wake them.
+	result = ctrl.Result{}
+	if adapterReady {
+		result.RequeueAfter = interval
 	}
 
 	if equality.Semantic.DeepEqual(before, &check.Status) {
-		return ctrl.Result{}, nil
+		return result, nil
 	}
 	if err := r.Status().Update(ctx, &check); err != nil {
 		return ctrl.Result{}, err
 	}
 	log.V(1).Info("updated AddonCheck status")
 
-	return ctrl.Result{}, nil
+	return result, nil
+}
+
+// addonCheckDueForRun reports whether the adapter should run this reconcile: on
+// first sight, on a spec (generation) change, when the on-demand run-now trigger
+// carries a new value, or when Interval has elapsed since the last run.
+func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGeneration int64, runNow string, interval time.Duration) bool {
+	switch {
+	case check.Status.LastRunTime == nil:
+		return true
+	case previousObservedGeneration != check.Generation:
+		return true
+	case runNow != "" && runNow != check.Status.LastRunTrigger:
+		return true
+	default:
+		return time.Since(check.Status.LastRunTime.Time) >= interval
+	}
 }
 
 func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
@@ -313,6 +356,13 @@ func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
 		return check.Spec.Timeout.Duration
 	}
 	return defaultAddonCheckTimeout
+}
+
+func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
+	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
+		return check.Spec.Interval.Duration
+	}
+	return defaultAddonCheckInterval
 }
 
 func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {

@@ -232,6 +232,13 @@ spec:
                 description: LastRunTime records when an adapter run last completed.
                 format: date-time
                 type: string
+              lastRunTrigger:
+                description: |-
+                  LastRunTrigger records the value of the fathom.skaphos.io/run-now
+                  annotation most recently consumed to force an adapter run. The controller
+                  re-runs the adapter whenever the annotation value differs from this, then
+                  stores it here so a given on-demand trigger fires exactly once.
+                type: string
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent metadata.generation reconciled by

@@ -118,6 +118,7 @@ _Appears in:_
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when an adapter run last completed. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the aggregate result from the most recent adapter run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent run. |  | Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the value of the fathom.skaphos.io/run-now<br />annotation most recently consumed to force an adapter run. The controller<br />re-runs the adapter whenever the annotation value differs from this, then<br />stores it here so a given on-demand trigger fires exactly once. |  | Optional: \{\} <br /> |
 
 
 #### CheckTargetRef

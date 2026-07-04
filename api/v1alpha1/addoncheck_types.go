@@ -91,6 +91,13 @@ type AddonCheckStatus struct {
 	// LastReportName names the HealthReport created for the most recent run.
 	// +optional
 	LastReportName string `json:"lastReportName,omitempty"`
+
+	// LastRunTrigger records the value of the fathom.skaphos.io/run-now
+	// annotation most recently consumed to force an adapter run. The controller
+	// re-runs the adapter whenever the annotation value differs from this, then
+	// stores it here so a given on-demand trigger fires exactly once.
+	// +optional
+	LastRunTrigger string `json:"lastRunTrigger,omitempty"`
 }
 
 // +kubebuilder:object:root=true
