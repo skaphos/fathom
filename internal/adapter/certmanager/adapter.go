@@ -62,22 +62,29 @@ const (
 	thresholdWebhookConfig    = "webhookConfigName"
 )
 
+// crdSupport pairs a cert-manager CRD with the API versions Fathom understands
+// for it, in descending preference. Each CRD carries its own slice so a future
+// heterogeneous CRD — one that ships a v2 or a beta while the others stay v1 —
+// is a one-line addition rather than a structural change (SKA-425).
+type crdSupport struct {
+	name     string
+	versions []string
+}
+
 var (
 	defaultComponents = []string{"cert-manager", "cert-manager-webhook", "cert-manager-cainjector"}
-	crds              = []string{
-		"certificates.cert-manager.io",
-		"certificaterequests.cert-manager.io",
-		"challenges.acme.cert-manager.io",
-		"clusterissuers.cert-manager.io",
-		"issuers.cert-manager.io",
-		"orders.acme.cert-manager.io",
+	// crds is the fixed set of cert-manager CRDs Fathom verifies, each with its
+	// own descending-preference served-version list. cert-manager has been stable
+	// at v1 since 1.6 (2021), so every entry is {"v1"} today; a CRD that ships a
+	// v2 or a beta becomes a one-line entry with its own list, no shared global.
+	crds = []crdSupport{
+		{"certificates.cert-manager.io", []string{"v1"}},
+		{"certificaterequests.cert-manager.io", []string{"v1"}},
+		{"challenges.acme.cert-manager.io", []string{"v1"}},
+		{"clusterissuers.cert-manager.io", []string{"v1"}},
+		{"issuers.cert-manager.io", []string{"v1"}},
+		{"orders.acme.cert-manager.io", []string{"v1"}},
 	}
-	// supportedAPIVersions lists the cert-manager.io API versions Fathom
-	// understands, in descending preference order. cert-manager has been
-	// stable at v1 since 1.6 (2021); the slice exists to make adapter
-	// version compatibility uniform across the codebase and to surface a
-	// drop-in shape when cert-manager eventually ships a v2 or beta.
-	supportedAPIVersions = []string{"v1"}
 )
 
 // Adapter implements cert-manager system health checks.
@@ -162,8 +169,8 @@ func (a Adapter) Run(ctx context.Context, req adapter.Request) (result adapter.R
 				}
 			}
 		}
-		for _, name := range crds {
-			checks = append(checks, a.checkCRD(ctx, req.Client, name))
+		for _, cv := range crds {
+			checks = append(checks, a.checkCRD(ctx, req.Client, cv.name, cv.versions))
 		}
 		if webhookProbeEnabled(systemPolicy) {
 			webhookServiceName := stringThreshold(systemPolicy, thresholdWebhookService, stringThreshold(systemPolicy, thresholdWebhookName, "cert-manager-webhook"))
@@ -375,7 +382,7 @@ func podTarget(pod *corev1.Pod) adapter.TargetRef {
 	return adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name}
 }
 
-func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapter.CheckResult {
+func (Adapter) checkCRD(ctx context.Context, c client.Client, name string, versions []string) adapter.CheckResult {
 	started := time.Now()
 	target := adapter.TargetRef{APIVersion: "apiextensions.k8s.io/v1", Kind: "CustomResourceDefinition", Name: name}
 	var crd apixv1.CustomResourceDefinition
@@ -389,9 +396,9 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 	if !crdutil.Established(&crd) {
 		return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager CRD is not established", details, started)
 	}
-	servedVersion, ok := crdutil.PreferredServedVersion(&crd, supportedAPIVersions)
+	servedVersion, ok := crdutil.PreferredServedVersion(&crd, versions)
 	if !ok {
-		details["expectedVersions"] = strings.Join(supportedAPIVersions, ",")
+		details["expectedVersions"] = strings.Join(versions, ",")
 		return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager CRD serves no supported version", details, started)
 	}
 	details["version"] = servedVersion
