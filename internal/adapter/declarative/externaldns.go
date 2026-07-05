@@ -10,9 +10,10 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // ExternalDNSDefinition is the declarative external-dns adapter (SKA-62).
 // system_health verifies the external-dns controller Deployment and its pods;
 // crd_health verifies the DNSEndpoint CRD. The Deployment is Required (absent
-// -> Fail), but the CRD is Optional: the CRD source is an opt-in external-dns
-// feature, so most installs legitimately run without
-// dnsendpoints.externaldns.k8s.io and score Skipped with the absent marker.
+// -> Fail), but the CRD is Optional: the Helm chart ships it in crds/, but
+// manifest-based installs and charts deployed with --skip-crds legitimately
+// run without dnsendpoints.externaldns.k8s.io, and the CRD source is an
+// opt-in feature — so absence scores Skipped with the absent marker.
 //
 // The Deployment name follows the Helm release fullname, so it is
 // policy-overridable via the "deploymentName" threshold (the chart convention

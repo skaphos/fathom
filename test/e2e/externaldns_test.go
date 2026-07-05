@@ -22,9 +22,10 @@ const (
 	externalDNSSampleNS   = "default"
 	externalDNSAddonNS    = "external-dns"
 
-	// externalDNSEndpointCRD is the opt-in CRD-source CRD. The helmfile fixture
-	// installs the chart defaults, which do NOT include it — the crd_health spec
-	// below asserts the adapter's Optional-absence contract against that.
+	// externalDNSEndpointCRD ships in the chart's crds/ directory, which helm
+	// installs by default — so the fixture cluster has it Established and the
+	// crd_health spec below asserts Pass. (The definition's Optional posture
+	// covers manifest installs without it; that path is unit-tested.)
 	externalDNSEndpointCRD = "dnsendpoints.externaldns.k8s.io"
 )
 
@@ -80,26 +81,22 @@ var _ = Describe("external-dns AddonCheck", Ordered, func() {
 			latestReport.Metadata.Name))
 	})
 
-	It("should emit Skipped crd_health with the absent marker when the DNSEndpoint CRD is not installed", func() {
-		// The DNSEndpoint CRD is an opt-in external-dns feature the chart-default
-		// fixture never installs, so the definition's component-level Optional
-		// posture must score it Skipped — with Details["absent"] so "not
-		// installed" stays queryable (SKA-526) — rather than failing the addon.
+	It("should produce a HealthReport with crd_health Pass for the DNSEndpoint CRD", func() {
 		verify := func(g Gomega) {
 			report, err := latestHealthReport(externalDNSSampleName, externalDNSSampleNS)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to fetch latest HealthReport")
 
 			c := findCheck(report, "crd_health", "CustomResourceDefinition", externalDNSEndpointCRD)
+			stopOnTerminalResult(c, "crd_health", "CRD/"+externalDNSEndpointCRD)
 			g.Expect(c).NotTo(BeNil(),
 				"crd_health check missing for CRD %s in HealthReport %q",
 				externalDNSEndpointCRD, report.Metadata.Name)
-			g.Expect(c.Result).To(Equal("Skipped"),
-				"crd_health on a CRD-less install: got %q with summary %q",
-				c.Result, c.Summary)
-			g.Expect(c.Details).To(HaveKeyWithValue("absent", "true"),
-				"crd_health Skipped result should carry the absent marker")
+			g.Expect(c.Result).To(Equal("Pass"),
+				"crd_health CRD %s: got %q with summary %q",
+				externalDNSEndpointCRD, c.Result, c.Summary)
 		}
-		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
+		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed(),
+			"external-dns crd_health CRD check did not reach Pass within timeout")
 	})
 
 	It("should report Ready=True on the AddonCheck", func() {

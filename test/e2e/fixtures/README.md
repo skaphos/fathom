@@ -21,7 +21,7 @@ The AddonCheck samples used by this stack live in `config/samples/`:
 - `fathom_v1alpha1_addoncheck_coredns.yaml` — exercises CoreDNS `system_health` + `dns_resolution`.
 - `fathom_v1alpha1_addoncheck.yaml` — exercises cert-manager `system_health`, `issuer_health`, `certificate_health`.
 - `fathom_v1alpha1_addoncheck_external_secrets.yaml` — exercises external-secrets `system_health` + `secret_sync`.
-- `fathom_v1alpha1_addoncheck_external_dns.yaml` — exercises external-dns `system_health` + the `crd_health` Optional-absence contract (the chart installs no DNSEndpoint CRD).
+- `fathom_v1alpha1_addoncheck_external_dns.yaml` — exercises external-dns `system_health` + `crd_health` (the chart ships the DNSEndpoint CRD in `crds/`, so it is Established in this stack).
 
 ## Prerequisites
 
