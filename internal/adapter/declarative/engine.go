@@ -45,6 +45,17 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 	if len(def.Families) == 0 {
 		return nil, fmt.Errorf("declarative: adapter %q declares no families", def.AddonType)
 	}
+	if err := validSupportedVersions(def.SupportedVersions); err != nil {
+		return nil, fmt.Errorf("declarative: adapter %q has %w", def.AddonType, err)
+	}
+	if vs := def.VersionSource; vs != nil {
+		if !validWorkloadKind(vs.Kind) {
+			return nil, fmt.Errorf("declarative: adapter %q VersionSource has unknown kind %q", def.AddonType, vs.Kind)
+		}
+		if vs.Namespace == "" || vs.Name == "" {
+			return nil, fmt.Errorf("declarative: adapter %q VersionSource needs a Namespace and Name", def.AddonType)
+		}
+	}
 	seen := make(map[adapter.Family]struct{}, len(def.Families))
 	for _, f := range def.Families {
 		if f.Name == "" {
@@ -55,9 +66,7 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 		}
 		seen[f.Name] = struct{}{}
 		for _, w := range f.Workloads {
-			switch w.Kind {
-			case KindDeployment, KindDaemonSet, KindStatefulSet:
-			default:
+			if !validWorkloadKind(w.Kind) {
 				return nil, fmt.Errorf("declarative: adapter %q family %q has workload with unknown kind %q", def.AddonType, f.Name, w.Kind)
 			}
 		}
@@ -84,6 +93,16 @@ func MustEngine(def AddonDefinition) *Engine {
 		panic(err)
 	}
 	return e
+}
+
+// validWorkloadKind reports whether k is one of the controller kinds the engine
+// can read (used by both family-workload and VersionSource validation).
+func validWorkloadKind(k WorkloadKind) bool {
+	switch k {
+	case KindDeployment, KindDaemonSet, KindStatefulSet:
+		return true
+	}
+	return false
 }
 
 // Name returns the adapter identity (the AddonType).
@@ -128,14 +147,19 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 	}
 
 	// All-disabled sentinel: a single Skipped under the primary family
-	// (Families[0]) targeting the driving AddonCheck.
+	// (Families[0]) targeting the driving AddonCheck. Version detection is
+	// skipped too — a fully-disabled check performs no reads.
 	if !anyEnabled {
 		c := skippedResult(e.def.Families[0].Name, req.Target,
 			"all check families are disabled by policy", "FamilyDisabled")
 		return adapter.Result{Checks: []adapter.CheckResult{c}, Duration: time.Since(started)}, nil
 	}
 
-	checks := []adapter.CheckResult{}
+	// Detect the installed addon version once per run and gate it against the
+	// definition's supported range; the Warn gate (if any) leads the checks
+	// (SKA-527).
+	detectedVersion, versionGate := e.detectAndGateVersion(ctx, req.Client)
+	checks := append([]adapter.CheckResult{}, versionGate...)
 	for _, fr := range runs {
 		if !fr.enabled {
 			continue
@@ -159,7 +183,7 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 			if evErr != nil {
 				// Adapter-level failure: abort the whole Run. The shipped
 				// read-and-compare evaluators never take this path.
-				return adapter.Result{Checks: checks, Duration: time.Since(started)}, evErr
+				return adapter.Result{Checks: checks, Duration: time.Since(started), DetectedVersion: detectedVersion}, evErr
 			}
 			checks = append(checks, out...)
 		}
@@ -169,7 +193,7 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 			string(adapter.FamilyOutcome(checks, fr.def.Name)), time.Since(famStart))
 	}
 
-	return adapter.Result{Checks: checks, Duration: time.Since(started)}, nil
+	return adapter.Result{Checks: checks, Duration: time.Since(started), DetectedVersion: detectedVersion}, nil
 }
 
 // endRunSpan annotates span with the check count and a per-family outcome

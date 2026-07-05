@@ -92,3 +92,29 @@ func TestMarkAbsentAndIsAbsent(t *testing.T) {
 		t.Fatal("IsAbsent(non-absent details) = true, want false")
 	}
 }
+
+func TestMarkVersionGate(t *testing.T) {
+	// Unsupported: all three keys set, existing details preserved.
+	m := adapter.MarkVersionGate(map[string]string{"component": "cilium"}, adapter.ReasonUnsupportedAddonVersion, "2.5.0", ">=1.0 <2.0")
+	if m["component"] != "cilium" {
+		t.Errorf("MarkVersionGate dropped existing details: %v", m)
+	}
+	if m[adapter.DetailVersionGate] != adapter.ReasonUnsupportedAddonVersion {
+		t.Errorf("versionGate = %q, want %q", m[adapter.DetailVersionGate], adapter.ReasonUnsupportedAddonVersion)
+	}
+	if m[adapter.DetailDetectedVersion] != "2.5.0" || m[adapter.DetailSupportedVersions] != ">=1.0 <2.0" {
+		t.Errorf("detected/supported = %q/%q", m[adapter.DetailDetectedVersion], m[adapter.DetailSupportedVersions])
+	}
+
+	// Unknown with no detected version: the detected key is omitted (not "").
+	m = adapter.MarkVersionGate(nil, adapter.ReasonVersionUnknown, "", ">=1.0")
+	if m[adapter.DetailVersionGate] != adapter.ReasonVersionUnknown {
+		t.Errorf("versionGate = %q, want VersionUnknown", m[adapter.DetailVersionGate])
+	}
+	if _, ok := m[adapter.DetailDetectedVersion]; ok {
+		t.Errorf("empty detected version should be omitted, got %q", m[adapter.DetailDetectedVersion])
+	}
+	if m[adapter.DetailSupportedVersions] != ">=1.0" {
+		t.Errorf("supported = %q, want >=1.0", m[adapter.DetailSupportedVersions])
+	}
+}

@@ -39,8 +39,8 @@ func TestEngine_Metadata(t *testing.T) {
 	if e.Name() != "cilium" {
 		t.Fatalf("Name: got %q, want cilium", e.Name())
 	}
-	if e.Version() != "0.1.1" {
-		t.Fatalf("Version: got %q, want 0.1.1", e.Version())
+	if e.Version() != "0.2.0" {
+		t.Fatalf("Version: got %q, want 0.2.0", e.Version())
 	}
 	if e.ContractVersion() != adapter.ContractVersion {
 		t.Fatalf("ContractVersion: got %q, want %q", e.ContractVersion(), adapter.ContractVersion)

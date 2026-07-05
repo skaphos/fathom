@@ -118,6 +118,7 @@ _Appears in:_
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when an adapter run last completed. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the aggregate result from the most recent adapter run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `absent` _integer_ | Absent is the number of checks in the most recent run whose target was not<br />installed — the required-absent Fails and optional-absent Skips alike. It<br />makes "not installed" queryable and distinct from "unhealthy" (a Fail whose<br />target exists) and "disabled" (a Skipped family). Zero when every checked<br />target is present (SKA-526). |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected on the most<br />recent run (from the addon workload's app.kubernetes.io/version label, else<br />its container image tag). Empty when the adapter does not detect versions or<br />the version was undetectable — the run then proceeds best-effort (SKA-527). |  | Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent run. |  | Optional: \{\} <br /> |
 | `lastRunTrigger` _string_ | LastRunTrigger records the value of the fathom.skaphos.io/run-now<br />annotation most recently consumed to force an adapter run. The controller<br />re-runs the adapter whenever the annotation value differs from this, then<br />stores it here so a given on-demand trigger fires exactly once. |  | Optional: \{\} <br /> |
 
@@ -429,6 +430,7 @@ _Appears in:_
 | `addonType` _string_ | AddonType is the AddonCheck addon type used to select the adapter. |  | Optional: \{\} <br /> |
 | `adapterName` _string_ | AdapterName is the adapter identity that produced this report. |  | Optional: \{\} <br /> |
 | `adapterVersion` _string_ | AdapterVersion is the adapter implementation version. |  | Optional: \{\} <br /> |
+| `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected for this<br />run, or empty when undetectable or not detected. Distinct from<br />AdapterVersion (the adapter's own version) — SKA-527. |  | Optional: \{\} <br /> |
 | `contractVersion` _string_ | ContractVersion is the adapter contract version used for this run. |  | Optional: \{\} <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result is the aggregate outcome across all checks. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
 | `checks` _[HealthReportCheck](#healthreportcheck) array_ | Checks are the individual observations produced by the adapter. |  | Optional: \{\} <br /> |

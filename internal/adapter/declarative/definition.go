@@ -90,6 +90,20 @@ type AddonDefinition struct {
 	// over this default (SKA-526).
 	Optional bool
 
+	// VersionSource, when set, names the workload whose app.kubernetes.io/version
+	// label (or, failing that, container image tag) reports the installed addon
+	// release version. The engine detects it once per Run and surfaces it as
+	// Result.DetectedVersion. Nil disables detection (SKA-527).
+	VersionSource *VersionSource
+
+	// SupportedVersions is the addon release-version semver RANGE (Masterminds /
+	// Helm grammar, e.g. ">=1.14 <2.0") the detected version is gated against.
+	// Empty disables gating: a detected version is still surfaced, but never
+	// produces a Warn. Requires VersionSource to be set to have any effect. This
+	// is the addon *release* version — distinct from the per-CRD served-API
+	// versions in CRDCheck/ConditionCheck.SupportedVersions (SKA-527).
+	SupportedVersions string
+
 	// Families are evaluated in slice order. Families[0] is the "primary"
 	// family under which the all-disabled sentinel Skipped is emitted.
 	Families []FamilyDefinition
@@ -98,6 +112,24 @@ type AddonDefinition struct {
 	// Recorded for documentation and codegen; the engine does not enforce
 	// them at runtime (the real markers must live on a scanned Go source file).
 	RBAC []RBACRule
+}
+
+// VersionSource identifies the workload whose app.kubernetes.io/version label
+// (primary) or container image tag (fallback) reports the installed addon
+// release version, for engine version detection (SKA-527). It carries only the
+// addressing fields — it is not a health check.
+type VersionSource struct {
+	// Kind is the controller kind read (Deployment/DaemonSet/StatefulSet).
+	Kind WorkloadKind
+	// Namespace is the workload's namespace.
+	Namespace string
+	// Name is the workload's name.
+	Name string
+	// Container selects which container's image supplies the fallback tag by
+	// name; "" uses the first container. The primary source is the version
+	// label, so this only matters for a multi-container workload whose first
+	// container is not the addon itself.
+	Container string
 }
 
 // defaultPosture is the Posture a component inherits when it declares none:
