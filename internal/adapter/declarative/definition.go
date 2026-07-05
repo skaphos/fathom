@@ -49,8 +49,13 @@ const (
 )
 
 // AddonDefinition is the complete declarative description of one addon adapter.
-// It is immutable after construction; an Engine holds a copy and never mutates
-// it, which is what makes Engine.Run safe for concurrent use.
+//
+// The Engine treats it as read-only: Run only reads the definition and copies
+// per-run scalars onto the stack, so many goroutines may call Run concurrently.
+// The copy the Engine holds is shallow — Families/RBAC share backing arrays with
+// the caller's value — so callers MUST NOT mutate a definition (or its nested
+// slices) after passing it to NewEngine/MustEngine. In practice definitions are
+// compiled-in literals that are never mutated.
 type AddonDefinition struct {
 	// AddonType is the adapter identity: Name(), the AddonTypes[0] capability,
 	// and the AddonCheck.spec.addonType match key.
@@ -179,6 +184,11 @@ type ConditionCheck struct {
 	Kind string
 	// ListKind is the list kind (e.g. "IssuerList").
 	ListKind string
+	// ListName is the stable placeholder Name used on list-level CheckResults
+	// (invalid-selector, list-failure, and no-matching-objects), so they don't
+	// collapse onto (Kind, Name=""). Matches the hand-written adapters'
+	// convention of a resource-plural label (e.g. "issuers"). Defaults to Kind.
+	ListName string
 	// ClusterScoped lists without a namespace when true.
 	ClusterScoped bool
 	// DefaultNamespace is used when policy.Namespaces is empty and the objects

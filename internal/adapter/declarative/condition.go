@@ -36,7 +36,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		mismatch = adapter.OutcomeFail
 	}
 
-	kindRef := adapter.TargetRef{APIVersion: cc.APIVersion, Kind: cc.Kind}
+	kindRef := adapter.TargetRef{APIVersion: cc.APIVersion, Kind: cc.Kind, Name: cc.listName()}
 
 	sel, err := metav1.LabelSelectorAsSelector(ec.Policy.LabelSelector)
 	if err != nil {
@@ -83,6 +83,15 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		out = append(out, cc.scoreObject(ec, obj, absent, mismatch))
 	}
 	return out, nil
+}
+
+// listName is the stable placeholder Name for list-level results, defaulting to
+// the singular Kind when ListName is unset.
+func (cc ConditionCheck) listName() string {
+	if cc.ListName != "" {
+		return cc.ListName
+	}
+	return cc.Kind
 }
 
 // scoreObject evaluates the configured condition on one listed object.

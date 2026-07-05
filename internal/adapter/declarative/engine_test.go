@@ -250,6 +250,7 @@ func TestNewEngine_Validation(t *testing.T) {
 		{"duplicate family", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f"}, {Name: "f"}}}},
 		{"unknown workload kind", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", Workloads: []WorkloadCheck{{Kind: "Nope"}}}}}},
 		{"empty crd names", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CRDs: []CRDCheck{{}}}}}},
+		{"crd without supported versions", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CRDs: []CRDCheck{{Names: []string{"foos.example.io"}}}}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

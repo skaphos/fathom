@@ -65,6 +65,12 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 			if len(c.Names) == 0 {
 				return nil, fmt.Errorf("declarative: adapter %q family %q has a CRDCheck with no names", def.AddonType, f.Name)
 			}
+			if len(c.SupportedVersions) == 0 {
+				// An empty list makes crdutil.PreferredServedVersion always
+				// return !ok, so every established CRD would be scored as
+				// "serves no recognized version" — a silent definition bug.
+				return nil, fmt.Errorf("declarative: adapter %q family %q CRDCheck %v has no SupportedVersions", def.AddonType, f.Name, c.Names)
+			}
 		}
 	}
 	return &Engine{def: def}, nil
