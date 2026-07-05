@@ -10,12 +10,15 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -122,4 +125,52 @@ func TestAdapterClient(t *testing.T) {
 			t.Fatal("expected the factory error to propagate")
 		}
 	})
+}
+
+// TestRunAddonCheckFailsClosedWithoutScopedClient locks the security-critical
+// fail-closed behavior: when impersonation is configured but the addon's scoped
+// ServiceAccount is absent, runAddonCheck must NOT execute the adapter against the
+// operator client — it records an adapter-level failure instead. A regression that
+// changed this to fall back to r.Client would reopen the door SKA-58 closed, and
+// this test would catch it.
+func TestRunAddonCheckFailsClosedWithoutScopedClient(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add fathom scheme: %v", err)
+	}
+
+	check := &fathomv1alpha1.AddonCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "failclosed", Namespace: "default"},
+		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "prog-cert-manager"},
+	}
+	// The fake cluster has the AddonCheck but NO addon ServiceAccount, so the
+	// scoped-client lookup fails. AddonClients is set and Namespace is non-empty,
+	// so impersonation is active (not the operator-client fallback path).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).Build()
+	prog := &programmableAdapter{}
+	r := &AddonCheckReconciler{
+		Client:       cl,
+		Scheme:       scheme,
+		AddonClients: &fakeClientFactory{client: cl},
+		Namespace:    "fathom-system",
+	}
+
+	// runAddonCheck maps adapter failures to a health condition, not a reconcile
+	// error, so it returns nil.
+	if err := r.runAddonCheck(context.Background(), logr.Discard(), check, prog); err != nil {
+		t.Fatalf("runAddonCheck returned an unexpected error: %v", err)
+	}
+	if prog.runCount() != 0 {
+		t.Errorf("adapter Run was invoked %d times; it must NOT run when the scoped client is unavailable", prog.runCount())
+	}
+	cond := apimeta.FindStatusCondition(check.Status.Conditions, addonCheckConditionReady)
+	if cond == nil {
+		t.Fatal("expected a Ready condition to be set")
+	}
+	if cond.Status != metav1.ConditionFalse || cond.Reason != "AdapterRunFailed" {
+		t.Errorf("Ready condition = %s/%s, want False/AdapterRunFailed", cond.Status, cond.Reason)
+	}
 }

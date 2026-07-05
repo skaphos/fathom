@@ -148,12 +148,31 @@ func Files(addons []AddonRBAC) (map[string][]byte, error) {
 }
 
 // Write generates every artifact and writes it under root. Returns the sorted
-// list of repo-relative paths written.
+// list of repo-relative paths written. It also prunes stale per-addon manifests:
+// a removed or renamed adapter's addon-<name>.yaml would otherwise linger as an
+// unreferenced tracked file (the regenerated kustomization no longer lists it, so
+// it is never deployed — but it clutters the tree and, for a read-only removed
+// adapter, slips past the read-only guard). Any addon-*.yaml not in the new set
+// is removed.
 func Write(root string, adapters []adapter.Adapter) ([]string, error) {
 	files, err := Files(Collect(adapters))
 	if err != nil {
 		return nil, err
 	}
+
+	stale, err := filepath.Glob(filepath.Join(root, addonsKustomizeDir, "addon-*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range stale {
+		rel := filepath.Join(addonsKustomizeDir, filepath.Base(m))
+		if _, keep := files[rel]; !keep {
+			if err := os.Remove(m); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	paths := make([]string, 0, len(files))
 	for rel, body := range files {
 		abs := filepath.Join(root, rel)
