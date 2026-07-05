@@ -106,10 +106,11 @@ func (Adapter) RBACRules() []adapter.PolicyRule {
 	}
 }
 
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods;services,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=create;delete
-// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
+// CoreDNS's cluster permissions (including the probe-pod create;delete) are NOT
+// granted to the operator ServiceAccount. They live on this adapter's per-addon
+// ServiceAccount (RBACRules above), generated into
+// config/rbac/addons/addon-coredns.yaml; the operator only impersonates that
+// ServiceAccount at run time (SKA-58). No +kubebuilder:rbac markers here.
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (result adapter.Result, err error) {
 	ctx, span := tracer.Start(ctx, Name+".run")

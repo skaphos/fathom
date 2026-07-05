@@ -114,13 +114,10 @@ func (Adapter) RBACRules() []adapter.PolicyRule {
 	}
 }
 
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;clusterissuers;issuers,verbs=get;list;watch
-// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;issuers,verbs=create
+// cert-manager's cluster permissions are NOT granted to the operator ServiceAccount.
+// They live on this adapter's per-addon ServiceAccount (RBACRules above), generated
+// into config/rbac/addons/addon-cert-manager.yaml; the operator only impersonates
+// that ServiceAccount at run time (SKA-58). No +kubebuilder:rbac markers here.
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (result adapter.Result, err error) {
 	ctx, span := tracer.Start(ctx, Name+".run")

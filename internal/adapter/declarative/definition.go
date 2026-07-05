@@ -26,20 +26,13 @@ SPDX-License-Identifier: MIT
 //   - The OutcomeError vs OutcomeFail split is preserved: transport/selector
 //     errors -> Error; an object that exists but is unhealthy -> Fail.
 //
-// RBAC: the +kubebuilder:rbac markers below are the union of reads every
-// declarative AddonDefinition performs. controller-gen aggregates them into the
-// operator's aggregate config/rbac/role.yaml. Each definition's own RBAC field
-// (Engine.RBACRules) is the per-addon least-privilege source the RBAC generator
-// emits scoped roles from (SKA-58); these union markers are retained only until
-// the operator drops the addon reads from its own role in favour of
-// impersonation. They live on the package doc -- one scanned location owning the
-// declarative reads -- because controller-gen did not reliably collect
-// equivalent markers placed on individual engine constructors.
-//
-// +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=external-secrets.io,resources=externalsecrets,verbs=get;list;watch
+// RBAC: declarative adapters' cluster reads are NOT granted to the operator
+// ServiceAccount. Each definition's own RBAC field (surfaced via
+// Engine.RBACRules) is the per-addon least-privilege source the RBAC generator
+// emits a scoped read-only ClusterRole from, into config/rbac/addons/; the
+// operator only impersonates that ServiceAccount at run time (SKA-58). There are
+// deliberately no +kubebuilder:rbac markers here — the engine's reads are scoped
+// per addon, not aggregated onto the operator role.
 package declarative
 
 import "github.com/skaphos/fathom/pkg/adapter"
