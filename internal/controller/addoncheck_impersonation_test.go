@@ -113,6 +113,22 @@ func TestAdapterClient(t *testing.T) {
 		}
 	})
 
+	t.Run("errors when multiple ServiceAccounts share the addon label", func(t *testing.T) {
+		// Two installs (e.g. two Fathom releases) both labeled for coredns: the
+		// resolution is ambiguous, so it must fail closed rather than pick one.
+		sa1 := addonSA("fathom-addon-coredns", "fathom-system", "coredns")
+		sa2 := addonSA("other-addon-coredns", "fathom-system", "coredns")
+		operatorClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sa1, sa2).Build()
+		r := &AddonCheckReconciler{
+			Client:       operatorClient,
+			AddonClients: &fakeClientFactory{client: fake.NewClientBuilder().WithScheme(scheme).Build()},
+			Namespace:    "fathom-system",
+		}
+		if _, err := r.adapterClient(context.Background(), "coredns"); err == nil {
+			t.Fatal("expected an error when multiple labeled ServiceAccounts exist")
+		}
+	})
+
 	t.Run("propagates a factory error", func(t *testing.T) {
 		sa := addonSA("fathom-addon-coredns", "fathom-system", "coredns")
 		operatorClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sa).Build()

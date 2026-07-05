@@ -130,6 +130,18 @@ func Files(addons []AddonRBAC) (map[string][]byte, error) {
 		if len(a.Rules) == 0 {
 			return nil, fmt.Errorf("rbacgen: adapter %q declares no RBAC rules (does it implement adapter.RBACDeclarer?)", a.Addon)
 		}
+		for _, r := range a.Rules {
+			// A rule missing apiGroups, resources, or verbs renders a manifest the
+			// API server rejects at apply time. The core group is the "" element, so
+			// a non-empty slice (not a non-empty string) is the right check. Fail
+			// codegen here rather than emit an unapplyable manifest.
+			if len(r.APIGroups) == 0 || len(r.Resources) == 0 || len(r.Verbs) == 0 {
+				return nil, fmt.Errorf(
+					"rbacgen: adapter %q has an incomplete RBAC rule (apiGroups=%v resources=%v verbs=%v); apiGroups, resources, and verbs must all be non-empty",
+					a.Addon, r.APIGroups, r.Resources, r.Verbs,
+				)
+			}
+		}
 	}
 	files := map[string][]byte{}
 

@@ -418,10 +418,20 @@ func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) 
 	); err != nil {
 		return nil, fmt.Errorf("list scoped ServiceAccount for addon %q: %w", addon, err)
 	}
-	if len(sas.Items) != 1 {
+	// Distinguish the two failure modes so the message points at the real cause:
+	// 0 matches means the addon RBAC was never installed; >1 means several
+	// installs (e.g. multiple Fathom releases) share the addon label in this
+	// namespace. Both fail closed — never fall back to broader access.
+	switch n := len(sas.Items); {
+	case n == 0:
 		return nil, fmt.Errorf(
-			"expected exactly one ServiceAccount labeled %s=%s in namespace %q, found %d; is the addon RBAC installed?",
-			adapter.AddonLabel, addon, r.Namespace, len(sas.Items),
+			"no ServiceAccount labeled %s=%s in namespace %q; is the addon RBAC installed?",
+			adapter.AddonLabel, addon, r.Namespace,
+		)
+	case n > 1:
+		return nil, fmt.Errorf(
+			"found %d ServiceAccounts labeled %s=%s in namespace %q, expected exactly one; multiple installs share the addon label",
+			n, adapter.AddonLabel, addon, r.Namespace,
 		)
 	}
 	return r.AddonClients.ClientFor(impersonation.SAUsername(r.Namespace, sas.Items[0].Name))
