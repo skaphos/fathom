@@ -1,774 +1,874 @@
 {
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/scripts/coverage_gate_test.go": {
-    "mtime": 1783205493.9975233,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/scripts/coverage_gate_test.go": {
+    "mtime": 1783271815.980042,
     "hash": "93a31e6414d84a9fd82667e2fe522e6b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/main_test.go": {
-    "mtime": 1783205493.9531221,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/main_test.go": {
+    "mtime": 1783271815.9298365,
     "hash": "0439d2bb305e892121cde0c1858114b4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/main.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/main.go": {
+    "mtime": 1783271815.9281657,
     "hash": "a9d640ed62bb834c933a52545f5786f6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/node-agent/main_test.go": {
-    "mtime": 1783205493.9537017,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/node-agent/main_test.go": {
+    "mtime": 1783271815.9306192,
     "hash": "6a7bb504ba7d5a2a2798216998330e50"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/node-agent/main.go": {
-    "mtime": 1783205493.9531221,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/node-agent/main.go": {
+    "mtime": 1783271815.9298365,
     "hash": "f89c76eb74b5d3e07cfb51b60a0436fa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/probe/main_test.go": {
-    "mtime": 1783205493.9543116,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/probe/main_test.go": {
+    "mtime": 1783271815.9314258,
     "hash": "5c9ae77a2441e261f1a1f0a0e940e8fc"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/cmd/probe/main.go": {
-    "mtime": 1783205493.9537017,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/cmd/probe/main.go": {
+    "mtime": 1783271815.9306192,
     "hash": "c1c68a3592c65f07a5fa6c714100dce4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/healthreport_types_test.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/healthreport_types_test.go": {
+    "mtime": 1783271815.9281657,
     "hash": "19c3766e1518c4db33579147a0f22f7f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/addoncheck_types.go": {
-    "mtime": 1783205493.9492126,
-    "hash": "026b0b294f28dfb2cf40c1f5c5f7ee9e"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/addoncheck_types.go": {
+    "mtime": 1783271815.92414,
+    "hash": "6e3e3a4649914eddeb7fca7868b056d6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/healthcheck_types.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/healthcheck_types.go": {
+    "mtime": 1783271815.9281657,
     "hash": "4a62ee0e37d6dd16786d048894650969"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/healthreport_types.go": {
-    "mtime": 1783205493.9514556,
-    "hash": "ee2f7e5a70728d6e036dbfeefe11b9e2"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/healthreport_types.go": {
+    "mtime": 1783271815.9281657,
+    "hash": "e5ac25e8b59ce40b4a2f27696e0ab9c3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/groupversion_info.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/groupversion_info.go": {
+    "mtime": 1783271815.9281657,
     "hash": "2c0f4844d13a0f5795b42c681b3fe924"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/groupversion_info_test.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/groupversion_info_test.go": {
+    "mtime": 1783271815.9281657,
     "hash": "64f4747534c439d6d63d1b3400f35d97"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/nodecertificatecheck_types.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/nodecertificatecheck_types.go": {
+    "mtime": 1783271815.9281657,
     "hash": "b75dbf00971a625bfce30c8c33646897"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/deepcopy_test.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/deepcopy_test.go": {
+    "mtime": 1783271815.9281657,
     "hash": "16f96b467ff6e662e851336c60886cf4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/clusterhealth_types.go": {
-    "mtime": 1783205493.9514556,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/clusterhealth_types.go": {
+    "mtime": 1783271815.9281657,
     "hash": "eb6b401c139b11f92f985e87d30b81ae"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1783206985.9419246,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/api/v1alpha1/zz_generated.deepcopy.go": {
+    "mtime": 1783276370.252141,
     "hash": "d466f4663f5074177818a75f302651ab"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/pkg/adapter/doc.go": {
-    "mtime": 1783205493.9964204,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/rbac.go": {
+    "mtime": 1783276107.8112054,
+    "hash": "a2e765eb7245c92ed6acb1731bef4bb8"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/rbac_test.go": {
+    "mtime": 1783276119.8980052,
+    "hash": "3c82e96cb11464a56526e2d631dc239d"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/doc.go": {
+    "mtime": 1783271815.978623,
     "hash": "07713d712ef358889658aa5f57b4714c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/pkg/adapter/version_test.go": {
-    "mtime": 1783205493.9964204,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/version_test.go": {
+    "mtime": 1783271815.978623,
     "hash": "5fe8f0a9fe6e775b3459b0f53c8182f0"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/pkg/adapter/adapter_test.go": {
-    "mtime": 1783205493.9964204,
-    "hash": "8b7256fd8562153476fa986fe6e10cfe"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/adapter_test.go": {
+    "mtime": 1783271815.978623,
+    "hash": "2b47c60a5e3922253b22dd29da0a578c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/pkg/adapter/version.go": {
-    "mtime": 1783205493.9964204,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/version.go": {
+    "mtime": 1783271815.978623,
     "hash": "4065e8f4fb49ff6ebc4d4a3c5383bdcf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/pkg/adapter/adapter.go": {
-    "mtime": 1783205493.9963264,
-    "hash": "67a6dbd776a7dbc8bad37ae1317dc9af"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/pkg/adapter/adapter.go": {
+    "mtime": 1783271815.9784842,
+    "hash": "de7ebbe5317e920e824cb285ec1495a9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/utils/utils_test.go": {
-    "mtime": 1783205494.001662,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/utils/utils_test.go": {
+    "mtime": 1783271815.9844973,
     "hash": "b7d3c50446e089e1a10aaa1b4ef2e020"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/utils/utils.go": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/utils/utils.go": {
+    "mtime": 1783271815.9823794,
     "hash": "b5b3716801ccbf32b758906ed6bbb0ea"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/coredns_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/coredns_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "05da837f017759b1ec1269dbee7fa6c4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/e2e_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/e2e_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "c4a30b3da7a19efb0a50559483ed62ea"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/addoncheck_refresh_test.go": {
-    "mtime": 1783205493.998458,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/addoncheck_refresh_test.go": {
+    "mtime": 1783271815.981282,
     "hash": "e466b1ea6d9e07d0d04bb755d76379c9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/e2e_suite_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/e2e_suite_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "7d6fc7fbb9cdb1e1ead19c4b3e497b01"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/certmanager_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/certmanager_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "e6865c8336c619979cdd3ef70c36bfbb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/nodecert_test.go": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/nodecert_test.go": {
+    "mtime": 1783271815.9823794,
     "hash": "98db04c106cf5820216c90380710e227"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/externalsecrets_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/impersonation_test.go": {
+    "mtime": 1783275282.1614482,
+    "hash": "097223b51053514e340de45e308c0445"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/externalsecrets_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "af0d5dbd4ba4e783ae505678e2583040"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/cilium_test.go": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/cilium_test.go": {
+    "mtime": 1783271815.9816067,
     "hash": "0d47f165a03cb6c6b8caea19dbb1c9b1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/healthreport_helpers_test.go": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/healthreport_helpers_test.go": {
+    "mtime": 1783271815.9823794,
     "hash": "5c06d252d79a0238e0836eab65ded4a4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/options_test.go": {
-    "mtime": 1783205493.9873528,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/options_test.go": {
+    "mtime": 1783271815.9693494,
     "hash": "8ad3d32c1ea1ee2fe44b6c7a2742bd55"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/run_happy_test.go": {
-    "mtime": 1783205493.9873528,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/run_happy_test.go": {
+    "mtime": 1783271815.9693494,
     "hash": "a1d5970ea8f676aff699325040e7319b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/run.go": {
-    "mtime": 1783205493.9873528,
-    "hash": "b3dc1f7636cb8e47f09fedcf3a5acbea"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/run.go": {
+    "mtime": 1783275276.8894758,
+    "hash": "9c7dc919077dd6f08965ad7e3a1dae8d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/run_test.go": {
-    "mtime": 1783205493.9873528,
-    "hash": "956f9d6c59da2a4464d3754c4ea7e001"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/run_test.go": {
+    "mtime": 1783273052.776158,
+    "hash": "324727a2357cb3fda86beb6b8c0fb959"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/root.go": {
-    "mtime": 1783205493.9873528,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/root.go": {
+    "mtime": 1783271815.9693494,
     "hash": "21e3a01e0a46bc6baf41342bfadc6702"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/root_test.go": {
-    "mtime": 1783205493.9873528,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/root_test.go": {
+    "mtime": 1783271815.9693494,
     "hash": "2cd7bdaf492b761ba60ab8b7061a37fb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/root_wiring_test.go": {
-    "mtime": 1783205493.9873528,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/root_wiring_test.go": {
+    "mtime": 1783271815.9693494,
     "hash": "4164b5994300db375ccbd1de05a6fd13"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/app/options.go": {
-    "mtime": 1783205493.9867535,
-    "hash": "a57fb133ac2dcddcff1bfcb8ec246e27"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/app/options.go": {
+    "mtime": 1783275276.8894758,
+    "hash": "31fd15ea22b8a7977a49ee5e8ebeaf04"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/nodecertificatecheck_helpers.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/nodecertificatecheck_helpers.go": {
+    "mtime": 1783271815.9712832,
     "hash": "1e0aeef8f6c0034a122207ba5ad29ff8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/clusterhealth_controller.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/absence_count_test.go": {
+    "mtime": 1783271815.9693494,
+    "hash": "56c2e8519f532b22fec116483f07f0dc"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/clusterhealth_controller.go": {
+    "mtime": 1783271815.9712832,
     "hash": "80fb80d35ab8bf30f4bd01b37905404c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/tracing_test.go": {
-    "mtime": 1783205493.9888127,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/impersonation_envtest_test.go": {
+    "mtime": 1783275282.1614482,
+    "hash": "c56693bda498aa0826f02c3995b43964"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/tracing_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "00b5483a864e0329e142cfbde521a1e1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/nodecertificatecheck_controller.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/nodecertificatecheck_controller.go": {
+    "mtime": 1783271815.9712832,
     "hash": "472fc221ae4225456da355a739037c82"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/healthcheck_controller_test.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/healthcheck_controller_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "1bedea9b244f270c9615b71eec0876c8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/clusterhealth_controller_test.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/clusterhealth_controller_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "1f1aff956053eefb9377909f212dae4b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/suite_test.go": {
-    "mtime": 1783205493.9888127,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/suite_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "a7e2372f916d5cbc3b84e3c7b524e6e4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/addoncheck_controller.go": {
-    "mtime": 1783205493.9873528,
-    "hash": "88e0fbaf14007e1a920b00e80e1b8e32"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/addoncheck_controller.go": {
+    "mtime": 1783275276.8894758,
+    "hash": "10724a24467b87f15030b8f77465636e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/nodecertificatecheck_controller_test.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/policy_validation_test.go": {
+    "mtime": 1783271815.9712832,
+    "hash": "08cfe99fb68f061dbb064fbf1a7cc732"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/nodecertificatecheck_controller_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "a900766e81eaa9389939a3fb41147172"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/crd_validation_test.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/crd_validation_test.go": {
+    "mtime": 1783271815.9712832,
     "hash": "14f0eaa75c00149f56caac8216b501ca"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/addoncheck_controller_test.go": {
-    "mtime": 1783205493.9884062,
-    "hash": "8b67f7c6dcfd91e87f34b6310cec1b78"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/addoncheck_controller_test.go": {
+    "mtime": 1783271815.9712832,
+    "hash": "abc470963b9d03a8c61bdef600949050"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/tracing.go": {
-    "mtime": 1783205493.9888127,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/addoncheck_impersonation_test.go": {
+    "mtime": 1783275914.6652372,
+    "hash": "4e7b25a95e9f71d4c354b3fa0badb24d"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/tracing.go": {
+    "mtime": 1783271815.9712832,
     "hash": "b8974e66d1497f5db274eb602beab778"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/controller/healthcheck_controller.go": {
-    "mtime": 1783205493.9884062,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/controller/healthcheck_controller.go": {
+    "mtime": 1783271815.9712832,
     "hash": "ae1684978824a45420a4c845f9bc4adf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/metrics/metrics_test.go": {
-    "mtime": 1783205493.9916606,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/metrics/metrics_test.go": {
+    "mtime": 1783271815.9742205,
     "hash": "65992ebd7860c8f0d500cf56c86a0a5d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/metrics/metrics.go": {
-    "mtime": 1783205493.9888127,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/metrics/metrics.go": {
+    "mtime": 1783271815.9712832,
     "hash": "b33bc978f89a0a1e55ffb01a0e5dff1e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/probe/launcher_test.go": {
-    "mtime": 1783205493.9941626,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/probe/launcher_test.go": {
+    "mtime": 1783271815.9769034,
     "hash": "09014832fd78d0061ed03837f1b0e53e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/probe/launcher.go": {
-    "mtime": 1783205493.9923186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/probe/launcher.go": {
+    "mtime": 1783271815.9750402,
     "hash": "464c96fe23668173436fe8f7fc856095"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/probe/pod.go": {
-    "mtime": 1783205493.9941626,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/probe/pod.go": {
+    "mtime": 1783271815.9769034,
     "hash": "c7cd055d84304eb41abb7eb968e1b5d8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/probe/pod_test.go": {
-    "mtime": 1783205493.9941626,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/probe/pod_test.go": {
+    "mtime": 1783271815.9769034,
     "hash": "cf22ccc0667fe299b48b3613e91d4f98"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/nodecert/paths.go": {
-    "mtime": 1783205493.9916606,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/nodecert/paths.go": {
+    "mtime": 1783271815.9742205,
     "hash": "f81eda16fd288bec025e521233345ca1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/nodecert/types.go": {
-    "mtime": 1783205493.9923186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/nodecert/types.go": {
+    "mtime": 1783271815.9750402,
     "hash": "988ce7e6cf2ef448e80e0c0a03772183"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/nodecert/scan.go": {
-    "mtime": 1783205493.9923186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/nodecert/scan.go": {
+    "mtime": 1783271815.9750402,
     "hash": "3a5d6e5fc852198071e1d20638b85761"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/nodecert/scan_test.go": {
-    "mtime": 1783205493.9923186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/nodecert/scan_test.go": {
+    "mtime": 1783271815.9750402,
     "hash": "cd4dc57223dc43bf6c2f711aaaa02bcc"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/nodecert/wire.go": {
-    "mtime": 1783205493.9923186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/nodecert/wire.go": {
+    "mtime": 1783271815.9750402,
     "hash": "255fd5870cb327be85a403af8481e5cd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/certmanager/adapter_test.go": {
-    "mtime": 1783205493.9818933,
-    "hash": "70256f92c37c0c19add5601de4055d12"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/certmanager/rbac_test.go": {
+    "mtime": 1783276293.8027177,
+    "hash": "d82f3fe1d9d60a7e59b74133b728e799"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/certmanager/adapter.go": {
-    "mtime": 1783205493.981231,
-    "hash": "fe7f387f7949a4313a5279d1142f95de"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/certmanager/adapter_test.go": {
+    "mtime": 1783271815.9623,
+    "hash": "104a526b346eb0101866275160304b4b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/coredns/adapter_test.go": {
-    "mtime": 1783205493.983209,
-    "hash": "92aa4453475bb5bb60c6841eff426238"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/certmanager/adapter.go": {
+    "mtime": 1783276140.3104756,
+    "hash": "bca854d6847bb6cc661bde914d5141a4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/coredns/adapter.go": {
-    "mtime": 1783205493.9824595,
-    "hash": "e59c84c45eb5720ad0c8ea14fa4eb6f0"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/coredns/rbac_test.go": {
+    "mtime": 1783276285.310468,
+    "hash": "6f4ca9db08e89274ef6819a3d171840c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/coredns/adapter_tracing_test.go": {
-    "mtime": 1783205493.983209,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/coredns/adapter_test.go": {
+    "mtime": 1783271815.9633985,
+    "hash": "5ef872d0d7324dad82b2003762555d5b"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/coredns/adapter.go": {
+    "mtime": 1783276153.8142922,
+    "hash": "9d0c71d7b1f52a30803ab77553321625"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/coredns/adapter_tracing_test.go": {
+    "mtime": 1783271815.9633985,
     "hash": "28e5c2cf8c3737d099b34d47aa41f198"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/registry/registry.go": {
-    "mtime": 1783205493.9853945,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/registry/registry.go": {
+    "mtime": 1783271815.9648318,
     "hash": "6fdec7c96123aeda515c49aa99b77568"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/registry/registry_test.go": {
-    "mtime": 1783205493.9867535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/registry/registry_test.go": {
+    "mtime": 1783271815.9685378,
     "hash": "87b675cecd93f8cabe59da6c2dcf112d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/externalsecrets/adapter_test.go": {
-    "mtime": 1783205493.9853945,
-    "hash": "46154b37a9cdb542901035339974f112"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/rbacgen/rbacgen.go": {
+    "mtime": 1783276234.4075468,
+    "hash": "e012063e7d54f3bbd86a58fb89f73035"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/externalsecrets/adapter.go": {
-    "mtime": 1783205493.984094,
-    "hash": "1652b5acc86539a15101336f55279157"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/rbacgen/write_test.go": {
+    "mtime": 1783275678.0118458,
+    "hash": "30f04ddbad918033363c5f1f2dc8b799"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/definition.go": {
-    "mtime": 1783226779.4238384,
-    "hash": "7c6352a3a8a88af4dcc682155d734474"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/rbacgen/guard_test.go": {
+    "mtime": 1783276273.5184681,
+    "hash": "6b34371b3d18d0f97a12580259c1ed6a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/workload.go": {
-    "mtime": 1783226779.1439352,
-    "hash": "7e5cc95246c9d48b4a88ac1dcda399b9"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/rbacgen/cmd/main.go": {
+    "mtime": 1783275274.2150483,
+    "hash": "81bf879c1aef3122f964fee4515977b9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/evaluator.go": {
-    "mtime": 1783226779.1439352,
-    "hash": "073dcd03709412bb7cfe55069736753d"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/definition.go": {
+    "mtime": 1783275279.5170484,
+    "hash": "d1dc97fd1cfdbd1fd78fbff0e611b829"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/engine.go": {
-    "mtime": 1783226779.4238384,
-    "hash": "9dd82c9faddc4337026bc9af6bb8856f"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/workload.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "412e80992a1cf106408716cd276a1fc7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/condition.go": {
-    "mtime": 1783226779.4238384,
-    "hash": "d68a4f1a4ca65af57807f8ae78c3c12d"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/tracing_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "4e6b9d99678b0bb6beec4e285466b517"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/workload_test.go": {
-    "mtime": 1783226779.7001302,
-    "hash": "36f8d81aa879e986041107e1ba68c014"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/evaluator.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "a9bb68cb69811d6954f2677cedb30c6c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/condition_test.go": {
-    "mtime": 1783226779.7001302,
-    "hash": "71c9c2c378e5add793825a38eff20b9a"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/engine.go": {
+    "mtime": 1783272974.3412354,
+    "hash": "bd59554ffad8e1ded43ca670a0cad070"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/crd.go": {
-    "mtime": 1783226779.1439352,
-    "hash": "3ca35697bc3305ee8f973fe1a3c01e4e"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/condition.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "2730dc8628025e2be7aaee326d9c1e7c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/engine_test.go": {
-    "mtime": 1783226779.4238384,
-    "hash": "e3dabb03ba29e955fdaf9afeb64ba670"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/externalsecrets.go": {
+    "mtime": 1783276179.9838476,
+    "hash": "562fce5121fef36639ba3922da718070"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/declarative/cilium.go": {
-    "mtime": 1783226779.1421604,
-    "hash": "dc5d2a1196c2b02a4980698d777e48ad"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/versiondetect_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "f0dfb8f9f8b269a8128dd97c0830b06a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/cilium/adapter_coverage_test.go": {
-    "mtime": 1783205493.9824595,
-    "hash": "ef56eff6160fb93ba6899169e9dbb3fc"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/workload_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "1b9b1c5e2895300b945d4badddad2e01"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/cilium/adapter_test.go": {
-    "mtime": 1783205493.9824595,
-    "hash": "14eff355f61f58f384e9b82bfc2aead2"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/versiondetect.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "74e0af57c36adf2833bca1a4217ac454"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/cilium/adapter.go": {
-    "mtime": 1783205493.9818933,
-    "hash": "f7b1a29cdadb11bf2d7f17616cc848f7"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/condition_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "89609afb12ee8227209192a06cc8382f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/cilium/adapter_tracing_test.go": {
-    "mtime": 1783205493.9824595,
-    "hash": "f7d575244a86a6106450c7e2fe1c0cbd"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/crd.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "ff08afd32d56922d141c5ac8e3b9e7df"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/crdutil/crdutil.go": {
-    "mtime": 1783205493.983209,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/externalsecrets_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "5492f7a6b132e1f6a54ffd9480337b3d"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/engine_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "675a82633858858bce95589c78612bcf"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/crd_test.go": {
+    "mtime": 1783271815.9648318,
+    "hash": "7b2ee7a4e1b482427259e1afe94cb288"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/declarative/cilium.go": {
+    "mtime": 1783276168.7258918,
+    "hash": "92acb317d0d37428d302b8421df7c7a2"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/impersonation/factory.go": {
+    "mtime": 1783275276.8858483,
+    "hash": "a41b25957bac76bb95699d46e4614dd6"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/impersonation/factory_test.go": {
+    "mtime": 1783275276.8894758,
+    "hash": "ef7b0217d34a7df8c7ef56cea956cf26"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/crdutil/crdutil.go": {
+    "mtime": 1783271815.9633985,
     "hash": "fc13af586e6b671d77e05c7d76e2531b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/adapter/crdutil/crdutil_test.go": {
-    "mtime": 1783205493.984094,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/adapter/crdutil/crdutil_test.go": {
+    "mtime": 1783271815.9643059,
     "hash": "991cd060c1e1074519473ad22f7121c9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/tracing/tracing_test.go": {
-    "mtime": 1783205493.995255,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/tracing/tracing_test.go": {
+    "mtime": 1783271815.9775841,
     "hash": "e57003049d350dbde0602441c759d8fa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/internal/tracing/tracing.go": {
-    "mtime": 1783205493.9941626,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/internal/tracing/tracing.go": {
+    "mtime": 1783271815.9769034,
     "hash": "411b763d0508321ae18bfc1396edae24"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/CONTRIBUTING.md": {
-    "mtime": 1783205493.9483871,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/CONTRIBUTING.md": {
+    "mtime": 1783271815.9230661,
     "hash": "23dc57f3765d195382eed867172eb3a2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/Taskfile.yml": {
-    "mtime": 1783205493.9483871,
-    "hash": "478f221764525cb056861237ed7e17f0"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/Taskfile.yml": {
+    "mtime": 1783275274.2106483,
+    "hash": "12b60e11fc3d1a75020d90e6ab26d5aa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/AGENTS.md": {
-    "mtime": 1783205493.9483871,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/AGENTS.md": {
+    "mtime": 1783271815.9230661,
     "hash": "d0193fc82374a024ebc7d90e5a51e7ed"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/CLAUDE.md": {
-    "mtime": 1783205493.9483871,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/CLAUDE.md": {
+    "mtime": 1783271815.9230661,
     "hash": "d0193fc82374a024ebc7d90e5a51e7ed"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/CHANGELOG.md": {
-    "mtime": 1783205493.9483871,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/CHANGELOG.md": {
+    "mtime": 1783271815.9230661,
     "hash": "6a74d212f9f54c31bf01b5fe4906bf72"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/README.md": {
-    "mtime": 1783205493.9483871,
-    "hash": "16ced94c75798836c8cd8d323fcbf7f5"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/README.md": {
+    "mtime": 1783275282.1614482,
+    "hash": "d626db71479a7d60e92ab9ea13c1dc61"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/RELEASE.md": {
-    "mtime": 1783205493.9483871,
-    "hash": "9501655fae98a385c5700f4ebf7f1ea8"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/RELEASE.md": {
+    "mtime": 1783275282.1614482,
+    "hash": "e1496fb93b1b18a6e295826cdf187340"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/values.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/values.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "acb404372c0a7b97f3434160f95dc13b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/Chart.yaml": {
-    "mtime": 1783205493.9657474,
-    "hash": "9c91bdad120bf703d3edc1af7728fb1a"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/Chart.yaml": {
+    "mtime": 1783271815.9442708,
+    "hash": "5dc2205481b35354ca9c18909e369a62"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783205493.9668713,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
+    "mtime": 1783276367.4761682,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783205493.9668713,
-    "hash": "32b1b5b8ffa575884a2af9cff3dc3cf8"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
+    "mtime": 1783276367.476317,
+    "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783205493.9668713,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
+    "mtime": 1783276367.476365,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783205493.9663339,
-    "hash": "51e81b264456f5d57a633fcc5615c225"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
+    "mtime": 1783276367.476045,
+    "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783205493.9668713,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
+    "mtime": 1783276367.47612,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/files/manager-rules.yaml": {
-    "mtime": 1783205493.9668713,
-    "hash": "f511e490a7387df300230c246e26679f"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "0b2230bed172ff014ec4525a62825c1f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/NOTES.txt": {
-    "mtime": 1783205493.9668713,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/files/manager-rules.yaml": {
+    "mtime": 1783276367.4850028,
+    "hash": "7407af4f00440c98fa9caa50ace56ba9"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/NOTES.txt": {
+    "mtime": 1783271815.9456925,
     "hash": "c761345c69bf236d8641ede00c06cb29"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/serviceaccount.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/serviceaccount.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "be1c4dcbda6008c221bd13bd71e9f06d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/metrics-rbac.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/addon-rbac.yaml": {
+    "mtime": 1783275274.2133598,
+    "hash": "198cb65046165df4ae597a0874b995f0"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/metrics-rbac.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "b9efa344c7c1c765b49e559944982dc6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/metrics-service.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/metrics-service.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "81ba522c15bf991cfb87bcb124f074ab"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/configmap.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/configmap.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "768684ef810876704a7f0e81eeb02c51"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/clusterrole.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/clusterrole.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "75852084a46f1ec64eb221c8d004e333"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/servicemonitor.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/servicemonitor.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "1557308c564f238cc806ee2b9d406c36"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/deployment.yaml": {
-    "mtime": 1783205493.9686852,
-    "hash": "aa47a6fbd93d1b1c30ca71fb5be22d61"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/deployment.yaml": {
+    "mtime": 1783275276.8858483,
+    "hash": "d441db24e1f5d4fa73be68200f3e7113"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/templates/leader-election-role.yaml": {
-    "mtime": 1783205493.9686852,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/templates/leader-election-role.yaml": {
+    "mtime": 1783271815.9470265,
     "hash": "8d98b28945c81074affffd5a6bd4d1e1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/ci/leaderelect-disabled-values.yaml": {
-    "mtime": 1783205493.9663339,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/ci/leaderelect-disabled-values.yaml": {
+    "mtime": 1783271815.9448552,
     "hash": "a8ecb16191fcc150df0215b262cd670b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/deploy/helm/fathom-operator/ci/ct-values.yaml": {
-    "mtime": 1783205493.9657474,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/deploy/helm/fathom-operator/ci/ct-values.yaml": {
+    "mtime": 1783271815.9442708,
     "hash": "470adb98f374e0b0ad5377d706fee8a3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/kustomization.yaml": {
-    "mtime": 1783205493.9568572,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/kustomization.yaml": {
+    "mtime": 1783271815.9339101,
     "hash": "ba5c481f4ed604a8e60368c045eb3b0a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/kustomizeconfig.yaml": {
-    "mtime": 1783205493.9568572,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/kustomizeconfig.yaml": {
+    "mtime": 1783271815.9339101,
     "hash": "d3159b0e0b5653f5fdb206754b749be5"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783206984.3359246,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
+    "mtime": 1783276368.360141,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783206984.3359246,
-    "hash": "32b1b5b8ffa575884a2af9cff3dc3cf8"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
+    "mtime": 1783276368.364541,
+    "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783206984.3579245,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
+    "mtime": 1783276368.3909411,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783206984.3315246,
-    "hash": "51e81b264456f5d57a633fcc5615c225"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
+    "mtime": 1783276368.360141,
+    "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783206984.3359246,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
+    "mtime": 1783276368.360141,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/default/metrics_service.yaml": {
-    "mtime": 1783205493.9580064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/default/metrics_service.yaml": {
+    "mtime": 1783271815.9354887,
     "hash": "90bff025c2b4b575c0d83a043ae37837"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/default/manager_metrics_patch.yaml": {
-    "mtime": 1783205493.9580064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/default/manager_metrics_patch.yaml": {
+    "mtime": 1783271815.9354887,
     "hash": "50af42d8c0440565f348a83e7df385f8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/default/kustomization.yaml": {
-    "mtime": 1783205493.9580064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/default/kustomization.yaml": {
+    "mtime": 1783271815.9354887,
     "hash": "d4a69a77489861172c8b158a0a8b7d34"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/default/cert_metrics_manager_patch.yaml": {
-    "mtime": 1783205493.9568572,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/default/cert_metrics_manager_patch.yaml": {
+    "mtime": 1783271815.9339101,
     "hash": "ba9a4912598265540236eb59e59adec8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/network-policy/kustomization.yaml": {
-    "mtime": 1783205493.9603484,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/network-policy/kustomization.yaml": {
+    "mtime": 1783271815.93779,
     "hash": "93ea57e0a92f92d6a961b0775e00e39d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/network-policy/allow-metrics-traffic.yaml": {
-    "mtime": 1783205493.9594934,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/network-policy/allow-metrics-traffic.yaml": {
+    "mtime": 1783271815.9371285,
     "hash": "dee85ed8e7c05bf16ec7f1ef8f20761d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/components/prometheus/kustomization.yaml": {
-    "mtime": 1783205493.955203,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/components/prometheus/kustomization.yaml": {
+    "mtime": 1783271815.9323618,
     "hash": "0f1bb4a6d6004bdc5b9e3a08e0fd5d2d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/components/prometheus/monitor.yaml": {
-    "mtime": 1783205493.9557278,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/components/prometheus/monitor.yaml": {
+    "mtime": 1783271815.9328923,
     "hash": "479dae1582978e93cb165069695c72a2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/components/prometheus/monitor_tls_patch.yaml": {
-    "mtime": 1783205493.9557278,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/components/prometheus/monitor_tls_patch.yaml": {
+    "mtime": 1783271815.9328923,
     "hash": "eb8b35947ce8022d41f4aa1c60312629"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/kustomization.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/kustomization.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "d79dce1e447584fecae5846ec913259e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_nodecertificatecheck.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_nodecertificatecheck.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "8ab1b2039812402e5c865355af2c5d9e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_healthcheck.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_healthcheck.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "cfda3fdc604f90a867ae7e63679359c1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_addoncheck_cilium.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_addoncheck_cilium.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "227b4c6e738aeb6c56d6626f58b66b70"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_addoncheck.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_addoncheck.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "1704a42b006613125db0a49bb96966b0"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_addoncheck_coredns.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_addoncheck_coredns.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "738fb3f86c1c66acdceafe95cd09b34b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "532aa727ab3e186b02ce6ffd2b38054e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_healthreport.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_healthreport.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "1e6ab936bd910c3e44868ac3041fae65"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/samples/fathom_v1alpha1_clusterhealth.yaml": {
-    "mtime": 1783205493.962419,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/samples/fathom_v1alpha1_clusterhealth.yaml": {
+    "mtime": 1783271815.9407182,
     "hash": "82477a9c9f1cbcc4d77d06a8e0ce40d6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/role_binding.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/role_binding.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "dddc51bcebfddee5569c4a0d28169d7c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/clusterhealth_viewer_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/clusterhealth_viewer_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "8f195ca2f6d39c0108b3334f7703ec34"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/kustomization.yaml": {
-    "mtime": 1783205493.9609995,
-    "hash": "e29568f2d6ab08de02a226a55641bd56"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/kustomization.yaml": {
+    "mtime": 1783275274.2133598,
+    "hash": "8ebffdb946d428c5e6fb552fb96e37c4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/clusterhealth_editor_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/clusterhealth_editor_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "913c62b01d1a78bc4f74b57e895634f8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/role.yaml": {
-    "mtime": 1783206984.2303245,
-    "hash": "d5a60ab0f567a0aa07a07d3dec249713"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/role.yaml": {
+    "mtime": 1783276368.2457411,
+    "hash": "3bd57a1c88d1f9c9d26ea4b75cebdd18"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/nodecertificatecheck_admin_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/nodecertificatecheck_admin_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "237c97ac9180b2d064d783c67a41cb1c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/clusterhealth_admin_role.yaml": {
-    "mtime": 1783205493.9603484,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/clusterhealth_admin_role.yaml": {
+    "mtime": 1783271815.93779,
     "hash": "bc63863c3a432788248c6fcce7c2249d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthreport_viewer_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthreport_viewer_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "dd4127cfc0fb7b9011294e865a6080a8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/metrics_auth_role_binding.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/metrics_auth_role_binding.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "4adce7fd68792641893e67ba57dbd02f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthreport_admin_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthreport_admin_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "55d004a42e4cc9c22d6de6431e37bcb7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/leader_election_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/leader_election_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "a9c96bd0e07363e41eb0f8c36372cd3f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthcheck_viewer_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthcheck_viewer_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "c919cf59b19783e61dd46860af110444"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/nodecertificatecheck_editor_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/nodecertificatecheck_editor_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "6a5e28aa73002774ea389d7613766f35"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthcheck_admin_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthcheck_admin_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "95d395a0619a8fe4641c73920376ebdb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/metrics_auth_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/metrics_auth_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "85d641b12b1ee01a0d9a466374cdd268"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/nodecertificatecheck_viewer_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/nodecertificatecheck_viewer_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "bdb032d5520ad8d2947f4af36166f934"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/leader_election_role_binding.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/leader_election_role_binding.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "ea8ba019af6ba8cde1ec144b827ab3a5"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthreport_editor_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthreport_editor_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "dc7e360b8508725b1a787c91d6241882"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/metrics_reader_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/metrics_reader_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "d30b56c353845d4a5ef6ee9ef42c7f85"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/rbac/healthcheck_editor_role.yaml": {
-    "mtime": 1783205493.9609995,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/healthcheck_editor_role.yaml": {
+    "mtime": 1783271815.9382863,
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/manifests/kustomization.yaml": {
-    "mtime": 1783205493.9594934,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/kustomization.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "50cc4ec1dbaa5c51e9a5a5a94d68a5eb"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/addon-coredns.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "16f200b70217efe8d28da2817bf35716"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/addon-cert-manager.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "03f957ddd583921feb706b9309d95bad"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/kustomizeconfig.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "e65eb9ba47025507e19f1f583bdb3661"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/addon-cilium.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "24ac45ecd388c802d8be635534a68981"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/rbac/addons/operator-impersonate.yaml": {
+    "mtime": 1783276365.54339,
+    "hash": "cefbc4e9617448c8d06230e656d98d07"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/manifests/kustomization.yaml": {
+    "mtime": 1783271815.9371285,
     "hash": "fdc2d950a3d45e32508993239fb72fd1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/manifests/bases/fathom.clusterserviceversion.yaml": {
-    "mtime": 1783205493.9594934,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/manifests/bases/fathom.clusterserviceversion.yaml": {
+    "mtime": 1783271815.9371285,
     "hash": "ec53f93127594cc7e9a4ce9f7e568140"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/scorecard/kustomization.yaml": {
-    "mtime": 1783205493.9637222,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/scorecard/kustomization.yaml": {
+    "mtime": 1783271815.942184,
     "hash": "efc4164264f723d726a0a4ce54c2f031"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/scorecard/patches/olm.config.yaml": {
-    "mtime": 1783205493.964353,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/scorecard/patches/olm.config.yaml": {
+    "mtime": 1783271815.9427779,
     "hash": "dfc2627b3fce2848a1ab15a8cff18c94"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/scorecard/patches/basic.config.yaml": {
-    "mtime": 1783205493.9637222,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/scorecard/patches/basic.config.yaml": {
+    "mtime": 1783271815.942184,
     "hash": "a8d7c8d46cee96e8df0cb384bc41bfc3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/scorecard/bases/config.yaml": {
-    "mtime": 1783205493.9637222,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/scorecard/bases/config.yaml": {
+    "mtime": 1783271815.942184,
     "hash": "2028205c77a062d0e7373166264b3b2b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/manager/manager.yaml": {
-    "mtime": 1783205493.9585567,
-    "hash": "3ad69e6dfc4d79af207d6266172212dc"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/manager/manager.yaml": {
+    "mtime": 1783275276.8858483,
+    "hash": "e9d892ef0c7a2a3155d1f2facb429ab2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/config/manager/kustomization.yaml": {
-    "mtime": 1783205493.9580064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/config/manager/kustomization.yaml": {
+    "mtime": 1783271815.9354887,
     "hash": "b9c55aa3eee69d0752a479c31fcb1363"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/hack/boilerplate.go.txt": {
-    "mtime": 1783205493.97917,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/hack/boilerplate.go.txt": {
+    "mtime": 1783271815.9593399,
     "hash": "ded978aeb0bb46b71449bc612ebdcccd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/architecture.md": {
-    "mtime": 1783205493.976064,
-    "hash": "f6348a87d86390b757ec136bc16ffe20"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/architecture.md": {
+    "mtime": 1783275282.1614482,
+    "hash": "a33e535feaeb00894f11e1f71759d39b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/code-map.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/code-map.md": {
+    "mtime": 1783271815.9498115,
     "hash": "823d98561a4a9a5f30dbc65b0706dad3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/README.md": {
-    "mtime": 1783205493.9740777,
-    "hash": "e66ce777d2a31d6948de93b6cbb506b7"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/README.md": {
+    "mtime": 1783271815.9489667,
+    "hash": "7fe5d0996b11990666ff56cabde2da62"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/reference/configuration.md": {
-    "mtime": 1783205493.97917,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/reference/api-versioning.md": {
+    "mtime": 1783271815.9521713,
+    "hash": "d46730c2915b8a2ca035f077c0830699"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/reference/configuration.md": {
+    "mtime": 1783271815.9546235,
     "hash": "376b41d9239ba650abb6cb711e0b7e40"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/reference/api.md": {
-    "mtime": 1783205493.9780753,
-    "hash": "470ac23e6209762cb0a8b83a55cf69e3"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/reference/api.md": {
+    "mtime": 1783276365.5441413,
+    "hash": "3f0db554278e434c42051ca701d83d92"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/getting-started.md": {
-    "mtime": 1783205493.9780753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/reference/rbac.md": {
+    "mtime": 1783276365.54339,
+    "hash": "e1624cc67dd345ee3d6973921ea9f9cf"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/getting-started.md": {
+    "mtime": 1783271815.9521713,
     "hash": "4a3150a0ce122d3393d8ada7a9ca581a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/concepts.md": {
-    "mtime": 1783205493.9780753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/concepts.md": {
+    "mtime": 1783271815.9521713,
     "hash": "fe29504a18aef8a78b163965d4bd1ee1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/node-certificate-checks.md": {
-    "mtime": 1783205493.9780753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/node-certificate-checks.md": {
+    "mtime": 1783271815.9521713,
     "hash": "9c0a745cc6c37992483fd39d0ccd9d71"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/monitoring.md": {
-    "mtime": 1783205493.9780753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/monitoring.md": {
+    "mtime": 1783271815.9521713,
     "hash": "0d89600b4d65510ef34e7e77bea363a8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/README.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/README.md": {
+    "mtime": 1783271815.9505398,
     "hash": "49694a2bad59e59d9b3b6fe8ca32ed8e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/guides/addon-checks.md": {
-    "mtime": 1783205493.9780753,
-    "hash": "3757e430d951f16ae261534fb04bc0e4"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/guides/addon-checks.md": {
+    "mtime": 1783271815.9521713,
+    "hash": "9ac21b8fb869cc13d3d87c1d2946f1fd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/adr/0001-in-process-adapter-contract.md": {
-    "mtime": 1783205493.9740777,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/adr/0001-in-process-adapter-contract.md": {
+    "mtime": 1783271815.9489667,
     "hash": "0a59455401b8d2a8e3e3b52f469c16b6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/adr/0002-healthreport-as-first-class-crd.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/adr/0002-healthreport-as-first-class-crd.md": {
+    "mtime": 1783271815.9498115,
     "hash": "4ad8ee7d175c69b973f62ef0eed10583"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/adr/0004-healthcheck-as-wrapper.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/adr/0004-healthcheck-as-wrapper.md": {
+    "mtime": 1783271815.9498115,
     "hash": "96ec8245defcc28066efc84efbf3a99e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/adr/0003-probe-pod-model.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/adr/0003-probe-pod-model.md": {
+    "mtime": 1783271815.9498115,
     "hash": "a5d345f2cd7cec4f2559753b0169dd43"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/docs/design/addon-adapters-implementation-plan.md": {
-    "mtime": 1783205493.976064,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/docs/design/addon-adapters-implementation-plan.md": {
+    "mtime": 1783271815.9505398,
     "hash": "d4f0cd0b85c3a6d767e44cc8b91316aa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/LICENSES/MIT.txt": {
-    "mtime": 1783205493.9483871,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/LICENSES/MIT.txt": {
+    "mtime": 1783271815.9230661,
     "hash": "877ee7aed4fdfc7a2a7722441fe27c56"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/fixtures/nodecertificatecheck.yaml": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/fixtures/nodecertificatecheck.yaml": {
+    "mtime": 1783271815.9823794,
     "hash": "c494843dfc942b0b9ab99473a29b5045"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/fixtures/README.md": {
-    "mtime": 1783205493.9989,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/fixtures/README.md": {
+    "mtime": 1783271815.9816067,
     "hash": "fee59475d701123ef7449d7d84ede0cd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/fixtures/kind-cluster.yaml": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/fixtures/kind-cluster.yaml": {
+    "mtime": 1783271815.9823794,
     "hash": "6375f5ed02c6990dfee13d6ab9b60c85"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/declarative-engine/test/e2e/fixtures/helmfile.yaml": {
-    "mtime": 1783205493.9998744,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-58-adapter-impersonation/test/e2e/fixtures/helmfile.yaml": {
+    "mtime": 1783271815.9823794,
     "hash": "54fc9602ec7fdf348ffcf137c665527e"
   }
 }
