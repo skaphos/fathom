@@ -223,6 +223,20 @@ func TestCondition_NamedNotFoundScoredByPosture(t *testing.T) {
 	assertHasDetail(t, checks, "Widget", "w1", adapter.DetailAbsent, "true")
 }
 
+func TestCondition_NamedIgnoresLabelSelector(t *testing.T) {
+	// policy.LabelSelector does not apply to named gets (like WorkloadCheck):
+	// a malformed selector must not error a check that never uses it.
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+	policy := map[adapter.Family]adapter.FamilyPolicy{
+		"widget_health": {Enabled: true, LabelSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "k", Operator: "Nonsense"}},
+		}},
+	}
+	checks := runManaged(t, cc, policy, widget("default", "w1", "Ready", "True"))
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomePass, "Ready")
+}
+
 func TestCondition_NamedClusterScopedGet(t *testing.T) {
 	// The metrics-server shape: a cluster-scoped named APIService.
 	cc := ConditionCheck{

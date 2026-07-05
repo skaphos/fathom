@@ -45,6 +45,20 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 
 	kindRef := adapter.TargetRef{APIVersion: cc.APIVersion, Kind: cc.Kind, Name: cc.listName()}
 
+	// Named mode branches before the selector parse: policy.LabelSelector does
+	// not apply to named gets, so a malformed selector must not error a check
+	// that never uses it (mirroring WorkloadCheck, which ignores it too).
+	if len(cc.Names) > 0 {
+		gv, err := schema.ParseGroupVersion(cc.APIVersion)
+		if err != nil {
+			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
+				fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), nil, started)}, nil
+		}
+		return cc.evaluateNamed(ec,
+			schema.GroupVersionKind{Group: gv.Group, Version: cc.resolveVersion(ec, gv.Version), Kind: cc.Kind},
+			absent, mismatch), nil
+	}
+
 	sel, err := metav1.LabelSelectorAsSelector(ec.Policy.LabelSelector)
 	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
@@ -56,17 +70,9 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
 			fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), nil, started)}, nil
 	}
-	// Resolve the served version so the read succeeds on clusters that serve only
+	// Resolve the served version so the list succeeds on clusters that serve only
 	// a legacy version (e.g. external-secrets.io/v1beta1); falls back to gv.Version.
-	version := cc.resolveVersion(ec, gv.Version)
-
-	if len(cc.Names) > 0 {
-		return cc.evaluateNamed(ec,
-			schema.GroupVersionKind{Group: gv.Group, Version: version, Kind: cc.Kind},
-			absent, mismatch), nil
-	}
-
-	listGVK := schema.GroupVersionKind{Group: gv.Group, Version: version, Kind: cc.ListKind}
+	listGVK := schema.GroupVersionKind{Group: gv.Group, Version: cc.resolveVersion(ec, gv.Version), Kind: cc.ListKind}
 
 	var items []unstructured.Unstructured
 	if cc.ClusterScoped {
