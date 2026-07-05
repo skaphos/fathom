@@ -432,6 +432,61 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(updated.Status.Absent).To(Equal(int32(2)))
 	})
 
+	It("rejects a policy with an unknown family: Accepted=False and the adapter is not run (SKA-54)", func() {
+		typeNamespacedName := types.NamespacedName{
+			Name:      "addoncheck-invalid-policy",
+			Namespace: "default",
+		}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typeNamespacedName.Name,
+				Namespace: typeNamespacedName.Namespace,
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "cert-manager",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					// fakeAddonAdapter advertises only "system_health".
+					"bogus_family": {Enabled: true},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		controllerReconciler := &AddonCheckReconciler{
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
+			Adapters: adapters,
+		}
+
+		result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+		// An invalid policy waits for a spec change to clear, so no interval requeue.
+		Expect(result.RequeueAfter).To(BeZero())
+
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+
+		accepted := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionAccepted)
+		Expect(accepted).NotTo(BeNil())
+		Expect(accepted.Status).To(Equal(metav1.ConditionFalse))
+		Expect(accepted.Reason).To(Equal("InvalidPolicy"))
+		Expect(accepted.Message).To(ContainSubstring(`unknown family "bogus_family"`))
+
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("InvalidPolicy"))
+
+		// The adapter never ran: no run time, no HealthReport.
+		Expect(updated.Status.LastRunTime).To(BeNil())
+		Expect(updated.Status.LastReportName).To(BeEmpty())
+	})
+
 	It("requeues a ready AddonCheck after Spec.Interval so it re-runs", func() {
 		name := types.NamespacedName{Name: "addoncheck-requeue", Namespace: "default"}
 		resource := &fathomv1alpha1.AddonCheck{
