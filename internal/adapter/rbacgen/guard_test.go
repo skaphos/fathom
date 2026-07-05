@@ -23,12 +23,14 @@ import (
 type writeKey struct{ addon, group, resource, verb string }
 
 // allowedWrites builds the set of write grants the adapters declared with a
-// WriteReason — the single source of the write-exception allowlist.
+// Justification — the single source of the write-exception allowlist. Every rule
+// is justified (enforced by TestModelGrantsAreJustified), so this is effectively
+// "every declared write", used to reject a committed write not backed by the model.
 func allowedWrites(addons []rbacgen.AddonRBAC) map[writeKey]bool {
 	allowed := map[writeKey]bool{}
 	for _, a := range addons {
 		for _, r := range a.Rules {
-			if r.WriteReason == "" {
+			if r.Justification == "" {
 				continue
 			}
 			for _, v := range r.Verbs {
@@ -46,35 +48,42 @@ func allowedWrites(addons []rbacgen.AddonRBAC) map[writeKey]bool {
 	return allowed
 }
 
-// TestModelWritesAreJustified enforces the core invariant directly on the
-// compiled-in adapters' declared rules: no write verb without a WriteReason.
-func TestModelWritesAreJustified(t *testing.T) {
-	if v := rbacgen.UnjustifiedWrites(rbacgen.Collect(app.BuiltInAdapters())); len(v) > 0 {
-		t.Errorf("unjustified writes in built-in adapters:\n%s", strings.Join(v, "\n"))
+// TestModelGrantsAreJustified enforces the core invariant directly on the
+// compiled-in adapters' declared rules: every grant, read or write, carries a
+// Justification.
+func TestModelGrantsAreJustified(t *testing.T) {
+	if v := rbacgen.UnjustifiedGrants(rbacgen.Collect(app.BuiltInAdapters())); len(v) > 0 {
+		t.Errorf("unjustified grants in built-in adapters:\n%s", strings.Join(v, "\n"))
 	}
 }
 
-// TestUnjustifiedWritesCatchesViolations proves the guard actually flags a rogue
-// write — a write verb with no WriteReason, and an addon with no rules — so a
-// passing TestModelWritesAreJustified is meaningful rather than vacuous.
-func TestUnjustifiedWritesCatchesViolations(t *testing.T) {
+// TestUnjustifiedGrantsCatchesViolations proves the guard actually flags an
+// unjustified grant — a write with no Justification, a READ with no Justification,
+// and an addon with no rules — so a passing TestModelGrantsAreJustified is
+// meaningful rather than vacuous.
+func TestUnjustifiedGrantsCatchesViolations(t *testing.T) {
 	bad := []rbacgen.AddonRBAC{
-		{Addon: "rogue", ServiceAccount: "addon-rogue", Rules: []adapter.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "delete"}}, // delete, no reason
+		{Addon: "rogue-write", ServiceAccount: "addon-rogue-write", Rules: []adapter.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "delete"}}, // write, no justification
+		}},
+		{Addon: "rogue-read", ServiceAccount: "addon-rogue-read", Rules: []adapter.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get"}}, // read, no justification
 		}},
 		{Addon: "empty", ServiceAccount: "addon-empty"}, // no rules at all
 		{Addon: "ok", ServiceAccount: "addon-ok", Rules: []adapter.PolicyRule{
-			{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create"}, WriteReason: "probe pod"},
+			{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}, Justification: "read workload health"},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create"}, Justification: "WRITE EXCEPTION: probe pod"},
 		}},
 	}
-	got := rbacgen.UnjustifiedWrites(bad)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 violations (rogue delete + empty addon), got %d: %v", len(got), got)
+	got := rbacgen.UnjustifiedGrants(bad)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 violations (rogue-write + rogue-read + empty), got %d: %v", len(got), got)
 	}
 	joined := strings.Join(got, "\n")
-	if !strings.Contains(joined, "rogue") || !strings.Contains(joined, "empty") {
-		t.Errorf("violations should name the rogue and empty addons, got:\n%s", joined)
+	for _, want := range []string{"rogue-write", "rogue-read", "empty"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("violations should name %q, got:\n%s", want, joined)
+		}
 	}
 	if strings.Contains(joined, "\"ok\"") {
 		t.Errorf("the justified addon must not be flagged, got:\n%s", joined)
@@ -83,9 +92,9 @@ func TestUnjustifiedWritesCatchesViolations(t *testing.T) {
 
 // TestCommittedAddonRolesAreReadOnly re-parses the committed per-addon
 // ClusterRoles under config/rbac/addons/ and fails if any grants a write verb
-// that the model does not justify with a WriteReason. This guards the shipped
-// artifact independently of the generator, so a hand-edit that broadens a role
-// cannot pass review (SKA-58).
+// that the model does not declare (and justify). This guards the shipped artifact
+// independently of the generator, so a hand-edit that broadens a role cannot pass
+// review (SKA-58).
 func TestCommittedAddonRolesAreReadOnly(t *testing.T) {
 	root := repoRoot(t)
 	allowed := allowedWrites(rbacgen.Collect(app.BuiltInAdapters()))
@@ -136,7 +145,7 @@ func TestCommittedAddonRolesAreReadOnly(t *testing.T) {
 					for _, g := range r.APIGroups {
 						for _, res := range r.Resources {
 							if !allowed[writeKey{addon, g, res, v}] {
-								t.Errorf("%s: unjustified write %q on group=%q resource=%q for addon %q — the committed role grants a write the adapter does not declare with a WriteReason", e.Name(), v, g, res, addon)
+								t.Errorf("%s: unjustified write %q on group=%q resource=%q for addon %q — the committed role grants a write the adapter does not declare (and justify)", e.Name(), v, g, res, addon)
 							}
 						}
 					}

@@ -29,10 +29,14 @@ var ExternalSecretsDefinition = AddonDefinition{
 	// (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-secrets", Name: "external-secrets"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"external-secrets.io"}, Resources: []string{"externalsecrets"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the three ESO Deployments (controller, webhook, cert-controller) to score readiness. list+watch because the names/namespace are policy-overridable; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read ESO Pods for restart counts and readiness behind the Deployments. list is required because Pod names are dynamic; read-only."},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the ESO CRDs to verify they are Established and serve a supported version. list is needed to check several CRDs; read-only."},
+		{APIGroups: []string{"external-secrets.io"}, Resources: []string{"externalsecrets"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read ExternalSecret Ready conditions to score sync health. Scoped to the external-secrets.io group and to ExternalSecrets only — deliberately NOT SecretStores or the synced Secrets themselves — and read-only, so the addon SA can never read secret material."},
 	},
 	Families: []FamilyDefinition{
 		{

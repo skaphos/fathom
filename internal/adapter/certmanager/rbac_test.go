@@ -12,9 +12,9 @@ import (
 )
 
 // TestRBACRulesDeclaresDryRunException locks cert-manager's one write exception
-// in place: the read-only RBAC guard only permits the certificates;issuers create
-// because it carries a WriteReason. Dropping it would silently break the
-// admission dry-run probe under the scoped ServiceAccount (SKA-58).
+// in place: the RBAC guard only permits the certificates;issuers create because it
+// carries a Justification. Dropping it would silently break the admission dry-run
+// probe under the scoped ServiceAccount (SKA-58).
 func TestRBACRulesDeclaresDryRunException(t *testing.T) {
 	var _ adapter.RBACDeclarer = Adapter{}
 
@@ -25,11 +25,12 @@ func TestRBACRulesDeclaresDryRunException(t *testing.T) {
 
 	var found bool
 	for _, r := range rules {
+		// Every rule — read or write — must justify itself, or the guard fails it.
+		if r.Justification == "" {
+			t.Errorf("rule %+v has no Justification", r)
+		}
 		if r.IsReadOnly() {
 			continue
-		}
-		if r.WriteReason == "" {
-			t.Errorf("write rule %+v has no WriteReason", r)
 		}
 		if hasVerb(r, "create") && hasResource(r, "certificates") && hasResource(r, "issuers") {
 			found = true

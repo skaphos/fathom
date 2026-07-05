@@ -11,9 +11,9 @@ SPDX-License-Identifier: MIT
 //
 // It is the build-time half of SKA-58: the reconciler impersonates the per-addon
 // ServiceAccount at run time so an adapter's blast radius is exactly its declared
-// rules. Generation is committed and gated by `verify-generated`; the read-only
-// guard (guard_test.go) fails any write verb not justified by a
-// adapter.PolicyRule.WriteReason.
+// rules. Generation is committed and gated by `verify-generated`; the guard
+// (guard_test.go) fails any grant — read or write — not defended by a
+// adapter.PolicyRule.Justification.
 package rbacgen
 
 import (
@@ -86,12 +86,13 @@ func Collect(adapters []adapter.Adapter) []AddonRBAC {
 	return out
 }
 
-// UnjustifiedWrites returns a human-readable message for every grant that would
-// fail the read-only guard: a write verb (anything but get/list/watch) on a rule
-// with no adapter.PolicyRule.WriteReason, or an addon that declared no rules at
-// all. An empty result means every addon is read-only except for writes that
-// document why they exist. It is the single security predicate the guard enforces.
-func UnjustifiedWrites(addons []AddonRBAC) []string {
+// UnjustifiedGrants returns a human-readable message for every grant that would
+// fail the guard: any rule with no adapter.PolicyRule.Justification, or an addon
+// that declared no rules at all. Every grant — read or write — must defend why it
+// is needed and why less would not suffice, so the generated RBAC matrix is a
+// complete, auditable least-privilege record. An empty result means every rule of
+// every addon is justified. It is the single security predicate the guard enforces.
+func UnjustifiedGrants(addons []AddonRBAC) []string {
 	var violations []string
 	for _, a := range addons {
 		if len(a.Rules) == 0 {
@@ -99,11 +100,12 @@ func UnjustifiedWrites(addons []AddonRBAC) []string {
 			continue
 		}
 		for _, r := range a.Rules {
-			for _, v := range r.Verbs {
-				if adapter.IsReadVerb(v) || r.WriteReason != "" {
-					continue
+			if r.Justification == "" {
+				kind := "read"
+				if !r.IsReadOnly() {
+					kind = "WRITE"
 				}
-				violations = append(violations, fmt.Sprintf("addon %q: write verb %q on %v has no WriteReason", a.Addon, v, r.Resources))
+				violations = append(violations, fmt.Sprintf("addon %q: %s grant on %v (verbs %v) has no Justification", a.Addon, kind, r.Resources, r.Verbs))
 			}
 		}
 	}
@@ -236,8 +238,8 @@ func stdLabels(extra map[string]string) map[string]string {
 }
 
 // clusterRules converts declared PolicyRules into rendered rbac rules, dropping
-// the WriteReason (not an RBAC field — it lives only in the model, the guard, and
-// the docs matrix).
+// the Justification (not an RBAC field — it lives only in the model, the guard,
+// and the docs matrix).
 func clusterRules(rules []adapter.PolicyRule) []policyRule {
 	out := make([]policyRule, len(rules))
 	for i, r := range rules {
@@ -388,23 +390,26 @@ per-addon ServiceAccounts (see [Operator impersonation grant](#operator-imperson
 
 Each adapter declares its grants in Go (` + "`adapter.RBACDeclarer`" + `); this
 page and the manifests under ` + "`config/rbac/addons/`" + ` are generated from
-those declarations. Every verb is read-only (` + "`get`/`list`/`watch`" + `)
-unless a **Write reason** justifies it — the read-only CI guard fails any
-unjustified write.
+those declarations. **Every** grant carries a defensive **justification** — why it
+is needed and why a narrower grant would not suffice — and the CI guard fails any
+grant (read or write) that is not justified. Verbs are read-only
+(` + "`get`/`list`/`watch`" + `) unless the justification, prefixed
+` + "`WRITE EXCEPTION`" + `, defends a write; the only writes are the CoreDNS probe
+Pod and the cert-manager admission dry-run.
 
 `)
 	for _, a := range addons {
 		fmt.Fprintf(&buf, "## %s\n\n", a.Addon)
 		fmt.Fprintf(&buf, "ServiceAccount: `fathom-%s` (namespace `fathom-system`)\n\n", a.ServiceAccount)
-		buf.WriteString("| API group | Resources | Verbs | Write reason |\n")
+		buf.WriteString("| API group | Resources | Verbs | Justification (why this, and why not less) |\n")
 		buf.WriteString("| --- | --- | --- | --- |\n")
 		for _, r := range a.Rules {
-			reason := r.WriteReason
-			if reason == "" {
-				reason = "—"
+			justification := r.Justification
+			if justification == "" {
+				justification = "—"
 			}
 			fmt.Fprintf(&buf, "| %s | %s | %s | %s |\n",
-				groupsCell(r.APIGroups), strings.Join(r.Resources, ", "), strings.Join(r.Verbs, ", "), reason)
+				groupsCell(r.APIGroups), strings.Join(r.Resources, ", "), strings.Join(r.Verbs, ", "), justification)
 		}
 		buf.WriteString("\n")
 	}

@@ -21,16 +21,21 @@ type PolicyRule struct {
 	Resources []string
 	// Verbs is the set of verbs granted (e.g. "get", "list", "watch").
 	Verbs []string
-	// WriteReason justifies any non-read verb in Verbs — a verb outside the read
-	// set {get, list, watch}. It MUST be non-empty whenever the rule grants a
-	// write verb: the read-only RBAC guard fails a write verb whose rule carries
-	// no WriteReason. This makes WriteReason the single source of the
-	// write-exception allowlist — the adapter that needs the write documents why,
-	// right next to the grant, so there is no separate table to drift from.
+	// Justification defends this grant for the least-privilege audit: why the
+	// rule is needed AND why a narrower grant (fewer verbs, fewer resources,
+	// namespaced instead of cluster-scoped, read-only instead of write) would not
+	// be sufficient. It is REQUIRED on every rule — the read-only RBAC guard fails
+	// any rule with an empty Justification — and is rendered into the generated
+	// RBAC matrix (docs/reference/rbac.md), so every permission the operator
+	// impersonates is documented and defensible next to the grant, with no
+	// separate table to drift from.
 	//
-	// The two shipped exceptions are the CoreDNS probe pod (pods create;delete)
-	// and the cert-manager admission dry-run (certificates;issuers create).
-	WriteReason string
+	// For a write verb (anything outside {get, list, watch}) the justification
+	// must additionally explain why the write is necessary and why a read cannot
+	// achieve it. The two shipped writes are the CoreDNS probe pod (pods
+	// create;delete) and the cert-manager admission dry-run (certificates;issuers
+	// create).
+	Justification string
 }
 
 // RBACDeclarer is implemented by adapters that declare the least-privilege RBAC
@@ -72,7 +77,7 @@ func AddonServiceAccountName(addon string) string {
 }
 
 // IsReadVerb reports whether v is a read-only verb (get, list, watch). Every
-// other verb is a write that requires a [PolicyRule.WriteReason].
+// other verb is a write, which a rule's [PolicyRule.Justification] must defend.
 func IsReadVerb(v string) bool {
 	switch v {
 	case "get", "list", "watch":

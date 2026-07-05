@@ -93,16 +93,20 @@ func (Adapter) Capabilities() adapter.Capabilities {
 // RBACRules declares CoreDNS's least-privilege grants (adapter.RBACDeclarer): the
 // passive workload/endpoint reads, plus the probe-pod lifecycle write the
 // DNS-resolution check performs — all under CoreDNS's impersonated ServiceAccount
-// (SKA-58). The generator emits a scoped ClusterRole from these, and the
-// read-only guard permits the pods create;delete only because it carries a
-// WriteReason.
+// (SKA-58). Each rule carries a defensive Justification (why it is needed and why
+// less would not suffice); the generator emits a scoped ClusterRole and renders
+// the justifications into docs/reference/rbac.md, and the guard permits the pods
+// create;delete only because it is justified.
 func (Adapter) RBACRules() []adapter.PolicyRule {
 	return []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the CoreDNS Deployment to score replica/rollout readiness. list+watch because the deployment name is policy-overridable; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read CoreDNS Pods (restart counts, readiness) and the kube-dns Service (the probe's resolution target). list is required because Pod names are dynamic; read-only and limited to these two core kinds."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete"},
-			WriteReason: "launch and tear down the single-shot DNS probe pod per check (ADR-0003)"},
-		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"}},
+			Justification: "WRITE EXCEPTION: launch and immediately tear down a single-shot DNS probe Pod per check to measure resolution from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; no in-process read can observe real in-cluster DNS. The Pod is deleted as soon as it completes — no update, no long-lived workload."},
+		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the EndpointSlices behind the DNS Service to confirm it has ready backends. list is required to enumerate slices for the Service; read-only."},
 	}
 }
 

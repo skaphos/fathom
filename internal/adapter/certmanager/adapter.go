@@ -99,18 +99,24 @@ func (Adapter) Capabilities() adapter.Capabilities {
 // RBACRules declares cert-manager's least-privilege grants (adapter.RBACDeclarer):
 // the passive workload/webhook/CRD/cert-manager reads, plus the create verb the
 // admission dry-run probe needs — all under cert-manager's impersonated
-// ServiceAccount (SKA-58). The generator emits a scoped ClusterRole from these,
-// and the read-only guard permits the certificates;issuers create only because it
-// carries a WriteReason.
+// ServiceAccount (SKA-58). Each rule carries a defensive Justification (why it is
+// needed and why less would not suffice); the generator emits a scoped ClusterRole
+// from these and renders the justifications into docs/reference/rbac.md, and the
+// guard permits the certificates;issuers create only because it is justified.
 func (Adapter) RBACRules() []adapter.PolicyRule {
 	return []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"admissionregistration.k8s.io"}, Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"cert-manager.io"}, Resources: []string{"certificates", "clusterissuers", "issuers"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the cert-manager controller/webhook/cainjector Deployments to score rollout readiness. list+watch (not just get) because the component names are policy-overridable and may span namespaces; read-only — health is derived from status, never mutated."},
+		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read component Pods (restart counts, readiness) and the webhook Service (that the admission endpoint exists) before probing. list is required because Pod names are dynamic (ReplicaSet hashes); read-only and scoped to these two core kinds, not the core group at large."},
+		{APIGroups: []string{"admissionregistration.k8s.io"}, Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read cert-manager's webhook configurations to confirm its admission wiring is present. Read-only — Fathom never edits webhook config; a narrower single-name get is impossible because the configuration names vary by install."},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the cert-manager CRDs to verify they are Established and serve the expected API version. list is needed to check several CRDs and to distinguish absent from unhealthy; read-only."},
+		{APIGroups: []string{"cert-manager.io"}, Resources: []string{"certificates", "clusterissuers", "issuers"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read Certificate/Issuer/ClusterIssuer status to score issuance health. Scoped to cert-manager's own API group only (not a blanket custom-resource read) and read-only."},
 		{APIGroups: []string{"cert-manager.io"}, Resources: []string{"certificates", "issuers"}, Verbs: []string{"create"},
-			WriteReason: "admission dry-run probe (create with DryRunAll) exercises the webhook path without persisting"},
+			Justification: "WRITE EXCEPTION: create a Certificate/Issuer with DryRunAll to exercise the admission webhook path without persisting anything. create is the only verb that triggers admission, and DryRun guarantees no object is stored; a read cannot prove the webhook is actually serving. Scoped to these two kinds only, no update/delete."},
 	}
 }
 

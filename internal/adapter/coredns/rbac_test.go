@@ -12,8 +12,8 @@ import (
 )
 
 // TestRBACRulesDeclaresProbeException locks CoreDNS's one write exception in
-// place: the read-only RBAC guard only permits the probe-pod create;delete
-// because it carries a WriteReason, and dropping it would silently break the
+// place: the RBAC guard only permits the probe-pod create;delete because it
+// carries a Justification, and dropping it would silently break the
 // DNS-resolution probe under the scoped ServiceAccount (SKA-58).
 func TestRBACRulesDeclaresProbeException(t *testing.T) {
 	var _ adapter.RBACDeclarer = Adapter{}
@@ -25,12 +25,12 @@ func TestRBACRulesDeclaresProbeException(t *testing.T) {
 
 	var found bool
 	for _, r := range rules {
+		// Every rule — read or write — must justify itself, or the guard fails it.
+		if r.Justification == "" {
+			t.Errorf("rule %+v has no Justification", r)
+		}
 		if r.IsReadOnly() {
 			continue
-		}
-		// Every non-read rule must justify itself, or the guard would fail it.
-		if r.WriteReason == "" {
-			t.Errorf("write rule %+v has no WriteReason", r)
 		}
 		if hasResource(r, "pods") && hasVerb(r, "create") && hasVerb(r, "delete") {
 			found = true

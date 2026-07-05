@@ -59,8 +59,8 @@ func TestPolicyRuleIsReadOnly(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "write verb even with a WriteReason is still not read-only",
-			rule: adapter.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"delete"}, WriteReason: "probe teardown"},
+			name: "write verb even with a Justification is still not read-only",
+			rule: adapter.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"delete"}, Justification: "probe teardown"},
 			want: false,
 		},
 	}

@@ -28,9 +28,12 @@ var CiliumDefinition = AddonDefinition{
 	// version — gating is opt-in once a maintainer confirms the range (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDaemonSet, Namespace: "kube-system", Name: "cilium"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the cilium-operator Deployment and the cilium agent DaemonSet to score readiness. list+watch because Cilium is Optional and may be absent, and the workload names are policy-overridable; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the operator/agent Pods for restart counts and readiness behind their controllers. list is required because Pod names are dynamic; read-only."},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the core Cilium CRDs to verify they are Established and serve a supported version. list is needed to check several CRDs at once; read-only."},
 	},
 	Families: []FamilyDefinition{
 		{
