@@ -64,7 +64,7 @@
     "hash": "eb6b401c139b11f92f985e87d30b81ae"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1783289768.372878,
+    "mtime": 1783291839.1250477,
     "hash": "d466f4663f5074177818a75f302651ab"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/rbac.go": {
@@ -76,8 +76,8 @@
     "hash": "3c82e96cb11464a56526e2d631dc239d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/doc.go": {
-    "mtime": 1783284466.4205022,
-    "hash": "07713d712ef358889658aa5f57b4714c"
+    "mtime": 1783291775.6345084,
+    "hash": "af81c6814fd9705add23a9417b7333d8"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/version_test.go": {
     "mtime": 1783284466.4205022,
@@ -292,8 +292,8 @@
     "hash": "d82f3fe1d9d60a7e59b74133b728e799"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/certmanager/adapter_test.go": {
-    "mtime": 1783289666.4676015,
-    "hash": "ef197648f2ac4f948dce2260f391b89d"
+    "mtime": 1783290401.0787303,
+    "hash": "77b3987e4cc7598dc9865a432ce63cc5"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/certmanager/adapter.go": {
     "mtime": 1783289564.9256868,
@@ -472,31 +472,31 @@
     "hash": "a0210b9ca0940e6afa5fa1fabf772df2"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783289772.1602461,
+    "mtime": 1783291833.4776254,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783289772.1602771,
+    "mtime": 1783291833.4776578,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783289772.1603072,
+    "mtime": 1783291833.4776897,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783289772.16014,
+    "mtime": 1783291833.4775112,
     "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783289772.1602135,
+    "mtime": 1783291833.477591,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.572048,
     "hash": "0b2230bed172ff014ec4525a62825c1f"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/files/manager-rules.yaml": {
-    "mtime": 1783289772.1690314,
+    "mtime": 1783291833.487433,
     "hash": "7407af4f00440c98fa9caa50ace56ba9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/NOTES.txt": {
@@ -556,23 +556,23 @@
     "hash": "d3159b0e0b5653f5fdb206754b749be5"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783289772.103878,
+    "mtime": 1783291837.1967144,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783289772.103878,
+    "mtime": 1783291837.1967144,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783289772.1255448,
+    "mtime": 1783291837.231381,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783289772.0995448,
+    "mtime": 1783291837.1967144,
     "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783289772.103878,
+    "mtime": 1783291837.1967144,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/default/metrics_service.yaml": {
@@ -664,7 +664,7 @@
     "hash": "913c62b01d1a78bc4f74b57e895634f8"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/role.yaml": {
-    "mtime": 1783289771.986878,
+    "mtime": 1783291837.0840478,
     "hash": "3bd57a1c88d1f9c9d26ea4b75cebdd18"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/nodecertificatecheck_admin_role.yaml": {
@@ -728,27 +728,27 @@
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/kustomization.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.5763814,
     "hash": "50cc4ec1dbaa5c51e9a5a5a94d68a5eb"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-coredns.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.572048,
     "hash": "16f200b70217efe8d28da2817bf35716"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-cert-manager.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.572048,
     "hash": "03f957ddd583921feb706b9309d95bad"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/kustomizeconfig.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.572048,
     "hash": "e65eb9ba47025507e19f1f583bdb3661"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-cilium.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.572048,
     "hash": "24ac45ecd388c802d8be635534a68981"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/operator-impersonate.yaml": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.5763814,
     "hash": "cefbc4e9617448c8d06230e656d98d07"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/manifests/kustomization.yaml": {
@@ -787,6 +787,10 @@
     "mtime": 1783284466.3896012,
     "hash": "ded978aeb0bb46b71449bc612ebdcccd"
   },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/authoring-adapters.md": {
+    "mtime": 1783291751.1243231,
+    "hash": "a57d582a73e7ef6c44657d512aff2811"
+  },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/architecture.md": {
     "mtime": 1783284534.5785968,
     "hash": "a33e535feaeb00894f11e1f71759d39b"
@@ -796,8 +800,8 @@
     "hash": "823d98561a4a9a5f30dbc65b0706dad3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/README.md": {
-    "mtime": 1783284466.3798547,
-    "hash": "7fe5d0996b11990666ff56cabde2da62"
+    "mtime": 1783291772.8828418,
+    "hash": "9ac4f73f6cc8a91b0ec77a5c9ef07f1d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/api-versioning.md": {
     "mtime": 1783284466.3834589,
@@ -808,11 +812,11 @@
     "hash": "376b41d9239ba650abb6cb711e0b7e40"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/api.md": {
-    "mtime": 1783289772.974878,
+    "mtime": 1783291834.250048,
     "hash": "3f0db554278e434c42051ca701d83d92"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/rbac.md": {
-    "mtime": 1783289770.218878,
+    "mtime": 1783291831.5763814,
     "hash": "e1624cc67dd345ee3d6973921ea9f9cf"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/getting-started.md": {

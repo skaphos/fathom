@@ -57,7 +57,7 @@ SPDX-License-Identifier: MIT
 //
 // # Stability
 //
-// This package is at contract version 0.1.0. Until 1.0.0, any minor version
-// bump may introduce breaking changes. Adapter authors should pin the
+// The current contract version is [ContractVersion]. Until 1.0.0, any minor
+// version bump may introduce breaking changes. Adapter authors should pin the
 // contract version they target and rebuild against new minor releases.
 package adapter
