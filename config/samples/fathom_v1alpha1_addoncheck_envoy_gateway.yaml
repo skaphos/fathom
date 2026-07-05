@@ -16,8 +16,8 @@ spec:
         - envoy-gateway-system
       thresholds:
         restartWarnCount: "3"
-        # The Deployment follows the Helm release convention; point the check
-        # at a renamed install:
+        # The chart hardcodes the Deployment name; point the check at a
+        # repackaged install that renames it:
         # deploymentName: "envoy-gateway"
     crd_health:
       enabled: true

@@ -33,7 +33,7 @@ var EnvoyGatewayDefinition = AddonDefinition{
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "envoy-gateway-system", Name: "envoy-gateway"},
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the envoy-gateway controller Deployment to score readiness. list+watch because the name/namespace are policy-overridable (Helm release convention); read-only."},
+			Justification: "Read the envoy-gateway controller Deployment to score readiness. list+watch because the name/namespace are policy-overridable (the chart hardcodes envoy-gateway, but repackaged installs may rename it); read-only."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
 			Justification: "Read the envoy-gateway Pods for restart counts and readiness behind the Deployment. list is required because Pod names are dynamic; read-only."},
 		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},

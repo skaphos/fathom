@@ -73,9 +73,19 @@ func TestEnvoyGateway_HealthyAndNoGatewaysSkipped(t *testing.T) {
 	}
 
 	// No Gateway objects exist -> gateway_status is Skipped (the e2e's
-	// empty-cluster contract), once per ConditionCheck (Accepted, Programmed).
+	// empty-cluster contract), once per ConditionCheck — and the two rows must
+	// be distinguishable by their conditionType detail, not identical twins.
 	assertHasOutcome(t, result.Checks, "Gateway", "gateways", adapter.OutcomeSkipped, "no Gateway objects matched")
 	assertFamily(t, result.Checks, "Gateway", "gateways", adapter.Family("gateway_status"))
+	seen := map[string]int{}
+	for _, c := range result.Checks {
+		if c.Family == adapter.Family("gateway_status") && c.Outcome == adapter.OutcomeSkipped {
+			seen[c.Details["conditionType"]]++
+		}
+	}
+	if seen["Accepted"] != 1 || seen["Programmed"] != 1 {
+		t.Errorf("gateway_status Skipped rows by conditionType: got %v, want one Accepted and one Programmed", seen)
+	}
 }
 
 func TestEnvoyGateway_MissingDeploymentFails(t *testing.T) {
