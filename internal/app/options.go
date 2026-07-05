@@ -94,6 +94,14 @@ type Options struct {
 	// images. Operators running a private GHCR mirror set this once.
 	NodeAgentImage string `mapstructure:"node_agent_image"`
 
+	// Namespace is the operator's own namespace, where the per-addon
+	// ServiceAccounts live. The AddonCheck reconciler impersonates them so each
+	// adapter reads under least privilege (SKA-58). In cluster it is injected from
+	// the Pod's namespace via the downward API (FATHOM_NAMESPACE); empty disables
+	// impersonation (the operator client is used), the common case for local
+	// out-of-cluster runs against a privileged kubeconfig.
+	Namespace string `mapstructure:"namespace"`
+
 	// Zap is bound directly to flags (not Viper) because zap.Options uses
 	// the stdlib flag package and is not round-trippable via mapstructure.
 	// Its default is whatever zap.Options.BindFlags registers (Development
@@ -262,6 +270,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "Container image used by adapters that launch probe pods. Per-AddonCheck thresholds still override this."},
 		{flagName: "node-agent-image", viperKey: "node_agent_image", stringDef: defaults.NodeAgentImage,
 			usage: "Container image used by the NodeCertificateCheck controller for its managed node-agent DaemonSet. A dedicated image, distinct from the operator and probe images."},
+		{flagName: "namespace", viperKey: "namespace", stringDef: defaults.Namespace,
+			usage: "The operator's own namespace, where per-addon ServiceAccounts live for adapter impersonation (SKA-58). In cluster it is set from the Pod namespace via the downward API (FATHOM_NAMESPACE); empty disables impersonation."},
 		{flagName: "tracing-enabled", viperKey: "tracing.enabled", isBool: true, boolDef: defaults.Tracing.Enabled,
 			usage: "Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead)."},
 		{flagName: "tracing-otlp-endpoint", viperKey: "tracing.otlp_endpoint", stringDef: defaults.Tracing.OTLPEndpoint,

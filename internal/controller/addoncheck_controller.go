@@ -27,8 +27,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -97,6 +100,18 @@ type AddonCheckReconciler struct {
 	// to the global provider (a no-op unless tracing is enabled). The adapter
 	// Run span nests under this reconcile span via the context.
 	Tracer trace.Tracer
+
+	// AddonClients builds the per-addon impersonating client handed to an adapter
+	// as adapter.Request.Client, so the adapter reads under its own least-privilege
+	// ServiceAccount rather than the operator's (SKA-58). Nil disables
+	// impersonation — the operator client is used instead (unit tests, and local
+	// out-of-cluster runs where the manager already uses a privileged kubeconfig).
+	AddonClients impersonation.ClientFactory
+
+	// Namespace is the operator's own namespace, where the per-addon
+	// ServiceAccounts live. Populated from FATHOM_NAMESPACE (downward API) in
+	// cluster. Empty disables impersonation (falls back to the operator client).
+	Namespace string
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
@@ -299,14 +314,27 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	defer cancel()
 
 	started := time.Now()
-	result, runErr := selectedAdapter.Run(runCtx, adapter.Request{
-		Client:     r.Client,
-		Logger:     log.WithValues("adapter", selectedAdapter.Name(), "addonType", check.Spec.AddonType),
-		Target:     addonCheckTargetRef(check),
-		Policy:     addonCheckPolicy(check),
-		Timeout:    timeout,
-		ProbeImage: r.ProbeImage,
-	})
+	var (
+		result adapter.Result
+		runErr error
+	)
+	// Hand the adapter a client scoped to its own ServiceAccount via
+	// impersonation, so it reads under least privilege (SKA-58). If the scoped
+	// client cannot be built (e.g. the addon RBAC is not installed), surface that
+	// as an adapter-level error rather than silently running with broader access.
+	runClient, clientErr := r.adapterClient(runCtx, selectedAdapter.Name())
+	if clientErr != nil {
+		runErr = clientErr
+	} else {
+		result, runErr = selectedAdapter.Run(runCtx, adapter.Request{
+			Client:     runClient,
+			Logger:     log.WithValues("adapter", selectedAdapter.Name(), "addonType", check.Spec.AddonType),
+			Target:     addonCheckTargetRef(check),
+			Policy:     addonCheckPolicy(check),
+			Timeout:    timeout,
+			ProbeImage: r.ProbeImage,
+		})
+	}
 	observedAt := metav1.NewTime(time.Now())
 	if result.Duration == 0 {
 		result.Duration = time.Since(started)
@@ -367,6 +395,36 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 		Message:            readyMessage,
 	})
 	return nil
+}
+
+// adapterClient returns the client an adapter Run should use. With impersonation
+// configured (AddonClients set and Namespace known), it resolves the addon's
+// ServiceAccount by the adapter.AddonLabel — prefix-agnostic, so it works under
+// either the kustomize or Helm naming — and returns a client impersonating that
+// ServiceAccount (SKA-58). It fails if the addon RBAC is not installed (no
+// matching ServiceAccount) rather than falling back to broader access.
+//
+// Without impersonation configured, it returns the operator client: unit tests
+// and local out-of-cluster runs, where the manager already uses a privileged
+// kubeconfig, run unscoped.
+func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) (client.Client, error) {
+	if r.AddonClients == nil || r.Namespace == "" {
+		return r.Client, nil
+	}
+	var sas corev1.ServiceAccountList
+	if err := r.List(ctx, &sas,
+		client.InNamespace(r.Namespace),
+		client.MatchingLabels{adapter.AddonLabel: addon},
+	); err != nil {
+		return nil, fmt.Errorf("list scoped ServiceAccount for addon %q: %w", addon, err)
+	}
+	if len(sas.Items) != 1 {
+		return nil, fmt.Errorf(
+			"expected exactly one ServiceAccount labeled %s=%s in namespace %q, found %d; is the addon RBAC installed?",
+			adapter.AddonLabel, addon, r.Namespace, len(sas.Items),
+		)
+	}
+	return r.AddonClients.ClientFor(impersonation.SAUsername(r.Namespace, sas.Items[0].Name))
 }
 
 // pruneHealthReportHistory enforces Spec.HistoryLimit by deleting the oldest

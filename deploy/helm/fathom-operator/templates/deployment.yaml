@@ -72,6 +72,13 @@ spec:
               protocol: TCP
             {{- end }}
           env:
+            # FATHOM_NAMESPACE tells the operator its own namespace (where the
+            # per-addon ServiceAccounts live) so it can impersonate them and run
+            # each adapter under least privilege (SKA-58).
+            - name: FATHOM_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

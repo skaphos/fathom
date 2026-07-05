@@ -35,6 +35,7 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/certmanager"
 	"github.com/skaphos/fathom/internal/adapter/coredns"
 	"github.com/skaphos/fathom/internal/adapter/declarative"
+	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
 	"github.com/skaphos/fathom/internal/metrics"
@@ -168,11 +169,13 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	tracer := otel.Tracer(controller.TracerScope)
 	return []Setupper{
 		&controller.AddonCheckReconciler{
-			Client:     mgr.GetClient(),
-			Scheme:     mgr.GetScheme(),
-			Adapters:   adapterRegistry,
-			ProbeImage: opts.ProbeImage,
-			Tracer:     tracer,
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Adapters:     adapterRegistry,
+			ProbeImage:   opts.ProbeImage,
+			Tracer:       tracer,
+			AddonClients: impersonation.New(mgr),
+			Namespace:    opts.Namespace,
 		},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
