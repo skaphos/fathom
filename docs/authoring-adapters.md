@@ -30,13 +30,16 @@ model — see [architecture.md](architecture.md).
 | **A — declarative `AddonDefinition`** *(default, start here)* | The add-on's health is "operator workloads healthy + CRDs established + managed-CR `status.conditions` in the expected state." | A data literal + an e2e spec. No new Go check logic. |
 | **B — Go adapter** *(escape hatch)* | You need something the evaluators can't express: an **active probe** (create a pod / issue a dry-run request), **conditional topology** (istio ambient-vs-sidecar), or a **bespoke API call**. | A full Go type implementing the [`Adapter`](../pkg/adapter/adapter.go) interface. |
 
-The selection rule the reconciler uses: if a Go adapter is registered for the
-`addonType`, it wins; otherwise the declarative engine handles it. Of the four
-built-ins, **CoreDNS** (DNS-resolution probe pod) and **cert-manager**
-(admission dry-run `create`) stay Go; **External Secrets** and **Cilium** are
-declarative. The planned build-out is ~14 declarative and ~2–3 Go (istio being
-the notable Go one). Default to Path A and only reach for Go when a check
-genuinely can't be a read-and-compare.
+This is an **authoring-time choice, not a runtime fallback**: each `addonType`
+is served by exactly one registered adapter. The reconciler just looks the
+adapter up by `addonType`, and the registry rejects two adapters that claim the
+same type — a declarative `Engine` and a Go adapter can't both answer for one
+add-on. Whether that single adapter is a declarative `Engine` or a Go type is
+your call. Of the four built-ins, **CoreDNS** (DNS-resolution probe pod) and
+**cert-manager** (admission dry-run `create`) are Go; **External Secrets** and
+**Cilium** are declarative. The planned build-out is ~14 declarative and ~2–3 Go
+(istio being the notable Go one). Default to Path A and only reach for Go when a
+check genuinely can't be a read-and-compare.
 
 ---
 
