@@ -77,6 +77,7 @@ its [guide](node-certificate-checks.md#availability)) — is the exception that
 | [`cilium`](#cilium) | `control_plane_health`, `agent_health`, `crd_health` | Cilium operator, per-node agent, and CRDs |
 | [`external-dns`](#external-dns) | `system_health`, `crd_health` | external-dns controller workloads + the opt-in DNSEndpoint CRD |
 | [`metrics-server`](#metrics-server) | `system_health`, `api_availability` | metrics-server workloads + the aggregated resource-metrics APIService |
+| [`envoy-gateway`](#envoy-gateway) | `system_health`, `crd_health`, `gateway_status` | Envoy Gateway controller, Gateway API CRDs, and Gateway conditions |
 
 ### cert-manager
 
@@ -258,6 +259,42 @@ unreachable metrics-server keeps its pods `Ready` while the APIService goes
 Deployment and the APIService are required; a missing APIService object is a
 `Fail` with the `absent` detail.
 
+### Envoy Gateway
+
+```yaml
+spec:
+  addonType: envoy-gateway
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - envoy-gateway-system
+      thresholds:
+        deploymentName: "envoy-gateway"
+        restartWarnCount: "3"
+    crd_health:
+      enabled: true
+    gateway_status:
+      enabled: true
+      namespaces:
+        - edge
+        - apps
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `envoy-gateway` controller Deployment and its pods. | `deploymentName`, `restartWarnCount` |
+| `crd_health` | The Gateway API core CRDs (`GatewayClass`, `Gateway`, `HTTPRoute`; `v1`/`v1beta1`) and Envoy Gateway's `EnvoyProxy` CRD (`v1alpha1`) are established. | — |
+| `gateway_status` | Every `Gateway` in the policy namespaces reports `Accepted=True` and `Programmed=True`. | — |
+
+Set `gateway_status.namespaces` to wherever your `Gateway` objects live — they
+are usually declared outside `envoy-gateway-system` (the default when no
+namespaces are given). A cluster with no Gateways yet reports `Skipped`.
+Not covered (yet): the dynamically-named per-Gateway proxy Deployments
+(`envoy-<ns>-<gateway>-<hash>`) — observe them indirectly through `Programmed`
+— and `HTTPRoute` conditions, which live per-parent under `status.parents`
+rather than in `status.conditions`.
+
 Either way, **`status.absent`** records how many checks in the most recent run found
 their target not installed — the required-absent Fails and the optional-absent Skips
 alike. It makes "not installed" queryable and distinct from "unhealthy" (a `Fail`
@@ -326,7 +363,7 @@ are in the `Accepted` condition message. Common `Ready=False` reasons:
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
-| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`, `external-dns`, `metrics-server`. |
+| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`, `external-dns`, `metrics-server`, `envoy-gateway`. |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
 | `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
 | `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |

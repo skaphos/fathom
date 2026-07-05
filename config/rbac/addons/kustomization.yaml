@@ -6,6 +6,7 @@ resources:
 - addon-cert-manager.yaml
 - addon-cilium.yaml
 - addon-coredns.yaml
+- addon-envoy-gateway.yaml
 - addon-external-dns.yaml
 - addon-external-secrets.yaml
 - addon-metrics-server.yaml

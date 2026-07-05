@@ -1,0 +1,30 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: envoy-gateway-sample
+spec:
+  addonType: envoy-gateway
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - envoy-gateway-system
+      thresholds:
+        restartWarnCount: "3"
+        # The Deployment follows the Helm release convention; point the check
+        # at a renamed install:
+        # deploymentName: "envoy-gateway"
+    crd_health:
+      enabled: true
+    gateway_status:
+      enabled: true
+      # Gateways usually live outside envoy-gateway-system — list the
+      # namespaces your Gateways are declared in:
+      # namespaces:
+      #   - edge
+      #   - apps

@@ -15,6 +15,7 @@ rules:
   - addon-cert-manager
   - addon-cilium
   - addon-coredns
+  - addon-envoy-gateway
   - addon-external-dns
   - addon-external-secrets
   - addon-metrics-server

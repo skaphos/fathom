@@ -27,6 +27,10 @@ repositories:
     url: https://kubernetes-sigs.github.io/external-dns/
   - name: metrics-server
     url: https://kubernetes-sigs.github.io/metrics-server/
+  # Envoy Gateway publishes gateway-helm only to Docker Hub's OCI registry.
+  - name: envoyproxy
+    url: registry-1.docker.io/envoyproxy
+    oci: true
 
 releases:
   - name: cilium
@@ -124,6 +128,26 @@ releases:
           requests:
             cpu: 10m
             memory: 32Mi
+
+  - name: envoy-gateway
+    namespace: envoy-gateway-system
+    chart: envoyproxy/gateway-helm
+    version: 1.8.2
+    needs:
+      - kube-system/cilium
+    createNamespace: true
+    wait: true
+    timeout: 600
+    values:
+      # Chart defaults: the envoy-gateway controller Deployment plus the
+      # bundled Gateway API + Envoy Gateway CRDs — everything Fathom's
+      # system_health and crd_health families assert. No GatewayClass/Gateway
+      # objects are created, so the gateway_status family exercises its
+      # empty-cluster Skipped contract (a provisioned Gateway would need a
+      # LoadBalancer address kind cannot assign, so it would never reach
+      # Programmed=True here).
+      - deployment:
+          replicas: 1
 
   - name: external-secrets
     namespace: external-secrets

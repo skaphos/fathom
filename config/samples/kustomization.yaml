@@ -6,6 +6,7 @@ resources:
 - fathom_v1alpha1_addoncheck_cilium.yaml
 - fathom_v1alpha1_addoncheck_external_dns.yaml
 - fathom_v1alpha1_addoncheck_metrics_server.yaml
+- fathom_v1alpha1_addoncheck_envoy_gateway.yaml
 - fathom_v1alpha1_healthcheck.yaml
 - fathom_v1alpha1_clusterhealth.yaml
 - fathom_v1alpha1_healthreport.yaml
