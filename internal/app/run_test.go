@@ -230,7 +230,7 @@ func TestBuildAdapterRegistry_WrapsRegistrationErrors(t *testing.T) {
 }
 
 func TestBuiltInAdapters_IncludesCertManager(t *testing.T) {
-	adapterRegistry, err := BuildAdapterRegistry(logr.Discard(), builtInAdapters()...)
+	adapterRegistry, err := BuildAdapterRegistry(logr.Discard(), BuiltInAdapters()...)
 	if err != nil {
 		t.Fatalf("BuildAdapterRegistry: %v", err)
 	}

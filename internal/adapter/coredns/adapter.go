@@ -90,6 +90,22 @@ func (Adapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth, FamilyDNSResolution}}
 }
 
+// RBACRules declares CoreDNS's least-privilege grants (adapter.RBACDeclarer): the
+// passive workload/endpoint reads, plus the probe-pod lifecycle write the
+// DNS-resolution check performs — all under CoreDNS's impersonated ServiceAccount
+// (SKA-58). The generator emits a scoped ClusterRole from these, and the
+// read-only guard permits the pods create;delete only because it carries a
+// WriteReason.
+func (Adapter) RBACRules() []adapter.PolicyRule {
+	return []adapter.PolicyRule{
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete"},
+			WriteReason: "launch and tear down the single-shot DNS probe pod per check (ADR-0003)"},
+		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"}},
+	}
+}
+
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods;services,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=create;delete

@@ -28,11 +28,11 @@ var ExternalSecretsDefinition = AddonDefinition{
 	// maintainer-owned), so ESO never Warns on a version — gating is opt-in
 	// (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-secrets", Name: "external-secrets"},
-	RBAC: []RBACRule{
-		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
-		{APIGroups: "", Resources: "pods", Verbs: "get;list;watch"},
-		{APIGroups: "apiextensions.k8s.io", Resources: "customresourcedefinitions", Verbs: "get;list;watch"},
-		{APIGroups: "external-secrets.io", Resources: "externalsecrets", Verbs: "get;list;watch"},
+	RBAC: []adapter.PolicyRule{
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"external-secrets.io"}, Resources: []string{"externalsecrets"}, Verbs: []string{"get", "list", "watch"}},
 	},
 	Families: []FamilyDefinition{
 		{

@@ -16,8 +16,8 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // marker. The persisted verdict of such a run is Skipped, not Pass — only the
 // metrics/tracing FamilyOutcome roll-up relabels an all-Skipped family as Pass.
 //
-// The RBAC field is documentation-only; the enforced +kubebuilder:rbac markers
-// for all declarative adapters live on the package doc in definition.go.
+// The RBAC field is the per-addon least-privilege source the RBAC generator
+// emits Cilium's scoped read-only ClusterRole from (SKA-58).
 var CiliumDefinition = AddonDefinition{
 	AddonType:      "cilium",
 	AdapterVersion: "0.2.0",
@@ -27,11 +27,10 @@ var CiliumDefinition = AddonDefinition{
 	// Detection-only: SupportedVersions is left empty so Cilium never Warns on a
 	// version — gating is opt-in once a maintainer confirms the range (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDaemonSet, Namespace: "kube-system", Name: "cilium"},
-	RBAC: []RBACRule{
-		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
-		{APIGroups: "apps", Resources: "daemonsets", Verbs: "get;list;watch"},
-		{APIGroups: "", Resources: "pods", Verbs: "get;list;watch"},
-		{APIGroups: "apiextensions.k8s.io", Resources: "customresourcedefinitions", Verbs: "get;list;watch"},
+	RBAC: []adapter.PolicyRule{
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
 	},
 	Families: []FamilyDefinition{
 		{

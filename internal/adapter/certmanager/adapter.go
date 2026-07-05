@@ -96,6 +96,24 @@ func (Adapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth, FamilyIssuerHealth, FamilyCertHealth}}
 }
 
+// RBACRules declares cert-manager's least-privilege grants (adapter.RBACDeclarer):
+// the passive workload/webhook/CRD/cert-manager reads, plus the create verb the
+// admission dry-run probe needs — all under cert-manager's impersonated
+// ServiceAccount (SKA-58). The generator emits a scoped ClusterRole from these,
+// and the read-only guard permits the certificates;issuers create only because it
+// carries a WriteReason.
+func (Adapter) RBACRules() []adapter.PolicyRule {
+	return []adapter.PolicyRule{
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"admissionregistration.k8s.io"}, Resources: []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"cert-manager.io"}, Resources: []string{"certificates", "clusterissuers", "issuers"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{"cert-manager.io"}, Resources: []string{"certificates", "issuers"}, Verbs: []string{"create"},
+			WriteReason: "admission dry-run probe (create with DryRunAll) exercises the webhook path without persisting"},
+	}
+}
+
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch

@@ -159,7 +159,7 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // values that reconcilers need to relay into per-Run adapter requests (e.g.
 // the operator-level probe image).
 func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
-	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), builtInAdapters()...)
+	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), BuiltInAdapters()...)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +205,12 @@ func adapterName(a adapter.Adapter) string {
 	return a.Name()
 }
 
-func builtInAdapters() []adapter.Adapter {
+// BuiltInAdapters returns the set of compiled-in adapters the operator ships,
+// in a stable order. It is the single source of truth for "which adapters exist"
+// — consumed both at startup (BuildAdapterRegistry) and by the RBAC generator and
+// its read-only guard (internal/adapter/rbacgen), so a newly added adapter cannot
+// ship without a generated per-addon role (SKA-58).
+func BuiltInAdapters() []adapter.Adapter {
 	return []adapter.Adapter{certmanager.New(), coredns.New(), declarative.NewExternalSecretsEngine(), declarative.NewCiliumEngine()}
 }
 

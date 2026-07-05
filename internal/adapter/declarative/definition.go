@@ -27,11 +27,14 @@ SPDX-License-Identifier: MIT
 //     errors -> Error; an object that exists but is unhealthy -> Fail.
 //
 // RBAC: the +kubebuilder:rbac markers below are the union of reads every
-// declarative AddonDefinition performs (the RBACRule field on each definition is
-// documentation, not enforced). controller-gen aggregates them into
-// config/rbac/role.yaml. They live on the package doc -- one scanned location
-// owning the declarative reads -- because controller-gen did not reliably
-// collect equivalent markers placed on individual engine constructors.
+// declarative AddonDefinition performs. controller-gen aggregates them into the
+// operator's aggregate config/rbac/role.yaml. Each definition's own RBAC field
+// (Engine.RBACRules) is the per-addon least-privilege source the RBAC generator
+// emits scoped roles from (SKA-58); these union markers are retained only until
+// the operator drops the addon reads from its own role in favour of
+// impersonation. They live on the package doc -- one scanned location owning the
+// declarative reads -- because controller-gen did not reliably collect
+// equivalent markers placed on individual engine constructors.
 //
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -108,10 +111,12 @@ type AddonDefinition struct {
 	// family under which the all-disabled sentinel Skipped is emitted.
 	Families []FamilyDefinition
 
-	// RBAC holds the +kubebuilder:rbac marker bodies this definition needs.
-	// Recorded for documentation and codegen; the engine does not enforce
-	// them at runtime (the real markers must live on a scanned Go source file).
-	RBAC []RBACRule
+	// RBAC holds the least-privilege grants this definition's evaluators need.
+	// The RBAC generator emits a per-addon read-only ClusterRole from them
+	// (surfaced via Engine.RBACRules), and the reconciler impersonates that
+	// addon's ServiceAccount when it runs the engine — so these rules are the
+	// engine's real, enforced blast radius, not documentation (SKA-58).
+	RBAC []adapter.PolicyRule
 }
 
 // VersionSource identifies the workload whose app.kubernetes.io/version label
@@ -139,17 +144,6 @@ func (d AddonDefinition) defaultPosture() Posture {
 		return Optional
 	}
 	return Required
-}
-
-// RBACRule is a least-privilege grant the definition's evaluators require.
-type RBACRule struct {
-	// APIGroups is the API group, "" for core (e.g. "apps",
-	// "apiextensions.k8s.io").
-	APIGroups string
-	// Resources is the resource plural (e.g. "deployments").
-	Resources string
-	// Verbs is the semicolon-separated verb list (e.g. "get;list;watch").
-	Verbs string
 }
 
 // FamilyDefinition is one policy-keyed check family. Each typed component slice

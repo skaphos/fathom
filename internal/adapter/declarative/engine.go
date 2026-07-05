@@ -114,6 +114,12 @@ func (e *Engine) Version() string { return e.def.AdapterVersion }
 // ContractVersion returns the contract version this engine builds against.
 func (e *Engine) ContractVersion() string { return adapter.ContractVersion }
 
+// RBACRules returns the definition's declared least-privilege grants, satisfying
+// adapter.RBACDeclarer so the RBAC generator can emit this addon's scoped
+// read-only ClusterRole and the reconciler can impersonate its ServiceAccount
+// (SKA-58).
+func (e *Engine) RBACRules() []adapter.PolicyRule { return e.def.RBAC }
+
 // Capabilities advertises the addon type and the declared families.
 func (e *Engine) Capabilities() adapter.Capabilities {
 	fams := make([]adapter.Family, len(e.def.Families))
