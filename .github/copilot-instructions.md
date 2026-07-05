@@ -35,6 +35,25 @@ contributor briefing — this file is the short version for Copilot.
 - `config/`: kustomize overlays, RBAC, CRDs, OLM scaffolding.
 - `test/e2e/`: Ginkgo suite that runs against a Kind cluster.
 - `tools/`: pinned tooling launched via `go -C tools tool task ...`.
+- `graphify-out/`: a generated knowledge graph of this codebase (see below).
+
+## Knowledge Graph (`graphify-out/`)
+
+`graphify-out/` is a **generated** knowledge graph of the repository, rebuilt with
+`graphify update .` (AST-only, no API cost). Treat it two ways:
+
+- **Do not code-review it.** `graphify-out/graph.json`, `graph.html`,
+  `GRAPH_REPORT.md`, and `manifest.json` are machine-generated artifacts — skip
+  them during review and never comment on their contents or diffs, exactly as
+  with other generated files (`zz_generated_*.go`, manifests under `config/`). A
+  PR that regenerates the graph alongside a code change is expected and needs no
+  scrutiny.
+- **Use it for reviews.** Read `graphify-out/GRAPH_REPORT.md` for the map of god
+  nodes (the most-connected core abstractions), community structure, and
+  cross-file relationships. Use it to reason about how a change ripples through
+  the codebase — what calls the modified code, which modules it couples to, and
+  whether editing a god node has wide blast radius — instead of grepping the tree
+  blind.
 
 ## Testing Expectations
 
