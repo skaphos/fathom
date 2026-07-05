@@ -37,12 +37,16 @@ var _ = Describe("Adapter RBAC impersonation posture", func() {
 		full := append([]string{"auth", "can-i"}, args...)
 		full = append(full, "--as="+as)
 		out, _ := utils.Run(exec.Command("kubectl", full...))
-		// Ignore any leading warnings; the verdict is the last non-empty line.
-		lines := strings.Fields(out)
-		if len(lines) == 0 {
-			return ""
+		// The verdict is the final line; any warnings precede it. Take the last
+		// non-empty line, trimmed — not the last whitespace token, which could be
+		// a word from a warning.
+		var verdict string
+		for _, line := range strings.Split(out, "\n") {
+			if s := strings.TrimSpace(line); s != "" {
+				verdict = s
+			}
 		}
-		return lines[len(lines)-1]
+		return verdict
 	}
 
 	It("denies the operator ServiceAccount direct addon reads", func() {

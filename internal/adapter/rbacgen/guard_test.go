@@ -59,8 +59,9 @@ func TestModelGrantsAreJustified(t *testing.T) {
 
 // TestUnjustifiedGrantsCatchesViolations proves the guard actually flags an
 // unjustified grant — a write with no Justification, a READ with no Justification,
-// and an addon with no rules — so a passing TestModelGrantsAreJustified is
-// meaningful rather than vacuous.
+// a write whose Justification lacks the WRITE EXCEPTION marker, and an addon with
+// no rules — so a passing TestModelGrantsAreJustified is meaningful rather than
+// vacuous.
 func TestUnjustifiedGrantsCatchesViolations(t *testing.T) {
 	bad := []rbacgen.AddonRBAC{
 		{Addon: "rogue-write", ServiceAccount: "addon-rogue-write", Rules: []adapter.PolicyRule{
@@ -69,18 +70,21 @@ func TestUnjustifiedGrantsCatchesViolations(t *testing.T) {
 		{Addon: "rogue-read", ServiceAccount: "addon-rogue-read", Rules: []adapter.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get"}}, // read, no justification
 		}},
+		{Addon: "write-unmarked", ServiceAccount: "addon-write-unmarked", Rules: []adapter.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create"}, Justification: "launch a probe pod"}, // justified but not WRITE EXCEPTION-marked
+		}},
 		{Addon: "empty", ServiceAccount: "addon-empty"}, // no rules at all
 		{Addon: "ok", ServiceAccount: "addon-ok", Rules: []adapter.PolicyRule{
 			{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"}, Justification: "read workload health"},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create"}, Justification: "WRITE EXCEPTION: probe pod"},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create"}, Justification: rbacgen.WriteExceptionPrefix + ": probe pod"},
 		}},
 	}
 	got := rbacgen.UnjustifiedGrants(bad)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 violations (rogue-write + rogue-read + empty), got %d: %v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("expected 4 violations (rogue-write + rogue-read + write-unmarked + empty), got %d: %v", len(got), got)
 	}
 	joined := strings.Join(got, "\n")
-	for _, want := range []string{"rogue-write", "rogue-read", "empty"} {
+	for _, want := range []string{"rogue-write", "rogue-read", "write-unmarked", "empty"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("violations should name %q, got:\n%s", want, joined)
 		}

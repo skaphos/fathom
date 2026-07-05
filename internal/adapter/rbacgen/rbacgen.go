@@ -86,12 +86,19 @@ func Collect(adapters []adapter.Adapter) []AddonRBAC {
 	return out
 }
 
+// WriteExceptionPrefix is the marker a write rule's Justification must begin with,
+// so a grant that steps outside read-only is unmistakable in both the generated
+// RBAC matrix and review. The guard enforces it (see UnjustifiedGrants).
+const WriteExceptionPrefix = "WRITE EXCEPTION"
+
 // UnjustifiedGrants returns a human-readable message for every grant that would
-// fail the guard: any rule with no adapter.PolicyRule.Justification, or an addon
-// that declared no rules at all. Every grant — read or write — must defend why it
-// is needed and why less would not suffice, so the generated RBAC matrix is a
-// complete, auditable least-privilege record. An empty result means every rule of
-// every addon is justified. It is the single security predicate the guard enforces.
+// fail the guard: any rule with no adapter.PolicyRule.Justification, any write
+// rule whose Justification is not marked WriteExceptionPrefix, or an addon that
+// declared no rules at all. Every grant — read or write — must defend why it is
+// needed and why less would not suffice, and every write must additionally be
+// flagged, so the generated RBAC matrix is a complete, auditable least-privilege
+// record. An empty result means every rule of every addon is justified (and every
+// write is marked). It is the single security predicate the guard enforces.
 func UnjustifiedGrants(addons []AddonRBAC) []string {
 	var violations []string
 	for _, a := range addons {
@@ -106,6 +113,10 @@ func UnjustifiedGrants(addons []AddonRBAC) []string {
 					kind = "WRITE"
 				}
 				violations = append(violations, fmt.Sprintf("addon %q: %s grant on %v (verbs %v) has no Justification", a.Addon, kind, r.Resources, r.Verbs))
+				continue
+			}
+			if !r.IsReadOnly() && !strings.HasPrefix(r.Justification, WriteExceptionPrefix) {
+				violations = append(violations, fmt.Sprintf("addon %q: write grant on %v (verbs %v) must prefix its Justification with %q", a.Addon, r.Resources, r.Verbs, WriteExceptionPrefix))
 			}
 		}
 	}
