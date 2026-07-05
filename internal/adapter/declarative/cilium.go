@@ -15,7 +15,7 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // does not run Cilium rolls up green (NotFound -> Skipped).
 //
 // The RBAC field is documentation-only; the enforced +kubebuilder:rbac markers
-// are on NewCiliumEngine below.
+// for all declarative adapters live in rbac.go.
 var CiliumDefinition = AddonDefinition{
 	AddonType:      "cilium",
 	AdapterVersion: "0.1.0",
@@ -77,17 +77,7 @@ var CiliumDefinition = AddonDefinition{
 
 // NewCiliumEngine returns the declarative Cilium adapter. It panics only on a
 // programmer error in CiliumDefinition, which is caught by any test that
-// constructs the engine.
-//
-// These +kubebuilder:rbac markers are the enforced read permissions for the
-// Cilium adapter (the RBACRule field on CiliumDefinition is documentation);
-// controller-gen aggregates them into config/rbac/role.yaml. apps/daemonsets is
-// read only by Cilium among the adapters, so this must stay on a scanned file.
-//
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+// constructs the engine. RBAC markers live in rbac.go.
 func NewCiliumEngine() *Engine {
 	return MustEngine(CiliumDefinition)
 }
