@@ -112,10 +112,11 @@ releases:
     wait: true
     timeout: 600
     values:
-      # kind's kubelets serve self-signed certs without the node IP in the
-      # SANs, so metrics-server needs --kubelet-insecure-tls to scrape them —
-      # the documented metrics-server-on-kind configuration. The chart creates
-      # the v1beta1.metrics.k8s.io APIService, which Fathom's api_availability
+      # kind's kubelets serve certs that are not signed by the cluster CA, so
+      # metrics-server needs --kubelet-insecure-tls to scrape them — the
+      # upstream-documented escape hatch for test clusters (README
+      # "Requirements"; not for production). The chart creates the
+      # v1beta1.metrics.k8s.io APIService, which Fathom's api_availability
       # family asserts Available=True against.
       - args:
           - --kubelet-insecure-tls
