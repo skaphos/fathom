@@ -26,17 +26,13 @@ SPDX-License-Identifier: MIT
 //   - The OutcomeError vs OutcomeFail split is preserved: transport/selector
 //     errors -> Error; an object that exists but is unhealthy -> Fail.
 //
-// RBAC: the +kubebuilder:rbac markers below are the union of reads every
-// declarative AddonDefinition performs (the RBACRule field on each definition is
-// documentation, not enforced). controller-gen aggregates them into
-// config/rbac/role.yaml. They live on the package doc -- one scanned location
-// owning the declarative reads -- because controller-gen did not reliably
-// collect equivalent markers placed on individual engine constructors.
-//
-// +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=external-secrets.io,resources=externalsecrets,verbs=get;list;watch
+// RBAC: declarative adapters' cluster reads are NOT granted to the operator
+// ServiceAccount. Each definition's own RBAC field (surfaced via
+// Engine.RBACRules) is the per-addon least-privilege source the RBAC generator
+// emits a scoped read-only ClusterRole from, into config/rbac/addons/; the
+// operator only impersonates that ServiceAccount at run time (SKA-58). There are
+// deliberately no +kubebuilder:rbac markers here — the engine's reads are scoped
+// per addon, not aggregated onto the operator role.
 package declarative
 
 import "github.com/skaphos/fathom/pkg/adapter"
@@ -108,10 +104,12 @@ type AddonDefinition struct {
 	// family under which the all-disabled sentinel Skipped is emitted.
 	Families []FamilyDefinition
 
-	// RBAC holds the +kubebuilder:rbac marker bodies this definition needs.
-	// Recorded for documentation and codegen; the engine does not enforce
-	// them at runtime (the real markers must live on a scanned Go source file).
-	RBAC []RBACRule
+	// RBAC holds the least-privilege grants this definition's evaluators need.
+	// The RBAC generator emits a per-addon read-only ClusterRole from them
+	// (surfaced via Engine.RBACRules), and the reconciler impersonates that
+	// addon's ServiceAccount when it runs the engine — so these rules are the
+	// engine's real, enforced blast radius, not documentation (SKA-58).
+	RBAC []adapter.PolicyRule
 }
 
 // VersionSource identifies the workload whose app.kubernetes.io/version label
@@ -139,17 +137,6 @@ func (d AddonDefinition) defaultPosture() Posture {
 		return Optional
 	}
 	return Required
-}
-
-// RBACRule is a least-privilege grant the definition's evaluators require.
-type RBACRule struct {
-	// APIGroups is the API group, "" for core (e.g. "apps",
-	// "apiextensions.k8s.io").
-	APIGroups string
-	// Resources is the resource plural (e.g. "deployments").
-	Resources string
-	// Verbs is the semicolon-separated verb list (e.g. "get;list;watch").
-	Verbs string
 }
 
 // FamilyDefinition is one policy-keyed check family. Each typed component slice

@@ -27,6 +27,13 @@ The chart sources its CRDs and the manager ClusterRole rules from `config/`
 (kustomize stays the source of truth). Regenerate the derived bits with
 `go -C tools tool task helm:sync`.
 
+Each addon adapter runs under its **own least-privilege ServiceAccount**: the
+operator holds no addon read permissions and instead impersonates a per-addon
+ServiceAccount for each check, so an adapter reads exactly what it declares. The
+per-addon ServiceAccounts, read-only ClusterRoles, and the operator's scoped
+`impersonate` Role are generated from the adapters (`task gen:addon-rbac`); the
+full permission matrix is [`docs/reference/rbac.md`](docs/reference/rbac.md).
+
 ## AddonCheck Example
 
 The built-in cert-manager adapter supports `system_health`, `issuer_health`, and

@@ -152,6 +152,14 @@ default it renders:
 - A `controller-manager-metrics-service` exposing `:8443` (HTTPS).
 - The Deployment with `--metrics-bind-address=:8443` injected by
   `manager_metrics_patch.yaml`.
+- Per-addon least-privilege RBAC (`config/rbac/addons/`): one ServiceAccount +
+  read-only ClusterRole + binding per built-in adapter, plus a namespaced
+  `impersonate` Role for the operator. These are **generated** from the adapters
+  (`task gen:addon-rbac`, gated by `verify-generated`); the operator impersonates
+  each addon ServiceAccount at run time so it reads under least privilege rather
+  than an aggregate role. This changes adapter reads from cached to live
+  (per-check) API calls — impersonation cannot use the manager cache. The full
+  matrix is `docs/reference/rbac.md`.
 
 The operator-side default probe image is `ghcr.io/skaphos/fathom-probe:vX.Y.Z`
 (same `vX.Y.Z` as the operator) and is launched on-demand by probe-using

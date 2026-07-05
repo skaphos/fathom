@@ -90,10 +90,31 @@ func (Adapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{AddonTypes: []string{Name}, Families: []adapter.Family{FamilySystemHealth, FamilyDNSResolution}}
 }
 
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods;services,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=create;delete
-// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
+// RBACRules declares CoreDNS's least-privilege grants (adapter.RBACDeclarer): the
+// passive workload/endpoint reads, plus the probe-pod lifecycle write the
+// DNS-resolution check performs — all under CoreDNS's impersonated ServiceAccount
+// (SKA-58). Each rule carries a defensive Justification (why it is needed and why
+// less would not suffice); the generator emits a scoped ClusterRole and renders
+// the justifications into docs/reference/rbac.md, and the guard permits the pods
+// create;delete only because it is justified.
+func (Adapter) RBACRules() []adapter.PolicyRule {
+	return []adapter.PolicyRule{
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the CoreDNS Deployment to score replica/rollout readiness. list+watch because the deployment name is policy-overridable; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods", "services"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read CoreDNS Pods (restart counts, readiness) and the kube-dns Service (the probe's resolution target). list is required because Pod names are dynamic; read-only and limited to these two core kinds."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete"},
+			Justification: "WRITE EXCEPTION: launch and immediately tear down a single-shot DNS probe Pod per check to measure resolution from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; no in-process read can observe real in-cluster DNS. The Pod is deleted as soon as it completes — no update, no long-lived workload."},
+		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"},
+			Justification: "Read the EndpointSlices behind the DNS Service to confirm it has ready backends. list is required to enumerate slices for the Service; read-only."},
+	}
+}
+
+// CoreDNS's cluster permissions (including the probe-pod create;delete) are NOT
+// granted to the operator ServiceAccount. They live on this adapter's per-addon
+// ServiceAccount (RBACRules above), generated into
+// config/rbac/addons/addon-coredns.yaml; the operator only impersonates that
+// ServiceAccount at run time (SKA-58). No +kubebuilder:rbac markers here.
 
 func (a Adapter) Run(ctx context.Context, req adapter.Request) (result adapter.Result, err error) {
 	ctx, span := tracer.Start(ctx, Name+".run")

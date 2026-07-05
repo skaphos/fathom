@@ -35,6 +35,7 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/certmanager"
 	"github.com/skaphos/fathom/internal/adapter/coredns"
 	"github.com/skaphos/fathom/internal/adapter/declarative"
+	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
 	"github.com/skaphos/fathom/internal/metrics"
@@ -159,7 +160,7 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // values that reconcilers need to relay into per-Run adapter requests (e.g.
 // the operator-level probe image).
 func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
-	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), builtInAdapters()...)
+	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), BuiltInAdapters()...)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +169,13 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	tracer := otel.Tracer(controller.TracerScope)
 	return []Setupper{
 		&controller.AddonCheckReconciler{
-			Client:     mgr.GetClient(),
-			Scheme:     mgr.GetScheme(),
-			Adapters:   adapterRegistry,
-			ProbeImage: opts.ProbeImage,
-			Tracer:     tracer,
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Adapters:     adapterRegistry,
+			ProbeImage:   opts.ProbeImage,
+			Tracer:       tracer,
+			AddonClients: impersonation.New(mgr),
+			Namespace:    opts.Namespace,
 		},
 		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
 		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
@@ -205,7 +208,12 @@ func adapterName(a adapter.Adapter) string {
 	return a.Name()
 }
 
-func builtInAdapters() []adapter.Adapter {
+// BuiltInAdapters returns the set of compiled-in adapters the operator ships,
+// in a stable order. It is the single source of truth for "which adapters exist"
+// — consumed both at startup (BuildAdapterRegistry) and by the RBAC generator and
+// its read-only guard (internal/adapter/rbacgen), so a newly added adapter cannot
+// ship without a generated per-addon role (SKA-58).
+func BuiltInAdapters() []adapter.Adapter {
 	return []adapter.Adapter{certmanager.New(), coredns.New(), declarative.NewExternalSecretsEngine(), declarative.NewCiliumEngine()}
 }
 
