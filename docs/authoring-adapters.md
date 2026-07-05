@@ -123,7 +123,7 @@ Cluster-scoped; one `CheckResult` per name.
 declarative.CRDCheck{
     Names:                     []string{"dnsendpoints.externaldns.k8s.io"},
     SupportedVersions:         []string{"v1alpha1"}, // descending preference; MUST be non-empty
-    Absence:                   declarative.Required,
+    Absence:                   declarative.Optional, // the CRD source is an opt-in external-dns feature
     UnsupportedVersionOutcome: adapter.OutcomeWarn,  // default when empty
 }
 ```
@@ -142,18 +142,23 @@ Lists managed CRs (or `APIService`s) across namespaces and scores
 
 ```go
 declarative.ConditionCheck{
-    APIVersion:        "externaldns.k8s.io/v1alpha1",
-    VersionCRD:        "dnsendpoints.externaldns.k8s.io", // resolve served version before listing
-    SupportedVersions: []string{"v1alpha1"},
-    Kind:              "DNSEndpoint",
-    ListKind:          "DNSEndpointList",
-    ListName:          "dnsendpoints",   // stable name on list-level results
-    DefaultNamespace:  "external-dns",
-    ConditionType:     "Ready",
+    APIVersion:        "gateway.networking.k8s.io/v1",
+    VersionCRD:        "gateways.gateway.networking.k8s.io", // resolve served version before listing
+    SupportedVersions: []string{"v1", "v1beta1"},
+    Kind:              "Gateway",
+    ListKind:          "GatewayList",
+    ListName:          "gateways",       // stable name on list-level results
+    DefaultNamespace:  "envoy-gateway-system",
+    ConditionType:     "Programmed",
     ExpectedStatus:    "True",
     // AbsentCondition / Mismatch default to OutcomeFail.
 }
 ```
+
+Check that the target kind actually carries top-level `status.conditions`
+before reaching for this — some kinds don't (`DNSEndpoint` has no conditions
+at all; `HTTPRoute` nests its conditions per-parent under `status.parents`),
+and those can't be expressed as a `ConditionCheck`.
 
 `VersionCRD` + `SupportedVersions` let the check keep working on clusters that
 serve only a legacy API version. An **empty result set** across all namespaces
