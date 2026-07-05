@@ -34,6 +34,11 @@ type EvalContext struct {
 	Family adapter.Family
 	// Policy is the resolved policy for this family (Enabled==true).
 	Policy adapter.FamilyPolicy
+	// DefaultPosture is the addon-level absence default (from
+	// AddonDefinition.defaultPosture) a component inherits when it declares no
+	// Posture of its own. The engine sets it; evaluators resolve it via
+	// effectiveAbsence.
+	DefaultPosture Posture
 }
 
 // Evaluator reads live cluster state and returns zero or more CheckResults, all
@@ -157,14 +162,29 @@ func podTarget(p *corev1.Pod) adapter.TargetRef {
 	return adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Namespace: p.Namespace, Name: p.Name}
 }
 
-// absenceOutcome maps a Posture to the outcome (and skipReason) used when a
-// named singleton target is NotFound: Required -> Fail (no reason), Optional ->
-// Skipped ("TargetAbsent").
-func absenceOutcome(p Posture) (adapter.Outcome, string) {
-	if p == Required {
-		return adapter.OutcomeFail, ""
+// effectiveAbsence resolves the Posture for a NotFound target: the component's
+// own Posture when set, otherwise the addon-level DefaultPosture, otherwise the
+// required-by-default Required. It never returns "".
+func effectiveAbsence(component, dflt Posture) Posture {
+	if component != "" {
+		return component
 	}
-	return adapter.OutcomeSkipped, "TargetAbsent"
+	if dflt != "" {
+		return dflt
+	}
+	return Required
+}
+
+// absenceOutcome maps the effective Posture to the Outcome used when a named
+// singleton target is NotFound: the explicit Optional opt-out -> Skipped;
+// Required (the default) -> Fail. Callers additionally tag the result with the
+// adapter.DetailAbsent marker via adapter.MarkAbsent so "not installed" stays
+// queryable regardless of the verdict (SKA-526).
+func absenceOutcome(p Posture) adapter.Outcome {
+	if p == Optional {
+		return adapter.OutcomeSkipped
+	}
+	return adapter.OutcomeFail
 }
 
 // result builds a CheckResult tagged with family, timed from started, and
@@ -183,8 +203,9 @@ func result(family adapter.Family, ref adapter.TargetRef, o adapter.Outcome,
 }
 
 // skippedResult builds an OutcomeSkipped CheckResult carrying the
-// machine-readable Details["skipReason"] (one of FamilyDisabled, TargetAbsent,
-// NoMatchingObjects).
+// machine-readable Details["skipReason"] (one of FamilyDisabled,
+// NoMatchingObjects). A NotFound singleton is not a skipReason category — it is
+// tagged with the cross-outcome adapter.DetailAbsent marker instead (SKA-526).
 func skippedResult(family adapter.Family, ref adapter.TargetRef, summary, skipReason string) adapter.CheckResult {
 	return adapter.CheckResult{
 		Family:     family,
@@ -194,17 +215,4 @@ func skippedResult(family adapter.Family, ref adapter.TargetRef, summary, skipRe
 		Details:    map[string]string{"skipReason": skipReason},
 		ObservedAt: time.Now(),
 	}
-}
-
-// withSkipReason records reason under Details["skipReason"] when reason is
-// non-empty, allocating the map if needed. It is a no-op for a healthy target.
-func withSkipReason(details map[string]string, reason string) map[string]string {
-	if reason == "" {
-		return details
-	}
-	if details == nil {
-		details = map[string]string{}
-	}
-	details["skipReason"] = reason
-	return details
 }

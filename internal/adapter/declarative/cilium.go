@@ -11,14 +11,17 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // hand-written internal/adapter/cilium package):
 // three families (control_plane_health, agent_health, crd_health) checking the
 // cilium-operator Deployment and pods, the cilium agent DaemonSet and pods, and
-// the core Cilium CRDs. Every workload and CRD is Optional, so a cluster that
-// does not run Cilium rolls up green (NotFound -> Skipped).
+// the core Cilium CRDs. The addon is Optional, so on a cluster that does not run
+// Cilium every NotFound target scores Skipped and carries the adapter.DetailAbsent
+// marker. The persisted verdict of such a run is Skipped, not Pass — only the
+// metrics/tracing FamilyOutcome roll-up relabels an all-Skipped family as Pass.
 //
 // The RBAC field is documentation-only; the enforced +kubebuilder:rbac markers
 // for all declarative adapters live on the package doc in definition.go.
 var CiliumDefinition = AddonDefinition{
 	AddonType:      "cilium",
-	AdapterVersion: "0.1.0",
+	AdapterVersion: "0.1.1",
+	Optional:       true,
 	RBAC: []RBACRule{
 		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
 		{APIGroups: "apps", Resources: "daemonsets", Verbs: "get;list;watch"},
@@ -35,7 +38,6 @@ var CiliumDefinition = AddonDefinition{
 				NameThresholdKey:        "operatorDeploymentName",
 				DefaultName:             "cilium-operator",
 				Component:               "cilium-operator",
-				Absence:                 Optional,
 				CheckPods:               true,
 				RestartWarnThresholdKey: "restartWarnCount",
 				DefaultRestartWarn:      3,
@@ -50,7 +52,6 @@ var CiliumDefinition = AddonDefinition{
 				NameThresholdKey:        "agentDaemonSetName",
 				DefaultName:             "cilium",
 				Component:               "cilium-agent",
-				Absence:                 Optional,
 				CheckPods:               true,
 				RestartWarnThresholdKey: "restartWarnCount",
 				DefaultRestartWarn:      3,
@@ -68,7 +69,6 @@ var CiliumDefinition = AddonDefinition{
 					"ciliumnodes.cilium.io",
 				},
 				SupportedVersions:         []string{"v2", "v2alpha1"},
-				Absence:                   Optional,
 				UnsupportedVersionOutcome: adapter.OutcomeWarn,
 			}},
 		},

@@ -89,6 +89,15 @@ type AddonCheckStatus struct {
 	// +optional
 	LastResult string `json:"lastResult,omitempty"`
 
+	// Absent is the number of checks in the most recent run whose target was not
+	// installed — the required-absent Fails and optional-absent Skips alike. It
+	// makes "not installed" queryable and distinct from "unhealthy" (a Fail whose
+	// target exists) and "disabled" (a Skipped family). Zero when every checked
+	// target is present (SKA-526).
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	Absent int32 `json:"absent,omitempty"`
+
 	// LastReportName names the HealthReport created for the most recent run.
 	// +optional
 	LastReportName string `json:"lastReportName,omitempty"`

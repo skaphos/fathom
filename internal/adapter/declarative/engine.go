@@ -147,11 +147,12 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 		}
 		famStart := time.Now()
 		ec := EvalContext{
-			Ctx:    ctx,
-			Client: req.Client,
-			Logger: req.Logger.WithValues("family", fr.def.Name),
-			Family: fr.def.Name,
-			Policy: fr.policy,
+			Ctx:            ctx,
+			Client:         req.Client,
+			Logger:         req.Logger.WithValues("family", fr.def.Name),
+			Family:         fr.def.Name,
+			Policy:         fr.policy,
+			DefaultPosture: e.def.defaultPosture(),
 		}
 		for _, ev := range fr.def.evaluators() {
 			out, evErr := ev.Evaluate(ec)

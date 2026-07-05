@@ -155,6 +155,16 @@ spec:
           status:
             description: AddonCheckStatus defines the observed state of AddonCheck.
             properties:
+              absent:
+                description: |-
+                  Absent is the number of checks in the most recent run whose target was not
+                  installed — the required-absent Fails and optional-absent Skips alike. It
+                  makes "not installed" queryable and distinct from "unhealthy" (a Fail whose
+                  target exists) and "disabled" (a Skipped family). Zero when every checked
+                  target is present (SKA-526).
+                format: int32
+                minimum: 0
+                type: integer
               conditions:
                 description: |-
                   Conditions summarize whether the controller accepted and processed this

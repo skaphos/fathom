@@ -100,6 +100,53 @@ func TestWorkload_StatefulSetScaledToZeroWarnsAndSkipsPods(t *testing.T) {
 func TestWorkload_StatefulSetAbsentRequiredFails(t *testing.T) {
 	checks := runEngine(t, stsEngine("db", "prod"), nil) // no objects
 	assertHasOutcome(t, checks, "StatefulSet", "db", adapter.OutcomeFail, "not found")
+	// Required-absent is a Fail that still carries the absent marker (SKA-526),
+	// so "not installed" is distinguishable from an unhealthy-but-present target.
+	assertHasDetail(t, checks, "StatefulSet", "db", adapter.DetailAbsent, "true")
+}
+
+// absenceEngine builds a single Deployment workload with the given component
+// Posture (blank inherits the addon default) and addon-level Optional, to
+// exercise required-by-default resolution and per-component override (SKA-526).
+func absenceEngine(component Posture, addonOptional bool) *Engine {
+	return MustEngine(AddonDefinition{
+		AddonType:      "app",
+		AdapterVersion: "0.0.1",
+		Optional:       addonOptional,
+		Families: []FamilyDefinition{{
+			Name:           "system_health",
+			DefaultEnabled: true,
+			Workloads: []WorkloadCheck{{
+				Kind:             KindDeployment,
+				DefaultNamespace: "prod",
+				DefaultName:      "app",
+				Component:        "app",
+				Absence:          component,
+			}},
+		}},
+	})
+}
+
+func TestWorkload_AbsenceResolution(t *testing.T) {
+	tests := []struct {
+		name          string
+		component     Posture
+		addonOptional bool
+		want          adapter.Outcome
+	}{
+		{"unset posture defaults to Required -> Fail", "", false, adapter.OutcomeFail},
+		{"addon Optional makes unset posture Skipped", "", true, adapter.OutcomeSkipped},
+		{"component Required overrides addon Optional", Required, true, adapter.OutcomeFail},
+		{"component Optional overrides required default", Optional, false, adapter.OutcomeSkipped},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			checks := runEngine(t, absenceEngine(tc.component, tc.addonOptional), nil) // no objects
+			assertHasOutcome(t, checks, "Deployment", "app", tc.want, "not found")
+			// Every absence path, Fail or Skipped, carries the absent marker.
+			assertHasDetail(t, checks, "Deployment", "app", adapter.DetailAbsent, "true")
+		})
+	}
 }
 
 // deployEngine builds a Deployment workload with a policy-overridable restart

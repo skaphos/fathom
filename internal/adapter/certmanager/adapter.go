@@ -41,7 +41,7 @@ var tracer = otel.Tracer("github.com/skaphos/fathom/internal/adapter/certmanager
 
 const (
 	Name               = "cert-manager"
-	Version            = "0.1.0"
+	Version            = "0.1.1"
 	FamilySystemHealth = adapter.Family("system_health")
 	FamilyIssuerHealth = adapter.Family("issuer_health")
 	FamilyCertHealth   = adapter.Family("certificate_health")
@@ -265,7 +265,7 @@ func (Adapter) checkDeployment(ctx context.Context, c client.Client, namespace, 
 	var deployment appsv1.Deployment
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &deployment); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager deployment is missing", map[string]string{"component": name}, started)
+			return nil, check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager deployment is missing", adapter.MarkAbsent(map[string]string{"component": name}), started)
 		}
 		return nil, check(FamilySystemHealth, target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager deployment: %v", err), map[string]string{"component": name}, started)
 	}
@@ -360,7 +360,7 @@ func (Adapter) checkCRD(ctx context.Context, c client.Client, name string) adapt
 	var crd apixv1.CustomResourceDefinition
 	if err := c.Get(ctx, types.NamespacedName{Name: name}, &crd); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager CRD is missing", map[string]string{"crd": name}, started)
+			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager CRD is missing", adapter.MarkAbsent(map[string]string{"crd": name}), started)
 		}
 		return check(FamilySystemHealth, target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager CRD: %v", err), map[string]string{"crd": name}, started)
 	}
@@ -383,7 +383,7 @@ func (Adapter) checkWebhookService(ctx context.Context, c client.Client, namespa
 	var service corev1.Service
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, &service); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager webhook service is missing", map[string]string{"component": serviceName}, started)
+			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager webhook service is missing", adapter.MarkAbsent(map[string]string{"component": serviceName}), started)
 		}
 		return check(FamilySystemHealth, target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager webhook service: %v", err), map[string]string{"component": serviceName}, started)
 	}
@@ -399,7 +399,7 @@ func (Adapter) checkValidatingWebhookConfiguration(ctx context.Context, c client
 	var config admissionv1.ValidatingWebhookConfiguration
 	if err := c.Get(ctx, types.NamespacedName{Name: configName}, &config); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager validating webhook configuration is missing", map[string]string{"component": configName}, started)
+			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager validating webhook configuration is missing", adapter.MarkAbsent(map[string]string{"component": configName}), started)
 		}
 		return check(FamilySystemHealth, target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager validating webhook configuration: %v", err), map[string]string{"component": configName}, started)
 	}
@@ -415,7 +415,7 @@ func (Adapter) checkMutatingWebhookConfiguration(ctx context.Context, c client.C
 	var config admissionv1.MutatingWebhookConfiguration
 	if err := c.Get(ctx, types.NamespacedName{Name: configName}, &config); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is missing", map[string]string{"component": configName}, started)
+			return check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager mutating webhook configuration is missing", adapter.MarkAbsent(map[string]string{"component": configName}), started)
 		}
 		return check(FamilySystemHealth, target, adapter.OutcomeError, fmt.Sprintf("failed to read cert-manager mutating webhook configuration: %v", err), map[string]string{"component": configName}, started)
 	}

@@ -39,8 +39,8 @@ func TestEngine_Metadata(t *testing.T) {
 	if e.Name() != "cilium" {
 		t.Fatalf("Name: got %q, want cilium", e.Name())
 	}
-	if e.Version() != "0.1.0" {
-		t.Fatalf("Version: got %q, want 0.1.0", e.Version())
+	if e.Version() != "0.1.1" {
+		t.Fatalf("Version: got %q, want 0.1.1", e.Version())
 	}
 	if e.ContractVersion() != adapter.ContractVersion {
 		t.Fatalf("ContractVersion: got %q, want %q", e.ContractVersion(), adapter.ContractVersion)
@@ -80,7 +80,7 @@ func TestEngine_AllFamiliesPassByDefault(t *testing.T) {
 	assertFamily(t, result.Checks, "CustomResourceDefinition", "ciliumnodes.cilium.io", adapter.Family("crd_health"))
 }
 
-func TestEngine_NotInstalledRollsUpGreen(t *testing.T) {
+func TestEngine_NotInstalledOptionalAbsent(t *testing.T) {
 	result, err := NewCiliumEngine().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t),
 		Logger: logr.Discard(),
@@ -93,13 +93,18 @@ func TestEngine_NotInstalledRollsUpGreen(t *testing.T) {
 		t.Fatalf("checks: got %d, want 7: %#v", len(result.Checks), result.Checks)
 	}
 	for _, check := range result.Checks {
+		// Cilium is an Optional addon, so each absent target is Skipped and
+		// carries the absent marker (SKA-526) — absence is a fact about the
+		// target, not a skipReason category.
 		if check.Outcome != adapter.OutcomeSkipped {
 			t.Fatalf("check %s/%s outcome: got %s, want Skipped: %s", check.TargetRef.Kind, check.TargetRef.Name, check.Outcome, check.Summary)
 		}
-		if check.Details["skipReason"] != "TargetAbsent" {
-			t.Fatalf("check %s/%s skipReason: got %q, want TargetAbsent", check.TargetRef.Kind, check.TargetRef.Name, check.Details["skipReason"])
+		if !adapter.IsAbsent(check.Details) {
+			t.Fatalf("check %s/%s: want absent marker, got Details=%v", check.TargetRef.Kind, check.TargetRef.Name, check.Details)
 		}
 	}
+	// The persisted verdict of an all-Skipped run is Skipped; only the metrics/
+	// tracing FamilyOutcome roll-up relabels an absent Optional family as Pass.
 	for _, family := range []adapter.Family{"control_plane_health", "agent_health", "crd_health"} {
 		if got := adapter.FamilyOutcome(result.Checks, family); got != adapter.OutcomePass {
 			t.Fatalf("FamilyOutcome(%s): got %s, want Pass", family, got)

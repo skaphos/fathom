@@ -67,3 +67,28 @@ func TestFamilyOutcome(t *testing.T) {
 		})
 	}
 }
+
+func TestMarkAbsentAndIsAbsent(t *testing.T) {
+	// nil map: MarkAbsent allocates one and IsAbsent reports true.
+	m := adapter.MarkAbsent(nil)
+	if !adapter.IsAbsent(m) {
+		t.Fatalf("IsAbsent(MarkAbsent(nil)) = false, want true (got %v)", m)
+	}
+	if m[adapter.DetailAbsent] != "true" {
+		t.Fatalf("MarkAbsent(nil)[%q] = %q, want \"true\"", adapter.DetailAbsent, m[adapter.DetailAbsent])
+	}
+
+	// Existing details are preserved and the marker is added alongside them.
+	m = adapter.MarkAbsent(map[string]string{"component": "app"})
+	if m["component"] != "app" || !adapter.IsAbsent(m) {
+		t.Fatalf("MarkAbsent(existing) preserved+marked: got %v", m)
+	}
+
+	// Absent nil or unmarked details are not absent.
+	if adapter.IsAbsent(nil) {
+		t.Fatal("IsAbsent(nil) = true, want false")
+	}
+	if adapter.IsAbsent(map[string]string{"skipReason": "FamilyDisabled"}) {
+		t.Fatal("IsAbsent(non-absent details) = true, want false")
+	}
+}

@@ -315,6 +315,7 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 
 	check.Status.LastRunTime = &observedAt
 	check.Status.LastResult = newResult
+	check.Status.Absent = countAbsent(result.Checks)
 
 	// An adapter Run error reports a genuine health condition (the adapter could
 	// not determine state — e.g. the API server was unreachable), not a
@@ -546,6 +547,19 @@ func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResu
 	default:
 		return fathomv1alpha1.HealthReportResultUnknown
 	}
+}
+
+// countAbsent returns the number of checks whose target was reported not
+// installed (carrying the adapter.DetailAbsent marker) — required-absent Fails
+// and optional-absent Skips alike. It feeds AddonCheck.status.absent (SKA-526).
+func countAbsent(checks []adapter.CheckResult) int32 {
+	var n int32
+	for _, c := range checks {
+		if adapter.IsAbsent(c.Details) {
+			n++
+		}
+	}
+	return n
 }
 
 // SetupWithManager sets up the controller with the Manager.
