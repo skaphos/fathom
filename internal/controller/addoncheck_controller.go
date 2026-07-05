@@ -8,7 +8,9 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -136,13 +138,6 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	before := check.Status.DeepCopy()
 	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               addonCheckConditionAccepted,
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: check.Generation,
-		Reason:             "SpecAccepted",
-		Message:            "AddonCheck specification has been accepted for reconciliation.",
-	})
 
 	pausedStatus := metav1.ConditionFalse
 	pausedReason := "RunEnabled"
@@ -161,9 +156,28 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	})
 	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
 
+	// Validate spec.policy against the resolved adapter before running it. An
+	// unknown family key used to be silently ignored, and an invalid selector
+	// only surfaced as a per-check Error after a wasted adapter run (SKA-54);
+	// both now set Accepted=False and gate the run, so the misconfiguration is
+	// loud and no run is wasted. An invalid policy is left to a spec change to
+	// clear, like a paused or adapterless check.
+	policyErrs := validateAddonCheckPolicy(&check, selectedAdapter)
+	policyValid := len(policyErrs) == 0
+	setAddonCheckAccepted(&check, policyErrs)
+	if adapterReady && !policyValid {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               addonCheckConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: check.Generation,
+			Reason:             "InvalidPolicy",
+			Message:            "AddonCheck policy is invalid; adapter execution is skipped until it is corrected.",
+		})
+	}
+
 	interval := addonCheckInterval(&check)
 	runNow := check.Annotations[annotationRunNow]
-	if adapterReady && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
+	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -183,7 +197,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// stalls after the first run. Paused / adapterless checks are left to a
 	// spec change (generation bump) to wake them.
 	result = ctrl.Result{}
-	if adapterReady {
+	if adapterReady && policyValid {
 		result.RequeueAfter = interval
 	}
 
@@ -398,6 +412,73 @@ func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
 		return check.Spec.Interval.Duration
 	}
 	return defaultAddonCheckInterval
+}
+
+// setAddonCheckAccepted records the Accepted condition from policy validation:
+// True/SpecAccepted when policyErrs is empty, otherwise False/InvalidPolicy
+// carrying the (deterministically ordered) list of problems.
+func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string) {
+	cond := metav1.Condition{
+		Type:               addonCheckConditionAccepted,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "SpecAccepted",
+		Message:            "AddonCheck specification has been accepted for reconciliation.",
+	}
+	if len(policyErrs) > 0 {
+		cond.Status = metav1.ConditionFalse
+		cond.Reason = "InvalidPolicy"
+		cond.Message = "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + "."
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, cond)
+}
+
+// validateAddonCheckPolicy reports spec.policy misconfiguration the controller
+// can detect without running the adapter: family keys the selected adapter does
+// not advertise, and structurally-invalid label selectors. The returned
+// problems are deterministically ordered (stable Accepted-condition message) and
+// empty when the policy is valid.
+//
+// Family validation is skipped when selectedAdapter is nil (a paused or
+// unregistered addonType), since the valid family set is not yet known; selector
+// validation is adapter-independent and always runs. Threshold values are
+// intentionally not validated: threshold keys and types are adapter-private and
+// not advertised in Capabilities, so a malformed threshold cannot be
+// distinguished from an unknown key here (tracked as a follow-up needing an
+// adapter contract surface).
+func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) []string {
+	if len(check.Spec.Policy) == 0 {
+		return nil
+	}
+	var known map[adapter.Family]struct{}
+	if selectedAdapter != nil {
+		families := selectedAdapter.Capabilities().Families
+		known = make(map[adapter.Family]struct{}, len(families))
+		for _, f := range families {
+			known[f] = struct{}{}
+		}
+	}
+
+	names := make([]string, 0, len(check.Spec.Policy))
+	for family := range check.Spec.Policy {
+		names = append(names, family)
+	}
+	sort.Strings(names)
+
+	var problems []string
+	for _, family := range names {
+		if known != nil {
+			if _, ok := known[adapter.Family(family)]; !ok {
+				problems = append(problems, fmt.Sprintf("unknown family %q", family))
+			}
+		}
+		if sel := check.Spec.Policy[family].LabelSelector; sel != nil {
+			if _, err := metav1.LabelSelectorAsSelector(sel); err != nil {
+				problems = append(problems, fmt.Sprintf("family %q has an invalid labelSelector: %v", family, err))
+			}
+		}
+	}
+	return problems
 }
 
 func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {

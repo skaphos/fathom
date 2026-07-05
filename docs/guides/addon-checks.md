@@ -261,13 +261,16 @@ spec: {}   # empty selector matches all HealthChecks in this namespace
 ## Troubleshooting
 
 Read the conditions: `kubectl describe addoncheck <name>` shows `Accepted`,
-`Ready`, and (when paused) `Paused`. Common `Ready=False` reasons:
+`Ready`, and (when paused) `Paused`. `Accepted=False` means the spec/policy was
+rejected and no adapter run happens until it is corrected — the exact problems
+are in the `Accepted` condition message. Common `Ready=False` reasons:
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
 | `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`. |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
 | `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
+| `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |
 
 On the wrapper side, `kubectl describe healthcheck <name>`:
 
