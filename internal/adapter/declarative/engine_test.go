@@ -256,6 +256,8 @@ func TestNewEngine_Validation(t *testing.T) {
 		{"unknown workload kind", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", Workloads: []WorkloadCheck{{Kind: "Nope"}}}}}},
 		{"empty crd names", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CRDs: []CRDCheck{{}}}}}},
 		{"crd without supported versions", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CRDs: []CRDCheck{{Names: []string{"foos.example.io"}}}}}}},
+		{"managed resource with empty name", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", ManagedResources: []ConditionCheck{{Kind: "Widget", Names: []string{""}}}}}}},
+		{"apiservice with empty name", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", APIServices: []ConditionCheck{{Kind: "APIService", Names: []string{"good", ""}}}}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

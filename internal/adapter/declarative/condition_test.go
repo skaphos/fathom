@@ -193,6 +193,52 @@ func TestCondition_ClusterScopedListsWithoutNamespace(t *testing.T) {
 	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeSkipped, "no Widget objects matched")
 }
 
+// --- named (get-by-name) mode ---
+
+func TestCondition_NamedGetScoresFoundObject(t *testing.T) {
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+	checks := runManaged(t, cc, nil, widget("default", "w1", "Ready", "True"))
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomePass, "Ready")
+
+	cc.Names = []string{"w2"}
+	checks = runManaged(t, cc, nil, widget("default", "w2", "Ready", "False"))
+	assertHasOutcome(t, checks, "Widget", "w2", adapter.OutcomeFail, "want")
+}
+
+func TestCondition_NamedNotFoundScoredByPosture(t *testing.T) {
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+
+	// Required (the default): a missing named singleton is a Fail — never the
+	// list mode's NoMatchingObjects skip — and carries the absent marker.
+	checks := runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomeFail, "not found")
+	assertHasDetail(t, checks, "Widget", "w1", adapter.DetailAbsent, "true")
+
+	// The explicit Optional opt-out scores Skipped, still with the marker.
+	cc.Absence = Optional
+	checks = runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomeSkipped, "not found")
+	assertHasDetail(t, checks, "Widget", "w1", adapter.DetailAbsent, "true")
+}
+
+func TestCondition_NamedClusterScopedGet(t *testing.T) {
+	// The metrics-server shape: a cluster-scoped named APIService.
+	cc := ConditionCheck{
+		APIVersion:     "apiregistration.k8s.io/v1",
+		Kind:           "APIService",
+		ListKind:       "APIServiceList",
+		ListName:       "apiservices",
+		ClusterScoped:  true,
+		Names:          []string{"v1beta1.metrics.k8s.io"},
+		ConditionType:  "Available",
+		ExpectedStatus: "True",
+	}
+	checks := runManaged(t, cc, nil, apiService("v1beta1.metrics.k8s.io", "Available", "True"))
+	assertHasOutcome(t, checks, "APIService", "v1beta1.metrics.k8s.io", adapter.OutcomePass, "Available")
+}
+
 // MustEngine panics on an invalid definition; NewEngine returns the error.
 func TestMustEngine_PanicsOnInvalid(t *testing.T) {
 	defer func() {

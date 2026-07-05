@@ -81,6 +81,15 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				return nil, fmt.Errorf("declarative: adapter %q family %q CRDCheck %v has no SupportedVersions", def.AddonType, f.Name, c.Names)
 			}
 		}
+		for _, m := range append(append([]ConditionCheck{}, f.ManagedResources...), f.APIServices...) {
+			for _, n := range m.Names {
+				if n == "" {
+					// An empty name would Get "" at run time and surface as a
+					// per-run Error — catch the definition bug at construction.
+					return nil, fmt.Errorf("declarative: adapter %q family %q has a %s ConditionCheck with an empty name", def.AddonType, f.Name, m.Kind)
+				}
+			}
+		}
 	}
 	return &Engine{def: def}, nil
 }

@@ -8,6 +8,7 @@ resources:
 - addon-coredns.yaml
 - addon-external-dns.yaml
 - addon-external-secrets.yaml
+- addon-metrics-server.yaml
 - operator-impersonate.yaml
 configurations:
 - kustomizeconfig.yaml

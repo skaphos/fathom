@@ -25,6 +25,8 @@ repositories:
     url: https://charts.external-secrets.io
   - name: external-dns
     url: https://kubernetes-sigs.github.io/external-dns/
+  - name: metrics-server
+    url: https://kubernetes-sigs.github.io/metrics-server/
 
 releases:
   - name: cilium
@@ -96,6 +98,27 @@ releases:
       # crd_health family asserts a real Established CRD against this stack.
       - provider:
           name: inmemory
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+
+  - name: metrics-server
+    namespace: kube-system
+    chart: metrics-server/metrics-server
+    version: 3.13.1
+    needs:
+      - kube-system/cilium
+    wait: true
+    timeout: 600
+    values:
+      # kind's kubelets serve self-signed certs without the node IP in the
+      # SANs, so metrics-server needs --kubelet-insecure-tls to scrape them —
+      # the documented metrics-server-on-kind configuration. The chart creates
+      # the v1beta1.metrics.k8s.io APIService, which Fathom's api_availability
+      # family asserts Available=True against.
+      - args:
+          - --kubelet-insecure-tls
         resources:
           requests:
             cpu: 10m
