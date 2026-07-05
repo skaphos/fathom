@@ -436,6 +436,38 @@ func assertHasDetail(t *testing.T, checks []adapter.CheckResult, kind, name, key
 	t.Fatalf("missing %s/%s in %#v", kind, name, checks)
 }
 
+// TestCheckCRD_HonorsPerCRDVersions proves each CRD is matched against its own
+// descending-preference version slice, not a single shared global (SKA-425). A
+// CRD that serves only v2 passes when its slice includes v2 (even at lower
+// priority) and fails when its slice is {"v1"} — so a future heterogeneous CRD
+// keying a different version is handled by its own entry.
+func TestCheckCRD_HonorsPerCRDVersions(t *testing.T) {
+	const crdName = "widgets.acme.cert-manager.io"
+	cl := newFakeClient(t, establishedCRDServing(crdName, "v2"))
+
+	cases := []struct {
+		name        string
+		versions    []string
+		wantOutcome adapter.Outcome
+		wantVersion string
+	}{
+		{"served version is the preferred entry", []string{"v2"}, adapter.OutcomePass, "v2"},
+		{"served version lower in preference still matches", []string{"v3", "v2"}, adapter.OutcomePass, "v2"},
+		{"no supported version served fails", []string{"v1"}, adapter.OutcomeFail, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Adapter{}.checkCRD(context.Background(), cl, crdName, tc.versions)
+			if got.Outcome != tc.wantOutcome {
+				t.Fatalf("outcome = %s, want %s (summary %q, details %v)", got.Outcome, tc.wantOutcome, got.Summary, got.Details)
+			}
+			if tc.wantVersion != "" && got.Details["version"] != tc.wantVersion {
+				t.Errorf("details[version] = %q, want %q", got.Details["version"], tc.wantVersion)
+			}
+		})
+	}
+}
+
 func newFakeClient(t *testing.T, objects ...clientObject) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -468,8 +500,8 @@ func healthyObjects(includeWebhookService bool) []clientObject {
 	for _, component := range defaultComponents {
 		objects = append(objects, healthyDeployment(component), readyPod(component))
 	}
-	for _, crdName := range crds {
-		objects = append(objects, establishedCRD(crdName))
+	for _, cv := range crds {
+		objects = append(objects, establishedCRD(cv.name))
 	}
 	if includeWebhookService {
 		objects = append(objects, webhookService("cert-manager-webhook"))
@@ -558,13 +590,22 @@ func webhookClientConfig(serviceName, serviceNamespace string) admissionv1.Webho
 }
 
 func establishedCRD(name string) *apixv1.CustomResourceDefinition {
+	return establishedCRDServing(name, "v1")
+}
+
+// establishedCRDServing builds an Established CRD that serves exactly the given
+// API version, so tests can exercise per-CRD version matching (SKA-425). Group
+// and Plural are derived from the CRD name (`<plural>.<group>`) so fixtures for
+// both cert-manager.io and acme.cert-manager.io CRDs stay internally consistent.
+func establishedCRDServing(name, version string) *apixv1.CustomResourceDefinition {
+	plural, group, _ := strings.Cut(name, ".")
 	return &apixv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apixv1.CustomResourceDefinitionSpec{
-			Group: "cert-manager.io",
-			Names: apixv1.CustomResourceDefinitionNames{Plural: "tests", Kind: "Test"},
+			Group: group,
+			Names: apixv1.CustomResourceDefinitionNames{Plural: plural, Kind: "Test"},
 			Versions: []apixv1.CustomResourceDefinitionVersion{{
-				Name:    "v1",
+				Name:    version,
 				Served:  true,
 				Storage: true,
 				Schema:  &apixv1.CustomResourceValidation{OpenAPIV3Schema: &apixv1.JSONSchemaProps{Type: "object"}},
