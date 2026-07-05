@@ -20,7 +20,8 @@ import (
 
 // Evaluate implements Evaluator for CRDCheck. It verifies each named CRD is
 // established and serves a supported version, emitting one CheckResult per name.
-// NotFound is scored by Absence (Required -> Fail, Optional -> Skipped); an
+// NotFound is scored by the effective Posture (Required, the default -> Fail;
+// Optional -> Skipped) and tagged with the adapter.DetailAbsent marker; an
 // established CRD serving no recognized version is scored by
 // UnsupportedVersionOutcome (default OutcomeWarn).
 func (cc CRDCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
@@ -36,9 +37,9 @@ func (cc CRDCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		var crd apixv1.CustomResourceDefinition
 		if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Name: name}, &crd); err != nil {
 			if apierrors.IsNotFound(err) {
-				o, reason := absenceOutcome(cc.Absence)
+				o := absenceOutcome(effectiveAbsence(cc.Absence, ec.DefaultPosture))
 				out = append(out, result(ec.Family, ref, o, "CRD not found",
-					withSkipReason(map[string]string{"crd": name}, reason), started))
+					adapter.MarkAbsent(map[string]string{"crd": name}), started))
 				continue
 			}
 			out = append(out, result(ec.Family, ref, adapter.OutcomeError, fmt.Sprintf("failed to read CRD: %v", err),

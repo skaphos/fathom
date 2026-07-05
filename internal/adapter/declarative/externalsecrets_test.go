@@ -74,4 +74,5 @@ func TestExternalSecrets_MissingDeploymentFails(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	assertHasOutcome(t, result.Checks, "Deployment", "external-secrets", adapter.OutcomeFail, "not found")
+	assertHasDetail(t, result.Checks, "Deployment", "external-secrets", adapter.DetailAbsent, "true")
 }

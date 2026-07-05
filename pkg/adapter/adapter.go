@@ -218,6 +218,37 @@ func FamilyOutcome(checks []CheckResult, family Family) Outcome {
 	return worst
 }
 
+// DetailAbsent is the well-known [CheckResult.Details] key set to "true" when a
+// check's target is not installed — a NotFound named singleton, Service, webhook
+// configuration, or CustomResourceDefinition. It cross-cuts Outcome: a required
+// target scores [OutcomeFail] and an optional target [OutcomeSkipped], yet both
+// carry this marker, so "not installed" stays queryable independent of the
+// verdict and is counted into AddonCheck.status.absent (SKA-526).
+//
+// It is deliberately its own boolean key rather than a reason=Absent detail:
+// Details["reason"] is already the persisted Kubernetes condition reason (e.g.
+// "Ready"/"DoesNotExist") and Details["skipReason"] is the Skipped-only skip
+// taxonomy. Absence is a fact about the target's existence, not a condition
+// reason or a skip category.
+const DetailAbsent = "absent"
+
+// MarkAbsent records the [DetailAbsent] marker on details (allocating the map
+// when nil) and returns it, so every adapter tags a not-installed target
+// identically. Pass the details map the check already built, or nil.
+func MarkAbsent(details map[string]string) map[string]string {
+	if details == nil {
+		details = map[string]string{}
+	}
+	details[DetailAbsent] = "true"
+	return details
+}
+
+// IsAbsent reports whether details carries the [DetailAbsent] marker set by
+// [MarkAbsent].
+func IsAbsent(details map[string]string) bool {
+	return details[DetailAbsent] == "true"
+}
+
 // TargetRef identifies a Kubernetes object without depending on a specific
 // runtime.Object instance. Sufficient for HealthReport persistence.
 type TargetRef struct {

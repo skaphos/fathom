@@ -73,8 +73,8 @@ func (w WorkloadCheck) readDeployment(ec EvalContext, ns, name string) (bool, ad
 	var deployment appsv1.Deployment
 	if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: ns, Name: name}, &deployment); err != nil {
 		if apierrors.IsNotFound(err) {
-			o, reason := absenceOutcome(w.Absence)
-			return false, result(ec.Family, target, o, "workload deployment not found", withSkipReason(details, reason), started), false, nil, ""
+			o := absenceOutcome(effectiveAbsence(w.Absence, ec.DefaultPosture))
+			return false, result(ec.Family, target, o, "workload deployment not found", adapter.MarkAbsent(details), started), false, nil, ""
 		}
 		return false, result(ec.Family, target, adapter.OutcomeError, fmt.Sprintf("failed to read deployment: %v", err), details, started), false, nil, ""
 	}
@@ -99,8 +99,8 @@ func (w WorkloadCheck) readDaemonSet(ec EvalContext, ns, name string) (bool, ada
 	var daemonset appsv1.DaemonSet
 	if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: ns, Name: name}, &daemonset); err != nil {
 		if apierrors.IsNotFound(err) {
-			o, reason := absenceOutcome(w.Absence)
-			return false, result(ec.Family, target, o, "workload daemonset not found", withSkipReason(details, reason), started), false, nil, ""
+			o := absenceOutcome(effectiveAbsence(w.Absence, ec.DefaultPosture))
+			return false, result(ec.Family, target, o, "workload daemonset not found", adapter.MarkAbsent(details), started), false, nil, ""
 		}
 		return false, result(ec.Family, target, adapter.OutcomeError, fmt.Sprintf("failed to read daemonset: %v", err), details, started), false, nil, ""
 	}
@@ -134,8 +134,8 @@ func (w WorkloadCheck) readStatefulSet(ec EvalContext, ns, name string) (bool, a
 	var sts appsv1.StatefulSet
 	if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: ns, Name: name}, &sts); err != nil {
 		if apierrors.IsNotFound(err) {
-			o, reason := absenceOutcome(w.Absence)
-			return false, result(ec.Family, target, o, "workload statefulset not found", withSkipReason(details, reason), started), false, nil, ""
+			o := absenceOutcome(effectiveAbsence(w.Absence, ec.DefaultPosture))
+			return false, result(ec.Family, target, o, "workload statefulset not found", adapter.MarkAbsent(details), started), false, nil, ""
 		}
 		return false, result(ec.Family, target, adapter.OutcomeError, fmt.Sprintf("failed to read statefulset: %v", err), details, started), false, nil, ""
 	}

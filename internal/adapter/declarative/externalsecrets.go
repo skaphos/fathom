@@ -21,7 +21,7 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // evaluator.
 var ExternalSecretsDefinition = AddonDefinition{
 	AddonType:      "external-secrets",
-	AdapterVersion: "0.2.0",
+	AdapterVersion: "0.2.1",
 	RBAC: []RBACRule{
 		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
 		{APIGroups: "", Resources: "pods", Verbs: "get;list;watch"},

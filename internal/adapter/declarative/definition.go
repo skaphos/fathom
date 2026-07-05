@@ -13,8 +13,11 @@ SPDX-License-Identifier: MIT
 // The engine commits to one uniform semantics for the conventions that drifted
 // across the hand-written adapters:
 //
-//   - Absence of a named singleton is declared per component via Posture:
-//     Required -> Fail, Optional -> Skipped.
+//   - Absence of a named singleton is declared per component via Posture, or
+//     per addon via AddonDefinition.Optional. Required (the default when neither
+//     is set) -> Fail; the explicit Optional opt-out -> Skipped. Either way the
+//     result carries the adapter.DetailAbsent marker, so "not installed" is
+//     queryable independent of the verdict (SKA-526).
 //   - A managed-resource list that matches zero objects -> Skipped.
 //   - An unsupported served CRD version -> Warn by default (per-component
 //     override via UnsupportedVersionOutcome).
@@ -42,9 +45,13 @@ import "github.com/skaphos/fathom/pkg/adapter"
 type Posture string
 
 const (
-	// Required scores a NotFound target as OutcomeFail.
+	// Required scores a NotFound target as OutcomeFail. It is the default: an
+	// unset component Posture on a non-Optional addon resolves to Required.
 	Required Posture = "Required"
-	// Optional scores a NotFound target as OutcomeSkipped (rolls up green).
+	// Optional scores a NotFound target as OutcomeSkipped — the explicit opt-out
+	// for an addon (or component) that may legitimately be absent on a cluster.
+	// The persisted verdict of an all-Optional-absent run is Skipped, not Pass;
+	// only the metrics/tracing FamilyOutcome roll-up relabels Skipped as Pass.
 	Optional Posture = "Optional"
 )
 
@@ -76,6 +83,13 @@ type AddonDefinition struct {
 	// AdapterVersion is the adapter's own SemVer (Adapter.Version()).
 	AdapterVersion string
 
+	// Optional makes every component default to the Optional Posture (a NotFound
+	// target -> Skipped) instead of the required-by-default. It is the addon-wide
+	// opt-out for addons that may legitimately be absent on a cluster (e.g. Cilium
+	// on a non-Cilium cluster). A component's own non-empty Posture always wins
+	// over this default (SKA-526).
+	Optional bool
+
 	// Families are evaluated in slice order. Families[0] is the "primary"
 	// family under which the all-disabled sentinel Skipped is emitted.
 	Families []FamilyDefinition
@@ -84,6 +98,15 @@ type AddonDefinition struct {
 	// Recorded for documentation and codegen; the engine does not enforce
 	// them at runtime (the real markers must live on a scanned Go source file).
 	RBAC []RBACRule
+}
+
+// defaultPosture is the Posture a component inherits when it declares none:
+// Optional when the addon opted out via Optional, otherwise Required.
+func (d AddonDefinition) defaultPosture() Posture {
+	if d.Optional {
+		return Optional
+	}
+	return Required
 }
 
 // RBACRule is a least-privilege grant the definition's evaluators require.

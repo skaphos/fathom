@@ -38,7 +38,7 @@ var tracer = otel.Tracer("github.com/skaphos/fathom/internal/adapter/coredns")
 
 const (
 	Name                = "coredns"
-	Version             = "0.1.0"
+	Version             = "0.1.1"
 	FamilySystemHealth  = adapter.Family("system_health")
 	FamilyDNSResolution = adapter.Family("dns_resolution")
 
@@ -188,7 +188,7 @@ func (Adapter) checkDeployment(ctx context.Context, c client.Client, namespace, 
 	var deployment appsv1.Deployment
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &deployment); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, check(target, adapter.OutcomeFail, "CoreDNS deployment is missing", map[string]string{"component": name}, started)
+			return nil, check(target, adapter.OutcomeFail, "CoreDNS deployment is missing", adapter.MarkAbsent(map[string]string{"component": name}), started)
 		}
 		return nil, check(target, adapter.OutcomeError, fmt.Sprintf("failed to read CoreDNS deployment: %v", err), map[string]string{"component": name}, started)
 	}
@@ -272,7 +272,7 @@ func (Adapter) checkService(ctx context.Context, c client.Client, namespace, ser
 	var service corev1.Service
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, &service); err != nil {
 		if apierrors.IsNotFound(err) {
-			return check(target, adapter.OutcomeFail, "CoreDNS service is missing", nil, started)
+			return check(target, adapter.OutcomeFail, "CoreDNS service is missing", adapter.MarkAbsent(nil), started)
 		}
 		return check(target, adapter.OutcomeError, fmt.Sprintf("failed to read CoreDNS service: %v", err), nil, started)
 	}
