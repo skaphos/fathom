@@ -33,8 +33,8 @@ import (
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/certmanager"
-	"github.com/skaphos/fathom/internal/adapter/cilium"
 	"github.com/skaphos/fathom/internal/adapter/coredns"
+	"github.com/skaphos/fathom/internal/adapter/declarative"
 	"github.com/skaphos/fathom/internal/adapter/externalsecrets"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
@@ -207,7 +207,7 @@ func adapterName(a adapter.Adapter) string {
 }
 
 func builtInAdapters() []adapter.Adapter {
-	return []adapter.Adapter{certmanager.New(), coredns.New(), externalsecrets.New(), cilium.New()}
+	return []adapter.Adapter{certmanager.New(), coredns.New(), externalsecrets.New(), declarative.NewCiliumEngine()}
 }
 
 // managerFactory builds a manager from a rest.Config and ctrl.Options. It is a
