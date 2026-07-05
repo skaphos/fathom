@@ -165,6 +165,7 @@ func TestDetectAndGateVersion(t *testing.T) {
 		if detected != "nightly" || len(gate) != 1 {
 			t.Fatalf("unparseable: detected=%q gate=%v", detected, gate)
 		}
+		assertHasOutcome(t, gate, "Deployment", "app", adapter.OutcomeWarn, "is not valid semver")
 		assertHasDetail(t, gate, "Deployment", "app", adapter.DetailVersionGate, adapter.ReasonVersionUnknown)
 		assertHasDetail(t, gate, "Deployment", "app", adapter.DetailDetectedVersion, "nightly")
 	})

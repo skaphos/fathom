@@ -25,9 +25,11 @@ import (
 const versionLabel = "app.kubernetes.io/version"
 
 // versionFamily is the synthetic family the once-per-run version-gate
-// CheckResult is emitted under. It is not a declared, policy-selectable family
-// (it is absent from Capabilities().Families) — detection runs per addon, before
-// the family loop, whenever VersionSource + SupportedVersions are set.
+// CheckResult is emitted under — only when gating is active (VersionSource set
+// and SupportedVersions non-empty). It is not a declared, policy-selectable
+// family: it is absent from Capabilities().Families. Detection itself is keyed
+// off VersionSource alone; SupportedVersions only controls whether a gate check
+// is produced.
 const versionFamily = adapter.Family("addon_version")
 
 // detectAndGateVersion resolves the installed addon version from the
@@ -68,8 +70,15 @@ func (e *Engine) detectAndGateVersion(ctx context.Context, c client.Client) (str
 		return detected, nil
 	}
 	v, err := semver.NewVersion(detected)
-	if detected == "" || err != nil {
+	if detected == "" {
 		return detected, gate(adapter.OutcomeWarn, "addon version could not be detected", adapter.ReasonVersionUnknown)
+	}
+	if err != nil {
+		// Detected, but not parseable as semver (e.g. "nightly", a git SHA): a
+		// distinct message from the undetectable case, so a HealthReport carrying
+		// detectedVersion is not contradicted by "could not be detected".
+		return detected, gate(adapter.OutcomeWarn,
+			fmt.Sprintf("detected addon version %q is not valid semver", detected), adapter.ReasonVersionUnknown)
 	}
 	// Gate on the base release (major.minor.patch), so a prerelease or build of a
 	// supported release (e.g. "1.15.0-rc.1" within ">=1.14 <2.0") counts as in
