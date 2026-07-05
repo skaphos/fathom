@@ -156,23 +156,39 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	})
 	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
 
-	// Validate spec.policy against the resolved adapter before running it. An
-	// unknown family key used to be silently ignored, and an invalid selector
-	// only surfaced as a per-check Error after a wasted adapter run (SKA-54);
-	// both now set Accepted=False and gate the run, so the misconfiguration is
-	// loud and no run is wasted. An invalid policy is left to a spec change to
-	// clear, like a paused or adapterless check.
-	policyErrs := validateAddonCheckPolicy(&check, selectedAdapter)
-	policyValid := len(policyErrs) == 0
-	setAddonCheckAccepted(&check, policyErrs)
-	if adapterReady && !policyValid {
-		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+	// Validate spec.policy against the adapter that will run it, so a misconfig
+	// is loud (Accepted=False) and gates the run, instead of being silently
+	// ignored (unknown family) or only surfacing as a post-run Error (invalid
+	// selector) -- SKA-54. Policy is validated only once an adapter is resolved,
+	// since the valid family set is the adapter's; a paused or adapterless check
+	// defers validation and is accepted structurally.
+	//
+	// Ready is given its final value here in a single write, rather than being
+	// set True in resolveAddonAdapter and then flipped False for an invalid
+	// policy: flipping the condition within one reconcile bumps its
+	// LastTransitionTime every pass, which -- with no watch predicate -- would
+	// re-trigger reconciliation forever for an invalid check.
+	policyValid := true
+	if adapterReady {
+		policyErrs := validateAddonCheckPolicy(&check, selectedAdapter)
+		policyValid = len(policyErrs) == 0
+		setAddonCheckAccepted(&check, policyErrs)
+
+		ready := metav1.Condition{
 			Type:               addonCheckConditionReady,
-			Status:             metav1.ConditionFalse,
+			Status:             metav1.ConditionTrue,
 			ObservedGeneration: check.Generation,
-			Reason:             "InvalidPolicy",
-			Message:            "AddonCheck policy is invalid; adapter execution is skipped until it is corrected.",
-		})
+			Reason:             "AdapterResolved",
+			Message:            "AddonCheck has a registered adapter and is ready for execution.",
+		}
+		if !policyValid {
+			ready.Status = metav1.ConditionFalse
+			ready.Reason = "InvalidPolicy"
+			ready.Message = "AddonCheck policy is invalid; adapter execution is skipped until it is corrected."
+		}
+		apiMeta.SetStatusCondition(&check.Status.Conditions, ready)
+	} else {
+		setAddonCheckAccepted(&check, nil)
 	}
 
 	interval := addonCheckInterval(&check)
@@ -270,13 +286,10 @@ func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapter
 		})
 		return nil, false
 	}
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               addonCheckConditionReady,
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: check.Generation,
-		Reason:             "AdapterResolved",
-		Message:            "AddonCheck has a registered adapter and is ready for execution.",
-	})
+	// The resolved-and-ready Ready condition (True/AdapterResolved, or
+	// False/InvalidPolicy) is set by the caller after policy validation, in one
+	// write, so an invalid policy does not flip Ready True->False within a single
+	// reconcile (which would churn LastTransitionTime and self-re-trigger).
 	return selectedAdapter, true
 }
 
