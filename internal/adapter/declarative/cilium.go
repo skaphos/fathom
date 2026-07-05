@@ -7,7 +7,8 @@ package declarative
 
 import "github.com/skaphos/fathom/pkg/adapter"
 
-// CiliumDefinition reproduces internal/adapter/cilium/adapter.go declaratively:
+// CiliumDefinition is the declarative Cilium adapter (it replaced the removed
+// hand-written internal/adapter/cilium package):
 // three families (control_plane_health, agent_health, crd_health) checking the
 // cilium-operator Deployment and pods, the cilium agent DaemonSet and pods, and
 // the core Cilium CRDs. Every workload and CRD is Optional, so a cluster that
