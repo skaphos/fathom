@@ -124,6 +124,12 @@ spec:
                 description: ContractVersion is the adapter contract version used
                   for this run.
                 type: string
+              detectedVersion:
+                description: |-
+                  DetectedVersion is the installed addon release version detected for this
+                  run, or empty when undetectable or not detected. Distinct from
+                  AdapterVersion (the adapter's own version) — SKA-527.
+                type: string
               duration:
                 description: Duration is the total adapter run duration.
                 type: string

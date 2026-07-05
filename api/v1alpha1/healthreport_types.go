@@ -120,6 +120,12 @@ type HealthReportSpec struct {
 	// +optional
 	AdapterVersion string `json:"adapterVersion,omitempty"`
 
+	// DetectedVersion is the installed addon release version detected for this
+	// run, or empty when undetectable or not detected. Distinct from
+	// AdapterVersion (the adapter's own version) — SKA-527.
+	// +optional
+	DetectedVersion string `json:"detectedVersion,omitempty"`
+
 	// ContractVersion is the adapter contract version used for this run.
 	// +optional
 	ContractVersion string `json:"contractVersion,omitempty"`

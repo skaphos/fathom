@@ -134,6 +134,14 @@ type Result struct {
 	// Duration is the wall-clock time the Run consumed. Reported separately
 	// from per-check durations so callers can measure adapter overhead.
 	Duration time.Duration
+
+	// DetectedVersion is the installed addon release version the adapter
+	// detected for this run (e.g. from the app.kubernetes.io/version label or a
+	// workload image tag), or "" when undetectable or when the adapter does not
+	// detect versions. It is an addon-level datum — distinct from Version()
+	// (the adapter's own SemVer) — mirrored to AddonCheck.status.detectedVersion
+	// and HealthReport (SKA-527).
+	DetectedVersion string
 }
 
 // CheckResult is the observation for a single check within a family.
@@ -247,6 +255,50 @@ func MarkAbsent(details map[string]string) map[string]string {
 // [MarkAbsent].
 func IsAbsent(details map[string]string) bool {
 	return details[DetailAbsent] == "true"
+}
+
+// Version-gate [CheckResult.Details] keys and reasons (SKA-527). They mark the
+// synthetic version-gate check an adapter emits when it detects the installed
+// addon version and gates it against a supported semver range.
+//
+// Like [DetailAbsent], these are dedicated keys rather than a Details["reason"]
+// detail: Details["reason"] is reserved for the mirrored Kubernetes condition
+// reason. DetailVersionGate carries the categorical gate reason; the detected
+// and supported values ride alongside so a HealthReport is self-describing.
+const (
+	// DetailVersionGate holds the gate reason: [ReasonUnsupportedAddonVersion]
+	// or [ReasonVersionUnknown].
+	DetailVersionGate = "versionGate"
+	// DetailDetectedVersion holds the detected installed addon version, if any.
+	DetailDetectedVersion = "detectedVersion"
+	// DetailSupportedVersions holds the definition's supported semver range.
+	DetailSupportedVersions = "supportedVersions"
+
+	// ReasonUnsupportedAddonVersion marks a detected version outside the
+	// supported range: Fathom's coverage of that version is uncertain (Warn),
+	// not necessarily the addon being unhealthy.
+	ReasonUnsupportedAddonVersion = "UnsupportedAddonVersion"
+	// ReasonVersionUnknown marks a version that could not be detected while a
+	// supported range was declared; the run proceeds best-effort (Warn).
+	ReasonVersionUnknown = "VersionUnknown"
+)
+
+// MarkVersionGate records the version-gate reason and the detected/supported
+// context on details (allocating the map when nil) and returns it, so every
+// adapter tags a version gate identically. detected may be "" (unknown);
+// supported is the declared range.
+func MarkVersionGate(details map[string]string, reason, detected, supported string) map[string]string {
+	if details == nil {
+		details = map[string]string{}
+	}
+	details[DetailVersionGate] = reason
+	if detected != "" {
+		details[DetailDetectedVersion] = detected
+	}
+	if supported != "" {
+		details[DetailSupportedVersions] = supported
+	}
+	return details
 }
 
 // TargetRef identifies a Kubernetes object without depending on a specific

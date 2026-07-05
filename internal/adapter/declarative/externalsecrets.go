@@ -21,7 +21,13 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // evaluator.
 var ExternalSecretsDefinition = AddonDefinition{
 	AddonType:      "external-secrets",
-	AdapterVersion: "0.2.1",
+	AdapterVersion: "0.3.0",
+	// Detect the installed ESO version off the controller Deployment (its
+	// app.kubernetes.io/version label, else the image tag). Detection-only:
+	// SupportedVersions is left empty (ESO is pre-1.0 and the exact range is
+	// maintainer-owned), so ESO never Warns on a version — gating is opt-in
+	// (SKA-527).
+	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-secrets", Name: "external-secrets"},
 	RBAC: []RBACRule{
 		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
 		{APIGroups: "", Resources: "pods", Verbs: "get;list;watch"},

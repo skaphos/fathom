@@ -20,8 +20,13 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // for all declarative adapters live on the package doc in definition.go.
 var CiliumDefinition = AddonDefinition{
 	AddonType:      "cilium",
-	AdapterVersion: "0.1.1",
+	AdapterVersion: "0.2.0",
 	Optional:       true,
+	// Detect the installed Cilium version off the agent DaemonSet (its
+	// app.kubernetes.io/version label, else the quay.io/cilium/cilium image tag).
+	// Detection-only: SupportedVersions is left empty so Cilium never Warns on a
+	// version — gating is opt-in once a maintainer confirms the range (SKA-527).
+	VersionSource: &VersionSource{Kind: KindDaemonSet, Namespace: "kube-system", Name: "cilium"},
 	RBAC: []RBACRule{
 		{APIGroups: "apps", Resources: "deployments", Verbs: "get;list;watch"},
 		{APIGroups: "apps", Resources: "daemonsets", Verbs: "get;list;watch"},

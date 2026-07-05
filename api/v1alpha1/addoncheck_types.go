@@ -98,6 +98,13 @@ type AddonCheckStatus struct {
 	// +kubebuilder:validation:Minimum=0
 	Absent int32 `json:"absent,omitempty"`
 
+	// DetectedVersion is the installed addon release version detected on the most
+	// recent run (from the addon workload's app.kubernetes.io/version label, else
+	// its container image tag). Empty when the adapter does not detect versions or
+	// the version was undetectable — the run then proceeds best-effort (SKA-527).
+	// +optional
+	DetectedVersion string `json:"detectedVersion,omitempty"`
+
 	// LastReportName names the HealthReport created for the most recent run.
 	// +optional
 	LastReportName string `json:"lastReportName,omitempty"`

@@ -135,6 +135,32 @@ func (absentReportingAdapter) Run(_ context.Context, _ adapter.Request) (adapter
 	}, nil
 }
 
+// versionReportingAdapter returns a healthy check plus a DetectedVersion, so the
+// reconciler's status.detectedVersion + HealthReport wiring can be asserted
+// end-to-end (SKA-527).
+type versionReportingAdapter struct{}
+
+func (versionReportingAdapter) Name() string            { return "version-addon" }
+func (versionReportingAdapter) Version() string         { return "0.0.1" }
+func (versionReportingAdapter) ContractVersion() string { return adapter.ContractVersion }
+func (versionReportingAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{"version-addon"}, Families: []adapter.Family{"system_health"}}
+}
+
+func (versionReportingAdapter) Run(_ context.Context, _ adapter.Request) (adapter.Result, error) {
+	return adapter.Result{
+		Duration:        time.Millisecond,
+		DetectedVersion: "1.15.6",
+		Checks: []adapter.CheckResult{{
+			Family:     adapter.Family("system_health"),
+			Outcome:    adapter.OutcomePass,
+			TargetRef:  adapter.TargetRef{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "x", Name: "addon"},
+			Summary:    "ok",
+			ObservedAt: time.Now(),
+		}},
+	}, nil
+}
+
 // healthReportCount returns how many HealthReports the given AddonCheck has
 // produced, matched via the source-kind/name labels.
 func healthReportCount(ctx context.Context, source types.NamespacedName) int {
@@ -453,6 +479,39 @@ var _ = Describe("AddonCheck Controller", func() {
 		// Two of the four checks carry the absent marker (required-absent Fail +
 		// optional-absent Skip); the present-but-unhealthy Fail and the Pass do not.
 		Expect(updated.Status.Absent).To(Equal(int32(2)))
+	})
+
+	It("surfaces the adapter's detected version into status and the HealthReport (SKA-527)", func() {
+		typeNamespacedName := types.NamespacedName{
+			Name:      "addoncheck-version",
+			Namespace: "default",
+		}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typeNamespacedName.Name,
+				Namespace: typeNamespacedName.Namespace,
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "version-addon"},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(versionReportingAdapter{})).To(Succeed())
+		r := &AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}
+
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.DetectedVersion).To(Equal("1.15.6"))
+
+		report := &fathomv1alpha1.HealthReport{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: updated.Status.LastReportName, Namespace: typeNamespacedName.Namespace}, report)).To(Succeed())
+		Expect(report.Spec.DetectedVersion).To(Equal("1.15.6"))
 	})
 
 	It("rejects a policy with an unknown family: Accepted=False and the adapter is not run (SKA-54)", func() {

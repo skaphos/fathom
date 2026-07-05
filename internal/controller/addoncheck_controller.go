@@ -343,6 +343,7 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	check.Status.LastRunTime = &observedAt
 	check.Status.LastResult = newResult
 	check.Status.Absent = countAbsent(result.Checks)
+	check.Status.DetectedVersion = result.DetectedVersion
 
 	// An adapter Run error reports a genuine health condition (the adapter could
 	// not determine state — e.g. the API server was unreachable), not a
@@ -555,6 +556,7 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 			AddonType:       check.Spec.AddonType,
 			AdapterName:     selectedAdapter.Name(),
 			AdapterVersion:  selectedAdapter.Version(),
+			DetectedVersion: result.DetectedVersion,
 			ContractVersion: selectedAdapter.ContractVersion(),
 			Result:          aggregate,
 			Checks:          healthReportChecks(result.Checks, observedAt),
