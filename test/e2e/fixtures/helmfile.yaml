@@ -90,10 +90,10 @@ releases:
     values:
       # The inmemory provider needs no cloud credentials, so the controller
       # runs (and reconciles its sources) self-contained inside kind — the
-      # Deployment readiness Fathom's external-dns system_health family checks
-      # is real. The DNSEndpoint CRD ships in the chart's crds/ directory and
-      # helm installs it by default, so the adapter's crd_health family
-      # asserts a real Established CRD against this stack.
+      # Deployment readiness that Fathom's external-dns system_health family
+      # checks is genuine. The DNSEndpoint CRD ships in the chart's crds/
+      # directory and helm installs it by default, so the adapter's
+      # crd_health family asserts a real Established CRD against this stack.
       - provider:
           name: inmemory
         resources:
