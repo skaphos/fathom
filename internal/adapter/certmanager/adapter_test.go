@@ -594,13 +594,16 @@ func establishedCRD(name string) *apixv1.CustomResourceDefinition {
 }
 
 // establishedCRDServing builds an Established CRD that serves exactly the given
-// API version, so tests can exercise per-CRD version matching (SKA-425).
+// API version, so tests can exercise per-CRD version matching (SKA-425). Group
+// and Plural are derived from the CRD name (`<plural>.<group>`) so fixtures for
+// both cert-manager.io and acme.cert-manager.io CRDs stay internally consistent.
 func establishedCRDServing(name, version string) *apixv1.CustomResourceDefinition {
+	plural, group, _ := strings.Cut(name, ".")
 	return &apixv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apixv1.CustomResourceDefinitionSpec{
-			Group: "cert-manager.io",
-			Names: apixv1.CustomResourceDefinitionNames{Plural: "tests", Kind: "Test"},
+			Group: group,
+			Names: apixv1.CustomResourceDefinitionNames{Plural: plural, Kind: "Test"},
 			Versions: []apixv1.CustomResourceDefinitionVersion{{
 				Name:    version,
 				Served:  true,
