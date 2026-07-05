@@ -22,6 +22,18 @@ SPDX-License-Identifier: MIT
 //   - Skipped results carry Details["skipReason"] for machine consumption.
 //   - The OutcomeError vs OutcomeFail split is preserved: transport/selector
 //     errors -> Error; an object that exists but is unhealthy -> Fail.
+//
+// RBAC: the +kubebuilder:rbac markers below are the union of reads every
+// declarative AddonDefinition performs (the RBACRule field on each definition is
+// documentation, not enforced). controller-gen aggregates them into
+// config/rbac/role.yaml. They live on the package doc -- one scanned location
+// owning the declarative reads -- because controller-gen did not reliably
+// collect equivalent markers placed on individual engine constructors.
+//
+// +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=external-secrets.io,resources=externalsecrets,verbs=get;list;watch
 package declarative
 
 import "github.com/skaphos/fathom/pkg/adapter"
@@ -178,8 +190,18 @@ type CRDCheck struct {
 // Available). It is unused by Cilium.
 type ConditionCheck struct {
 	// APIVersion is the group/version of the listed objects (e.g.
-	// "cert-manager.io/v1").
+	// "cert-manager.io/v1"). Its version is the fallback when VersionCRD
+	// resolution finds nothing.
 	APIVersion string
+	// VersionCRD, when set, names the CRD (e.g.
+	// "externalsecrets.external-secrets.io") whose preferred served version among
+	// SupportedVersions overrides APIVersion's version before listing -- so the
+	// check keeps working on clusters that serve only a legacy version. When
+	// empty, APIVersion's version is used verbatim.
+	VersionCRD string
+	// SupportedVersions is the ordered candidate list for VersionCRD resolution
+	// (e.g. []string{"v1", "v1beta1"}); ignored when VersionCRD is empty.
+	SupportedVersions []string
 	// Kind is the object kind (e.g. "Issuer").
 	Kind string
 	// ListKind is the list kind (e.g. "IssuerList").
