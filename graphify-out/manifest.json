@@ -112,8 +112,8 @@
     "hash": "c4a30b3da7a19efb0a50559483ed62ea"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/test/e2e/externaldns_test.go": {
-    "mtime": 1783294440.6422615,
-    "hash": "df6435eb0926f454a54e8c0ffe890ce1"
+    "mtime": 1783295480.8393211,
+    "hash": "5be732814603061111f29fa6fef04c1e"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/test/e2e/addoncheck_refresh_test.go": {
     "mtime": 1783294435.0973625,
@@ -160,8 +160,8 @@
     "hash": "0de36046ce29c8e23c8836a4474b89bb"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/internal/app/run_test.go": {
-    "mtime": 1783294471.5385134,
-    "hash": "40de1358146b5f166b38012280919fad"
+    "mtime": 1783295901.3157315,
+    "hash": "520e042a365db2e72d574373bb487c91"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/internal/app/root.go": {
     "mtime": 1783294435.08784,
@@ -364,8 +364,8 @@
     "hash": "412e80992a1cf106408716cd276a1fc7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/internal/adapter/declarative/externaldns.go": {
-    "mtime": 1783294440.6422615,
-    "hash": "9064014088643d6ab6dd296d245f3b81"
+    "mtime": 1783295891.6500678,
+    "hash": "db10327b075003a0c844e492e48740a9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/internal/adapter/declarative/tracing_test.go": {
     "mtime": 1783294435.0833454,
@@ -452,7 +452,7 @@
     "hash": "23dc57f3765d195382eed867172eb3a2"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/Taskfile.yml": {
-    "mtime": 1783294435.0435948,
+    "mtime": 1783295480.8393211,
     "hash": "12b60e11fc3d1a75020d90e6ab26d5aa"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/AGENTS.md": {
@@ -504,8 +504,8 @@
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
-    "mtime": 1783294440.6335948,
-    "hash": "eeaea1a34e445a7fabb17c1c9dc10231"
+    "mtime": 1783295920.9630644,
+    "hash": "91b7b87dd123d80d9017b05193f6ccd6"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/deploy/helm/fathom-operator/files/manager-rules.yaml": {
     "mtime": 1783294435.0656455,
@@ -744,31 +744,31 @@
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/kustomization.yaml": {
-    "mtime": 1783294440.6335948,
+    "mtime": 1783295920.9630644,
     "hash": "3cb1fc12d418b99504ea9a9862288f11"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/addon-external-dns.yaml": {
-    "mtime": 1783294440.6335948,
-    "hash": "305eb37533c58ffd350812c46bf1f958"
+    "mtime": 1783295920.9630644,
+    "hash": "b1a993951d6d7b46de1608e5c9a5250b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/addon-coredns.yaml": {
-    "mtime": 1783294435.0571084,
+    "mtime": 1783295920.9630644,
     "hash": "16f200b70217efe8d28da2817bf35716"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/addon-cert-manager.yaml": {
-    "mtime": 1783294435.0569878,
+    "mtime": 1783295920.9630644,
     "hash": "03f957ddd583921feb706b9309d95bad"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/kustomizeconfig.yaml": {
-    "mtime": 1783294435.0571084,
+    "mtime": 1783295920.9630644,
     "hash": "e65eb9ba47025507e19f1f583bdb3661"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/addon-cilium.yaml": {
-    "mtime": 1783294435.0571084,
+    "mtime": 1783295920.9630644,
     "hash": "24ac45ecd388c802d8be635534a68981"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/rbac/addons/operator-impersonate.yaml": {
-    "mtime": 1783294440.6335948,
+    "mtime": 1783295920.9630644,
     "hash": "12c4408e25b8e0ad56d5cea901f72146"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/config/manifests/kustomization.yaml": {
@@ -836,8 +836,8 @@
     "hash": "3f0db554278e434c42051ca701d83d92"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/docs/reference/rbac.md": {
-    "mtime": 1783294440.6379282,
-    "hash": "f6d88ecca151e9c450431c1c9c39d13f"
+    "mtime": 1783295920.9630644,
+    "hash": "4a85b7c39995ecb323373df633b9ed12"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/docs/guides/getting-started.md": {
     "mtime": 1783294435.0702565,
@@ -892,15 +892,15 @@
     "hash": "c494843dfc942b0b9ab99473a29b5045"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/test/e2e/fixtures/README.md": {
-    "mtime": 1783294440.6422615,
-    "hash": "6213126ba904cde076ae42007dd2bbdf"
+    "mtime": 1783295480.8393211,
+    "hash": "9959e359766af4d9f574469a38130e48"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/test/e2e/fixtures/kind-cluster.yaml": {
     "mtime": 1783294435.0989287,
     "hash": "6375f5ed02c6990dfee13d6ab9b60c85"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/pr120-copilot-loop/test/e2e/fixtures/helmfile.yaml": {
-    "mtime": 1783294440.6422615,
-    "hash": "5460923bc964c48e93030053fe666b20"
+    "mtime": 1783295917.1887312,
+    "hash": "7bee0054532a0e800128a155230e45dd"
   }
 }

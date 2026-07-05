@@ -34,12 +34,17 @@ var ExternalDNSDefinition = AddonDefinition{
 	// opt-in (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-dns", Name: "external-dns"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the external-dns controller Deployment to score readiness. list+watch because the name/namespace are policy-overridable (Helm release fullname); read-only."},
-		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the external-dns Pods for restart counts and readiness behind the Deployment. list is required because Pod names are dynamic; read-only."},
-		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the DNSEndpoint CRD to verify it is Established and serves a supported version. Deliberately NOT the DNSEndpoint objects themselves — no evaluator reads them (their status carries no conditions); read-only."},
+		// Verbs mirror the engine's actual reads through the direct (uncached)
+		// impersonating client: workloads and CRDs are fetched by name (get),
+		// pods by label selector (list). Nothing watches — the client is
+		// deliberately cache-free (see internal/adapter/impersonation) — so no
+		// list/watch is granted where the engine never lists or watches.
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
+			Justification: "Get the external-dns controller Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
+			Justification: "List the external-dns Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only."},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get"},
+			Justification: "Get the DNSEndpoint CRD by name to verify it is Established and serves a supported version. Deliberately NOT the DNSEndpoint objects themselves — no evaluator reads them (their status carries no conditions); read-only."},
 	},
 	Families: []FamilyDefinition{
 		{
