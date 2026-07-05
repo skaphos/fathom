@@ -199,6 +199,12 @@ operator Deployment, agent DaemonSet, and CRDs are all missing — so a `cilium`
 that *exists but is unhealthy* still reports `Fail`. This makes a single Cilium
 check safe to ship to a mixed fleet.
 
+Either way, **`status.absent`** records how many checks in the most recent run found
+their target not installed — the required-absent Fails and the optional-absent Skips
+alike. It makes "not installed" queryable and distinct from "unhealthy" (a `Fail`
+whose target exists) and "disabled" (a `Skipped` family), so a dashboard can tell an
+absent Cilium apart from a broken one without parsing per-check details (SKA-526).
+
 ## Probe image
 
 The CoreDNS `dns_resolution` family launches probe pods. The image is resolved

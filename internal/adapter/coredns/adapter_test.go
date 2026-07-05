@@ -360,6 +360,27 @@ func TestRun_MissingDeploymentFails(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	assertHasOutcome(t, result.Checks, "Deployment", "coredns", adapter.OutcomeFail, "missing")
+	// The missing Deployment is a Fail that carries the absent marker so
+	// status.absent counts it (SKA-526).
+	assertHasDetail(t, result.Checks, "Deployment", "coredns", adapter.DetailAbsent, "true")
+}
+
+// TestRun_MissingServiceFails covers the second CoreDNS absence site: the kube-dns
+// Service NotFound is a Fail carrying the absent marker (SKA-526).
+func TestRun_MissingServiceFails(t *testing.T) {
+	// Deployment and pod present, Service absent.
+	objects := []clientObject{healthyDeployment(), readyPod(), dnsEndpointSlice()}
+	a := adapterWithLauncher(passingDNSLauncher())
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilySystemHealth: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Service", "kube-dns", adapter.OutcomeFail, "missing")
+	assertHasDetail(t, result.Checks, "Service", "kube-dns", adapter.DetailAbsent, "true")
 }
 
 func TestRun_UnreadyPodFails(t *testing.T) {
@@ -376,6 +397,8 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	assertHasOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomeFail, "not ready")
+	// A present-but-unhealthy target is a Fail that is NOT absent (SKA-526).
+	assertHasDetail(t, result.Checks, "Pod", "coredns", adapter.DetailAbsent, "")
 }
 
 func TestRun_NoReadyEndpointSlicesFails(t *testing.T) {

@@ -121,6 +121,9 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeFail, "not ready")
+	// A present-but-unhealthy target is a Fail that is NOT absent: the marker
+	// must distinguish "not installed" from "installed but broken" (SKA-526).
+	assertHasDetail(t, result.Checks, "Pod", "cert-manager", adapter.DetailAbsent, "")
 }
 
 func TestRun_RestartAnomalyWarns(t *testing.T) {
@@ -174,6 +177,34 @@ func TestRun_MissingCRDFails(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	assertHasOutcome(t, result.Checks, "CustomResourceDefinition", "orders.acme.cert-manager.io", adapter.OutcomeFail, "missing")
+}
+
+// TestRun_AbsentComponentsCarryMarker runs against a cluster with no cert-manager
+// objects (webhook probe enabled) and asserts every not-installed component —
+// Deployment, CRD, webhook Service, and both webhook configurations — is a Fail
+// that carries the adapter.DetailAbsent marker so status.absent counts it and it
+// stays distinct from an installed-but-broken component (SKA-526).
+func TestRun_AbsentComponentsCarryMarker(t *testing.T) {
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilySystemHealth: {Enabled: true, Thresholds: map[string]string{thresholdWebhookProbe: "true"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, tc := range []struct{ kind, name string }{
+		{"Deployment", "cert-manager"},
+		{"CustomResourceDefinition", "orders.acme.cert-manager.io"},
+		{"Service", "cert-manager-webhook"},
+		{"ValidatingWebhookConfiguration", "cert-manager-webhook"},
+		{"MutatingWebhookConfiguration", "cert-manager-webhook"},
+	} {
+		assertHasOutcome(t, result.Checks, tc.kind, tc.name, adapter.OutcomeFail, "missing")
+		assertHasDetail(t, result.Checks, tc.kind, tc.name, adapter.DetailAbsent, "true")
+	}
 }
 
 func TestRun_SystemHealthSupportsCustomNames(t *testing.T) {

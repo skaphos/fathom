@@ -107,6 +107,34 @@ func (a *programmableAdapter) setOutcome(o adapter.Outcome) {
 	a.outcome = o
 }
 
+// absentReportingAdapter returns a fixed mix of checks — one required-absent Fail,
+// one optional-absent Skip, one present-but-unhealthy Fail, and one healthy Pass —
+// so the reconciler's status.absent wiring (countAbsent over the absent marker)
+// can be asserted end-to-end (SKA-526).
+type absentReportingAdapter struct{}
+
+func (absentReportingAdapter) Name() string            { return "absent-addon" }
+func (absentReportingAdapter) Version() string         { return "0.0.1" }
+func (absentReportingAdapter) ContractVersion() string { return adapter.ContractVersion }
+func (absentReportingAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{"absent-addon"}, Families: []adapter.Family{"system_health"}}
+}
+
+func (absentReportingAdapter) Run(_ context.Context, _ adapter.Request) (adapter.Result, error) {
+	ref := func(name string) adapter.TargetRef {
+		return adapter.TargetRef{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "x", Name: name}
+	}
+	return adapter.Result{
+		Duration: time.Millisecond,
+		Checks: []adapter.CheckResult{
+			{Family: adapter.Family("system_health"), Outcome: adapter.OutcomeFail, TargetRef: ref("required-absent"), Summary: "not installed", Details: adapter.MarkAbsent(map[string]string{"component": "a"}), ObservedAt: time.Now()},
+			{Family: adapter.Family("system_health"), Outcome: adapter.OutcomeSkipped, TargetRef: ref("optional-absent"), Summary: "not installed", Details: adapter.MarkAbsent(map[string]string{"component": "b"}), ObservedAt: time.Now()},
+			{Family: adapter.Family("system_health"), Outcome: adapter.OutcomeFail, TargetRef: ref("present-unhealthy"), Summary: "broken", Details: map[string]string{"component": "c"}, ObservedAt: time.Now()},
+			{Family: adapter.Family("system_health"), Outcome: adapter.OutcomePass, TargetRef: ref("healthy"), Summary: "ok", ObservedAt: time.Now()},
+		},
+	}, nil
+}
+
 // healthReportCount returns how many HealthReports the given AddonCheck has
 // produced, matched via the source-kind/name labels.
 func healthReportCount(ctx context.Context, source types.NamespacedName) int {
@@ -362,6 +390,46 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		Expect(ready.Reason).To(Equal("RunCompleted"))
+	})
+
+	It("counts absent components into status.absent (SKA-526)", func() {
+		typeNamespacedName := types.NamespacedName{
+			Name:      "addoncheck-absent",
+			Namespace: "default",
+		}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typeNamespacedName.Name,
+				Namespace: typeNamespacedName.Namespace,
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "absent-addon",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					"system_health": {Enabled: true},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(absentReportingAdapter{})).To(Succeed())
+		controllerReconciler := &AddonCheckReconciler{
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
+			Adapters: adapters,
+		}
+
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+		// Two of the four checks carry the absent marker (required-absent Fail +
+		// optional-absent Skip); the present-but-unhealthy Fail and the Pass do not.
+		Expect(updated.Status.Absent).To(Equal(int32(2)))
 	})
 
 	It("requeues a ready AddonCheck after Spec.Interval so it re-runs", func() {
