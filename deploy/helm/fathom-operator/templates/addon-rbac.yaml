@@ -1,0 +1,84 @@
+{{- if .Values.rbac.create -}}
+{{- $root := . -}}
+{{- $data := .Files.Get "files/addon-rbac.yaml" | fromYaml -}}
+{{/*
+Per-addon least-privilege RBAC, DERIVED from the adapters' declared RBAC via
+`task gen:addon-rbac` (files/addon-rbac.yaml). The operator impersonates each
+addon's ServiceAccount at run time (SKA-58), so an adapter reads only what it
+declares. Never hand-edit files/addon-rbac.yaml — the Go adapters are the source
+of truth; kustomize (config/rbac/addons/) is the parallel deploy path.
+*/}}
+{{- range $data.addons }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" $root | nindent 4 }}
+    fathom.skaphos.io/addon: {{ .name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+  labels:
+    {{- include "fathom-operator.labels" $root | nindent 4 }}
+    fathom.skaphos.io/addon: {{ .name }}
+rules:
+  {{- toYaml .rules | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+  labels:
+    {{- include "fathom-operator.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+    namespace: {{ $root.Release.Namespace }}
+---
+{{- end }}
+{{/*
+Operator impersonation grant: a namespaced Role granting the operator SA only
+`impersonate` on the per-addon ServiceAccounts above (SA impersonation is a
+namespaced authorization check), scoped by resourceNames. The operator holds no
+addon read permissions of its own.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-addon-impersonator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["impersonate"]
+    resourceNames:
+      {{- range $data.addons }}
+      - {{ include "fathom-operator.fullname" $root }}-addon-{{ .name }}
+      {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" . }}-addon-impersonator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fathom-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fathom-operator.fullname" . }}-addon-impersonator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fathom-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

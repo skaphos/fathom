@@ -59,22 +59,28 @@ tasks:
     cmds:
       - '{{.CONTROLLER_GEN}} object:headerFile="hack/boilerplate.go.txt" paths="./..."'
 
+  gen:addon-rbac:
+    desc: Generate per-addon RBAC (config/rbac/addons/), the operator impersonate Role, the Helm data file, and the RBAC docs matrix from the adapters' declared RBAC (SKA-58)
+    cmds:
+      - go run ./internal/adapter/rbacgen/cmd
+
   verify-generated:
     desc: Re-run generators and fail if anything changed (CI gate against stale codegen)
     cmds:
       - task: manifests
       - task: generate
+      - task: gen:addon-rbac
       - task: helm:sync
       - task: docs:api-ref
       - |
-        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml docs/reference/api.md"
+        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
         untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
         if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
           fi
-          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
+          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
 

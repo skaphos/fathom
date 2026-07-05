@@ -9,6 +9,9 @@ resources:
 - role_binding.yaml
 - leader_election_role.yaml
 - leader_election_role_binding.yaml
+# Per-addon least-privilege RBAC + the operator's scoped impersonate Role,
+# generated from the adapters' declared RBAC by `task gen:addon-rbac` (SKA-58).
+- addons
 # The following RBAC configurations are used to protect
 # the metrics endpoint with authn/authz. These configurations
 # ensure that only authorized users and service accounts
