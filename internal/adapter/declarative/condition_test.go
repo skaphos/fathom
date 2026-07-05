@@ -1,0 +1,181 @@
+/*
+SPDX-FileCopyrightText: 2026 Skaphos
+SPDX-License-Identifier: MIT
+*/
+
+package declarative
+
+import (
+	"context"
+	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/go-logr/logr"
+
+	"github.com/skaphos/fathom/pkg/adapter"
+)
+
+// widget builds an example.io/v1 Widget managed CR with an optional
+// status.conditions[condType]=status entry (condType == "" leaves the object
+// with no conditions).
+func widget(namespace, name, condType, status string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "example.io/v1",
+		"kind":       "Widget",
+		"metadata":   map[string]any{"name": name, "namespace": namespace},
+	}}
+	if condType != "" {
+		_ = unstructured.SetNestedSlice(obj.Object,
+			[]any{map[string]any{"type": condType, "status": status}},
+			"status", "conditions")
+	}
+	return obj
+}
+
+func widgetCheck() ConditionCheck {
+	return ConditionCheck{
+		APIVersion:       "example.io/v1",
+		Kind:             "Widget",
+		ListKind:         "WidgetList",
+		ListName:         "widgets",
+		DefaultNamespace: "default",
+		ConditionType:    "Ready",
+		ExpectedStatus:   "True",
+	}
+}
+
+// runManaged runs an engine whose single enabled family carries cc as its only
+// ManagedResources evaluator, against objs and the given policy.
+func runManaged(t *testing.T, cc ConditionCheck, policy map[adapter.Family]adapter.FamilyPolicy, objs ...clientObject) []adapter.CheckResult {
+	t.Helper()
+	eng := MustEngine(AddonDefinition{
+		AddonType:      "widgets",
+		AdapterVersion: "0.0.1",
+		Families: []FamilyDefinition{{
+			Name:             "widget_health",
+			DefaultEnabled:   true,
+			ManagedResources: []ConditionCheck{cc},
+		}},
+	})
+	res, err := eng.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objs...),
+		Logger: logr.Discard(),
+		Policy: policy,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return res.Checks
+}
+
+// Per-object scoring is tested directly against scoreObject / conditionStatus:
+// the controller-runtime fake client's unstructured List is unreliable for these
+// dynamic CRs, but scoreObject is a pure function of the object. Evaluate's
+// list-level paths (skip / error) are covered through the engine below.
+
+func TestCondition_ScoreObject(t *testing.T) {
+	cc := widgetCheck()
+	ec := EvalContext{Family: "widget_health"}
+	one := func(c adapter.CheckResult) []adapter.CheckResult { return []adapter.CheckResult{c} }
+
+	pass := cc.scoreObject(ec, widget("default", "w1", "Ready", "True"), adapter.OutcomeFail, adapter.OutcomeFail)
+	assertHasOutcome(t, one(pass), "Widget", "w1", adapter.OutcomePass, "Ready")
+	assertHasDetail(t, one(pass), "Widget", "w1", "status", "True")
+	assertFamily(t, one(pass), "Widget", "w1", adapter.Family("widget_health"))
+
+	mismatch := cc.scoreObject(ec, widget("default", "w2", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeFail)
+	assertHasOutcome(t, one(mismatch), "Widget", "w2", adapter.OutcomeFail, "want")
+	assertHasDetail(t, one(mismatch), "Widget", "w2", "expectedStatus", "True")
+
+	absentFail := cc.scoreObject(ec, widget("default", "w3", "", ""), adapter.OutcomeFail, adapter.OutcomeFail)
+	assertHasOutcome(t, one(absentFail), "Widget", "w3", adapter.OutcomeFail, "absent")
+
+	// Custom outcomes: absent -> Warn, mismatch -> Warn.
+	absentWarn := cc.scoreObject(ec, widget("default", "w4", "", ""), adapter.OutcomeWarn, adapter.OutcomeFail)
+	assertHasOutcome(t, one(absentWarn), "Widget", "w4", adapter.OutcomeWarn, "absent")
+	mismatchWarn := cc.scoreObject(ec, widget("default", "w5", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeWarn)
+	assertHasOutcome(t, one(mismatchWarn), "Widget", "w5", adapter.OutcomeWarn, "want")
+}
+
+func TestCondition_ConditionStatus(t *testing.T) {
+	if s, ok := conditionStatus(widget("default", "w1", "Ready", "True"), "Ready"); !ok || s != "True" {
+		t.Fatalf("conditionStatus present: got (%q,%v), want (True,true)", s, ok)
+	}
+	if _, ok := conditionStatus(widget("default", "w2", "", ""), "Ready"); ok {
+		t.Fatal("conditionStatus absent: got ok=true, want false")
+	}
+	if _, ok := conditionStatus(widget("default", "w3", "Synced", "True"), "Ready"); ok {
+		t.Fatal("conditionStatus wrong type: got ok=true, want false")
+	}
+}
+
+func TestCondition_NoMatchingObjectsSkipped(t *testing.T) {
+	checks := runManaged(t, widgetCheck(), nil) // no objects
+	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeSkipped, "no Widget objects matched")
+	assertHasDetail(t, checks, "Widget", "widgets", "skipReason", "NoMatchingObjects")
+}
+
+func TestCondition_ListNameFallsBackToKind(t *testing.T) {
+	cc := widgetCheck()
+	cc.ListName = "" // list-level results should fall back to Kind
+	checks := runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "Widget", adapter.OutcomeSkipped, "")
+}
+
+func TestCondition_InvalidSelectorErrors(t *testing.T) {
+	policy := map[adapter.Family]adapter.FamilyPolicy{
+		"widget_health": {Enabled: true, LabelSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "k", Operator: "Nonsense"}},
+		}},
+	}
+	checks := runManaged(t, widgetCheck(), policy)
+	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeError, "invalid label selector")
+}
+
+func TestCondition_InvalidAPIVersionErrors(t *testing.T) {
+	cc := widgetCheck()
+	cc.APIVersion = "a/b/c" // unparseable group/version
+	checks := runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeError, "invalid apiVersion")
+}
+
+func TestPolicyNamespaceResolution(t *testing.T) {
+	// policyNamespaces + firstNamespace are pure; test them directly (the fake
+	// client mishandles multiple same-GVK unstructured objects, so an engine-
+	// level multi-namespace list can't be exercised reliably).
+	if got := policyNamespaces(adapter.FamilyPolicy{}, "kube-system"); len(got) != 1 || got[0] != "kube-system" {
+		t.Fatalf("empty policy: got %v, want [kube-system]", got)
+	}
+	if got := policyNamespaces(adapter.FamilyPolicy{Namespaces: []string{"a", "b"}}, "kube-system"); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("explicit namespaces: got %v, want [a b]", got)
+	}
+	if got := firstNamespace(adapter.FamilyPolicy{Namespaces: []string{"x", "y"}}, "def"); got != "x" {
+		t.Fatalf("firstNamespace explicit: got %q, want x", got)
+	}
+	if got := firstNamespace(adapter.FamilyPolicy{}, "def"); got != "def" {
+		t.Fatalf("firstNamespace default: got %q, want def", got)
+	}
+}
+
+func TestCondition_ClusterScopedListsWithoutNamespace(t *testing.T) {
+	cc := widgetCheck()
+	cc.ClusterScoped = true
+	// Exercises the cluster-scoped (no-namespace) list path. The fake client's
+	// cluster-scoped unstructured handling differs from a real API server, so we
+	// assert the branch runs and yields the list-level Skipped when nothing
+	// matches, rather than a specific object hit.
+	checks := runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeSkipped, "no Widget objects matched")
+}
+
+// MustEngine panics on an invalid definition; NewEngine returns the error.
+func TestMustEngine_PanicsOnInvalid(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("MustEngine: expected panic on invalid definition")
+		}
+	}()
+	MustEngine(AddonDefinition{}) // empty AddonType -> validation error -> panic
+}
