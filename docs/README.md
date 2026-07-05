@@ -30,6 +30,7 @@ Task-oriented guides for installing and using Fathom live in
 | --- | --- |
 | [architecture.md](architecture.md) | The CRD model, the AddonCheck → HealthCheck → ClusterHealth aggregation chain, what each reconciler owns and watches, the adapter contract, the probe-pod model, and the runtime shape. |
 | [code-map.md](code-map.md) | A module-by-module tour of the source tree for new contributors. |
+| [authoring-adapters.md](authoring-adapters.md) | How to add a new add-on adapter — the declarative `AddonDefinition` path, the Go escape hatch, RBAC declaration, versioning, and a ship-it checklist. |
 | [reference/configuration.md](reference/configuration.md) | Every operator option (flag / env var / config file / default) and the precedence rules. |
 | [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
 | [reference/api-versioning.md](reference/api-versioning.md) | CRD API versioning policy — the maturity ladder (alpha/beta/GA), compatible vs. breaking schema changes, storage/served versions, and deprecation windows. Mirror of the org standard. |
