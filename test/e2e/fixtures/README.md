@@ -14,13 +14,14 @@ the Go e2e suite under `test/e2e/` will eventually drive automatically.
 | File | Purpose |
 | ---- | ------- |
 | `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned by digest to `v1.36.1` (matches `ENVTEST_K8S_VERSION` 1.36 in `Taskfile.yml`; kind only publishes specific patch tags per release, so use a real one). |
-| `helmfile.yaml` | Installs cert-manager + external-secrets via their official charts. CoreDNS is preinstalled by kind and is not managed here. |
+| `helmfile.yaml` | Installs Cilium (the cluster CNI) + cert-manager + external-dns + external-secrets via their official charts. CoreDNS is preinstalled by kind and is not managed here. |
 
 The AddonCheck samples used by this stack live in `config/samples/`:
 
 - `fathom_v1alpha1_addoncheck_coredns.yaml` — exercises CoreDNS `system_health` + `dns_resolution`.
 - `fathom_v1alpha1_addoncheck.yaml` — exercises cert-manager `system_health`, `issuer_health`, `certificate_health`.
 - `fathom_v1alpha1_addoncheck_external_secrets.yaml` — exercises external-secrets `system_health` + `secret_sync`.
+- `fathom_v1alpha1_addoncheck_external_dns.yaml` — exercises external-dns `system_health` + the `crd_health` Optional-absence contract (the chart installs no DNSEndpoint CRD).
 
 ## Prerequisites
 

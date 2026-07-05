@@ -75,6 +75,7 @@ its [guide](node-certificate-checks.md#availability)) — is the exception that
 | [`coredns`](#coredns) | `system_health`, `dns_resolution` | CoreDNS workloads + real DNS resolution from a workload's vantage point |
 | [`external-secrets`](#external-secrets) | `system_health`, `secret_sync` | External Secrets Operator workloads + ExternalSecret sync state |
 | [`cilium`](#cilium) | `control_plane_health`, `agent_health`, `crd_health` | Cilium operator, per-node agent, and CRDs |
+| [`external-dns`](#external-dns) | `system_health`, `crd_health` | external-dns controller workloads + the opt-in DNSEndpoint CRD |
 
 ### cert-manager
 
@@ -199,6 +200,35 @@ operator Deployment, agent DaemonSet, and CRDs are all missing — so a `cilium`
 that *exists but is unhealthy* still reports `Fail`. This makes a single Cilium
 check safe to ship to a mixed fleet.
 
+### external-dns
+
+```yaml
+spec:
+  addonType: external-dns
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - external-dns
+      thresholds:
+        deploymentName: "external-dns"
+        restartWarnCount: "3"
+    crd_health:
+      enabled: true
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The external-dns controller Deployment and its pods. | `deploymentName` (the Deployment follows the Helm release fullname), `restartWarnCount` |
+| `crd_health` | The `dnsendpoints.externaldns.k8s.io` CRD is established and serves `v1alpha1`. | — |
+
+The controller Deployment is required (absent → `Fail`), but the DNSEndpoint
+CRD is **optional**: the CRD source is an opt-in external-dns feature, so an
+install without it reports `Skipped` with the `absent` detail instead of
+failing. DNS record reconciliation outcomes are not checked — `DNSEndpoint`
+status carries no conditions, so per-record health is only observable through
+external-dns's own metrics and logs.
+
 Either way, **`status.absent`** records how many checks in the most recent run found
 their target not installed — the required-absent Fails and the optional-absent Skips
 alike. It makes "not installed" queryable and distinct from "unhealthy" (a `Fail`
@@ -267,7 +297,7 @@ are in the `Accepted` condition message. Common `Ready=False` reasons:
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
-| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`. |
+| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`, `external-dns`. |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
 | `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
 | `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |

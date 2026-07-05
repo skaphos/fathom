@@ -303,8 +303,9 @@ and a set of families:
 | --- | --- | --- |
 | `cert-manager` | `internal/adapter/certmanager` | `system_health`, `issuer_health`, `certificate_health` |
 | `coredns` | `internal/adapter/coredns` | `system_health`, `dns_resolution` |
-| `external-secrets` | `internal/adapter/externalsecrets` | `system_health`, `secret_sync` |
-| `cilium` | `internal/adapter/cilium` | `control_plane_health`, `agent_health`, `crd_health` |
+| `external-secrets` | `internal/adapter/declarative` (`externalsecrets.go`) | `system_health`, `secret_sync` |
+| `cilium` | `internal/adapter/declarative` (`cilium.go`) | `control_plane_health`, `agent_health`, `crd_health` |
+| `external-dns` | `internal/adapter/declarative` (`externaldns.go`) | `system_health`, `crd_health` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`

@@ -1,886 +1,906 @@
 {
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/scripts/coverage_gate_test.go": {
-    "mtime": 1783284466.422618,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/scripts/coverage_gate_test.go": {
+    "mtime": 1783293134.2278693,
     "hash": "93a31e6414d84a9fd82667e2fe522e6b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/main_test.go": {
-    "mtime": 1783284466.3581197,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/main_test.go": {
+    "mtime": 1783293134.1758447,
     "hash": "0439d2bb305e892121cde0c1858114b4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/main.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/main.go": {
+    "mtime": 1783293134.1743433,
     "hash": "a9d640ed62bb834c933a52545f5786f6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/node-agent/main_test.go": {
-    "mtime": 1783284466.3589833,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/node-agent/main_test.go": {
+    "mtime": 1783293134.1766212,
     "hash": "6a7bb504ba7d5a2a2798216998330e50"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/node-agent/main.go": {
-    "mtime": 1783284466.3581197,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/node-agent/main.go": {
+    "mtime": 1783293134.1758447,
     "hash": "f89c76eb74b5d3e07cfb51b60a0436fa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/probe/main_test.go": {
-    "mtime": 1783284466.359909,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/probe/main_test.go": {
+    "mtime": 1783293134.1772447,
     "hash": "5c9ae77a2441e261f1a1f0a0e940e8fc"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/cmd/probe/main.go": {
-    "mtime": 1783284466.3589833,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/cmd/probe/main.go": {
+    "mtime": 1783293134.1766212,
     "hash": "c1c68a3592c65f07a5fa6c714100dce4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/healthreport_types_test.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/healthreport_types_test.go": {
+    "mtime": 1783293134.1743433,
     "hash": "19c3766e1518c4db33579147a0f22f7f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/addoncheck_types.go": {
-    "mtime": 1783284534.5699563,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/addoncheck_types.go": {
+    "mtime": 1783293134.1741922,
     "hash": "6e3e3a4649914eddeb7fca7868b056d6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/healthcheck_types.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/healthcheck_types.go": {
+    "mtime": 1783293134.1743433,
     "hash": "4a62ee0e37d6dd16786d048894650969"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/healthreport_types.go": {
-    "mtime": 1783284534.5699563,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/healthreport_types.go": {
+    "mtime": 1783293134.1743433,
     "hash": "e5ac25e8b59ce40b4a2f27696e0ab9c3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/groupversion_info.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/groupversion_info.go": {
+    "mtime": 1783293134.1743433,
     "hash": "2c0f4844d13a0f5795b42c681b3fe924"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/groupversion_info_test.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/groupversion_info_test.go": {
+    "mtime": 1783293134.1743433,
     "hash": "64f4747534c439d6d63d1b3400f35d97"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/nodecertificatecheck_types.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/nodecertificatecheck_types.go": {
+    "mtime": 1783293134.1743433,
     "hash": "b75dbf00971a625bfce30c8c33646897"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/deepcopy_test.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/deepcopy_test.go": {
+    "mtime": 1783293134.1743433,
     "hash": "16f96b467ff6e662e851336c60886cf4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/clusterhealth_types.go": {
-    "mtime": 1783284466.3561664,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/clusterhealth_types.go": {
+    "mtime": 1783293134.1743433,
     "hash": "eb6b401c139b11f92f985e87d30b81ae"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1783291839.1250477,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/api/v1alpha1/zz_generated.deepcopy.go": {
+    "mtime": 1783293597.1345556,
     "hash": "d466f4663f5074177818a75f302651ab"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/rbac.go": {
-    "mtime": 1783284534.595878,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/rbac.go": {
+    "mtime": 1783293134.226436,
     "hash": "a2e765eb7245c92ed6acb1731bef4bb8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/rbac_test.go": {
-    "mtime": 1783284534.595878,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/rbac_test.go": {
+    "mtime": 1783293134.226436,
     "hash": "3c82e96cb11464a56526e2d631dc239d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/doc.go": {
-    "mtime": 1783291775.6345084,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/doc.go": {
+    "mtime": 1783293134.226436,
     "hash": "af81c6814fd9705add23a9417b7333d8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/version_test.go": {
-    "mtime": 1783284466.4205022,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/version_test.go": {
+    "mtime": 1783293134.226436,
     "hash": "5fe8f0a9fe6e775b3459b0f53c8182f0"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/adapter_test.go": {
-    "mtime": 1783284534.595878,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/adapter_test.go": {
+    "mtime": 1783293134.226436,
     "hash": "2b47c60a5e3922253b22dd29da0a578c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/version.go": {
-    "mtime": 1783284466.4205022,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/version.go": {
+    "mtime": 1783293134.226436,
     "hash": "4065e8f4fb49ff6ebc4d4a3c5383bdcf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/pkg/adapter/adapter.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/pkg/adapter/adapter.go": {
+    "mtime": 1783293134.2258234,
     "hash": "de7ebbe5317e920e824cb285ec1495a9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/utils/utils_test.go": {
-    "mtime": 1783284466.4266644,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/utils/utils_test.go": {
+    "mtime": 1783293134.2319365,
     "hash": "b7d3c50446e089e1a10aaa1b4ef2e020"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/utils/utils.go": {
-    "mtime": 1783284466.424268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/utils/utils.go": {
+    "mtime": 1783293134.230649,
     "hash": "b5b3716801ccbf32b758906ed6bbb0ea"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/coredns_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/coredns_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "05da837f017759b1ec1269dbee7fa6c4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/e2e_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/e2e_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "c4a30b3da7a19efb0a50559483ed62ea"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/addoncheck_refresh_test.go": {
-    "mtime": 1783284466.4238753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/externaldns_test.go": {
+    "mtime": 1783293433.763825,
+    "hash": "df6435eb0926f454a54e8c0ffe890ce1"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/addoncheck_refresh_test.go": {
+    "mtime": 1783293134.228922,
     "hash": "e466b1ea6d9e07d0d04bb755d76379c9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/e2e_suite_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/e2e_suite_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "7d6fc7fbb9cdb1e1ead19c4b3e497b01"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/certmanager_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/certmanager_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "e6865c8336c619979cdd3ef70c36bfbb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/nodecert_test.go": {
-    "mtime": 1783284466.424268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/nodecert_test.go": {
+    "mtime": 1783293134.230649,
     "hash": "98db04c106cf5820216c90380710e227"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/impersonation_test.go": {
-    "mtime": 1783284534.595878,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/impersonation_test.go": {
+    "mtime": 1783293134.230649,
     "hash": "5f7a479ad60df603764d17b163fc3c4c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/externalsecrets_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/externalsecrets_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "af0d5dbd4ba4e783ae505678e2583040"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/cilium_test.go": {
-    "mtime": 1783284466.424219,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/cilium_test.go": {
+    "mtime": 1783293134.2290583,
     "hash": "0d47f165a03cb6c6b8caea19dbb1c9b1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/healthreport_helpers_test.go": {
-    "mtime": 1783284466.424268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/healthreport_helpers_test.go": {
+    "mtime": 1783293134.230649,
     "hash": "5c06d252d79a0238e0836eab65ded4a4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/options_test.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/options_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "8ad3d32c1ea1ee2fe44b6c7a2742bd55"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/run_happy_test.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/run_happy_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "a1d5970ea8f676aff699325040e7319b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/run.go": {
-    "mtime": 1783284534.5940535,
-    "hash": "9c7dc919077dd6f08965ad7e3a1dae8d"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/run.go": {
+    "mtime": 1783293268.0952268,
+    "hash": "0de36046ce29c8e23c8836a4474b89bb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/run_test.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/run_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "324727a2357cb3fda86beb6b8c0fb959"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/root.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/root.go": {
+    "mtime": 1783293134.2161152,
     "hash": "21e3a01e0a46bc6baf41342bfadc6702"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/root_test.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/root_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "2cd7bdaf492b761ba60ab8b7061a37fb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/root_wiring_test.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/root_wiring_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "4164b5994300db375ccbd1de05a6fd13"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/app/options.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/app/options.go": {
+    "mtime": 1783293134.2152717,
     "hash": "31fd15ea22b8a7977a49ee5e8ebeaf04"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/nodecertificatecheck_helpers.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/nodecertificatecheck_helpers.go": {
+    "mtime": 1783293134.217946,
     "hash": "1e0aeef8f6c0034a122207ba5ad29ff8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/absence_count_test.go": {
-    "mtime": 1783284466.408581,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/absence_count_test.go": {
+    "mtime": 1783293134.2161152,
     "hash": "56c2e8519f532b22fec116483f07f0dc"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/clusterhealth_controller.go": {
-    "mtime": 1783284466.4106631,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/clusterhealth_controller.go": {
+    "mtime": 1783293134.217946,
     "hash": "80fb80d35ab8bf30f4bd01b37905404c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/impersonation_envtest_test.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/impersonation_envtest_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "c56693bda498aa0826f02c3995b43964"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/tracing_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/tracing_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "00b5483a864e0329e142cfbde521a1e1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/nodecertificatecheck_controller.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/nodecertificatecheck_controller.go": {
+    "mtime": 1783293134.217946,
     "hash": "472fc221ae4225456da355a739037c82"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/healthcheck_controller_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/healthcheck_controller_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "1bedea9b244f270c9615b71eec0876c8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/clusterhealth_controller_test.go": {
-    "mtime": 1783284466.4106631,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/clusterhealth_controller_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "1f1aff956053eefb9377909f212dae4b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/suite_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/suite_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "a7e2372f916d5cbc3b84e3c7b524e6e4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/addoncheck_controller.go": {
-    "mtime": 1783288518.5443926,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/addoncheck_controller.go": {
+    "mtime": 1783293134.217946,
     "hash": "9b57c01560cae32f8d0d1b0f4f0e7a76"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/policy_validation_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/policy_validation_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "08cfe99fb68f061dbb064fbf1a7cc732"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/nodecertificatecheck_controller_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/nodecertificatecheck_controller_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "a900766e81eaa9389939a3fb41147172"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/crd_validation_test.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/crd_validation_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "14f0eaa75c00149f56caac8216b501ca"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/addoncheck_controller_test.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/addoncheck_controller_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "abc470963b9d03a8c61bdef600949050"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/addoncheck_impersonation_test.go": {
-    "mtime": 1783288557.4836686,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/addoncheck_impersonation_test.go": {
+    "mtime": 1783293134.217946,
     "hash": "dc25387371b142a2820fbb5d53516146"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/tracing.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/tracing.go": {
+    "mtime": 1783293134.217946,
     "hash": "b8974e66d1497f5db274eb602beab778"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/controller/healthcheck_controller.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/controller/healthcheck_controller.go": {
+    "mtime": 1783293134.217946,
     "hash": "ae1684978824a45420a4c845f9bc4adf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/metrics/metrics_test.go": {
-    "mtime": 1783284466.415389,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/metrics/metrics_test.go": {
+    "mtime": 1783293134.2217205,
     "hash": "65992ebd7860c8f0d500cf56c86a0a5d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/metrics/metrics.go": {
-    "mtime": 1783284466.411268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/metrics/metrics.go": {
+    "mtime": 1783293134.217946,
     "hash": "b33bc978f89a0a1e55ffb01a0e5dff1e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/probe/launcher_test.go": {
-    "mtime": 1783284466.418384,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/probe/launcher_test.go": {
+    "mtime": 1783293134.2240036,
     "hash": "09014832fd78d0061ed03837f1b0e53e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/probe/launcher.go": {
-    "mtime": 1783284466.4163024,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/probe/launcher.go": {
+    "mtime": 1783293134.2225978,
     "hash": "464c96fe23668173436fe8f7fc856095"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/probe/pod.go": {
-    "mtime": 1783284466.418384,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/probe/pod.go": {
+    "mtime": 1783293134.2240036,
     "hash": "c7cd055d84304eb41abb7eb968e1b5d8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/probe/pod_test.go": {
-    "mtime": 1783284466.418384,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/probe/pod_test.go": {
+    "mtime": 1783293134.2240036,
     "hash": "cf22ccc0667fe299b48b3613e91d4f98"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/nodecert/paths.go": {
-    "mtime": 1783284466.415389,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/nodecert/paths.go": {
+    "mtime": 1783293134.2217205,
     "hash": "f81eda16fd288bec025e521233345ca1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/nodecert/types.go": {
-    "mtime": 1783284466.4163024,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/nodecert/types.go": {
+    "mtime": 1783293134.2225978,
     "hash": "988ce7e6cf2ef448e80e0c0a03772183"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/nodecert/scan.go": {
-    "mtime": 1783284466.4163024,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/nodecert/scan.go": {
+    "mtime": 1783293134.2225978,
     "hash": "3a5d6e5fc852198071e1d20638b85761"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/nodecert/scan_test.go": {
-    "mtime": 1783284466.4163024,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/nodecert/scan_test.go": {
+    "mtime": 1783293134.2225978,
     "hash": "cd4dc57223dc43bf6c2f711aaaa02bcc"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/nodecert/wire.go": {
-    "mtime": 1783284466.4163024,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/nodecert/wire.go": {
+    "mtime": 1783293134.2225978,
     "hash": "255fd5870cb327be85a403af8481e5cd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/certmanager/rbac_test.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/certmanager/rbac_test.go": {
+    "mtime": 1783293134.206488,
     "hash": "d82f3fe1d9d60a7e59b74133b728e799"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/certmanager/adapter_test.go": {
-    "mtime": 1783290401.0787303,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/certmanager/adapter_test.go": {
+    "mtime": 1783293134.206488,
     "hash": "77b3987e4cc7598dc9865a432ce63cc5"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/certmanager/adapter.go": {
-    "mtime": 1783289564.9256868,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/certmanager/adapter.go": {
+    "mtime": 1783293134.205564,
     "hash": "5387b03685de8bf1dc94d20a12baf840"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/coredns/rbac_test.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/coredns/rbac_test.go": {
+    "mtime": 1783293134.2074914,
     "hash": "6f4ca9db08e89274ef6819a3d171840c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/coredns/adapter_test.go": {
-    "mtime": 1783284466.397303,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/coredns/adapter_test.go": {
+    "mtime": 1783293134.2074914,
     "hash": "5ef872d0d7324dad82b2003762555d5b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/coredns/adapter.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/coredns/adapter.go": {
+    "mtime": 1783293134.206488,
     "hash": "9d0c71d7b1f52a30803ab77553321625"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/coredns/adapter_tracing_test.go": {
-    "mtime": 1783284466.397303,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/coredns/adapter_tracing_test.go": {
+    "mtime": 1783293134.2074914,
     "hash": "28e5c2cf8c3737d099b34d47aa41f198"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/registry/registry.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/registry/registry.go": {
+    "mtime": 1783293134.2137117,
     "hash": "6fdec7c96123aeda515c49aa99b77568"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/registry/registry_test.go": {
-    "mtime": 1783284466.4076476,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/registry/registry_test.go": {
+    "mtime": 1783293134.2152717,
     "hash": "87b675cecd93f8cabe59da6c2dcf112d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/files_test.go": {
-    "mtime": 1783288568.923668,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/files_test.go": {
+    "mtime": 1783293134.2137117,
     "hash": "a161d8b1be3ee34e3190dbb598638b70"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/rbacgen.go": {
-    "mtime": 1783288508.53006,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/rbacgen.go": {
+    "mtime": 1783293134.2137117,
     "hash": "ef27d23d2168e60b71487ef4211e82bb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/write_test.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/write_test.go": {
+    "mtime": 1783293134.2137117,
     "hash": "30f04ddbad918033363c5f1f2dc8b799"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/guard_test.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/guard_test.go": {
+    "mtime": 1783293134.2137117,
     "hash": "a2f3ff7ba0389984788ad1820a020e13"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/cmd/main_test.go": {
-    "mtime": 1783284650.4621096,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/cmd/main_test.go": {
+    "mtime": 1783293134.2137117,
     "hash": "623b00b3ae104712d94855f06b6e24d9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/rbacgen/cmd/main.go": {
-    "mtime": 1783284534.5940535,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/rbacgen/cmd/main.go": {
+    "mtime": 1783293134.2134943,
     "hash": "81bf879c1aef3122f964fee4515977b9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/definition.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/externaldns_test.go": {
+    "mtime": 1783293208.0734875,
+    "hash": "585fef1d4f8b631c5c7198b4e880ab1e"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/definition.go": {
+    "mtime": 1783293134.2092168,
     "hash": "d1dc97fd1cfdbd1fd78fbff0e611b829"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/workload.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/workload.go": {
+    "mtime": 1783293134.2092168,
     "hash": "412e80992a1cf106408716cd276a1fc7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/tracing_test.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/externaldns.go": {
+    "mtime": 1783293179.2199173,
+    "hash": "9064014088643d6ab6dd296d245f3b81"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/tracing_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "4e6b9d99678b0bb6beec4e285466b517"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/evaluator.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/evaluator.go": {
+    "mtime": 1783293134.2092168,
     "hash": "a9bb68cb69811d6954f2677cedb30c6c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/engine.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/engine.go": {
+    "mtime": 1783293134.2092168,
     "hash": "bd59554ffad8e1ded43ca670a0cad070"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/condition.go": {
-    "mtime": 1783284466.399877,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/condition.go": {
+    "mtime": 1783293134.2092168,
     "hash": "2730dc8628025e2be7aaee326d9c1e7c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/externalsecrets.go": {
-    "mtime": 1783284534.5872374,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/externalsecrets.go": {
+    "mtime": 1783293134.2092168,
     "hash": "562fce5121fef36639ba3922da718070"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/versiondetect_test.go": {
-    "mtime": 1783284534.5872374,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/versiondetect_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "f0dfb8f9f8b269a8128dd97c0830b06a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/workload_test.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/workload_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "1b9b1c5e2895300b945d4badddad2e01"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/versiondetect.go": {
-    "mtime": 1783284534.5872374,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/versiondetect.go": {
+    "mtime": 1783293134.2092168,
     "hash": "74e0af57c36adf2833bca1a4217ac454"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/condition_test.go": {
-    "mtime": 1783284466.399877,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/condition_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "89609afb12ee8227209192a06cc8382f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/crd.go": {
-    "mtime": 1783284466.399877,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/crd.go": {
+    "mtime": 1783293134.2092168,
     "hash": "ff08afd32d56922d141c5ac8e3b9e7df"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/externalsecrets_test.go": {
-    "mtime": 1783284466.4026012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/externalsecrets_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "5492f7a6b132e1f6a54ffd9480337b3d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/engine_test.go": {
-    "mtime": 1783284534.5872374,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/engine_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "675a82633858858bce95589c78612bcf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/crd_test.go": {
-    "mtime": 1783284466.399877,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/crd_test.go": {
+    "mtime": 1783293134.2092168,
     "hash": "7b2ee7a4e1b482427259e1afe94cb288"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/declarative/cilium.go": {
-    "mtime": 1783284534.5829172,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/declarative/cilium.go": {
+    "mtime": 1783293134.2084258,
     "hash": "92acb317d0d37428d302b8421df7c7a2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/impersonation/factory.go": {
-    "mtime": 1783284534.5872374,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/impersonation/factory.go": {
+    "mtime": 1783293134.2092168,
     "hash": "a41b25957bac76bb95699d46e4614dd6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/impersonation/factory_test.go": {
-    "mtime": 1783284534.5927753,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/impersonation/factory_test.go": {
+    "mtime": 1783293134.21228,
     "hash": "ef7b0217d34a7df8c7ef56cea956cf26"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/crdutil/crdutil.go": {
-    "mtime": 1783284466.397303,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/crdutil/crdutil.go": {
+    "mtime": 1783293134.2074914,
     "hash": "fc13af586e6b671d77e05c7d76e2531b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/adapter/crdutil/crdutil_test.go": {
-    "mtime": 1783284466.3989809,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/adapter/crdutil/crdutil_test.go": {
+    "mtime": 1783293134.2084258,
     "hash": "991cd060c1e1074519473ad22f7121c9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/tracing/tracing_test.go": {
-    "mtime": 1783284466.4190738,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/tracing/tracing_test.go": {
+    "mtime": 1783293134.2250733,
     "hash": "e57003049d350dbde0602441c759d8fa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/internal/tracing/tracing.go": {
-    "mtime": 1783284466.418384,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/internal/tracing/tracing.go": {
+    "mtime": 1783293134.2240036,
     "hash": "411b763d0508321ae18bfc1396edae24"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/CONTRIBUTING.md": {
-    "mtime": 1783284466.35029,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/CONTRIBUTING.md": {
+    "mtime": 1783293134.1708949,
     "hash": "23dc57f3765d195382eed867172eb3a2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/Taskfile.yml": {
-    "mtime": 1783284534.5699563,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/Taskfile.yml": {
+    "mtime": 1783293134.1708949,
     "hash": "12b60e11fc3d1a75020d90e6ab26d5aa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/AGENTS.md": {
-    "mtime": 1783284466.35029,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/AGENTS.md": {
+    "mtime": 1783293134.1708949,
     "hash": "d0193fc82374a024ebc7d90e5a51e7ed"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/CLAUDE.md": {
-    "mtime": 1783284466.35029,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/CLAUDE.md": {
+    "mtime": 1783293134.1708949,
     "hash": "d0193fc82374a024ebc7d90e5a51e7ed"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/CHANGELOG.md": {
-    "mtime": 1783284466.35029,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/CHANGELOG.md": {
+    "mtime": 1783293134.1708949,
     "hash": "6a74d212f9f54c31bf01b5fe4906bf72"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/README.md": {
-    "mtime": 1783284534.5699563,
-    "hash": "d626db71479a7d60e92ab9ea13c1dc61"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/README.md": {
+    "mtime": 1783293456.2971578,
+    "hash": "bd89022409664c5ad774065062a708c7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/RELEASE.md": {
-    "mtime": 1783284534.5699563,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/RELEASE.md": {
+    "mtime": 1783293134.1708949,
     "hash": "e1496fb93b1b18a6e295826cdf187340"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/values.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/values.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "acb404372c0a7b97f3434160f95dc13b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/Chart.yaml": {
-    "mtime": 1783284534.5785968,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/Chart.yaml": {
+    "mtime": 1783293134.190321,
     "hash": "a0210b9ca0940e6afa5fa1fabf772df2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783291833.4776254,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
+    "mtime": 1783293567.314909,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783291833.4776578,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
+    "mtime": 1783293567.315084,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783291833.4776897,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
+    "mtime": 1783293567.3151314,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783291833.4775112,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
+    "mtime": 1783293567.314801,
     "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783291833.477591,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
+    "mtime": 1783293567.3148663,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
-    "mtime": 1783291831.572048,
-    "hash": "0b2230bed172ff014ec4525a62825c1f"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
+    "mtime": 1783293565.1958733,
+    "hash": "eeaea1a34e445a7fabb17c1c9dc10231"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/files/manager-rules.yaml": {
-    "mtime": 1783291833.487433,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/files/manager-rules.yaml": {
+    "mtime": 1783293567.3192065,
     "hash": "7407af4f00440c98fa9caa50ace56ba9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/NOTES.txt": {
-    "mtime": 1783284466.3766012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/NOTES.txt": {
+    "mtime": 1783293134.1923912,
     "hash": "c761345c69bf236d8641ede00c06cb29"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/serviceaccount.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/serviceaccount.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "be1c4dcbda6008c221bd13bd71e9f06d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/addon-rbac.yaml": {
-    "mtime": 1783284534.5785968,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/addon-rbac.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "198cb65046165df4ae597a0874b995f0"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/metrics-rbac.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/metrics-rbac.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "b9efa344c7c1c765b49e559944982dc6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/metrics-service.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/metrics-service.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "81ba522c15bf991cfb87bcb124f074ab"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/configmap.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/configmap.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "768684ef810876704a7f0e81eeb02c51"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/clusterrole.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/clusterrole.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "75852084a46f1ec64eb221c8d004e333"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/servicemonitor.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/servicemonitor.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "1557308c564f238cc806ee2b9d406c36"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/deployment.yaml": {
-    "mtime": 1783284534.5785968,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/deployment.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "d441db24e1f5d4fa73be68200f3e7113"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/templates/leader-election-role.yaml": {
-    "mtime": 1783284466.3779542,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/templates/leader-election-role.yaml": {
+    "mtime": 1783293134.1930346,
     "hash": "8d98b28945c81074affffd5a6bd4d1e1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/ci/leaderelect-disabled-values.yaml": {
-    "mtime": 1783284466.3753026,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/ci/leaderelect-disabled-values.yaml": {
+    "mtime": 1783293134.1908605,
     "hash": "a8ecb16191fcc150df0215b262cd670b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/deploy/helm/fathom-operator/ci/ct-values.yaml": {
-    "mtime": 1783284466.3744512,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/deploy/helm/fathom-operator/ci/ct-values.yaml": {
+    "mtime": 1783293134.190321,
     "hash": "470adb98f374e0b0ad5377d706fee8a3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/kustomization.yaml": {
-    "mtime": 1783284466.3629282,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/kustomization.yaml": {
+    "mtime": 1783293134.1799252,
     "hash": "ba5c481f4ed604a8e60368c045eb3b0a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/kustomizeconfig.yaml": {
-    "mtime": 1783284466.3629282,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/kustomizeconfig.yaml": {
+    "mtime": 1783293134.1799252,
     "hash": "d3159b0e0b5653f5fdb206754b749be5"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783291837.1967144,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
+    "mtime": 1783293595.032889,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783291837.1967144,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
+    "mtime": 1783293595.0372224,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783291837.231381,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
+    "mtime": 1783293595.0632224,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783291837.1967144,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
+    "mtime": 1783293595.032889,
     "hash": "aead0b7f41525a23cf23cf7663b4feb3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783291837.1967144,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
+    "mtime": 1783293595.032889,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/default/metrics_service.yaml": {
-    "mtime": 1783284466.3642724,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/default/metrics_service.yaml": {
+    "mtime": 1783293134.1808019,
     "hash": "90bff025c2b4b575c0d83a043ae37837"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/default/manager_metrics_patch.yaml": {
-    "mtime": 1783284466.3642724,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/default/manager_metrics_patch.yaml": {
+    "mtime": 1783293134.1808019,
     "hash": "50af42d8c0440565f348a83e7df385f8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/default/kustomization.yaml": {
-    "mtime": 1783284466.3642724,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/default/kustomization.yaml": {
+    "mtime": 1783293134.1808019,
     "hash": "d4a69a77489861172c8b158a0a8b7d34"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/default/cert_metrics_manager_patch.yaml": {
-    "mtime": 1783284466.3629282,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/default/cert_metrics_manager_patch.yaml": {
+    "mtime": 1783293134.1799252,
     "hash": "ba9a4912598265540236eb59e59adec8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/network-policy/kustomization.yaml": {
-    "mtime": 1783284466.3666236,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/network-policy/kustomization.yaml": {
+    "mtime": 1783293134.1833186,
     "hash": "93ea57e0a92f92d6a961b0775e00e39d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/network-policy/allow-metrics-traffic.yaml": {
-    "mtime": 1783284466.365909,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/network-policy/allow-metrics-traffic.yaml": {
+    "mtime": 1783293134.1826313,
     "hash": "dee85ed8e7c05bf16ec7f1ef8f20761d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/components/prometheus/kustomization.yaml": {
-    "mtime": 1783284466.3607824,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/components/prometheus/kustomization.yaml": {
+    "mtime": 1783293134.1781921,
     "hash": "0f1bb4a6d6004bdc5b9e3a08e0fd5d2d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/components/prometheus/monitor.yaml": {
-    "mtime": 1783284466.361423,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/components/prometheus/monitor.yaml": {
+    "mtime": 1783293134.178739,
     "hash": "479dae1582978e93cb165069695c72a2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/components/prometheus/monitor_tls_patch.yaml": {
-    "mtime": 1783284466.361423,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/components/prometheus/monitor_tls_patch.yaml": {
+    "mtime": 1783293134.178739,
     "hash": "eb8b35947ce8022d41f4aa1c60312629"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/kustomization.yaml": {
-    "mtime": 1783284466.369991,
-    "hash": "d79dce1e447584fecae5846ec913259e"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/kustomization.yaml": {
+    "mtime": 1783293382.695274,
+    "hash": "829af369cba8642ceb6094d7d378a3d6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_nodecertificatecheck.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_nodecertificatecheck.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "8ab1b2039812402e5c865355af2c5d9e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_healthcheck.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_healthcheck.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "cfda3fdc604f90a867ae7e63679359c1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_addoncheck_cilium.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_addoncheck_cilium.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "227b4c6e738aeb6c56d6626f58b66b70"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_addoncheck.yaml": {
-    "mtime": 1783284466.3679347,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_addoncheck.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "1704a42b006613125db0a49bb96966b0"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_addoncheck_coredns.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_addoncheck_coredns.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "738fb3f86c1c66acdceafe95cd09b34b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_addoncheck_external_dns.yaml": {
+    "mtime": 1783293381.0529408,
+    "hash": "ee6047de46b692c86b8b774aff63dd06"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "532aa727ab3e186b02ce6ffd2b38054e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_healthreport.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_healthreport.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "1e6ab936bd910c3e44868ac3041fae65"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/samples/fathom_v1alpha1_clusterhealth.yaml": {
-    "mtime": 1783284466.369991,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/samples/fathom_v1alpha1_clusterhealth.yaml": {
+    "mtime": 1783293134.1865828,
     "hash": "82477a9c9f1cbcc4d77d06a8e0ce40d6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/role_binding.yaml": {
-    "mtime": 1783284466.3679347,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/role_binding.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "dddc51bcebfddee5569c4a0d28169d7c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/clusterhealth_viewer_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/clusterhealth_viewer_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "8f195ca2f6d39c0108b3334f7703ec34"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/kustomization.yaml": {
-    "mtime": 1783284534.576135,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/kustomization.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "8ebffdb946d428c5e6fb552fb96e37c4"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/clusterhealth_editor_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/clusterhealth_editor_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "913c62b01d1a78bc4f74b57e895634f8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/role.yaml": {
-    "mtime": 1783291837.0840478,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/role.yaml": {
+    "mtime": 1783293594.915889,
     "hash": "3bd57a1c88d1f9c9d26ea4b75cebdd18"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/nodecertificatecheck_admin_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/nodecertificatecheck_admin_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "237c97ac9180b2d064d783c67a41cb1c"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/clusterhealth_admin_role.yaml": {
-    "mtime": 1783284466.3666236,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/clusterhealth_admin_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "bc63863c3a432788248c6fcce7c2249d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthreport_viewer_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthreport_viewer_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "dd4127cfc0fb7b9011294e865a6080a8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/metrics_auth_role_binding.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/metrics_auth_role_binding.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "4adce7fd68792641893e67ba57dbd02f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthreport_admin_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthreport_admin_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "55d004a42e4cc9c22d6de6431e37bcb7"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/leader_election_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/leader_election_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "a9c96bd0e07363e41eb0f8c36372cd3f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthcheck_viewer_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthcheck_viewer_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "c919cf59b19783e61dd46860af110444"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/nodecertificatecheck_editor_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/nodecertificatecheck_editor_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "6a5e28aa73002774ea389d7613766f35"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthcheck_admin_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthcheck_admin_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "95d395a0619a8fe4641c73920376ebdb"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/metrics_auth_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/metrics_auth_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "85d641b12b1ee01a0d9a466374cdd268"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/nodecertificatecheck_viewer_role.yaml": {
-    "mtime": 1783284466.3679347,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/nodecertificatecheck_viewer_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "bdb032d5520ad8d2947f4af36166f934"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/leader_election_role_binding.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/leader_election_role_binding.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "ea8ba019af6ba8cde1ec144b827ab3a5"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthreport_editor_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthreport_editor_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "dc7e360b8508725b1a787c91d6241882"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/metrics_reader_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/metrics_reader_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "d30b56c353845d4a5ef6ee9ef42c7f85"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/healthcheck_editor_role.yaml": {
-    "mtime": 1783284466.367249,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/healthcheck_editor_role.yaml": {
+    "mtime": 1783293134.1844223,
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/kustomization.yaml": {
-    "mtime": 1783291831.5763814,
-    "hash": "50cc4ec1dbaa5c51e9a5a5a94d68a5eb"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/kustomization.yaml": {
+    "mtime": 1783293565.1915398,
+    "hash": "3cb1fc12d418b99504ea9a9862288f11"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-coredns.yaml": {
-    "mtime": 1783291831.572048,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/addon-external-dns.yaml": {
+    "mtime": 1783293565.1915398,
+    "hash": "305eb37533c58ffd350812c46bf1f958"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/addon-coredns.yaml": {
+    "mtime": 1783293565.1915398,
     "hash": "16f200b70217efe8d28da2817bf35716"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-cert-manager.yaml": {
-    "mtime": 1783291831.572048,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/addon-cert-manager.yaml": {
+    "mtime": 1783293565.1958733,
     "hash": "03f957ddd583921feb706b9309d95bad"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/kustomizeconfig.yaml": {
-    "mtime": 1783291831.572048,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/kustomizeconfig.yaml": {
+    "mtime": 1783293565.1915398,
     "hash": "e65eb9ba47025507e19f1f583bdb3661"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/addon-cilium.yaml": {
-    "mtime": 1783291831.572048,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/addon-cilium.yaml": {
+    "mtime": 1783293565.1958733,
     "hash": "24ac45ecd388c802d8be635534a68981"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/rbac/addons/operator-impersonate.yaml": {
-    "mtime": 1783291831.5763814,
-    "hash": "cefbc4e9617448c8d06230e656d98d07"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/rbac/addons/operator-impersonate.yaml": {
+    "mtime": 1783293565.1958733,
+    "hash": "12c4408e25b8e0ad56d5cea901f72146"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/manifests/kustomization.yaml": {
-    "mtime": 1783284466.365909,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/manifests/kustomization.yaml": {
+    "mtime": 1783293134.1826313,
     "hash": "fdc2d950a3d45e32508993239fb72fd1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/manifests/bases/fathom.clusterserviceversion.yaml": {
-    "mtime": 1783284466.365909,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/manifests/bases/fathom.clusterserviceversion.yaml": {
+    "mtime": 1783293134.1826313,
     "hash": "ec53f93127594cc7e9a4ce9f7e568140"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/scorecard/kustomization.yaml": {
-    "mtime": 1783284466.372121,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/scorecard/kustomization.yaml": {
+    "mtime": 1783293134.1879659,
     "hash": "efc4164264f723d726a0a4ce54c2f031"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/scorecard/patches/olm.config.yaml": {
-    "mtime": 1783284466.3728988,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/scorecard/patches/olm.config.yaml": {
+    "mtime": 1783293134.1887832,
     "hash": "dfc2627b3fce2848a1ab15a8cff18c94"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/scorecard/patches/basic.config.yaml": {
-    "mtime": 1783284466.372121,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/scorecard/patches/basic.config.yaml": {
+    "mtime": 1783293134.1879659,
     "hash": "a8d7c8d46cee96e8df0cb384bc41bfc3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/scorecard/bases/config.yaml": {
-    "mtime": 1783284466.372121,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/scorecard/bases/config.yaml": {
+    "mtime": 1783293134.1879659,
     "hash": "2028205c77a062d0e7373166264b3b2b"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/manager/manager.yaml": {
-    "mtime": 1783284534.5742764,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/manager/manager.yaml": {
+    "mtime": 1783293134.1815746,
     "hash": "e9d892ef0c7a2a3155d1f2facb429ab2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/config/manager/kustomization.yaml": {
-    "mtime": 1783284466.3642724,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/config/manager/kustomization.yaml": {
+    "mtime": 1783293134.1808019,
     "hash": "b9c55aa3eee69d0752a479c31fcb1363"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/hack/boilerplate.go.txt": {
-    "mtime": 1783284466.3896012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/hack/boilerplate.go.txt": {
+    "mtime": 1783293134.2000837,
     "hash": "ded978aeb0bb46b71449bc612ebdcccd"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/authoring-adapters.md": {
-    "mtime": 1783291751.1243231,
-    "hash": "a57d582a73e7ef6c44657d512aff2811"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/authoring-adapters.md": {
+    "mtime": 1783293134.195346,
+    "hash": "fd62169b77512790f7ef4ba88d2c0018"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/architecture.md": {
-    "mtime": 1783284534.5785968,
-    "hash": "a33e535feaeb00894f11e1f71759d39b"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/architecture.md": {
+    "mtime": 1783293488.3948154,
+    "hash": "e3452895096669ab4186bbfe8e2226a6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/code-map.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/code-map.md": {
+    "mtime": 1783293134.195346,
     "hash": "823d98561a4a9a5f30dbc65b0706dad3"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/README.md": {
-    "mtime": 1783291772.8828418,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/README.md": {
+    "mtime": 1783293134.194613,
     "hash": "9ac4f73f6cc8a91b0ec77a5c9ef07f1d"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/api-versioning.md": {
-    "mtime": 1783284466.3834589,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/reference/api-versioning.md": {
+    "mtime": 1783293134.197255,
     "hash": "d46730c2915b8a2ca035f077c0830699"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/configuration.md": {
-    "mtime": 1783284466.3864186,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/reference/configuration.md": {
+    "mtime": 1783293134.1985517,
     "hash": "376b41d9239ba650abb6cb711e0b7e40"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/api.md": {
-    "mtime": 1783291834.250048,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/reference/api.md": {
+    "mtime": 1783293568.1685398,
     "hash": "3f0db554278e434c42051ca701d83d92"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/reference/rbac.md": {
-    "mtime": 1783291831.5763814,
-    "hash": "e1624cc67dd345ee3d6973921ea9f9cf"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/reference/rbac.md": {
+    "mtime": 1783293565.1958733,
+    "hash": "f6d88ecca151e9c450431c1c9c39d13f"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/getting-started.md": {
-    "mtime": 1783284466.3834589,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/getting-started.md": {
+    "mtime": 1783293134.197255,
     "hash": "4a3150a0ce122d3393d8ada7a9ca581a"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/concepts.md": {
-    "mtime": 1783284466.3834589,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/concepts.md": {
+    "mtime": 1783293134.197255,
     "hash": "fe29504a18aef8a78b163965d4bd1ee1"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/node-certificate-checks.md": {
-    "mtime": 1783284466.3834589,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/node-certificate-checks.md": {
+    "mtime": 1783293134.197255,
     "hash": "9c0a745cc6c37992483fd39d0ccd9d71"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/monitoring.md": {
-    "mtime": 1783284466.3834589,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/monitoring.md": {
+    "mtime": 1783293134.197255,
     "hash": "0d89600b4d65510ef34e7e77bea363a8"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/README.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/README.md": {
+    "mtime": 1783293134.195346,
     "hash": "49694a2bad59e59d9b3b6fe8ca32ed8e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/guides/addon-checks.md": {
-    "mtime": 1783284466.3834589,
-    "hash": "9ac21b8fb869cc13d3d87c1d2946f1fd"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/guides/addon-checks.md": {
+    "mtime": 1783293454.2041578,
+    "hash": "b8f18ba909f8bee262cce385de5651f2"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/adr/0001-in-process-adapter-contract.md": {
-    "mtime": 1783284466.3798547,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/adr/0001-in-process-adapter-contract.md": {
+    "mtime": 1783293134.194613,
     "hash": "0a59455401b8d2a8e3e3b52f469c16b6"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/adr/0002-healthreport-as-first-class-crd.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/adr/0002-healthreport-as-first-class-crd.md": {
+    "mtime": 1783293134.195346,
     "hash": "4ad8ee7d175c69b973f62ef0eed10583"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/adr/0004-healthcheck-as-wrapper.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/adr/0004-healthcheck-as-wrapper.md": {
+    "mtime": 1783293134.195346,
     "hash": "96ec8245defcc28066efc84efbf3a99e"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/adr/0003-probe-pod-model.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/adr/0003-probe-pod-model.md": {
+    "mtime": 1783293134.195346,
     "hash": "a5d345f2cd7cec4f2559753b0169dd43"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/docs/design/addon-adapters-implementation-plan.md": {
-    "mtime": 1783284466.38111,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/docs/design/addon-adapters-implementation-plan.md": {
+    "mtime": 1783293134.195346,
     "hash": "d4f0cd0b85c3a6d767e44cc8b91316aa"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/LICENSES/MIT.txt": {
-    "mtime": 1783284466.3506012,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/LICENSES/MIT.txt": {
+    "mtime": 1783293134.1708949,
     "hash": "877ee7aed4fdfc7a2a7722441fe27c56"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/fixtures/nodecertificatecheck.yaml": {
-    "mtime": 1783284466.424268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/fixtures/nodecertificatecheck.yaml": {
+    "mtime": 1783293134.230649,
     "hash": "c494843dfc942b0b9ab99473a29b5045"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/fixtures/README.md": {
-    "mtime": 1783284466.424219,
-    "hash": "fee59475d701123ef7449d7d84ede0cd"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/fixtures/README.md": {
+    "mtime": 1783293410.8385181,
+    "hash": "6213126ba904cde076ae42007dd2bbdf"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/fixtures/kind-cluster.yaml": {
-    "mtime": 1783284466.424268,
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/fixtures/kind-cluster.yaml": {
+    "mtime": 1783293134.230649,
     "hash": "6375f5ed02c6990dfee13d6ab9b60c85"
   },
-  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/fix-ska58-coverage/test/e2e/fixtures/helmfile.yaml": {
-    "mtime": 1783284466.424268,
-    "hash": "54fc9602ec7fdf348ffcf137c665527e"
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-62-external-dns/test/e2e/fixtures/helmfile.yaml": {
+    "mtime": 1783293405.7468517,
+    "hash": "5460923bc964c48e93030053fe666b20"
   }
 }

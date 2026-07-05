@@ -4,6 +4,7 @@ resources:
 - fathom_v1alpha1_addoncheck_coredns.yaml
 - fathom_v1alpha1_addoncheck_external_secrets.yaml
 - fathom_v1alpha1_addoncheck_cilium.yaml
+- fathom_v1alpha1_addoncheck_external_dns.yaml
 - fathom_v1alpha1_healthcheck.yaml
 - fathom_v1alpha1_clusterhealth.yaml
 - fathom_v1alpha1_healthreport.yaml
