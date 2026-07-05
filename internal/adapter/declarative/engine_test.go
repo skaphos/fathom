@@ -148,7 +148,7 @@ func TestEngine_OperatorScaledToZeroWarnsAndSkipsPods(t *testing.T) {
 func TestEngine_CRDUnsupportedVersionWarns(t *testing.T) {
 	objects := healthyObjects()
 	// Established, but only serves an unrecognized version.
-	objects[len(objects)-1] = ciliumCRD("ciliumnodes.cilium.io", "v1", true, true)
+	objects[len(objects)-1] = establishedCRD("ciliumnodes.cilium.io", "v1", true, true)
 	result, err := NewCiliumEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objects...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -158,7 +158,7 @@ func TestEngine_CRDUnsupportedVersionWarns(t *testing.T) {
 
 func TestEngine_CRDNotEstablishedFails(t *testing.T) {
 	objects := healthyObjects()
-	objects[len(objects)-1] = ciliumCRD("ciliumnodes.cilium.io", "v2", true, false)
+	objects[len(objects)-1] = establishedCRD("ciliumnodes.cilium.io", "v2", true, false)
 	result, err := NewCiliumEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objects...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -359,7 +359,7 @@ func healthyObjects() []clientObject {
 		podInNamespace(defaultAgentName+"-node2", defaultAgentName, defaultNamespace),
 	}
 	for _, name := range ciliumCRDNames() {
-		objects = append(objects, ciliumCRD(name, "v2", true, true))
+		objects = append(objects, establishedCRD(name, "v2", true, true))
 	}
 	return objects
 }
@@ -408,16 +408,22 @@ func podInNamespace(name, component, namespace string) *corev1.Pod {
 	}
 }
 
-func ciliumCRD(name, version string, served, established bool) *apixv1.CustomResourceDefinition {
+// establishedCRD builds a CRD object named "<plural>.<group>" serving the given
+// version. Group and plural are derived from name so fixtures are self-consistent
+// (e.g. externalsecrets.external-secrets.io -> group external-secrets.io, plural
+// externalsecrets), unlike a hard-coded group. served/established toggle the
+// served flag and the Established condition.
+func establishedCRD(name, version string, served, established bool) *apixv1.CustomResourceDefinition {
 	condStatus := apixv1.ConditionTrue
 	if !established {
 		condStatus = apixv1.ConditionFalse
 	}
+	plural, group, _ := strings.Cut(name, ".")
 	return &apixv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apixv1.CustomResourceDefinitionSpec{
-			Group: "cilium.io",
-			Names: apixv1.CustomResourceDefinitionNames{Plural: "tests", Kind: "Test"},
+			Group: group,
+			Names: apixv1.CustomResourceDefinitionNames{Plural: plural, Kind: "Test"},
 			Versions: []apixv1.CustomResourceDefinitionVersion{{
 				Name:    version,
 				Served:  served,

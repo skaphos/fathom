@@ -32,7 +32,7 @@ func esoHealthyObjects() []clientObject {
 		objs = append(objs, deploymentInNamespace(d, "external-secrets"), podInNamespace(d+"-abc", d, "external-secrets"))
 	}
 	for _, c := range esoCRDs {
-		objs = append(objs, ciliumCRD(c, "v1", true, true))
+		objs = append(objs, establishedCRD(c, "v1", true, true))
 	}
 	return objs
 }

@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"time"
 
+	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/adapter/crdutil"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -49,7 +52,9 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
 			fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), nil, started)}, nil
 	}
-	listGVK := schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: cc.ListKind}
+	// Resolve the served version so the list succeeds on clusters that serve only
+	// a legacy version (e.g. external-secrets.io/v1beta1); falls back to gv.Version.
+	listGVK := schema.GroupVersionKind{Group: gv.Group, Version: cc.resolveVersion(ec, gv.Version), Kind: cc.ListKind}
 
 	var items []unstructured.Unstructured
 	if cc.ClusterScoped {
@@ -83,6 +88,26 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		out = append(out, cc.scoreObject(ec, obj, absent, mismatch))
 	}
 	return out, nil
+}
+
+// resolveVersion returns the CR version to list. When VersionCRD is set it uses
+// the CRD's preferred served version among SupportedVersions -- matching the
+// crd-established check -- and falls back to the given default when the CRD is
+// absent, unreadable, or serves no supported version. This preserves the
+// hand-written adapter's behavior of listing whichever version the cluster
+// actually serves.
+func (cc ConditionCheck) resolveVersion(ec EvalContext, fallback string) string {
+	if cc.VersionCRD == "" {
+		return fallback
+	}
+	var crd apixv1.CustomResourceDefinition
+	if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Name: cc.VersionCRD}, &crd); err != nil {
+		return fallback
+	}
+	if v, ok := crdutil.PreferredServedVersion(&crd, cc.SupportedVersions); ok {
+		return v
+	}
+	return fallback
 }
 
 // listName is the stable placeholder Name for list-level results, defaulting to

@@ -15,11 +15,10 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // Skipped when no ExternalSecret resources exist. Deployments and CRDs are
 // Required (absent -> Fail), matching the hand-written adapter.
 //
-// Deferred vs the hand-written adapter (not exercised by the e2e, which runs on
-// an empty ExternalSecret set): the refreshTime staleness Warn, which needs a
-// recency evaluator, and dynamic v1/v1beta1 version selection for the managed
-// list -- ESO 2.x serves external-secrets.io/v1, so v1 is used directly; older
-// clusters are a version-detection concern.
+// The managed list resolves the served version via VersionCRD (v1, falling back
+// to v1beta1), matching the hand-written adapter. Deferred (not exercised by the
+// empty-cluster e2e): the refreshTime staleness Warn, which needs a recency
+// evaluator.
 var ExternalSecretsDefinition = AddonDefinition{
 	AddonType:      "external-secrets",
 	AdapterVersion: "0.2.0",
@@ -54,13 +53,15 @@ var ExternalSecretsDefinition = AddonDefinition{
 			Name:           adapter.Family("secret_sync"),
 			DefaultEnabled: true,
 			ManagedResources: []ConditionCheck{{
-				APIVersion:       "external-secrets.io/v1",
-				Kind:             "ExternalSecret",
-				ListKind:         "ExternalSecretList",
-				ListName:         "externalsecrets",
-				DefaultNamespace: "external-secrets",
-				ConditionType:    "Ready",
-				ExpectedStatus:   "True",
+				APIVersion:        "external-secrets.io/v1",
+				VersionCRD:        "externalsecrets.external-secrets.io",
+				SupportedVersions: []string{"v1", "v1beta1"},
+				Kind:              "ExternalSecret",
+				ListKind:          "ExternalSecretList",
+				ListName:          "externalsecrets",
+				DefaultNamespace:  "external-secrets",
+				ConditionType:     "Ready",
+				ExpectedStatus:    "True",
 			}},
 		},
 	},

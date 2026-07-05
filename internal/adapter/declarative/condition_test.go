@@ -99,6 +99,29 @@ func TestCondition_ScoreObject(t *testing.T) {
 	assertHasOutcome(t, one(mismatchWarn), "Widget", "w5", adapter.OutcomeWarn, "want")
 }
 
+func TestCondition_ResolveVersion(t *testing.T) {
+	cc := ConditionCheck{
+		APIVersion:        "external-secrets.io/v1",
+		VersionCRD:        "externalsecrets.external-secrets.io",
+		SupportedVersions: []string{"v1", "v1beta1"},
+	}
+	// CRD serves only the legacy version -> list at v1beta1, not the v1 fallback.
+	legacy := EvalContext{Ctx: context.Background(),
+		Client: newFakeClient(t, establishedCRD("externalsecrets.external-secrets.io", "v1beta1", true, true))}
+	if got := cc.resolveVersion(legacy, "v1"); got != "v1beta1" {
+		t.Errorf("resolveVersion(v1beta1-only CRD) = %q, want v1beta1", got)
+	}
+	// No CRD present -> fall back to the passed default.
+	absent := EvalContext{Ctx: context.Background(), Client: newFakeClient(t)}
+	if got := cc.resolveVersion(absent, "v1"); got != "v1" {
+		t.Errorf("resolveVersion(absent CRD) = %q, want v1 fallback", got)
+	}
+	// VersionCRD unset -> fall back verbatim without reading any CRD.
+	if got := (ConditionCheck{}).resolveVersion(legacy, "v1"); got != "v1" {
+		t.Errorf("resolveVersion(no VersionCRD) = %q, want v1", got)
+	}
+}
+
 func TestCondition_ConditionStatus(t *testing.T) {
 	if s, ok := conditionStatus(widget("default", "w1", "Ready", "True"), "Ready"); !ok || s != "True" {
 		t.Fatalf("conditionStatus present: got (%q,%v), want (True,true)", s, ok)
