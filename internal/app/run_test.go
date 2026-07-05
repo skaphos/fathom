@@ -250,6 +250,13 @@ func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 	if got.Name() != "metrics-server" {
 		t.Fatalf("adapter name: got %q, want metrics-server", got.Name())
 	}
+	got, err = adapterRegistry.Lookup("envoy-gateway")
+	if err != nil {
+		t.Fatalf("Lookup(envoy-gateway): %v", err)
+	}
+	if got.Name() != "envoy-gateway" {
+		t.Fatalf("adapter name: got %q, want envoy-gateway", got.Name())
+	}
 }
 
 func TestReadyzCheck(t *testing.T) {
