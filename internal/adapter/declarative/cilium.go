@@ -15,7 +15,7 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // does not run Cilium rolls up green (NotFound -> Skipped).
 //
 // The RBAC field is documentation-only; the enforced +kubebuilder:rbac markers
-// for all declarative adapters live in rbac.go.
+// for all declarative adapters live on the package doc in definition.go.
 var CiliumDefinition = AddonDefinition{
 	AddonType:      "cilium",
 	AdapterVersion: "0.1.0",
@@ -77,7 +77,7 @@ var CiliumDefinition = AddonDefinition{
 
 // NewCiliumEngine returns the declarative Cilium adapter. It panics only on a
 // programmer error in CiliumDefinition, which is caught by any test that
-// constructs the engine. RBAC markers live in rbac.go.
+// constructs the engine. RBAC markers live on the package doc in definition.go.
 func NewCiliumEngine() *Engine {
 	return MustEngine(CiliumDefinition)
 }

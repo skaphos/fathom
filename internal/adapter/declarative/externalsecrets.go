@@ -83,8 +83,8 @@ func esoDeployment(name string) WorkloadCheck {
 }
 
 // NewExternalSecretsEngine returns the declarative External Secrets adapter.
-// RBAC markers (including the adapter-unique external-secrets.io read) live in
-// rbac.go.
+// RBAC markers (including the adapter-unique external-secrets.io read) live on
+// the package doc in definition.go.
 func NewExternalSecretsEngine() *Engine {
 	return MustEngine(ExternalSecretsDefinition)
 }
