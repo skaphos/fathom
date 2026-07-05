@@ -262,6 +262,13 @@ func TestBuiltInAdapters_IncludesCertManager(t *testing.T) {
 	if got.Name() != "cilium" {
 		t.Fatalf("adapter name: got %q, want cilium", got.Name())
 	}
+	got, err = adapterRegistry.Lookup("external-dns")
+	if err != nil {
+		t.Fatalf("Lookup(external-dns): %v", err)
+	}
+	if got.Name() != "external-dns" {
+		t.Fatalf("adapter name: got %q, want external-dns", got.Name())
+	}
 }
 
 func TestReadyzCheck(t *testing.T) {
