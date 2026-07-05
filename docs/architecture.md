@@ -148,6 +148,15 @@ reconcile with no status change issues no API write.
   in-process registry. If paused, missing, or lookup fails, it records a
   `Ready=False` condition (`Paused` / `MissingAdapter` / `AdapterLookupFailed`)
   and does not run.
+- **Scoped client (least privilege):** the adapter's `Request.Client`
+  impersonates the addon's own ServiceAccount (`fathom-addon-<addonType>`,
+  resolved by the `fathom.skaphos.io/addon` label), so an adapter reads exactly
+  and only what it declares — the operator ServiceAccount holds no addon reads,
+  just `impersonate` on those ServiceAccounts. The client is direct/uncached
+  because impersonation is an API-server feature the manager cache does not
+  honor. A missing addon ServiceAccount surfaces as an adapter-level `Error`
+  rather than a fall-back to broader access. See
+  [Adapter RBAC](reference/rbac.md).
 - **Run trigger:** an adapter run happens only when the adapter is ready **and**
   (`status.lastRunTime == nil` **or** the observed generation changed). There is
   no periodic requeue — see [Known limitation](#known-limitations) on
