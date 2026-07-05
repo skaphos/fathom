@@ -149,6 +149,29 @@ func healthReportCount(ctx context.Context, source types.NamespacedName) int {
 	return len(reports.Items)
 }
 
+// countingStatusClient wraps a client.Client to count Status().Update calls, so
+// a test can assert a reconcile attempted no status write (converged). It is
+// robust against the API server's second-granularity dedup of metav1.Time,
+// which otherwise hides a condition churning within a single wall-clock second.
+type countingStatusClient struct {
+	client.Client
+	statusUpdates *int
+}
+
+func (c countingStatusClient) Status() client.SubResourceWriter {
+	return countingStatusWriter{SubResourceWriter: c.Client.Status(), n: c.statusUpdates}
+}
+
+type countingStatusWriter struct {
+	client.SubResourceWriter
+	n *int
+}
+
+func (w countingStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	*w.n++
+	return w.SubResourceWriter.Update(ctx, obj, opts...)
+}
+
 var _ = Describe("AddonCheck Controller", func() {
 	ctx := context.Background()
 
@@ -485,6 +508,59 @@ var _ = Describe("AddonCheck Controller", func() {
 		// The adapter never ran: no run time, no HealthReport.
 		Expect(updated.Status.LastRunTime).To(BeNil())
 		Expect(updated.Status.LastReportName).To(BeEmpty())
+	})
+
+	It("converges: repeated reconciles of an invalid policy attempt no further status write", func() {
+		typeNamespacedName := types.NamespacedName{
+			Name:      "addoncheck-invalid-policy-converge",
+			Namespace: "default",
+		}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      typeNamespacedName.Name,
+				Namespace: typeNamespacedName.Namespace,
+			},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "cert-manager",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					"bogus_family": {Enabled: true},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
+		})
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+		// Count status-write attempts directly, rather than comparing
+		// resourceVersion: the API server serializes metav1.Time to second
+		// precision and dedupes byte-identical updates, so a churning condition is
+		// invisible via resourceVersion when two reconciles share a wall-clock
+		// second. The reconciler's own before/after DeepEqual (nanosecond LTT) is
+		// the true signal, observed here as the Status().Update call count.
+		statusUpdates := 0
+		r := &AddonCheckReconciler{
+			Client:   countingStatusClient{Client: k8sClient, statusUpdates: &statusUpdates},
+			Scheme:   k8sClient.Scheme(),
+			Adapters: adapters,
+		}
+
+		// First reconcile persists Accepted=False / Ready=False: one write.
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(statusUpdates).To(Equal(1))
+
+		// A second reconcile of the unchanged, still-invalid check must attempt no
+		// write. Regression guard: setting Ready True in resolveAddonAdapter and
+		// then flipping it False for the invalid policy bumped LastTransitionTime
+		// every pass, so before != after and the reconciler rewrote status on
+		// every reconcile (churn), self-re-triggering via the predicate-less watch.
+		statusUpdates = 0
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(statusUpdates).To(Equal(0), "second reconcile rewrote status (churn) instead of converging")
 	})
 
 	It("requeues a ready AddonCheck after Spec.Interval so it re-runs", func() {
