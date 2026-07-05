@@ -229,45 +229,19 @@ func TestBuildAdapterRegistry_WrapsRegistrationErrors(t *testing.T) {
 	}
 }
 
-func TestBuiltInAdapters_IncludesCertManager(t *testing.T) {
+func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 	adapterRegistry, err := BuildAdapterRegistry(logr.Discard(), BuiltInAdapters()...)
 	if err != nil {
 		t.Fatalf("BuildAdapterRegistry: %v", err)
 	}
-	got, err := adapterRegistry.Lookup("cert-manager")
-	if err != nil {
-		t.Fatalf("Lookup(cert-manager): %v", err)
-	}
-	if got.Name() != "cert-manager" {
-		t.Fatalf("adapter name: got %q, want cert-manager", got.Name())
-	}
-	got, err = adapterRegistry.Lookup("coredns")
-	if err != nil {
-		t.Fatalf("Lookup(coredns): %v", err)
-	}
-	if got.Name() != "coredns" {
-		t.Fatalf("adapter name: got %q, want coredns", got.Name())
-	}
-	got, err = adapterRegistry.Lookup("external-secrets")
-	if err != nil {
-		t.Fatalf("Lookup(external-secrets): %v", err)
-	}
-	if got.Name() != "external-secrets" {
-		t.Fatalf("adapter name: got %q, want external-secrets", got.Name())
-	}
-	got, err = adapterRegistry.Lookup("cilium")
-	if err != nil {
-		t.Fatalf("Lookup(cilium): %v", err)
-	}
-	if got.Name() != "cilium" {
-		t.Fatalf("adapter name: got %q, want cilium", got.Name())
-	}
-	got, err = adapterRegistry.Lookup("external-dns")
-	if err != nil {
-		t.Fatalf("Lookup(external-dns): %v", err)
-	}
-	if got.Name() != "external-dns" {
-		t.Fatalf("adapter name: got %q, want external-dns", got.Name())
+	for _, name := range []string{"cert-manager", "coredns", "external-secrets", "cilium", "external-dns"} {
+		got, err := adapterRegistry.Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%s): %v", name, err)
+		}
+		if got.Name() != name {
+			t.Fatalf("adapter name: got %q, want %q", got.Name(), name)
+		}
 	}
 }
 
