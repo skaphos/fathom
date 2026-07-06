@@ -52,6 +52,17 @@ ServiceAccount: `fathom-addon-coredns` (namespace `fathom-system`)
 | core | pods | create, delete | WRITE EXCEPTION: launch and immediately tear down a single-shot DNS probe Pod per check to measure resolution from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; no in-process read can observe real in-cluster DNS. The Pod is deleted as soon as it completes — no update, no long-lived workload. |
 | discovery.k8s.io | endpointslices | get, list, watch | Read the EndpointSlices behind the DNS Service to confirm it has ready backends. list is required to enumerate slices for the Service; read-only. |
 
+## envoy-gateway
+
+ServiceAccount: `fathom-addon-envoy-gateway` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the envoy-gateway controller Deployment by name to score readiness. The name/namespace are policy-overridable (the chart hardcodes envoy-gateway, but repackaged installs may rename it) but always resolve to a single named Get; read-only. |
+| core | pods | list | List the envoy-gateway Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
+| apiextensions.k8s.io | customresourcedefinitions | get | Get the Gateway API core CRDs and Envoy Gateway's EnvoyProxy CRD by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only. |
+| gateway.networking.k8s.io | gateways | list | List Gateway objects to score their Accepted and Programmed conditions. Deliberately only Gateways — not HTTPRoutes or the gateway.envoyproxy.io policy kinds, which no evaluator reads; read-only. |
+
 ## external-dns
 
 ServiceAccount: `fathom-addon-external-dns` (namespace `fathom-system`)

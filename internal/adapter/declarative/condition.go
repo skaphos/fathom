@@ -62,13 +62,13 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	sel, err := metav1.LabelSelectorAsSelector(ec.Policy.LabelSelector)
 	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-			fmt.Sprintf("invalid label selector: %v", err), nil, started)}, nil
+			fmt.Sprintf("invalid label selector: %v", err), cc.listDetails(), started)}, nil
 	}
 
 	gv, err := schema.ParseGroupVersion(cc.APIVersion)
 	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-			fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), nil, started)}, nil
+			fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), cc.listDetails(), started)}, nil
 	}
 	// Resolve the served version so the list succeeds on clusters that serve only
 	// a legacy version (e.g. external-secrets.io/v1beta1); falls back to gv.Version.
@@ -80,7 +80,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		list.SetGroupVersionKind(listGVK)
 		if err := ec.Client.List(ec.Ctx, &list, client.MatchingLabelsSelector{Selector: sel}); err != nil {
 			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-				fmt.Sprintf("failed to list %s: %v", cc.Kind, err), nil, started)}, nil
+				fmt.Sprintf("failed to list %s: %v", cc.Kind, err), cc.listDetails(), started)}, nil
 		}
 		items = append(items, list.Items...)
 	} else {
@@ -89,15 +89,19 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 			list.SetGroupVersionKind(listGVK)
 			if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: sel}); err != nil {
 				return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-					fmt.Sprintf("failed to list %s in namespace %q: %v", cc.Kind, ns, err), nil, started)}, nil
+					fmt.Sprintf("failed to list %s in namespace %q: %v", cc.Kind, ns, err), cc.listDetails(), started)}, nil
 			}
 			items = append(items, list.Items...)
 		}
 	}
 
 	if len(items) == 0 {
-		return []adapter.CheckResult{skippedResult(ec.Family, kindRef,
-			fmt.Sprintf("no %s objects matched", cc.Kind), "NoMatchingObjects")}, nil
+		c := skippedResult(ec.Family, kindRef,
+			fmt.Sprintf("no %s objects matched", cc.Kind), "NoMatchingObjects")
+		if cc.ConditionType != "" {
+			c.Details["conditionType"] = cc.ConditionType
+		}
+		return []adapter.CheckResult{c}, nil
 	}
 
 	out := make([]adapter.CheckResult, 0, len(items))
@@ -162,6 +166,17 @@ func (cc ConditionCheck) resolveVersion(ec EvalContext, fallback string) string 
 		return v
 	}
 	return fallback
+}
+
+// listDetails returns the Details carried by list-level results (invalid
+// input, list failure, no-matching-objects): the conditionType, so two
+// ConditionChecks over the same kind (e.g. Gateway Accepted vs Programmed)
+// stay distinguishable in a HealthReport. Nil when ConditionType is empty.
+func (cc ConditionCheck) listDetails() map[string]string {
+	if cc.ConditionType == "" {
+		return nil
+	}
+	return map[string]string{"conditionType": cc.ConditionType}
 }
 
 // listName is the stable placeholder Name for list-level results, defaulting to

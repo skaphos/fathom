@@ -91,6 +91,21 @@ func findCheck(report healthReport, family, targetKind, targetName string) *chec
 	return nil
 }
 
+// findCheckByDetail returns the first CheckResult matching the given
+// family/kind/name triple whose Details[detailKey] equals detailValue, or nil
+// if none match. Use it instead of findCheck when a family emits more than
+// one check with the same target (e.g. two ConditionChecks over the same
+// kind, distinguished by Details["conditionType"]).
+func findCheckByDetail(report healthReport, family, targetKind, targetName, detailKey, detailValue string) *checkResult {
+	for i := range report.Spec.Checks {
+		c := &report.Spec.Checks[i]
+		if c.Family == family && c.TargetRef.Kind == targetKind && c.TargetRef.Name == targetName && c.Details[detailKey] == detailValue {
+			return c
+		}
+	}
+	return nil
+}
+
 // dumpAddonCheckDiagnostics prints state useful for triaging a failed
 // AddonCheck spec: controller logs, events in the AddonCheck's namespace,
 // and the AddonCheck + HealthReports themselves.
