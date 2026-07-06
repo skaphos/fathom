@@ -18,6 +18,7 @@ rules:
   - addon-envoy-gateway
   - addon-external-dns
   - addon-external-secrets
+  - addon-istio
   - addon-metrics-server
   resources:
   - serviceaccounts

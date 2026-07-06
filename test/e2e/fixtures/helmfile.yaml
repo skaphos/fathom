@@ -8,8 +8,8 @@
 # by kind and is not managed from here.
 #
 # Cilium is installed first and provides the cluster CNI (kindnet is disabled in
-# kind-cluster.yaml). cert-manager, external-dns, and external-secrets `needs`
-# it so helmfile's DAG brings networking up before any pod-networked addon —
+# kind-cluster.yaml). Every other release `needs` it (directly or transitively)
+# so helmfile's DAG brings networking up before any pod-networked addon —
 # and before the operator is deployed by the e2e:cluster:fathom task.
 #
 # Apply with:
@@ -31,6 +31,8 @@ repositories:
   - name: envoyproxy
     url: registry-1.docker.io/envoyproxy
     oci: true
+  - name: istio
+    url: https://istio-release.storage.googleapis.com/charts
 
 releases:
   - name: cilium
@@ -148,6 +150,39 @@ releases:
       # Programmed=True here).
       - deployment:
           replicas: 1
+
+  # istio installs in SIDECAR mode only (base CRDs + istiod) — deliberately no
+  # ztunnel or istio-cni releases, so Fathom's ztunnel_health and
+  # istio_cni_health families assert the Optional-absence Skipped contract
+  # against a real cluster. istiod patches the webhook caBundles at startup,
+  # which is exactly what the system_health webhook checks assert.
+  - name: istio-base
+    namespace: istio-system
+    chart: istio/base
+    version: 1.30.2
+    needs:
+      - kube-system/cilium
+    createNamespace: true
+    wait: true
+    timeout: 600
+
+  - name: istiod
+    namespace: istio-system
+    chart: istio/istiod
+    version: 1.30.2
+    needs:
+      - istio-system/istio-base
+    wait: true
+    timeout: 600
+    values:
+      # Chart-default requests (500m CPU / 2Gi memory) are sized for real
+      # clusters; shrink them so the single-node kind cluster schedules
+      # istiod alongside the rest of the stack.
+      - pilot:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
 
   - name: external-secrets
     namespace: external-secrets

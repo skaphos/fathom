@@ -234,7 +234,7 @@ func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAdapterRegistry: %v", err)
 	}
-	for _, name := range []string{"cert-manager", "coredns", "external-secrets", "cilium", "external-dns"} {
+	for _, name := range []string{"cert-manager", "coredns", "external-secrets", "cilium", "external-dns", "metrics-server", "envoy-gateway", "istio"} {
 		got, err := adapterRegistry.Lookup(name)
 		if err != nil {
 			t.Fatalf("Lookup(%s): %v", name, err)
@@ -242,20 +242,6 @@ func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 		if got.Name() != name {
 			t.Fatalf("adapter name: got %q, want %q", got.Name(), name)
 		}
-	}
-	got, err := adapterRegistry.Lookup("metrics-server")
-	if err != nil {
-		t.Fatalf("Lookup(metrics-server): %v", err)
-	}
-	if got.Name() != "metrics-server" {
-		t.Fatalf("adapter name: got %q, want metrics-server", got.Name())
-	}
-	got, err = adapterRegistry.Lookup("envoy-gateway")
-	if err != nil {
-		t.Fatalf("Lookup(envoy-gateway): %v", err)
-	}
-	if got.Name() != "envoy-gateway" {
-		t.Fatalf("adapter name: got %q, want envoy-gateway", got.Name())
 	}
 }
 

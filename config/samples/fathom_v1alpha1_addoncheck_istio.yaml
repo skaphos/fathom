@@ -1,0 +1,34 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: istio-sample
+spec:
+  addonType: istio
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - istio-system
+      thresholds:
+        restartWarnCount: "3"
+        # A revisioned control plane renames the Deployment; point the check
+        # at it:
+        # deploymentName: "istiod-1-30"
+    ztunnel_health:
+      # Ambient L4 node proxy. Optional: a sidecar-mode mesh scores Skipped
+      # with the absent marker instead of failing.
+      enabled: true
+      namespaces:
+        - istio-system
+    istio_cni_health:
+      # Required for ambient, opt-in for sidecar mode — also Optional.
+      enabled: true
+      namespaces:
+        - istio-system
+    crd_health:
+      enabled: true
