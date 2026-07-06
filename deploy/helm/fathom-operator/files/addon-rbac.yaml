@@ -195,6 +195,39 @@ addons:
     - get
     - list
     - watch
+- name: istio
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - get
+  - apiGroups:
+    - apps
+    resources:
+    - daemonsets
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - get
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - mutatingwebhookconfigurations
+    - validatingwebhookconfigurations
+    verbs:
+    - get
 - name: metrics-server
   rules:
   - apiGroups:

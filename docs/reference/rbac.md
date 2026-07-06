@@ -84,6 +84,18 @@ ServiceAccount: `fathom-addon-external-secrets` (namespace `fathom-system`)
 | apiextensions.k8s.io | customresourcedefinitions | get, list, watch | Read the ESO CRDs to verify they are Established and serve a supported version. list is needed to check several CRDs; read-only. |
 | external-secrets.io | externalsecrets | get, list, watch | Read ExternalSecret Ready conditions to score sync health. Scoped to the external-secrets.io group and to ExternalSecrets only — deliberately NOT SecretStores or the synced Secrets themselves — and read-only, so the addon SA can never read secret material. |
 
+## istio
+
+ServiceAccount: `fathom-addon-istio` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the istiod Deployment by name to score control-plane readiness and detect the installed version. The name/namespace are policy-overridable (revisioned installs rename it istiod-<rev>) but always resolve to a single named Get; read-only. |
+| apps | daemonsets | get | Get the ztunnel and istio-cni-node DaemonSets by name to score ambient data-plane readiness. Both are Optional (sidecar-mode meshes run without them) but always resolve to named Gets; read-only. |
+| core | pods | list | List the istiod/ztunnel/istio-cni Pods by label selector for restart counts and readiness behind their controllers. list (not get) because Pod names are dynamic; read-only. |
+| apiextensions.k8s.io | customresourcedefinitions | get | Get the core networking.istio.io and security.istio.io CRDs by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only. |
+| admissionregistration.k8s.io | mutatingwebhookconfigurations, validatingwebhookconfigurations | get | Get the istio-sidecar-injector and istio-validator webhook configurations by name to verify istiod's admission wiring (caBundle populated, backed by the istiod Service). get only — exactly two named Gets; read-only. |
+
 ## metrics-server
 
 ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)

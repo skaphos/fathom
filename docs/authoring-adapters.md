@@ -28,7 +28,7 @@ model — see [architecture.md](architecture.md).
 | Path | Use it when | Cost |
 | --- | --- | --- |
 | **A — declarative `AddonDefinition`** *(default, start here)* | The add-on's health is "operator workloads healthy + CRDs established + managed-CR `status.conditions` in the expected state." | A data literal + an e2e spec. No new Go check logic. |
-| **B — Go adapter** *(escape hatch)* | You need something the evaluators can't express: an **active probe** (create a pod / issue a dry-run request), **conditional topology** (istio ambient-vs-sidecar), or a **bespoke API call**. | A full Go type implementing the [`Adapter`](../pkg/adapter/adapter.go) interface. |
+| **B — Go adapter** *(escape hatch)* | You need something the evaluators can't express: an **active probe** (create a pod / issue a dry-run request) or a **bespoke API call**. Present-or-absent topology (istio ambient-vs-sidecar) and webhook wiring are declarative now — `Absence: Optional` and `WebhookCheck`. | A full Go type implementing the [`Adapter`](../pkg/adapter/adapter.go) interface. |
 
 This is an **authoring-time choice, not a runtime fallback**: each `addonType`
 is served by exactly one registered adapter. The reconciler just looks the
@@ -78,7 +78,7 @@ declarative.AddonDefinition{
 
 A `FamilyDefinition` is one policy-keyed family (`spec.policy.<name>`). It holds
 typed slices of checks, evaluated in a **fixed within-family order: Workloads →
-CRDs → ManagedResources → APIServices**.
+CRDs → ManagedResources → APIServices → Webhooks**.
 
 ```go
 declarative.FamilyDefinition{
@@ -88,7 +88,7 @@ declarative.FamilyDefinition{
     CRDs:           []declarative.CRDCheck{ /* … */ },
     ManagedResources: []declarative.ConditionCheck{ /* … */ },
     APIServices:    []declarative.ConditionCheck{ /* … */ },
-    // Webhooks: reserved — see note below.
+    Webhooks:       []declarative.WebhookCheck{ /* … */ },
 }
 ```
 
@@ -191,10 +191,37 @@ resolves its namespace like a `WorkloadCheck` singleton (first policy
 namespace, else `DefaultNamespace`). Use this same type for `APIServices`
 (as above — see the metrics-server definition).
 
-> **`Webhooks` are reserved.** `FamilyDefinition.Webhooks` / `WebhookCheck` fix
-> the schema shape but have **no shipped evaluator** yet — don't populate them.
-> `ValidatingWebhookConfiguration` checks still need the Go escape hatch (see
-> cert-manager).
+#### `WebhookCheck` — admission webhook wiring
+
+Verifies one named `MutatingWebhookConfiguration` or
+`ValidatingWebhookConfiguration` (a cluster-scoped singleton) is present and
+wired: at least one `webhooks[]` entry, every *service-based* entry's
+`clientConfig.caBundle` populated, and — when `ExpectedService` is set —
+every entry pointing at the expected in-cluster backing service. An
+unpopulated `caBundle` is the classic silent failure of CA-injecting addons
+(istiod, cert-manager's cainjector): admission either errors or, with
+`failurePolicy: Ignore`, silently stops being enforced. URL-based entries
+are exempt from the caBundle score — the API allows omitting it, in which
+case the API server verifies the webhook against its system trust roots.
+
+```go
+declarative.WebhookCheck{
+    Kind:             declarative.KindMutatingWebhookConfiguration,
+    Name:             "istio-sidecar-injector",
+    NameThresholdKey: "injectorWebhookName", // policy override for renamed configs
+    ExpectedService:  "istiod",        // "" disables the service assertion
+    ServiceNamespace: "istio-system",  // set together with ExpectedService
+    Absence:          declarative.Required,
+}
+```
+
+A NotFound configuration is scored by the effective `Absence` posture with
+the absent marker. The expected backing-service namespace follows the
+family's resolved namespace (first policy namespace, else
+`ServiceNamespace`) — the backing service lives wherever the addon was
+installed. Backing-service *endpoint* readiness is deliberately not
+checked — the serving workload is the same one a `WorkloadCheck` in the
+family already scores (see the istio definition).
 
 ### Absence semantics
 

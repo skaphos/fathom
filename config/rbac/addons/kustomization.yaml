@@ -9,6 +9,7 @@ resources:
 - addon-envoy-gateway.yaml
 - addon-external-dns.yaml
 - addon-external-secrets.yaml
+- addon-istio.yaml
 - addon-metrics-server.yaml
 - operator-impersonate.yaml
 configurations:

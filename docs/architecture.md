@@ -308,6 +308,7 @@ and a set of families:
 | `external-dns` | `internal/adapter/declarative` (`externaldns.go`) | `system_health`, `crd_health` |
 | `metrics-server` | `internal/adapter/declarative` (`metricsserver.go`) | `system_health`, `api_availability` |
 | `envoy-gateway` | `internal/adapter/declarative` (`envoygateway.go`) | `system_health`, `crd_health`, `gateway_status` |
+| `istio` | `internal/adapter/declarative` (`istio.go`) | `system_health`, `ztunnel_health`, `istio_cni_health`, `crd_health` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`

@@ -63,6 +63,15 @@ const (
 	KindStatefulSet WorkloadKind = "StatefulSet"
 )
 
+// Webhook configuration kinds a WebhookCheck can read
+// (admissionregistration.k8s.io/v1).
+const (
+	// KindMutatingWebhookConfiguration reads a MutatingWebhookConfiguration.
+	KindMutatingWebhookConfiguration = "MutatingWebhookConfiguration"
+	// KindValidatingWebhookConfiguration reads a ValidatingWebhookConfiguration.
+	KindValidatingWebhookConfiguration = "ValidatingWebhookConfiguration"
+)
+
 // AddonDefinition is the complete declarative description of one addon adapter.
 //
 // The Engine treats it as read-only: Run only reads the definition and copies
@@ -142,7 +151,7 @@ func (d AddonDefinition) defaultPosture() Posture {
 // FamilyDefinition is one policy-keyed check family. Each typed component slice
 // contributes zero or more CheckResults, all tagged with Name. The engine
 // evaluates components in a fixed within-family order: Workloads, then CRDs,
-// then ManagedResources, then APIServices (Webhooks are reserved).
+// then ManagedResources, then APIServices, then Webhooks.
 type FamilyDefinition struct {
 	// Name is the adapter-defined family identifier and the Request.Policy key.
 	Name adapter.Family
@@ -160,15 +169,15 @@ type FamilyDefinition struct {
 	// mode against apiregistration.k8s.io APIService Available=True (see the
 	// metrics-server definition).
 	APIServices []ConditionCheck
-	// Webhooks are reserved; their evaluator ships in a later PR.
+	// Webhooks verify admission webhook configurations are present and wired
+	// (caBundle populated, expected backing service).
 	Webhooks []WebhookCheck
 }
 
 // evaluators returns the family's components in the fixed within-family order.
-// Webhooks are omitted: their evaluator is not shipped in this increment.
 func (f FamilyDefinition) evaluators() []Evaluator {
 	evals := make([]Evaluator, 0,
-		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.APIServices))
+		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.APIServices)+len(f.Webhooks))
 	for _, w := range f.Workloads {
 		evals = append(evals, w)
 	}
@@ -180,6 +189,9 @@ func (f FamilyDefinition) evaluators() []Evaluator {
 	}
 	for _, a := range f.APIServices {
 		evals = append(evals, a)
+	}
+	for _, w := range f.Webhooks {
+		evals = append(evals, w)
 	}
 	return evals
 }
@@ -286,18 +298,34 @@ type ConditionCheck struct {
 	Mismatch adapter.Outcome
 }
 
-// WebhookCheck is reserved for cert-manager's ValidatingWebhookConfiguration /
-// MutatingWebhookConfiguration client validation. It is declared here to fix
-// the schema shape; its evaluator ships in a later PR.
+// WebhookCheck verifies one named admission webhook configuration (a
+// cluster-scoped singleton) is present and wired: at least one webhooks[]
+// entry, every entry's clientConfig.caBundle populated, and — when
+// ExpectedService is set — every entry pointing at the expected in-cluster
+// backing service. An unpopulated caBundle is the classic silent failure of
+// CA-injecting addons (istiod, cert-manager's cainjector): the API server
+// cannot trust the webhook, so admission either errors or, with failurePolicy
+// Ignore, silently stops being enforced.
 type WebhookCheck struct {
-	// Kind is "ValidatingWebhookConfiguration" or "MutatingWebhookConfiguration".
+	// Kind is KindValidatingWebhookConfiguration or
+	// KindMutatingWebhookConfiguration.
 	Kind string
 	// Name is the webhook configuration name.
 	Name string
-	// ExpectedService is the backing service name.
+	// NameThresholdKey overrides the configuration name from policy
+	// thresholds; "" disables the override. Covers renamed configurations —
+	// e.g. istio's revision- and namespace-suffixed
+	// istio-validator-<rev>-<ns>.
+	NameThresholdKey string
+	// ExpectedService is the backing service name every entry's clientConfig
+	// must reference; "" disables the service assertion. Set it together with
+	// ServiceNamespace (enforced at engine construction).
 	ExpectedService string
-	// ServiceNamespace is the backing service namespace.
+	// ServiceNamespace is the backing service namespace when policy names no
+	// namespaces; the first policy namespace overrides it, because the
+	// backing service lives wherever the addon was installed.
 	ServiceNamespace string
-	// Absence scores a NotFound configuration.
+	// Absence scores a NotFound configuration (Required -> Fail, Optional ->
+	// Skipped), always tagged with the adapter.DetailAbsent marker.
 	Absence Posture
 }
