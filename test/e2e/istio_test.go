@@ -137,6 +137,7 @@ var _ = Describe("istio AddonCheck", Ordered, func() {
 				"istio_cni_health": "istio-cni-node",
 			} {
 				c := findCheck(report, family, "DaemonSet", name)
+				stopOnTerminalResult(c, family, "DaemonSet/"+name)
 				g.Expect(c).NotTo(BeNil(),
 					"%s check missing for DaemonSet %s in HealthReport %q",
 					family, name, report.Metadata.Name)
