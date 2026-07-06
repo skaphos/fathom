@@ -427,9 +427,9 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 }
 
 // collectNodeReports lists fresh per-node report ConfigMaps for this check,
-// adopts any not yet owner-referenced (so they are garbage-collected with the
-// check), and decodes them into NodeReports. Reports are keyed by unique node
-// name so duplicate ConfigMaps cannot inflate coverage.
+// decodes them into NodeReports, and adopts only reports whose payload belongs
+// to this check. Reports are keyed by unique node name so duplicate ConfigMaps
+// cannot inflate coverage.
 func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
@@ -455,7 +455,6 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 			log.Error(err, "skipping unparsable node report ConfigMap", "configmap", cm.Name)
 			continue
 		}
-		r.adoptReportConfigMap(ctx, log, check, cm)
 		if report.CheckName != check.Name {
 			log.V(1).Info("skipping node report for different check", "configmap", cm.Name, "reportCheckName", report.CheckName)
 			continue
@@ -471,6 +470,7 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 		if existing, ok := reportsByNode[report.Node]; ok && !report.ObservedAt.After(existing.ObservedAt) {
 			continue
 		}
+		r.adoptReportConfigMap(ctx, log, check, cm)
 		reportsByNode[report.Node] = report
 	}
 	reports := make([]nodecert.NodeReport, 0, len(reportsByNode))
