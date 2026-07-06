@@ -14,6 +14,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -85,6 +86,15 @@ func setNodeAgentDaemonSetStatus(ctx context.Context, check *fathomv1alpha1.Node
 	ds.Status.NumberAvailable = ready
 	ds.Status.NumberReady = ready
 	Expect(k8sClient.Status().Update(ctx, ds)).To(Succeed())
+}
+
+func nodeCertHealthReportCount(ctx context.Context, source types.NamespacedName) int {
+	reports := &fathomv1alpha1.HealthReportList{}
+	Expect(k8sClient.List(ctx, reports, client.InNamespace(source.Namespace), client.MatchingLabels{
+		labelHealthReportSourceKind: "NodeCertificateCheck",
+		labelHealthReportSourceName: source.Name,
+	})).To(Succeed())
+	return len(reports.Items)
 }
 
 var _ = Describe("NodeCertificateCheck Controller", func() {
@@ -288,6 +298,42 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal("PartialReports"))
+	})
+
+	It("reuses a HealthReport after a status update conflict", func() {
+		name := types.NamespacedName{Name: "nc-status-conflict", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+		writeNodeReport(ctx, check, "node-b", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		conflict := true
+		conflictReconciler := newNodeCertReconciler()
+		conflictReconciler.Client = conflictOnceStatusClient{Client: k8sClient, conflict: &conflict}
+		_, err = conflictReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(apierrors.IsConflict(err)).To(BeTrue())
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(1))
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(1))
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(updated.Status.LastReportName).NotTo(BeEmpty())
 	})
 
 	It("ignores report ConfigMaps whose payload belongs to a different check", func() {

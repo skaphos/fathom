@@ -503,19 +503,30 @@ func (r *NodeCertificateCheckReconciler) adoptReportConfigMap(ctx context.Contex
 func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1alpha1.HealthReportResult) error {
 	observedAt := metav1.NewTime(time.Now())
 	report := healthReportForNodeCert(check, reports, aggregate, observedAt)
+	useDeterministicHealthReportName(report, check.Name,
+		"NodeCertificateCheck",
+		string(check.UID),
+		strconv.FormatInt(check.Generation, 10),
+		check.Status.LastReportName,
+		check.Status.LastResult,
+		string(aggregate),
+	)
 	if r.Scheme != nil {
 		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
 			return err
 		}
 	}
-	if err := r.Create(ctx, report); err != nil {
+	persistedReport, created, err := createOrReuseHealthReport(ctx, r.Client, report)
+	if err != nil {
 		return err
 	}
-	pruneNodeCertHealthReports(ctx, r.Client, log, check)
+	if created {
+		pruneNodeCertHealthReports(ctx, r.Client, log, check)
+	}
 
-	check.Status.LastRunTime = &observedAt
-	check.Status.LastReportName = report.Name
-	check.Status.LastResult = string(aggregate)
+	check.Status.LastRunTime = &persistedReport.Spec.ObservedAt
+	check.Status.LastReportName = persistedReport.Name
+	check.Status.LastResult = string(persistedReport.Spec.Result)
 	return nil
 }
 

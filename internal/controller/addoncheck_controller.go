@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -356,16 +357,29 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	// report capturing the current result; LastRunTime tracks the latest poll.
 	resultChanged := check.Status.LastReportName == "" || newResult != check.Status.LastResult
 	if resultChanged {
+		useDeterministicHealthReportName(report, check.Name,
+			"AddonCheck",
+			string(check.UID),
+			strconv.FormatInt(check.Generation, 10),
+			check.Status.LastReportName,
+			check.Status.LastResult,
+			newResult,
+		)
 		if r.Scheme != nil {
 			if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
 				return err
 			}
 		}
-		if err := r.Create(ctx, report); err != nil {
+		persistedReport, created, err := createOrReuseHealthReport(ctx, r.Client, report)
+		if err != nil {
 			return err
 		}
-		r.pruneHealthReportHistory(ctx, log, check)
-		check.Status.LastReportName = report.Name
+		if created {
+			r.pruneHealthReportHistory(ctx, log, check)
+		}
+		observedAt = persistedReport.Spec.ObservedAt
+		newResult = string(persistedReport.Spec.Result)
+		check.Status.LastReportName = persistedReport.Name
 	}
 
 	check.Status.LastRunTime = &observedAt
