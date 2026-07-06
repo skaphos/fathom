@@ -109,18 +109,24 @@ var _ = Describe("envoy-gateway AddonCheck", Ordered, func() {
 		// The fixture installs the controller but never declares a
 		// GatewayClass/Gateway (a provisioned Gateway could not reach
 		// Programmed=True on kind anyway — no LoadBalancer addresses), so the
-		// adapter's empty-cluster contract is Skipped.
+		// adapter's empty-cluster contract is Skipped. The family carries two
+		// ConditionChecks (Accepted, Programmed) over the same Gateway/gateways
+		// target, so both rows are asserted explicitly by conditionType rather
+		// than through findCheck, which would only ever see whichever comes
+		// first.
 		verify := func(g Gomega) {
 			report, err := latestHealthReport(envoyGatewaySampleName, envoyGatewaySampleNS)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to fetch latest HealthReport")
 
-			c := findCheck(report, "gateway_status", "Gateway", "gateways")
-			g.Expect(c).NotTo(BeNil(),
-				"gateway_status empty-cluster Skipped entry missing from HealthReport %q",
-				report.Metadata.Name)
-			g.Expect(c.Result).To(Equal("Skipped"),
-				"gateway_status on empty cluster: got %q with summary %q",
-				c.Result, c.Summary)
+			for _, conditionType := range []string{"Accepted", "Programmed"} {
+				c := findCheckByDetail(report, "gateway_status", "Gateway", "gateways", "conditionType", conditionType)
+				g.Expect(c).NotTo(BeNil(),
+					"gateway_status empty-cluster Skipped entry for conditionType %s missing from HealthReport %q",
+					conditionType, report.Metadata.Name)
+				g.Expect(c.Result).To(Equal("Skipped"),
+					"gateway_status on empty cluster (conditionType %s): got %q with summary %q",
+					conditionType, c.Result, c.Summary)
+			}
 		}
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
