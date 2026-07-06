@@ -32,13 +32,18 @@ var EnvoyGatewayDefinition = AddonDefinition{
 	// never Warns on a version — gating is opt-in (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "envoy-gateway-system", Name: "envoy-gateway"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the envoy-gateway controller Deployment to score readiness. list+watch because the name/namespace are policy-overridable (the chart hardcodes envoy-gateway, but repackaged installs may rename it); read-only."},
-		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the envoy-gateway Pods for restart counts and readiness behind the Deployment. list is required because Pod names are dynamic; read-only."},
-		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the Gateway API core CRDs and Envoy Gateway's EnvoyProxy CRD to verify they are Established and serve a supported version. list is needed to check several CRDs; read-only."},
-		{APIGroups: []string{"gateway.networking.k8s.io"}, Resources: []string{"gateways"}, Verbs: []string{"get", "list", "watch"},
+		// Verbs mirror the engine's actual reads through the direct (uncached)
+		// impersonating client: the Deployment and each CRD are fetched by name
+		// (get), Pods and Gateways by list. Nothing watches — the client is
+		// deliberately cache-free (see internal/adapter/impersonation) — so no
+		// watch is granted where the engine never watches.
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
+			Justification: "Get the envoy-gateway controller Deployment by name to score readiness. The name/namespace are policy-overridable (the chart hardcodes envoy-gateway, but repackaged installs may rename it) but always resolve to a single named Get; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
+			Justification: "List the envoy-gateway Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only."},
+		{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get"},
+			Justification: "Get the Gateway API core CRDs and Envoy Gateway's EnvoyProxy CRD by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only."},
+		{APIGroups: []string{"gateway.networking.k8s.io"}, Resources: []string{"gateways"}, Verbs: []string{"list"},
 			Justification: "List Gateway objects to score their Accepted and Programmed conditions. Deliberately only Gateways — not HTTPRoutes or the gateway.envoyproxy.io policy kinds, which no evaluator reads; read-only."},
 	},
 	Families: []FamilyDefinition{
