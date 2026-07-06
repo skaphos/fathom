@@ -139,6 +139,10 @@
     "mtime": 1783312119.3436716,
     "hash": "5f7a479ad60df603764d17b163fc3c4c"
   },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/test/e2e/envoygateway_test.go": {
+    "mtime": 1783313482.201199,
+    "hash": "4fe467048b601a706c62838717fb2d21"
+  },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/test/e2e/externalsecrets_test.go": {
     "mtime": 1783312119.3428643,
     "hash": "af0d5dbd4ba4e783ae505678e2583040"
@@ -160,12 +164,12 @@
     "hash": "a1d5970ea8f676aff699325040e7319b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/app/run.go": {
-    "mtime": 1783312279.3234637,
-    "hash": "c4d3b6ffa6965f2bae7aa99cc7f8b079"
+    "mtime": 1783313482.201199,
+    "hash": "2c3b63e35d8da979ec2a7c5b76200929"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/app/run_test.go": {
-    "mtime": 1783312457.96411,
-    "hash": "f31594bfd392d9e8dfd128e1efeb7643"
+    "mtime": 1783313597.6380513,
+    "hash": "b8e1a7a8c085f1baa01452827bd97e11"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/app/root.go": {
     "mtime": 1783312119.3358815,
@@ -368,7 +372,7 @@
     "hash": "412e80992a1cf106408716cd276a1fc7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/externaldns.go": {
-    "mtime": 1783312279.2411304,
+    "mtime": 1783313482.1172006,
     "hash": "db10327b075003a0c844e492e48740a9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/tracing_test.go": {
@@ -388,8 +392,8 @@
     "hash": "127602426c733a0a160709336b83dda3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/condition.go": {
-    "mtime": 1783312911.2239823,
-    "hash": "bf0b9f2afc130951d3d39df753e30d34"
+    "mtime": 1783313597.8450534,
+    "hash": "9aee7588873d36981ca64d5d14cc5838"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/externalsecrets.go": {
     "mtime": 1783312119.3322551,
@@ -400,7 +404,7 @@
     "hash": "f0dfb8f9f8b269a8128dd97c0830b06a"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/metricsserver.go": {
-    "mtime": 1783312991.8693278,
+    "mtime": 1783313482.1172006,
     "hash": "c6f54ec8835099c34918860d660ddb0a"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/workload_test.go": {
@@ -412,12 +416,20 @@
     "hash": "74e0af57c36adf2833bca1a4217ac454"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/condition_test.go": {
-    "mtime": 1783312939.4493313,
+    "mtime": 1783313482.1172006,
     "hash": "06b9eb4eae086eafb0663f2012e67eaa"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/crd.go": {
     "mtime": 1783312119.3322551,
     "hash": "ff08afd32d56922d141c5ac8e3b9e7df"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/envoygateway.go": {
+    "mtime": 1783313597.8450534,
+    "hash": "86d8c60b48f65b9359c30562fa571723"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/envoygateway_test.go": {
+    "mtime": 1783313597.8450534,
+    "hash": "a190d387a4903ba3c0cdf8ef66ced74d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/internal/adapter/declarative/externalsecrets_test.go": {
     "mtime": 1783312119.3322551,
@@ -480,8 +492,8 @@
     "hash": "6a74d212f9f54c31bf01b5fe4906bf72"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/README.md": {
-    "mtime": 1783312279.3191304,
-    "hash": "b456aeb73e5650e8e6ae6dda2fa86208"
+    "mtime": 1783313482.1931992,
+    "hash": "e2a3ea7be22f3a7b2bdb14f7371b58b5"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/RELEASE.md": {
     "mtime": 1783312119.3028429,
@@ -492,8 +504,8 @@
     "hash": "acb404372c0a7b97f3434160f95dc13b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/deploy/helm/fathom-operator/Chart.yaml": {
-    "mtime": 1783312337.3898716,
-    "hash": "d9b306008d0cc7164c465ffa105b8916"
+    "mtime": 1783313597.2257905,
+    "hash": "5156acefc3c1aca19f0a7d3a9289e784"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
     "mtime": 1783312119.319303,
@@ -516,8 +528,8 @@
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
-    "mtime": 1783313018.3772378,
-    "hash": "3a6c6276f2572951c315704d8b7543b7"
+    "mtime": 1783313482.1931992,
+    "hash": "e302c23e1c856e5a3eb9d0553e0947a3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/deploy/helm/fathom-operator/files/manager-rules.yaml": {
     "mtime": 1783312119.3199828,
@@ -636,8 +648,8 @@
     "hash": "eb8b35947ce8022d41f4aa1c60312629"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/samples/kustomization.yaml": {
-    "mtime": 1783312279.3191304,
-    "hash": "11079b1dde5d2143776ee52825860450"
+    "mtime": 1783313482.1931992,
+    "hash": "4d5d207db03243f32a15a8232540880e"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/samples/fathom_v1alpha1_nodecertificatecheck.yaml": {
     "mtime": 1783312119.3151114,
@@ -674,6 +686,10 @@
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/samples/fathom_v1alpha1_healthreport.yaml": {
     "mtime": 1783312119.3151114,
     "hash": "1e6ab936bd910c3e44868ac3041fae65"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/samples/fathom_v1alpha1_addoncheck_envoy_gateway.yaml": {
+    "mtime": 1783313597.8450534,
+    "hash": "76efcd0de76f3e7defef48704a98f0b2"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/samples/fathom_v1alpha1_clusterhealth.yaml": {
     "mtime": 1783312119.3151114,
@@ -760,15 +776,19 @@
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/kustomization.yaml": {
-    "mtime": 1783313018.3772378,
-    "hash": "f13c85779a596c9354a402606740f924"
+    "mtime": 1783313482.1931992,
+    "hash": "ffc1535bd62ac02819665d82b6024f99"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/addon-envoy-gateway.yaml": {
+    "mtime": 1783313482.1931992,
+    "hash": "5668dd79f6ecbe9edb80679fb7911efa"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/addon-metrics-server.yaml": {
-    "mtime": 1783313018.3772378,
+    "mtime": 1783313482.1165683,
     "hash": "f1f3a618f11467fc763d1b1ed862d13d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/addon-external-dns.yaml": {
-    "mtime": 1783313018.3772378,
+    "mtime": 1783313482.1165683,
     "hash": "b1a993951d6d7b46de1608e5c9a5250b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/addon-coredns.yaml": {
@@ -788,8 +808,8 @@
     "hash": "24ac45ecd388c802d8be635534a68981"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/rbac/addons/operator-impersonate.yaml": {
-    "mtime": 1783313018.3772378,
-    "hash": "79a19dd13637f08dcff4d68505f3d048"
+    "mtime": 1783313482.1931992,
+    "hash": "2a41ef3480ae6e0c32ce932ad7a464e7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/config/manifests/kustomization.yaml": {
     "mtime": 1783312119.3121965,
@@ -828,12 +848,12 @@
     "hash": "ded978aeb0bb46b71449bc612ebdcccd"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/authoring-adapters.md": {
-    "mtime": 1783312279.3191304,
-    "hash": "11f72a9e7eaf3d7a09779ac1c206fae4"
+    "mtime": 1783313597.433231,
+    "hash": "78981d54292f35ebcde1d841698030a3"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/architecture.md": {
-    "mtime": 1783312279.3191304,
-    "hash": "49808639d85777b3a4a952810f88707c"
+    "mtime": 1783313482.1931992,
+    "hash": "8ee9a756d6cb27d09b7845600b5f50b1"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/code-map.md": {
     "mtime": 1783312119.3220842,
@@ -856,8 +876,8 @@
     "hash": "3f0db554278e434c42051ca701d83d92"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/reference/rbac.md": {
-    "mtime": 1783313018.3772378,
-    "hash": "f52f5f9eb633e37296ad077d059950b9"
+    "mtime": 1783313597.8450534,
+    "hash": "d2f8214ece71c96b1f21b258ad0a1bbe"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/guides/getting-started.md": {
     "mtime": 1783312119.3233142,
@@ -880,8 +900,8 @@
     "hash": "49694a2bad59e59d9b3b6fe8ca32ed8e"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/guides/addon-checks.md": {
-    "mtime": 1783312279.3191304,
-    "hash": "458b734c8a373dad41a327facc03e66f"
+    "mtime": 1783313482.1931992,
+    "hash": "611074330693090866fd6ceb240951c8"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/docs/adr/0001-in-process-adapter-contract.md": {
     "mtime": 1783312119.321492,
@@ -912,15 +932,15 @@
     "hash": "c494843dfc942b0b9ab99473a29b5045"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/test/e2e/fixtures/README.md": {
-    "mtime": 1783312305.788072,
-    "hash": "0b89ff35b973f2422df10d2e5365480f"
+    "mtime": 1783313482.201199,
+    "hash": "e810f5cae5e833cb25ef58c583dff180"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/test/e2e/fixtures/kind-cluster.yaml": {
     "mtime": 1783312119.3436716,
     "hash": "6375f5ed02c6990dfee13d6ab9b60c85"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/rebase-pr-121/test/e2e/fixtures/helmfile.yaml": {
-    "mtime": 1783312458.430662,
-    "hash": "f5a6010992dae6c1901fd6957a73647b"
+    "mtime": 1783313482.201199,
+    "hash": "589eccfe5429dd10e981e83dc78d5783"
   }
 }
