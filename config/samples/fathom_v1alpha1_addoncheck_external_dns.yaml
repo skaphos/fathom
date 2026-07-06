@@ -1,0 +1,23 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: external-dns-sample
+spec:
+  addonType: external-dns
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - external-dns
+      thresholds:
+        restartWarnCount: "3"
+        # The Deployment follows the Helm release fullname; point the check at
+        # a renamed install:
+        # deploymentName: "external-dns"
+    crd_health:
+      enabled: true
