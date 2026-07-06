@@ -397,8 +397,10 @@ spec: {}   # empty selector matches all HealthChecks in this namespace
 - One `HealthCheck` per `AddonCheck` you want in the roll-up.
 - A `ClusterHealth` with an empty selector folds in **every** `HealthCheck` in
   its namespace; use `spec.selector` (label selector) to scope it.
-- Aggregation is **same-namespace** in this build. Keep the checks you want
-  rolled up together in one namespace.
+- Aggregation selects `HealthCheck` wrappers in the **same namespace** as the
+  `ClusterHealth`. A wrapper may explicitly set `checkRef.namespace` to mirror
+  an `AddonCheck` in another namespace, so use RBAC on `HealthCheck` creation to
+  control which teams can proxy remote addon status into an aggregate namespace.
 
 > `HealthCheck` can only wrap `AddonCheck` (`checkRef.kind: AddonCheck`). The
 > newer `NodeCertificateCheck` kind, where present, reports its own
@@ -422,7 +424,7 @@ On the wrapper side, `kubectl describe healthcheck <name>`:
 
 | Condition reason | Meaning |
 | --- | --- |
-| `TargetNotFound` | `checkRef` points at an `AddonCheck` that doesn't exist (same namespace). |
+| `TargetNotFound` | `checkRef` points at an `AddonCheck` that doesn't exist in the wrapper namespace, or in the explicit `checkRef.namespace` when one is set. |
 | `UnsupportedKind` | `checkRef.kind` is not `AddonCheck`. |
 | `Paused` | `spec.paused` is set; mirroring is suspended. |
 
