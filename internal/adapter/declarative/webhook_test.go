@@ -49,6 +49,13 @@ func validatingConfig(name string, entries ...admissionv1.MutatingWebhook) *admi
 // WebhookCheck, against objs.
 func runWebhook(t *testing.T, wc WebhookCheck, objs ...clientObject) []adapter.CheckResult {
 	t.Helper()
+	return runWebhookPolicy(t, wc, nil, objs...)
+}
+
+// runWebhookPolicy is runWebhook with an explicit family policy, for the
+// threshold-override and namespace-resolution paths.
+func runWebhookPolicy(t *testing.T, wc WebhookCheck, policy map[adapter.Family]adapter.FamilyPolicy, objs ...clientObject) []adapter.CheckResult {
+	t.Helper()
 	eng := MustEngine(AddonDefinition{
 		AddonType:      "webhooktest",
 		AdapterVersion: "0.0.1",
@@ -61,6 +68,7 @@ func runWebhook(t *testing.T, wc WebhookCheck, objs ...clientObject) []adapter.C
 	res, err := eng.Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, objs...),
 		Logger: logr.Discard(),
+		Policy: policy,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -164,13 +172,55 @@ func TestWebhook_NoEntriesFails(t *testing.T) {
 	assertHasOutcome(t, checks, KindValidatingWebhookConfiguration, "empty", adapter.OutcomeFail, "no webhook entries")
 }
 
-func TestWebhook_NoServiceAssertionWhenUnset(t *testing.T) {
-	// ExpectedService unset: a URL-based entry with a populated bundle passes.
+func TestWebhook_URLEntryWithoutCABundlePasses(t *testing.T) {
+	// ExpectedService unset + a URL-based entry with NO caBundle: legal per
+	// the admissionregistration API (the API server falls back to its system
+	// trust roots), so the caBundle score must not apply — only
+	// service-based entries depend on the addon's CA injection.
 	wc := WebhookCheck{Kind: KindMutatingWebhookConfiguration, Name: "external"}
-	cfg := mutatingConfig("external", wiredEntry("url.example.com", "", "", []byte("ca")))
+	cfg := mutatingConfig("external", wiredEntry("url.example.com", "", "", nil))
 
 	checks := runWebhook(t, wc, cfg)
 	assertHasOutcome(t, checks, KindMutatingWebhookConfiguration, "external", adapter.OutcomePass, "wired")
+}
+
+func TestWebhook_NameThresholdOverride(t *testing.T) {
+	// A renamed configuration (istio's revisioned/relocated
+	// istio-validator-<rev>-<ns>) is reachable via the name threshold.
+	wc := WebhookCheck{
+		Kind:             KindValidatingWebhookConfiguration,
+		Name:             "istio-validator-istio-system",
+		NameThresholdKey: "validatorWebhookName",
+	}
+	cfg := validatingConfig("istio-validator-istio-mesh",
+		wiredEntry("rev.validation.istio.io", "istio-mesh", "istiod", []byte("ca")))
+
+	policy := map[adapter.Family]adapter.FamilyPolicy{
+		"webhook_health": {Enabled: true, Thresholds: map[string]string{"validatorWebhookName": "istio-validator-istio-mesh"}},
+	}
+	checks := runWebhookPolicy(t, wc, policy, cfg)
+	assertHasOutcome(t, checks, KindValidatingWebhookConfiguration, "istio-validator-istio-mesh", adapter.OutcomePass, "wired")
+}
+
+func TestWebhook_PolicyNamespaceOverridesServiceNamespace(t *testing.T) {
+	// The expected backing-service namespace follows the family's resolved
+	// namespace: an addon installed outside its default namespace passes
+	// when the policy points the family there.
+	wc := WebhookCheck{
+		Kind:             KindMutatingWebhookConfiguration,
+		Name:             "injector",
+		ExpectedService:  "istiod",
+		ServiceNamespace: "istio-system",
+	}
+	cfg := mutatingConfig("injector",
+		wiredEntry("inject.istio.io", "istio-mesh", "istiod", []byte("ca")))
+
+	policy := map[adapter.Family]adapter.FamilyPolicy{
+		"webhook_health": {Enabled: true, Namespaces: []string{"istio-mesh"}},
+	}
+	checks := runWebhookPolicy(t, wc, policy, cfg)
+	assertHasOutcome(t, checks, KindMutatingWebhookConfiguration, "injector", adapter.OutcomePass, "wired")
+	assertHasDetail(t, checks, KindMutatingWebhookConfiguration, "injector", "expectedService", "istio-mesh/istiod")
 }
 
 func TestWebhook_AbsenceResolution(t *testing.T) {

@@ -312,11 +312,18 @@ type WebhookCheck struct {
 	Kind string
 	// Name is the webhook configuration name.
 	Name string
+	// NameThresholdKey overrides the configuration name from policy
+	// thresholds; "" disables the override. Covers renamed configurations —
+	// e.g. istio's revision- and namespace-suffixed
+	// istio-validator-<rev>-<ns>.
+	NameThresholdKey string
 	// ExpectedService is the backing service name every entry's clientConfig
 	// must reference; "" disables the service assertion. Set it together with
 	// ServiceNamespace (enforced at engine construction).
 	ExpectedService string
-	// ServiceNamespace is the backing service namespace.
+	// ServiceNamespace is the backing service namespace when policy names no
+	// namespaces; the first policy namespace overrides it, because the
+	// backing service lives wherever the addon was installed.
 	ServiceNamespace string
 	// Absence scores a NotFound configuration (Required -> Fail, Optional ->
 	// Skipped), always tagged with the adapter.DetailAbsent marker.

@@ -324,20 +324,26 @@ spec:
 
 | Family | Checks | Key thresholds |
 | --- | --- | --- |
-| `system_health` | The `istiod` Deployment and its pods, plus istiod's admission wiring: the `istio-sidecar-injector` `MutatingWebhookConfiguration` and the `istio-validator-istio-system` `ValidatingWebhookConfiguration` must exist, carry a populated `caBundle`, and point at the `istiod` Service. | `deploymentName`, `restartWarnCount` |
+| `system_health` | The `istiod` Deployment and its pods, plus istiod's admission wiring: the `istio-sidecar-injector` `MutatingWebhookConfiguration` and the `istio-validator-istio-system` `ValidatingWebhookConfiguration` must exist, carry a populated `caBundle`, and point at the `istiod` Service in the family's namespace. | `deploymentName`, `injectorWebhookName`, `validatorWebhookName`, `restartWarnCount` |
 | `ztunnel_health` | The `ztunnel` DaemonSet (ambient L4 node proxy) and its pods. **Optional**: a sidecar-mode mesh reports `Skipped` with the absent marker. | `daemonSetName`, `restartWarnCount` |
 | `istio_cni_health` | The `istio-cni-node` DaemonSet and its pods. **Optional**: required for ambient, opt-in for sidecar mode. | `daemonSetName`, `restartWarnCount` |
 | `crd_health` | The core `networking.istio.io` (`v1`/`v1beta1`/`v1alpha3`) and `security.istio.io` (`v1`/`v1beta1`) CRDs are established. | — |
 
 The webhook checks are the ones that distinguish "istiod pods Ready" from
 "injection and validation actually admit": an unpopulated `caBundle` means
-istiod has not (or cannot) patch the bundle, so sidecar injection silently
-stops. Names assume the default revision; point one AddonCheck per revision
-at a renamed control plane via `deploymentName` (webhook names are not
-policy-overridable yet). Not covered (yet): `mesh_status` — proxy-sync /
-config-distribution anomalies are observable only through istiod's XDS and
-metrics endpoints, not the Kubernetes API, and `PeerAuthentication` carries
-no status conditions to score.
+istiod has not patched (or cannot patch) the bundle, so sidecar injection
+silently stops. Names assume the default revision in `istio-system`; a
+revisioned or relocated control plane is reachable entirely through policy —
+`namespaces` redirects the workload and the expected backing service, and
+`deploymentName` / `injectorWebhookName` / `validatorWebhookName` override
+the renamed objects (`istiod-<rev>`, `istio-sidecar-injector-<rev>`,
+`istio-validator-<rev>-<ns>`). One caveat: version detection stays pinned to
+`istio-system/istiod` (an engine-wide limitation shared with every
+declarative adapter), so a renamed control plane reports no detected
+version — display-only, never a wrong verdict. Not covered (yet):
+`mesh_status` — proxy-sync / config-distribution anomalies are observable
+only through istiod's XDS and metrics endpoints, not the Kubernetes API,
+and `PeerAuthentication` carries no status conditions to score.
 
 Either way, **`status.absent`** records how many checks in the most recent run found
 their target not installed — the required-absent Fails and the optional-absent Skips

@@ -14,8 +14,8 @@ import "github.com/skaphos/fathom/pkg/adapter"
 //     MutatingWebhookConfiguration and the istio-validator-istio-system
 //     ValidatingWebhookConfiguration, both of which must carry a populated
 //     caBundle and point at the istiod Service. An unpopulated caBundle is
-//     istio's classic silent failure: istiod has not (or cannot) patch the
-//     bundle, so injection/validation requests fail TLS — or with
+//     istio's classic silent failure: istiod has not patched (or cannot
+//     patch) the bundle, so injection/validation requests fail TLS — or with
 //     failurePolicy Ignore, pods are silently created uninjected.
 //   - ztunnel_health verifies the ztunnel DaemonSet (ambient L4 node proxy).
 //     Optional: a sidecar-mode mesh legitimately runs without it.
@@ -31,15 +31,19 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // absence, SKA-526, and the WebhookCheck evaluator shipped with this
 // definition), so istio is declarative like the rest of Wave 2.
 //
-// Names assume the default revision (istioctl / helm install without
-// --revision): a revisioned control plane names its Deployment and webhook
-// configurations istiod-<rev> / istio-sidecar-injector-<rev> /
-// istio-validator-<rev>-<ns>. Point one AddonCheck per revision at the
-// renamed workload via the deploymentName threshold; webhook names are not
-// policy-overridable yet. The base chart's istiod-default-validator is
-// deliberately not checked: it exists only as a default-revision alias for
-// the same istiod service the chart-owned validator already covers, so
-// checking both would double-report one signal.
+// Names assume the default revision in istio-system (istioctl / helm install
+// without --revision): a revisioned or relocated control plane renames its
+// Deployment and webhook configurations (istiod-<rev>,
+// istio-sidecar-injector-<rev>, istio-validator-<rev>-<ns>). Point one
+// AddonCheck per revision at the renamed objects via the deploymentName,
+// injectorWebhookName, and validatorWebhookName thresholds; the expected
+// backing-service namespace follows the family's policy namespace. One known
+// gap: VersionSource is not threshold-aware (an engine-wide limitation shared
+// with every declarative adapter), so a renamed istiod loses version
+// detection — detection-only, never a wrong verdict. The base chart's
+// istiod-default-validator is deliberately not checked: it exists only as a
+// default-revision alias for the same istiod service the chart-owned
+// validator already covers, so checking both would double-report one signal.
 //
 // Deferred, pending an active-probe evaluator: mesh_status
 // (config-distribution / proxy-sync anomalies, PeerAuthentication mTLS-mode
@@ -93,6 +97,7 @@ var IstioDefinition = AddonDefinition{
 				{
 					Kind:             KindMutatingWebhookConfiguration,
 					Name:             "istio-sidecar-injector",
+					NameThresholdKey: "injectorWebhookName",
 					ExpectedService:  "istiod",
 					ServiceNamespace: "istio-system",
 					Absence:          Required,
@@ -100,6 +105,7 @@ var IstioDefinition = AddonDefinition{
 				{
 					Kind:             KindValidatingWebhookConfiguration,
 					Name:             "istio-validator-istio-system",
+					NameThresholdKey: "validatorWebhookName",
 					ExpectedService:  "istiod",
 					ServiceNamespace: "istio-system",
 					Absence:          Required,

@@ -195,17 +195,20 @@ namespace, else `DefaultNamespace`). Use this same type for `APIServices`
 
 Verifies one named `MutatingWebhookConfiguration` or
 `ValidatingWebhookConfiguration` (a cluster-scoped singleton) is present and
-wired: at least one `webhooks[]` entry, every entry's
+wired: at least one `webhooks[]` entry, every *service-based* entry's
 `clientConfig.caBundle` populated, and — when `ExpectedService` is set —
 every entry pointing at the expected in-cluster backing service. An
 unpopulated `caBundle` is the classic silent failure of CA-injecting addons
 (istiod, cert-manager's cainjector): admission either errors or, with
-`failurePolicy: Ignore`, silently stops being enforced.
+`failurePolicy: Ignore`, silently stops being enforced. URL-based entries
+are exempt from the caBundle score — the API allows omitting it, in which
+case the API server verifies the webhook against its system trust roots.
 
 ```go
 declarative.WebhookCheck{
     Kind:             declarative.KindMutatingWebhookConfiguration,
     Name:             "istio-sidecar-injector",
+    NameThresholdKey: "injectorWebhookName", // policy override for renamed configs
     ExpectedService:  "istiod",        // "" disables the service assertion
     ServiceNamespace: "istio-system",  // set together with ExpectedService
     Absence:          declarative.Required,
@@ -213,7 +216,10 @@ declarative.WebhookCheck{
 ```
 
 A NotFound configuration is scored by the effective `Absence` posture with
-the absent marker. Backing-service *endpoint* readiness is deliberately not
+the absent marker. The expected backing-service namespace follows the
+family's resolved namespace (first policy namespace, else
+`ServiceNamespace`) — the backing service lives wherever the addon was
+installed. Backing-service *endpoint* readiness is deliberately not
 checked — the serving workload is the same one a `WorkloadCheck` in the
 family already scores (see the istio definition).
 
