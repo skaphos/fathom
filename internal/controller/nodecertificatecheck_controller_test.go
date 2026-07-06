@@ -34,10 +34,18 @@ func newNodeCertReconciler() *NodeCertificateCheckReconciler {
 }
 
 func writeNodeReport(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node string, certs []nodecert.CertResult) {
+	writeNodeReportForCheck(ctx, check, node, check.Name, time.Now(), certs)
+}
+
+func writeNodeReportAt(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node string, observedAt time.Time, certs []nodecert.CertResult) {
+	writeNodeReportForCheck(ctx, check, node, check.Name, observedAt, certs)
+}
+
+func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node, reportCheckName string, observedAt time.Time, certs []nodecert.CertResult) {
 	report := nodecert.NodeReport{
 		Node:       node,
-		CheckName:  check.Name,
-		ObservedAt: time.Now(),
+		CheckName:  reportCheckName,
+		ObservedAt: observedAt,
 		Aggregate:  nodecert.WorstOutcome(certs),
 		Certs:      certs,
 	}
@@ -56,7 +64,27 @@ func writeNodeReport(ctx context.Context, check *fathomv1alpha1.NodeCertificateC
 		},
 		Data: map[string]string{nodecert.ConfigMapReportKey: encoded},
 	}
+	existing := &corev1.ConfigMap{}
+	err = k8sClient.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existing)
+	if err == nil {
+		existing.Data = cm.Data
+		existing.Labels = cm.Labels
+		Expect(k8sClient.Update(ctx, existing)).To(Succeed())
+		return
+	}
+	Expect(client.IgnoreNotFound(err)).To(Succeed())
 	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+}
+
+func setNodeAgentDaemonSetStatus(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, desired, ready int32) {
+	ds := &appsv1.DaemonSet{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, ds)).To(Succeed())
+	ds.Status.DesiredNumberScheduled = desired
+	ds.Status.CurrentNumberScheduled = desired
+	ds.Status.UpdatedNumberScheduled = desired
+	ds.Status.NumberAvailable = ready
+	ds.Status.NumberReady = ready
+	Expect(k8sClient.Status().Update(ctx, ds)).To(Succeed())
 }
 
 var _ = Describe("NodeCertificateCheck Controller", func() {
@@ -141,6 +169,7 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		r := newNodeCertReconciler()
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
 
 		// Simulate two node-agents reporting: one healthy node, one with a cert
 		// expiring inside the critical window.
@@ -173,6 +202,121 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		cm := &corev1.ConfigMap{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodecert.NodeReportConfigMapName("nc-rollup", "node-a"), Namespace: "default"}, cm)).To(Succeed())
 		Expect(metav1.IsControlledBy(cm, updated)).To(BeTrue())
+	})
+
+	It("does not roll up until every desired node has a fresh report", func() {
+		name := types.NamespacedName{Name: "nc-partial", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.DesiredNodes).To(Equal(int32(2)))
+		Expect(updated.Status.ReportingNodes).To(Equal(int32(1)))
+		Expect(updated.Status.LastResult).To(BeEmpty())
+		Expect(updated.Status.LastReportName).To(BeEmpty())
+		Expect(updated.Status.LastRunTime).To(BeNil())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("PartialReports"))
+
+		reports := &fathomv1alpha1.HealthReportList{}
+		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
+			labelHealthReportSourceKind: "NodeCertificateCheck",
+			labelHealthReportSourceName: "nc-partial",
+		})).To(Succeed())
+		Expect(reports.Items).To(BeEmpty())
+	})
+
+	It("clears a previous roll-up when a node report becomes stale", func() {
+		name := types.NamespacedName{Name: "nc-stale", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+		writeNodeReport(ctx, check, "node-b", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		current := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(current.Status.LastReportName).NotTo(BeEmpty())
+
+		writeNodeReportAt(ctx, check, "node-b", time.Now().Add(-2*nodeCertReportMaxAge(check)), []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.DesiredNodes).To(Equal(int32(2)))
+		Expect(updated.Status.ReportingNodes).To(Equal(int32(1)))
+		Expect(updated.Status.LastResult).To(BeEmpty())
+		Expect(updated.Status.LastReportName).To(BeEmpty())
+		Expect(updated.Status.LastRunTime).To(BeNil())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("PartialReports"))
+	})
+
+	It("ignores report ConfigMaps whose payload belongs to a different check", func() {
+		name := types.NamespacedName{Name: "nc-mismatched-report", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeReportForCheck(ctx, check, "node-a", "other-check", time.Now(), []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.ReportingNodes).To(Equal(int32(0)))
+		Expect(updated.Status.LastResult).To(BeEmpty())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("AwaitingReports"))
 	})
 
 	It("removes the node-agent DaemonSet while paused", func() {

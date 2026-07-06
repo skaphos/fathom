@@ -183,18 +183,22 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
 
-	reports, err := r.collectNodeReports(ctx, log, &check)
+	reports, err := r.collectNodeReports(ctx, log, &check, time.Now(), nodeCertReportMaxAge(&check))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	check.Status.ReportingNodes = int32(len(reports))
 
-	aggregate := aggregateNodeReports(reports)
-	genChanged := previousObservedGeneration != check.Generation
-	if len(reports) > 0 && r.rollupDue(&check, interval, string(aggregate), genChanged) {
-		if err := r.rollup(ctx, log, &check, reports, aggregate); err != nil {
-			return ctrl.Result{}, err
+	if nodeCertReportsComplete(ds, len(reports)) {
+		aggregate := aggregateNodeReports(reports)
+		genChanged := previousObservedGeneration != check.Generation
+		if r.rollupDue(&check, interval, string(aggregate), genChanged) {
+			if err := r.rollup(ctx, log, &check, reports, aggregate); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
+	} else {
+		clearNodeCertRollupStatus(&check)
 	}
 
 	r.setReadyFromState(&check, ds, len(reports))
@@ -422,10 +426,11 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 	}
 }
 
-// collectNodeReports lists the per-node report ConfigMaps for this check,
+// collectNodeReports lists fresh per-node report ConfigMaps for this check,
 // adopts any not yet owner-referenced (so they are garbage-collected with the
-// check), and decodes them into NodeReports.
-func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck) ([]nodecert.NodeReport, error) {
+// check), and decodes them into NodeReports. Reports are keyed by unique node
+// name so duplicate ConfigMaps cannot inflate coverage.
+func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
 		client.InNamespace(check.Namespace),
@@ -438,7 +443,7 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 		return nil, err
 	}
 
-	reports := make([]nodecert.NodeReport, 0, len(cms.Items))
+	reportsByNode := make(map[string]nodecert.NodeReport, len(cms.Items))
 	for i := range cms.Items {
 		cm := &cms.Items[i]
 		raw, ok := cm.Data[nodecert.ConfigMapReportKey]
@@ -451,6 +456,25 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 			continue
 		}
 		r.adoptReportConfigMap(ctx, log, check, cm)
+		if report.CheckName != check.Name {
+			log.V(1).Info("skipping node report for different check", "configmap", cm.Name, "reportCheckName", report.CheckName)
+			continue
+		}
+		if report.Node == "" {
+			log.V(1).Info("skipping node report without node name", "configmap", cm.Name)
+			continue
+		}
+		if !nodeCertReportFresh(report, now, maxAge) {
+			log.V(1).Info("skipping stale node report", "configmap", cm.Name, "node", report.Node, "observedAt", report.ObservedAt, "maxAge", maxAge.String())
+			continue
+		}
+		if existing, ok := reportsByNode[report.Node]; ok && !report.ObservedAt.After(existing.ObservedAt) {
+			continue
+		}
+		reportsByNode[report.Node] = report
+	}
+	reports := make([]nodecert.NodeReport, 0, len(reportsByNode))
+	for _, report := range reportsByNode {
 		reports = append(reports, report)
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Node < reports[j].Node })
@@ -505,6 +529,30 @@ func (r *NodeCertificateCheckReconciler) rollupDue(check *fathomv1alpha1.NodeCer
 	return time.Since(check.Status.LastRunTime.Time) >= interval
 }
 
+func nodeCertReportMaxAge(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
+	return nodeCertInterval(check) + nodeCertTimeout(check)
+}
+
+func nodeCertReportFresh(report nodecert.NodeReport, now time.Time, maxAge time.Duration) bool {
+	if report.ObservedAt.IsZero() {
+		return false
+	}
+	if report.ObservedAt.After(now.Add(maxAge)) {
+		return false
+	}
+	return now.Sub(report.ObservedAt) <= maxAge
+}
+
+func nodeCertReportsComplete(ds *appsv1.DaemonSet, reportCount int) bool {
+	return ds.Status.DesiredNumberScheduled > 0 && int32(reportCount) == ds.Status.DesiredNumberScheduled
+}
+
+func clearNodeCertRollupStatus(check *fathomv1alpha1.NodeCertificateCheck) {
+	check.Status.LastRunTime = nil
+	check.Status.LastReportName = ""
+	check.Status.LastResult = ""
+}
+
 func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) {
 	status := metav1.ConditionFalse
 	reason := "RollingOut"
@@ -529,12 +577,18 @@ func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.Nod
 
 func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, reportCount int) {
 	switch {
-	case reportCount > 0:
-		r.setReady(check, metav1.ConditionTrue, "Reporting", "Node-agents are reporting and a HealthReport was rolled up.")
 	case ds.Status.DesiredNumberScheduled == 0:
 		r.setReady(check, metav1.ConditionFalse, "NoMatchingNodes", "No nodes match the node-agent DaemonSet.")
+	case reportCount == 0:
+		r.setReady(check, metav1.ConditionFalse, "AwaitingReports", "Waiting for node-agents to publish fresh scan results.")
+	case int32(reportCount) < ds.Status.DesiredNumberScheduled:
+		r.setReady(check, metav1.ConditionFalse, "PartialReports", "Waiting for every selected node-agent to publish a fresh scan result.")
+	case int32(reportCount) > ds.Status.DesiredNumberScheduled:
+		r.setReady(check, metav1.ConditionFalse, "ReportMismatch", "Fresh node-agent reports do not match the selected node count.")
+	case ds.Status.NumberReady < ds.Status.DesiredNumberScheduled:
+		r.setReady(check, metav1.ConditionFalse, "AgentRollingOut", "Node-agent DaemonSet is still rolling out.")
 	default:
-		r.setReady(check, metav1.ConditionFalse, "AwaitingReports", "Waiting for node-agents to publish their first scan results.")
+		r.setReady(check, metav1.ConditionTrue, "Reporting", "Node-agents are reporting and a HealthReport was rolled up.")
 	}
 }
 
