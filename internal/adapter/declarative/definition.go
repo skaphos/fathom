@@ -156,9 +156,9 @@ type FamilyDefinition struct {
 	// ManagedResources score a status.conditions predicate over listed CRs.
 	ManagedResources []ConditionCheck
 
-	// APIServices are declared for cert-manager parity later. They map onto the
-	// ConditionCheck evaluator (apiregistration.k8s.io APIService, Available=True)
-	// and are not exercised by Cilium.
+	// APIServices map onto the ConditionCheck evaluator, typically in named
+	// mode against apiregistration.k8s.io APIService Available=True (see the
+	// metrics-server definition).
 	APIServices []ConditionCheck
 	// Webhooks are reserved; their evaluator ships in a later PR.
 	Webhooks []WebhookCheck
@@ -226,10 +226,16 @@ type CRDCheck struct {
 	UnsupportedVersionOutcome adapter.Outcome
 }
 
-// ConditionCheck lists managed CRs (or APIServices) across namespaces and
-// scores a status.conditions[type]==expectedStatus predicate. This is the
-// cert-manager passive-check primitive (issuer/cert Ready, APIService
-// Available). It is unused by Cilium.
+// ConditionCheck scores a status.conditions[type]==expectedStatus predicate,
+// in one of two modes:
+//
+//   - List mode (Names empty): list managed CRs across the resolved namespaces
+//     and score every match. This is the cert-manager passive-check primitive
+//     (issuer/cert Ready). An empty result set is Skipped — quiet by design.
+//   - Named mode (Names set): Get each named singleton and score it. A NotFound
+//     name is scored by Absence (Required by default -> Fail) with the absent
+//     marker — the right shape for objects whose existence is itself the check,
+//     like an aggregated APIService (metrics-server's v1beta1.metrics.k8s.io).
 type ConditionCheck struct {
 	// APIVersion is the group/version of the listed objects (e.g.
 	// "cert-manager.io/v1"). Its version is the fallback when VersionCRD
@@ -253,7 +259,17 @@ type ConditionCheck struct {
 	// collapse onto (Kind, Name=""). Matches the hand-written adapters'
 	// convention of a resource-plural label (e.g. "issuers"). Defaults to Kind.
 	ListName string
-	// ClusterScoped lists without a namespace when true.
+	// Names, when non-empty, switches the check from list-and-score to
+	// get-by-name: each named object is fetched and scored individually.
+	// policy.LabelSelector does not apply to named gets; a namespaced kind
+	// resolves its namespace via firstNamespace (like a WorkloadCheck
+	// singleton).
+	Names []string
+	// Absence scores a NotFound named object (Required -> Fail, Optional ->
+	// Skipped), always tagged with the adapter.DetailAbsent marker. Only
+	// meaningful in named mode; list mode keeps its NoMatchingObjects skip.
+	Absence Posture
+	// ClusterScoped lists (or, in named mode, gets) without a namespace when true.
 	ClusterScoped bool
 	// DefaultNamespace is used when policy.Namespaces is empty and the objects
 	// are namespaced.

@@ -17,6 +17,7 @@ rules:
   - addon-coredns
   - addon-external-dns
   - addon-external-secrets
+  - addon-metrics-server
   resources:
   - serviceaccounts
   verbs:

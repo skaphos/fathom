@@ -243,6 +243,13 @@ func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 			t.Fatalf("adapter name: got %q, want %q", got.Name(), name)
 		}
 	}
+	got, err := adapterRegistry.Lookup("metrics-server")
+	if err != nil {
+		t.Fatalf("Lookup(metrics-server): %v", err)
+	}
+	if got.Name() != "metrics-server" {
+		t.Fatalf("adapter name: got %q, want metrics-server", got.Name())
+	}
 }
 
 func TestReadyzCheck(t *testing.T) {

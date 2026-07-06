@@ -158,8 +158,33 @@ declarative.ConditionCheck{
 `VersionCRD` + `SupportedVersions` let the check keep working on clusters that
 serve only a legacy API version. An **empty result set** across all namespaces
 is `Skipped` (`skipReason=NoMatchingObjects`) — so a check for an add-on with no
-CRs yet stays quiet. Use the same type for `APIServices` (map onto
-`apiregistration.k8s.io` `APIService`, `Available=True`).
+CRs yet stays quiet.
+
+**Named mode.** Setting `Names` switches the check from list-and-score to
+get-by-name: each named object is fetched and scored individually, and a
+NotFound name is scored by `Absence` (`Required`, the default → `Fail`;
+`Optional` → `Skipped`) with the absent marker — never the list mode's
+quiet skip. Use it when a singleton's *existence* is itself the check, e.g.
+metrics-server's aggregated APIService:
+
+```go
+declarative.ConditionCheck{
+    APIVersion:     "apiregistration.k8s.io/v1",
+    Kind:           "APIService",
+    ListKind:       "APIServiceList",
+    ListName:       "apiservices",
+    ClusterScoped:  true,
+    Names:          []string{"v1beta1.metrics.k8s.io"},
+    Absence:        declarative.Required,
+    ConditionType:  "Available",
+    ExpectedStatus: "True",
+}
+```
+
+`policy.labelSelector` does not apply to named gets; a namespaced kind
+resolves its namespace like a `WorkloadCheck` singleton (first policy
+namespace, else `DefaultNamespace`). Use this same type for `APIServices`
+(as above — see the metrics-server definition).
 
 > **`Webhooks` are reserved.** `FamilyDefinition.Webhooks` / `WebhookCheck` fix
 > the schema shape but have **no shipped evaluator** yet — don't populate them.

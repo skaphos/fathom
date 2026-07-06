@@ -169,3 +169,23 @@ addons:
     - get
     - list
     - watch
+- name: metrics-server
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - apiregistration.k8s.io
+    resources:
+    - apiservices
+    verbs:
+    - get

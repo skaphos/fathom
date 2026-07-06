@@ -8,6 +8,7 @@ package declarative
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -80,22 +81,22 @@ func TestCondition_ScoreObject(t *testing.T) {
 	ec := EvalContext{Family: "widget_health"}
 	one := func(c adapter.CheckResult) []adapter.CheckResult { return []adapter.CheckResult{c} }
 
-	pass := cc.scoreObject(ec, widget("default", "w1", "Ready", "True"), adapter.OutcomeFail, adapter.OutcomeFail)
+	pass := cc.scoreObject(ec, widget("default", "w1", "Ready", "True"), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(pass), "Widget", "w1", adapter.OutcomePass, "Ready")
 	assertHasDetail(t, one(pass), "Widget", "w1", "status", "True")
 	assertFamily(t, one(pass), "Widget", "w1", adapter.Family("widget_health"))
 
-	mismatch := cc.scoreObject(ec, widget("default", "w2", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeFail)
+	mismatch := cc.scoreObject(ec, widget("default", "w2", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(mismatch), "Widget", "w2", adapter.OutcomeFail, "want")
 	assertHasDetail(t, one(mismatch), "Widget", "w2", "expectedStatus", "True")
 
-	absentFail := cc.scoreObject(ec, widget("default", "w3", "", ""), adapter.OutcomeFail, adapter.OutcomeFail)
+	absentFail := cc.scoreObject(ec, widget("default", "w3", "", ""), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(absentFail), "Widget", "w3", adapter.OutcomeFail, "absent")
 
 	// Custom outcomes: absent -> Warn, mismatch -> Warn.
-	absentWarn := cc.scoreObject(ec, widget("default", "w4", "", ""), adapter.OutcomeWarn, adapter.OutcomeFail)
+	absentWarn := cc.scoreObject(ec, widget("default", "w4", "", ""), adapter.OutcomeWarn, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(absentWarn), "Widget", "w4", adapter.OutcomeWarn, "absent")
-	mismatchWarn := cc.scoreObject(ec, widget("default", "w5", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeWarn)
+	mismatchWarn := cc.scoreObject(ec, widget("default", "w5", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeWarn, time.Now())
 	assertHasOutcome(t, one(mismatchWarn), "Widget", "w5", adapter.OutcomeWarn, "want")
 }
 
@@ -191,6 +192,66 @@ func TestCondition_ClusterScopedListsWithoutNamespace(t *testing.T) {
 	// matches, rather than a specific object hit.
 	checks := runManaged(t, cc, nil)
 	assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeSkipped, "no Widget objects matched")
+}
+
+// --- named (get-by-name) mode ---
+
+func TestCondition_NamedGetScoresFoundObject(t *testing.T) {
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+	checks := runManaged(t, cc, nil, widget("default", "w1", "Ready", "True"))
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomePass, "Ready")
+
+	cc.Names = []string{"w2"}
+	checks = runManaged(t, cc, nil, widget("default", "w2", "Ready", "False"))
+	assertHasOutcome(t, checks, "Widget", "w2", adapter.OutcomeFail, "want")
+}
+
+func TestCondition_NamedNotFoundScoredByPosture(t *testing.T) {
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+
+	// Required (the default): a missing named singleton is a Fail — never the
+	// list mode's NoMatchingObjects skip — and carries the absent marker.
+	checks := runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomeFail, "not found")
+	assertHasDetail(t, checks, "Widget", "w1", adapter.DetailAbsent, "true")
+
+	// The explicit Optional opt-out scores Skipped, still with the marker.
+	cc.Absence = Optional
+	checks = runManaged(t, cc, nil)
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomeSkipped, "not found")
+	assertHasDetail(t, checks, "Widget", "w1", adapter.DetailAbsent, "true")
+}
+
+func TestCondition_NamedIgnoresLabelSelector(t *testing.T) {
+	// policy.LabelSelector does not apply to named gets (like WorkloadCheck):
+	// a malformed selector must not error a check that never uses it.
+	cc := widgetCheck()
+	cc.Names = []string{"w1"}
+	policy := map[adapter.Family]adapter.FamilyPolicy{
+		"widget_health": {Enabled: true, LabelSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "k", Operator: "Nonsense"}},
+		}},
+	}
+	checks := runManaged(t, cc, policy, widget("default", "w1", "Ready", "True"))
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomePass, "Ready")
+}
+
+func TestCondition_NamedClusterScopedGet(t *testing.T) {
+	// The metrics-server shape: a cluster-scoped named APIService.
+	cc := ConditionCheck{
+		APIVersion:     "apiregistration.k8s.io/v1",
+		Kind:           "APIService",
+		ListKind:       "APIServiceList",
+		ListName:       "apiservices",
+		ClusterScoped:  true,
+		Names:          []string{"v1beta1.metrics.k8s.io"},
+		ConditionType:  "Available",
+		ExpectedStatus: "True",
+	}
+	checks := runManaged(t, cc, nil, apiService("v1beta1.metrics.k8s.io", "Available", "True"))
+	assertHasOutcome(t, checks, "APIService", "v1beta1.metrics.k8s.io", adapter.OutcomePass, "Available")
 }
 
 // MustEngine panics on an invalid definition; NewEngine returns the error.

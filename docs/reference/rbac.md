@@ -73,6 +73,16 @@ ServiceAccount: `fathom-addon-external-secrets` (namespace `fathom-system`)
 | apiextensions.k8s.io | customresourcedefinitions | get, list, watch | Read the ESO CRDs to verify they are Established and serve a supported version. list is needed to check several CRDs; read-only. |
 | external-secrets.io | externalsecrets | get, list, watch | Read ExternalSecret Ready conditions to score sync health. Scoped to the external-secrets.io group and to ExternalSecrets only — deliberately NOT SecretStores or the synced Secrets themselves — and read-only, so the addon SA can never read secret material. |
 
+## metrics-server
+
+ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the metrics-server Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only. |
+| core | pods | list | List the metrics-server Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
+| apiregistration.k8s.io | apiservices | get | Get the v1beta1.metrics.k8s.io APIService by name to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs. |
+
 ## Operator impersonation grant
 
 The operator ServiceAccount (`fathom-controller-manager`) holds only `impersonate` on the per-addon ServiceAccounts above, via the namespaced Role `fathom-addon-impersonator` in `fathom-system`. It carries no addon read permissions of its own, so each addon's blast radius is exactly its declared rules.

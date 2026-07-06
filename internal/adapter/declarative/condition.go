@@ -10,6 +10,7 @@ import (
 	"time"
 
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,14 +21,17 @@ import (
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
-// Evaluate implements Evaluator for ConditionCheck. It lists managed CRs (or
-// APIServices) across the resolved namespaces and scores a
-// status.conditions[ConditionType]==ExpectedStatus predicate per object.
+// Evaluate implements Evaluator for ConditionCheck. It scores a
+// status.conditions[ConditionType]==ExpectedStatus predicate per object — over
+// a list of managed CRs across the resolved namespaces, or, when Names is set,
+// over each named singleton fetched individually.
 //
-// An empty result set across all namespaces -> OutcomeSkipped with
-// Details["skipReason"]="NoMatchingObjects". A missing condition ->
-// AbsentCondition (default Fail); a status mismatch -> Mismatch (default Fail).
-// Transport and invalid-selector errors -> OutcomeError.
+// List mode: an empty result set across all namespaces -> OutcomeSkipped with
+// Details["skipReason"]="NoMatchingObjects". Named mode: a NotFound name ->
+// the effective Absence posture (Required default -> Fail) with the absent
+// marker. Either mode: a missing condition -> AbsentCondition (default Fail);
+// a status mismatch -> Mismatch (default Fail). Transport and invalid-selector
+// errors -> OutcomeError.
 func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 	started := time.Now()
 	absent := cc.AbsentCondition
@@ -40,6 +44,20 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	}
 
 	kindRef := adapter.TargetRef{APIVersion: cc.APIVersion, Kind: cc.Kind, Name: cc.listName()}
+
+	// Named mode branches before the selector parse: policy.LabelSelector does
+	// not apply to named gets, so a malformed selector must not error a check
+	// that never uses it (mirroring WorkloadCheck, which ignores it too).
+	if len(cc.Names) > 0 {
+		gv, err := schema.ParseGroupVersion(cc.APIVersion)
+		if err != nil {
+			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
+				fmt.Sprintf("invalid apiVersion %q: %v", cc.APIVersion, err), nil, started)}, nil
+		}
+		return cc.evaluateNamed(ec,
+			schema.GroupVersionKind{Group: gv.Group, Version: cc.resolveVersion(ec, gv.Version), Kind: cc.Kind},
+			absent, mismatch), nil
+	}
 
 	sel, err := metav1.LabelSelectorAsSelector(ec.Policy.LabelSelector)
 	if err != nil {
@@ -85,9 +103,45 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	out := make([]adapter.CheckResult, 0, len(items))
 	for i := range items {
 		obj := &items[i]
-		out = append(out, cc.scoreObject(ec, obj, absent, mismatch))
+		out = append(out, cc.scoreObject(ec, obj, absent, mismatch, time.Now()))
 	}
 	return out, nil
+}
+
+// evaluateNamed is the named (get-by-name) mode: each entry in Names is
+// fetched and scored individually. A NotFound name is a verdict — the
+// effective Absence posture (Required, the default -> Fail; Optional ->
+// Skipped) tagged with the adapter.DetailAbsent marker (SKA-526) — never the
+// list mode's NoMatchingObjects skip, because a named singleton's existence is
+// itself the check (e.g. an aggregated APIService). policy.LabelSelector is
+// intentionally not applied to named gets.
+func (cc ConditionCheck) evaluateNamed(ec EvalContext, gvk schema.GroupVersionKind, absent, mismatch adapter.Outcome) []adapter.CheckResult {
+	namespace := ""
+	if !cc.ClusterScoped {
+		namespace = firstNamespace(ec.Policy, cc.DefaultNamespace)
+	}
+	out := make([]adapter.CheckResult, 0, len(cc.Names))
+	for _, name := range cc.Names {
+		started := time.Now()
+		ref := adapter.TargetRef{APIVersion: cc.APIVersion, Kind: cc.Kind, Namespace: namespace, Name: name}
+
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(gvk)
+		if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj); err != nil {
+			if apierrors.IsNotFound(err) {
+				o := absenceOutcome(effectiveAbsence(cc.Absence, ec.DefaultPosture))
+				out = append(out, result(ec.Family, ref, o,
+					fmt.Sprintf("%s %s not found", cc.Kind, name),
+					adapter.MarkAbsent(map[string]string{"conditionType": cc.ConditionType}), started))
+				continue
+			}
+			out = append(out, result(ec.Family, ref, adapter.OutcomeError,
+				fmt.Sprintf("failed to read %s %s: %v", cc.Kind, name, err), nil, started))
+			continue
+		}
+		out = append(out, cc.scoreObject(ec, obj, absent, mismatch, started))
+	}
+	return out
 }
 
 // resolveVersion returns the CR version to list. When VersionCRD is set it uses
@@ -119,9 +173,12 @@ func (cc ConditionCheck) listName() string {
 	return cc.Kind
 }
 
-// scoreObject evaluates the configured condition on one listed object.
-func (cc ConditionCheck) scoreObject(ec EvalContext, obj *unstructured.Unstructured, absent, mismatch adapter.Outcome) adapter.CheckResult {
-	started := time.Now()
+// scoreObject evaluates the configured condition on one object. started marks
+// the beginning of the work this result's Duration should cover: a fresh
+// timestamp in list mode (the fetch is already accounted for once, across the
+// whole list), or the per-name Get's start in named mode, so the Duration
+// reflects the full get+evaluate work for that object.
+func (cc ConditionCheck) scoreObject(ec EvalContext, obj *unstructured.Unstructured, absent, mismatch adapter.Outcome, started time.Time) adapter.CheckResult {
 	ref := adapter.TargetRef{
 		APIVersion: cc.APIVersion,
 		Kind:       cc.Kind,
