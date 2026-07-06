@@ -59,12 +59,11 @@ OTel span; helmfile e2e stack.
 
 These are the current-code facts the target architecture must fix:
 
-- **[correction] Checks don't re-run.** `runAddonCheck` fires only when
-  `LastRunTime == nil || observedGeneration != Generation`
-  (`internal/controller/addoncheck_controller.go:141`); there is **no `RequeueAfter`** and
-  **`spec.interval` is unused**. Today an AddonCheck runs once and then never again
-  until its spec is edited — a degraded addon keeps its last green report. This is
-  the single most important thing to fix (Decision 1).
+- **[implemented correction] Checks re-run periodically and on demand.**
+  `AddonCheckReconciler` now honors `spec.interval` with `RequeueAfter` and
+  supports one-shot runs through the `fathom.skaphos.io/run-now` annotation.
+  This closed the original v1-review gap where checks ran once and then waited
+  for a spec edit.
 - **[correction] Absence is handled inconsistently, and "rolls up green" is false.**
   cert-manager / external-secrets / CoreDNS emit **Fail** on NotFound; only Cilium
   emits **Skipped**. The persisted verdict for an all-Skipped run is **`Skipped`**
@@ -138,8 +137,8 @@ copy-paste):
 
 The engine walks the definition, runs the named evaluators (reusing the same
 workload/CRD/threshold logic today's adapters copy), and emits `CheckResult`s with
-**uniform outcome semantics** — fixing the Fail-vs-Skipped-vs-Warn drift between the
-current four adapters.
+**uniform outcome semantics** — fixing the Fail-vs-Skipped-vs-Warn drift found in
+the original adapter review.
 
 **Escape hatch (Go).** A hand-written adapter still registers normally and
 *overrides* the declarative path for its `addonType`. Reserve it for what the
@@ -245,8 +244,8 @@ Ordered by dependency. Each is its own PR.
 
 | # | Work | Ticket | Notes |
 | --- | --- | --- | --- |
-| P0-A | **Periodic + on-demand execution** — consume `spec.interval` (+ default), `RequeueAfter`, run-now trigger | **new (blocker)** | Nothing else matters until checks re-run. |
-| P0-B | **Declarative engine + evaluator library + `AddonDefinition` schema** (embedded catalog) | **SKA-523 reframed** | Was "shared kit"; now the engine. Migrate the 4 existing adapters onto it (each its own e2e-gated PR — see §6). |
+| P0-A | **Periodic + on-demand execution** — consume `spec.interval` (+ default), `RequeueAfter`, run-now trigger | **landed** | Checks re-run on cadence and via `fathom.skaphos.io/run-now`. |
+| P0-B | **Declarative engine + evaluator library + `AddonDefinition` schema** (embedded catalog) | **SKA-523 reframed** | Was "shared kit"; now the engine. Migrate suitable adapters onto it (each its own e2e-gated PR — see §6). |
 | P0-C | **Absence semantics** — `required`/`optional`, `Absent` reason + status count | **new** | Ends the NotFound inconsistency. |
 | P0-D | **Definition/policy validation + status conditions** | **SKA-54** | Largely CEL on the `AddonDefinition`/policy + engine checks (unknown family, bad thresholds → `Accepted=False`). |
 | P0-E | **Per-addon scoped client (impersonation) + generated per-addon RBAC + read-only CI guard** | **SKA-58 evolved** | Phased behind the aggregate role. |

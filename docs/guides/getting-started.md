@@ -114,15 +114,10 @@ kubectl apply -f cert-manager-check.yaml
 `cert-manager` adapter, runs the enabled families against your cluster, writes
 the outcome to `status`, and records the run as an immutable `HealthReport`.
 
-> **Set expectations on cadence.** In the current build `spec.interval` is
-> accepted but **not yet honored** for `AddonCheck` — a run is triggered when
-> the check is first created and whenever you change its spec, not on a timer.
-> To force a fresh run, edit the spec (any generation-changing edit re-runs the
-> adapter). Periodic requeue is a tracked limitation; see
-> [Add-on checks → Run cadence](addon-checks.md#run-cadence-and-the-interval-caveat).
-> `NodeCertificateCheck` — a newer kind not present in older builds (see
-> its [Availability note](node-certificate-checks.md#availability)) — *does*
-> honor `interval`.
+> **Set expectations on cadence.** `spec.interval` drives periodic
+> `AddonCheck` re-runs and defaults to `5m`. To force an immediate run outside
+> that cadence, set a fresh `fathom.skaphos.io/run-now` annotation value; see
+> [Add-on checks → Run cadence](addon-checks.md#run-cadence).
 
 ## 3. Read the result
 

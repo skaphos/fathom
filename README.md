@@ -13,7 +13,7 @@ helm install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
 ```
 
 Replace `X.Y.Z` with a released chart version (plain semver, no leading `v`).
-The chart installs the four `fathom.skaphos.io` CRDs from its native `crds/`
+The chart installs the five `fathom.skaphos.io` CRDs from its native `crds/`
 directory — Helm installs CRDs on first install only and never upgrades or
 removes them, so apply new CRDs with `kubectl` before a breaking `helm upgrade`.
 

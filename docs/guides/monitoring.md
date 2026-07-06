@@ -186,10 +186,9 @@ kubectl -n fathom-system get clusterhealth platform \
   -o jsonpath='{.status.result}'
 ```
 
-Treat anything other than `Pass`/`Skipped` as a stop. Remember the
-[`interval` caveat](addon-checks.md#run-cadence-and-the-interval-caveat): for
-`AddonCheck`s, force a fresh run (a spec/generation change) before reading the
-verdict if you need it to reflect the current cluster state.
+Treat anything other than `Pass`/`Skipped` as a stop. For a just-in-time verdict,
+force a fresh `AddonCheck` run with a new `fathom.skaphos.io/run-now` annotation
+value before reading the aggregate result.
 
 ## Reference
 
