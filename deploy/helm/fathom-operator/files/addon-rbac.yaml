@@ -177,16 +177,12 @@ addons:
     - deployments
     verbs:
     - get
-    - list
-    - watch
   - apiGroups:
     - ""
     resources:
     - pods
     verbs:
-    - get
     - list
-    - watch
   - apiGroups:
     - apiregistration.k8s.io
     resources:

@@ -79,9 +79,9 @@ ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)
 
 | API group | Resources | Verbs | Justification (why this, and why not less) |
 | --- | --- | --- | --- |
-| apps | deployments | get, list, watch | Read the metrics-server Deployment to score readiness. list+watch because the name/namespace are policy-overridable (Helm release fullname); read-only. |
-| core | pods | get, list, watch | Read the metrics-server Pods for restart counts and readiness behind the Deployment. list is required because Pod names are dynamic; read-only. |
-| apiregistration.k8s.io | apiservices | get | Read the v1beta1.metrics.k8s.io APIService to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs. |
+| apps | deployments | get | Get the metrics-server Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only. |
+| core | pods | list | List the metrics-server Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
+| apiregistration.k8s.io | apiservices | get | Get the v1beta1.metrics.k8s.io APIService by name to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs. |
 
 ## Operator impersonation grant
 

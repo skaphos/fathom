@@ -28,12 +28,17 @@ var MetricsServerDefinition = AddonDefinition{
 	// version — gating is opt-in (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "kube-system", Name: "metrics-server"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the metrics-server Deployment to score readiness. list+watch because the name/namespace are policy-overridable (Helm release fullname); read-only."},
-		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"},
-			Justification: "Read the metrics-server Pods for restart counts and readiness behind the Deployment. list is required because Pod names are dynamic; read-only."},
+		// Verbs mirror the engine's actual reads through the direct (uncached)
+		// impersonating client: the Deployment and the APIService are fetched by
+		// name (get), pods by label selector (list). Nothing watches — the
+		// client is deliberately cache-free (see internal/adapter/impersonation)
+		// — so no list/watch is granted where the engine never lists or watches.
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
+			Justification: "Get the metrics-server Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only."},
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
+			Justification: "List the metrics-server Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only."},
 		{APIGroups: []string{"apiregistration.k8s.io"}, Resources: []string{"apiservices"}, Verbs: []string{"get"},
-			Justification: "Read the v1beta1.metrics.k8s.io APIService to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs."},
+			Justification: "Get the v1beta1.metrics.k8s.io APIService by name to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs."},
 	},
 	Families: []FamilyDefinition{
 		{
