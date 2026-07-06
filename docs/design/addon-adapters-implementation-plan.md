@@ -147,12 +147,18 @@ evaluators can't express:
 
 - **Active probes** — CoreDNS DNS-resolution probe pod; cert-manager admission
   dry-run `Create`. (Both exist already.)
-- **Conditional topology** — istio ambient-vs-sidecar (present-or-absent families).
 - Anything needing bespoke API calls.
+
+*(Realigned 2026-07-06, SKA-60: "conditional topology — istio
+ambient-vs-sidecar" was originally listed here, but per-check
+`Absence: Optional` (SKA-526) expresses present-or-absent families
+declaratively, and the reserved `WebhookCheck` evaluator shipped with the
+istio definition — so istio landed declarative after all, and the escape
+hatch shrank to genuinely active probes.)*
 
 Note: the `expiry-threshold`, `recency`, and `node-annotation` evaluators pull
 cert-manager (passive parts), Velero, and kured *back into* declarative — the Go
-escape hatch shrinks to genuinely active probes + istio.
+escape hatch shrinks to genuinely active probes.
 
 **Where definitions live.** Phase 1: an **embedded first-party catalog** (Go
 `embed` of the YAML), versioned with the operator release. Phase 2: an
@@ -261,7 +267,7 @@ hatch (and several of *those* fold back to declarative once the `expiry-threshol
 
 | Addon | Ticket | Delivery | Why |
 | --- | --- | --- | --- |
-| istio mesh | SKA-60 | **Go** | ambient/sidecar conditional topology, webhooks |
+| istio mesh | SKA-60 | Declarative *(realigned 2026-07-06; was Go)* | ambient/sidecar topology via `Absence: Optional` (SKA-526) + the `WebhookCheck` evaluator for injector/validator wiring; `mesh_status` (proxy sync — needs XDS/metrics, not API reads) deferred to a future active probe that would compose with the engine |
 | external-dns | SKA-62 | Declarative | Deployment + optional DNSEndpoint status |
 | metrics-server | SKA-65 | Declarative | Deployment + `apiservice-available` |
 | envoy-gateway | SKA-507 | Declarative* | Gateway/HTTPRoute conditions; *dynamically-named proxy Deployments may need a label-selector workload evaluator |
@@ -299,8 +305,10 @@ Phase 0 (foundation, mostly serial where noted):
 
 Phase 1  migrate the 4 shipped adapters onto the engine (Cilium first; each e2e-gated PR)
 Phase 2  declarative definitions batch — cheap YAML PRs, highly parallel
-Phase 3  Go escapes: istio; add expiry/recency/CronJob evaluators to reclaim
-         cert-manager-passive / Velero / descheduler as declarative
+Phase 3  add expiry/recency/CronJob evaluators to reclaim cert-manager-passive
+         / Velero / descheduler as declarative
+         (istio left this phase 2026-07-06: it shipped declarative in Phase 2
+         via Optional absence + the WebhookCheck evaluator — see §2.1/§4)
 ```
 
 ---
