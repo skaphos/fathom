@@ -103,7 +103,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	out := make([]adapter.CheckResult, 0, len(items))
 	for i := range items {
 		obj := &items[i]
-		out = append(out, cc.scoreObject(ec, obj, absent, mismatch))
+		out = append(out, cc.scoreObject(ec, obj, absent, mismatch, time.Now()))
 	}
 	return out, nil
 }
@@ -139,7 +139,7 @@ func (cc ConditionCheck) evaluateNamed(ec EvalContext, gvk schema.GroupVersionKi
 				fmt.Sprintf("failed to read %s %s: %v", cc.Kind, name, err), nil, started))
 			continue
 		}
-		out = append(out, cc.scoreObject(ec, obj, absent, mismatch))
+		out = append(out, cc.scoreObject(ec, obj, absent, mismatch, started))
 	}
 	return out
 }
@@ -173,9 +173,12 @@ func (cc ConditionCheck) listName() string {
 	return cc.Kind
 }
 
-// scoreObject evaluates the configured condition on one listed object.
-func (cc ConditionCheck) scoreObject(ec EvalContext, obj *unstructured.Unstructured, absent, mismatch adapter.Outcome) adapter.CheckResult {
-	started := time.Now()
+// scoreObject evaluates the configured condition on one object. started marks
+// the beginning of the work this result's Duration should cover: a fresh
+// timestamp in list mode (the fetch is already accounted for once, across the
+// whole list), or the per-name Get's start in named mode, so the Duration
+// reflects the full get+evaluate work for that object.
+func (cc ConditionCheck) scoreObject(ec EvalContext, obj *unstructured.Unstructured, absent, mismatch adapter.Outcome, started time.Time) adapter.CheckResult {
 	ref := adapter.TargetRef{
 		APIVersion: cc.APIVersion,
 		Kind:       cc.Kind,

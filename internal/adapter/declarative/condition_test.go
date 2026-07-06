@@ -8,6 +8,7 @@ package declarative
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -80,22 +81,22 @@ func TestCondition_ScoreObject(t *testing.T) {
 	ec := EvalContext{Family: "widget_health"}
 	one := func(c adapter.CheckResult) []adapter.CheckResult { return []adapter.CheckResult{c} }
 
-	pass := cc.scoreObject(ec, widget("default", "w1", "Ready", "True"), adapter.OutcomeFail, adapter.OutcomeFail)
+	pass := cc.scoreObject(ec, widget("default", "w1", "Ready", "True"), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(pass), "Widget", "w1", adapter.OutcomePass, "Ready")
 	assertHasDetail(t, one(pass), "Widget", "w1", "status", "True")
 	assertFamily(t, one(pass), "Widget", "w1", adapter.Family("widget_health"))
 
-	mismatch := cc.scoreObject(ec, widget("default", "w2", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeFail)
+	mismatch := cc.scoreObject(ec, widget("default", "w2", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(mismatch), "Widget", "w2", adapter.OutcomeFail, "want")
 	assertHasDetail(t, one(mismatch), "Widget", "w2", "expectedStatus", "True")
 
-	absentFail := cc.scoreObject(ec, widget("default", "w3", "", ""), adapter.OutcomeFail, adapter.OutcomeFail)
+	absentFail := cc.scoreObject(ec, widget("default", "w3", "", ""), adapter.OutcomeFail, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(absentFail), "Widget", "w3", adapter.OutcomeFail, "absent")
 
 	// Custom outcomes: absent -> Warn, mismatch -> Warn.
-	absentWarn := cc.scoreObject(ec, widget("default", "w4", "", ""), adapter.OutcomeWarn, adapter.OutcomeFail)
+	absentWarn := cc.scoreObject(ec, widget("default", "w4", "", ""), adapter.OutcomeWarn, adapter.OutcomeFail, time.Now())
 	assertHasOutcome(t, one(absentWarn), "Widget", "w4", adapter.OutcomeWarn, "absent")
-	mismatchWarn := cc.scoreObject(ec, widget("default", "w5", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeWarn)
+	mismatchWarn := cc.scoreObject(ec, widget("default", "w5", "Ready", "False"), adapter.OutcomeFail, adapter.OutcomeWarn, time.Now())
 	assertHasOutcome(t, one(mismatchWarn), "Widget", "w5", adapter.OutcomeWarn, "want")
 }
 
