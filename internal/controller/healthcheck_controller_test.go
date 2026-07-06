@@ -139,6 +139,47 @@ var _ = Describe("HealthCheck Controller", func() {
 		Expect(got.Status.Result).To(BeEmpty())
 	})
 
+	It("clears mirrored fields when a previously mirrored target disappears", func() {
+		runTime := metav1.NewTime(time.Now().Add(-time.Minute))
+		ac := createAddonCheckWithStatus("ac-disappears", fathomv1alpha1.AddonCheckStatus{
+			LastResult:     "Pass",
+			LastRunTime:    &runTime,
+			LastReportName: "ac-disappears-1",
+			Conditions: []metav1.Condition{{
+				Type:               healthCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             "RunCompleted",
+				Message:            "source was healthy",
+				LastTransitionTime: metav1.Now(),
+			}},
+		})
+		createHealthCheck("hc-target-disappears", fathomv1alpha1.HealthCheckSpec{
+			CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: ac.Name},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-target-disappears", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Delete(ctx, ac)).To(Succeed())
+
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-target-disappears", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.HealthCheck
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "hc-target-disappears", Namespace: "default"}, &got)).To(Succeed())
+		ready := apiMeta.FindStatusCondition(got.Status.Conditions, healthCheckConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("TargetNotFound"))
+		Expect(got.Status.Result).To(BeEmpty())
+		Expect(got.Status.SourceObservedAt).To(BeNil())
+		Expect(got.Status.LastReportName).To(BeEmpty())
+		Expect(got.Status.Summary).To(BeEmpty())
+	})
+
 	It("rejects unsupported CheckRef.Kind values", func() {
 		createHealthCheck("hc-unsupported", fathomv1alpha1.HealthCheckSpec{
 			CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "DNSCheck", Name: "future-kind"},

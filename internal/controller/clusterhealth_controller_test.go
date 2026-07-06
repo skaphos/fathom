@@ -197,6 +197,43 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 	})
 
+	It("clears aggregate fields when a previously valid selector becomes invalid", func() {
+		createHealthCheckWithStatus("hc-selector-goes-invalid", map[string]string{"team": "invalid-selector"}, fathomv1alpha1.HealthReportResultPass, "ok")
+		ch := createClusterHealth("ch-selector-goes-invalid", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "invalid-selector"}},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}, ch)).To(Succeed())
+		Expect(ch.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(ch.Status.Children).NotTo(BeEmpty())
+
+		ch.Spec.Selector = &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      "team",
+			Operator: metav1.LabelSelectorOpIn,
+		}}}
+		Expect(k8sClient.Update(ctx, ch)).To(Succeed())
+
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}, &got)).To(Succeed())
+		ready := apiMeta.FindStatusCondition(got.Status.Conditions, clusterHealthConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("InvalidSelector"))
+		Expect(got.Status.Result).To(BeEmpty())
+		Expect(got.Status.MatchedCount).To(BeNumerically("==", 0))
+		Expect(got.Status.Children).To(BeEmpty())
+		Expect(got.Status.ObservedAt).To(BeNil())
+	})
+
 	It("treats a nil/empty Selector as 'every HealthCheck in the namespace'", func() {
 		createHealthCheckWithStatus("hc-empty-selector", map[string]string{"unique": "empty-selector-test"}, fathomv1alpha1.HealthReportResultPass, "ok")
 		createClusterHealth("ch-empty-selector", fathomv1alpha1.ClusterHealthSpec{Selector: nil})
