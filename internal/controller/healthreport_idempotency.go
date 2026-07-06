@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,7 +52,25 @@ func createOrReuseHealthReport(ctx context.Context, c client.Client, report *fat
 		if getErr := c.Get(ctx, types.NamespacedName{Namespace: report.Namespace, Name: report.Name}, existing); getErr != nil {
 			return nil, false, getErr
 		}
+		if reuseErr := validateReusableHealthReport(existing, report); reuseErr != nil {
+			return nil, false, reuseErr
+		}
 		return existing, false, nil
 	}
 	return report, true, nil
+}
+
+func validateReusableHealthReport(existing, expected *fathomv1alpha1.HealthReport) error {
+	if existing.Spec.SourceRef != expected.Spec.SourceRef {
+		return fmt.Errorf("healthreport %s/%s already exists with mismatched sourceRef", existing.Namespace, existing.Name)
+	}
+	for key, value := range expected.Labels {
+		if existing.Labels[key] != value {
+			return fmt.Errorf("healthreport %s/%s already exists with mismatched label %q", existing.Namespace, existing.Name, key)
+		}
+	}
+	if existing.Spec.Result != expected.Spec.Result {
+		return fmt.Errorf("healthreport %s/%s already exists with mismatched result", existing.Namespace, existing.Name)
+	}
+	return nil
 }
