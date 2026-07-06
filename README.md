@@ -260,6 +260,8 @@ Reference and internals:
 
 - [Architecture](docs/architecture.md) — CRD model, the AddonCheck → HealthCheck → ClusterHealth aggregation chain, reconcilers, adapter contract, probe-pod model.
 - [API reference](docs/reference/api.md) — generated CRD reference for `fathom.skaphos.io/v1alpha1`.
+- [Status and conditions](docs/reference/status-conditions.md) — operational meaning of status fields and condition reasons.
 - [Configuration reference](docs/reference/configuration.md) — every flag, env var, and config-file key.
+- [RBAC reference](docs/reference/rbac.md) — generated least-privilege adapter permission matrix.
 - [Code map](docs/code-map.md) — internal package tour for contributors.
 - [Architecture Decision Records](docs/adr/) — ADR-0001 … ADR-0004.

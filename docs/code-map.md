@@ -63,8 +63,9 @@ The unit-testable seam between `cmd/main.go` and controller-runtime.
   (`RegisterFlags`), resolves options (`Load`), wires signal-aware context
   (`signalContext`), and calls `Run`.
 - `options.go` — `Options`, `DefaultOptions`, the `bindings()` flag/viper table,
-  `RegisterFlags`, `Load` (viper precedence), and `Validate`. `DefaultProbeImage`
-  and `DefaultConfigPath` live here. See
+  `RegisterFlags`, `Load` (viper precedence), and `Validate`.
+  `DefaultProbeImage`, `DefaultNodeAgentImage`, and `DefaultConfigPath` live
+  here. See
   [reference/configuration.md](reference/configuration.md).
 - `run.go` — `NewScheme` (registers client-go, fathom v1alpha1, and
   apiextensions/v1), `BuildManagerOptions` (Options → `ctrl.Options` + cert

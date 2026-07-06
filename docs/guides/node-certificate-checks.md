@@ -91,14 +91,17 @@ kubeadm, k3s, RKE2, standalone etcd, and the kubelet:
 
 How paths are interpreted:
 
-- A **directory** is scanned **non-recursively** for `*.crt`, `*.pem`, and
-  `*.cert` files.
+- A **directory** is scanned recursively, to a bounded depth, for `*.crt`,
+  `*.pem`, and `*.cert` files.
 - A **certificate file** (`.crt` / `.pem` / `.cert`) is read directly.
 - A **kubeconfig** (`.conf` / `.kubeconfig`) is parsed and its embedded
   client/CA certificates are extracted.
-- A path that **doesn't exist on a node is `Skipped`, never `Fail`.** That's
-  why listing a superset across distributions is safe — each node only reports
-  on the paths it actually has.
+- A path the non-root agent cannot read is `Skipped`, never `Fail` or `Error`.
+- A path that **doesn't exist on a node is omitted from that node's report.**
+  That's why listing a superset across distributions is safe — each node only
+  reports on the paths it actually has. For explicitly configured directories,
+  Kubernetes may create an empty hostPath on the node; narrow `paths` on
+  immutable-OS distributions where that side effect matters.
 
 To pin an explicit set instead of the defaults:
 
@@ -170,15 +173,16 @@ kubectl -n fathom-system describe nodecertificatecheck node-certificates
 - `reportingNodes` / `desiredNodes` — coverage.
 - `lastReportName` — the `HealthReport` for the most recent roll-up.
 - `conditions` — whether the spec was accepted and the DaemonSet is rolled out
-  and reporting.
+  and reporting. See
+  [Status and conditions](../reference/status-conditions.md#nodecertificatecheck)
+  for every `AgentReady` / `Ready` reason and the next action.
 
 The detail (which certificate on which node, and its days-to-expiry) lives in
 the `HealthReport`:
 
 ```sh
 kubectl -n fathom-system get healthreport \
-  -l fathom.skaphos.io/source-kind=NodeCertificateCheck \
-  -l fathom.skaphos.io/source-name=node-certificates
+  -l 'fathom.skaphos.io/source-kind=NodeCertificateCheck,fathom.skaphos.io/source-name=node-certificates'
 ```
 
 > `NodeCertificateCheck` reports its own status and history directly. In this

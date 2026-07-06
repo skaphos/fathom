@@ -33,7 +33,9 @@ kubectl -n fathom-system get healthreport \
 
 `status.conditions` on each resource explains *why* it is in its current state
 (`Accepted`, `Ready`, `Paused`, and the failure reasons in
-[Add-on checks → Troubleshooting](addon-checks.md#troubleshooting)).
+[Add-on checks → Troubleshooting](addon-checks.md#troubleshooting)). For the
+complete condition reason table across all CRDs, see
+[Status and conditions](../reference/status-conditions.md).
 
 ## 2. Scrape Prometheus metrics
 

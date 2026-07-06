@@ -34,3 +34,7 @@ for the generated, field-level CRD reference see
   `Pass < Skipped < Warn < Unknown < Fail < Error`; aggregation is worst-case.
 - Threshold values in `spec.policy.<family>.thresholds` are **strings**, even
   when numeric (`"3"`, `"30"`).
+- When a resource is not doing what you expect, start with
+  [Status and conditions](../reference/status-conditions.md): it maps each
+  `Accepted`, `Paused`, `Ready`, and `AgentReady` reason to the next operator
+  action.

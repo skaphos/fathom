@@ -139,14 +139,14 @@ So a single failing certificate makes the whole check `Fail`; a missing,
 not-applicable path reports `Skipped` (which rolls up green). The `Accepted`,
 `Ready`, and (if set) `Paused` conditions explain *why* a check is in its
 current state — for example `Ready=False / MissingAdapter` if `addonType` is
-misspelled.
+misspelled. The complete condition reason table is in
+[Status and conditions](../reference/status-conditions.md).
 
 Every run is also persisted as a `HealthReport` for history and audit:
 
 ```sh
 kubectl -n fathom-system get healthreport \
-  -l fathom.skaphos.io/source-kind=AddonCheck \
-  -l fathom.skaphos.io/source-name=cert-manager-system-health
+  -l 'fathom.skaphos.io/source-kind=AddonCheck,fathom.skaphos.io/source-name=cert-manager-system-health'
 ```
 
 The newest report holds the per-family, per-target detail; older reports are

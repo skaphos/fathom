@@ -135,7 +135,10 @@ stable regardless of how history is stored (see
 All reconcilers live in `internal/controller` and are registered with the
 manager in `internal/app/run.go` (`DefaultControllers`). Each writes only its
 own resource's `status` subresource and uses a `DeepEqual` no-op guard so a
-reconcile with no status change issues no API write.
+reconcile with no status change issues no API write. The operational
+condition/reason tables are in
+[reference/status-conditions.md](reference/status-conditions.md); this section
+focuses on controller ownership and data flow.
 
 ### AddonCheckReconciler
 
