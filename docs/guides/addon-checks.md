@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 
 An `AddonCheck` validates one platform add-on. It picks a built-in **adapter**
 with `spec.addonType` and enables one or more **check families** under
-`spec.policy`. This guide is the working reference for the four built-in
+`spec.policy`. This guide is the working reference for the eight built-in
 adapters, their families, and the threshold knobs you'll actually set.
 
 New to the model? Start with [Concepts](concepts.md) and
@@ -21,8 +21,8 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | external-secrets | cilium>
-  interval: 5m          # accepted; see "Run cadence" below
+  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio>
+  interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
   policy:
@@ -46,26 +46,30 @@ Key rules that apply to every adapter:
   k3s rename the standard workloads; the thresholds let you point the check at
   the real object names.
 
-## Run cadence and the `interval` caveat
+## Run cadence
 
-In the current build, `spec.interval` is **accepted but not yet honored** for
-`AddonCheck`. The operator runs an adapter when:
+The operator runs an adapter when:
 
-1. the check is first created (`status.lastRunTime` is empty), or
-2. the check's spec changes (its generation increments).
+1. the check is first created (`status.lastRunTime` is empty),
+2. the check's spec changes (its generation increments),
+3. `spec.interval` has elapsed since the last run, or
+4. the `fathom.skaphos.io/run-now` annotation changes to a fresh non-empty
+   value.
 
-There is no periodic timer yet. In practice this means:
+`spec.interval` defaults to `5m` when omitted. A ready check is requeued after
+the interval so results keep tracking live cluster state. To force an out-of-band
+run, write a new run-now annotation value each time, such as an RFC3339
+timestamp or nonce:
 
-- To re-run a check on demand, edit its spec (any generation-changing edit
-  re-runs the adapter). A no-op annotation bump works.
-- Until periodic requeue lands, treat `interval` as advisory and drive
-  re-runs from your GitOps/apply cadence if you need them.
+```sh
+kubectl -n fathom-system annotate addoncheck cert-manager \
+  fathom.skaphos.io/run-now="$(date -Iseconds)" --overwrite
+```
 
-This is a known limitation tracked in the
-[architecture reference](../architecture.md#known-limitations).
-`NodeCertificateCheck` — a newer kind not present in older builds (see
-its [guide](node-certificate-checks.md#availability)) — is the exception that
-*does* honor `interval`.
+Periodic runs update `status.lastRunTime`. `HealthReport` history is still a
+transition log: the controller creates a new report on the first run or when the
+aggregate result changes, and reuses status refreshes for same-result periodic
+runs.
 
 ## Adapter catalog
 
@@ -428,9 +432,9 @@ On the wrapper side, `kubectl describe healthcheck <name>`:
 | `UnsupportedKind` | `checkRef.kind` is not `AddonCheck`. |
 | `Paused` | `spec.paused` is set; mirroring is suspended. |
 
-If a check is stuck on a stale result, remember the
-[run-cadence caveat](#run-cadence-and-the-interval-caveat): edit the spec to
-force a fresh run.
+If a check is stuck on a stale result, compare `status.lastRunTime` with
+`spec.interval` and the controller logs. To force an immediate run, set a fresh
+`fathom.skaphos.io/run-now` annotation value.
 
 ## Reference
 

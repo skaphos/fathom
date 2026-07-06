@@ -13,10 +13,10 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary). |
+| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node certificate scanner). |
 | `api/v1alpha1/` | CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
-| `internal/controller/` | The three reconcilers. |
+| `internal/controller/` | The four reconcilers. |
 | `internal/adapter/` | Adapter registry and built-in adapters. |
 | `internal/probe/` | Probe-pod manifest builder and launcher. |
 | `pkg/adapter/` | The public, in-process adapter contract. |
@@ -35,20 +35,25 @@ for and the key entrypoints to start reading from. For the design rationale see
   `/dev/termination-log`, and exits. Built into the probe image
   (`Dockerfile.probe`, `scratch` base). Key funcs: `run`, `runDNS`,
   `runTCPConnect`, `runTCPListen`.
+- `cmd/node-agent/main.go` — the node-local certificate scanner run by the
+  `NodeCertificateCheck` DaemonSet. Scans host-mounted certificate paths,
+  publishes one ConfigMap report per node, and exposes node-certificate metrics.
+  Built into the dedicated node-agent image (`Dockerfile.node-agent`).
 
 ## `api/v1alpha1/` — CRD types
 
-Defines the four kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+Defines the five kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
 (`addoncheck_types.go`, `healthcheck_types.go`, `clusterhealth_types.go`,
-`healthreport_types.go`), plus `groupversion_info.go` (scheme registration) and
-the generated `zz_generated.deepcopy.go` (**never hand-edit**).
+`healthreport_types.go`, `nodecertificatecheck_types.go`), plus
+`groupversion_info.go` (scheme registration) and the generated
+`zz_generated.deepcopy.go` (**never hand-edit**).
 
 Key types: `AddonCheckSpec/Status`, `HealthCheckSpec/Status`,
-`ClusterHealthSpec/Status`, `HealthReportSpec`, and the `HealthReportResult`
-enum with its `Severity()` ordering used by worst-case aggregation. The kubebuilder
-markers on these types drive both the generated CRDs in `config/crd/bases/` and
-the field descriptions in [reference/api.md](reference/api.md), so doc comments
-here are load-bearing.
+`ClusterHealthSpec/Status`, `NodeCertificateCheckSpec/Status`,
+`HealthReportSpec`, and the `HealthReportResult` enum with its `Severity()`
+ordering used by worst-case aggregation. The kubebuilder markers on these types
+drive both the generated CRDs in `config/crd/bases/` and the field descriptions
+in [reference/api.md](reference/api.md), so doc comments here are load-bearing.
 
 ## `internal/app/` — process plumbing
 
@@ -63,7 +68,7 @@ The unit-testable seam between `cmd/main.go` and controller-runtime.
   [reference/configuration.md](reference/configuration.md).
 - `run.go` — `NewScheme` (registers client-go, fathom v1alpha1, and
   apiextensions/v1), `BuildManagerOptions` (Options → `ctrl.Options` + cert
-  watchers), `DefaultControllers` (constructs the three reconcilers),
+  watchers), `DefaultControllers` (constructs the four reconcilers),
   `BuildAdapterRegistry` / `builtInAdapters` (registry assembly), and `Run`
   (starts the manager, gates `/readyz` on cache sync). `managerFactory` is a
   package var so tests can swap in a fake manager.
@@ -78,6 +83,7 @@ ownership and watch wiring. Each implements `Reconcile` and `SetupWithManager`.
 | `addoncheck_controller.go` | `AddonCheckReconciler` | Dispatches to adapters, creates + prunes `HealthReport`s. |
 | `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck.status`; watches `AddonCheck`. |
 | `clusterhealth_controller.go` | `ClusterHealthReconciler` | Worst-case roll-up of `HealthCheck.status`; watches `HealthCheck`. |
+| `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. |
 | `suite_test.go` | — | envtest bootstrap for the Ginkgo controller tests. |
 
 `+kubebuilder:rbac` markers on the reconcilers are the source of the operator's
@@ -101,8 +107,10 @@ The public, importable contract (see
 - `registry/registry.go` — `Registry` keyed by add-on type. `New`, `Register`
   (runs `EnsureCompatible`, rejects nil/empty/conflicting adapters, idempotent
   re-registration), `Lookup` (`ErrNotFound`), `Capabilities`.
-- `certmanager/`, `coredns/`, `externalsecrets/`, `cilium/` — built-in adapters.
-  Each exposes `New()` and implements the contract; families are listed in
+- `certmanager/`, `coredns/`, and declarative definitions for
+  `external-secrets`, `cilium`, `external-dns`, `metrics-server`,
+  `envoy-gateway`, and `istio` — built-in adapters. Each exposes or is wrapped
+  by `New()` and implements the contract; families are listed in
   [architecture.md](architecture.md#built-in-adapters). The CoreDNS adapter is
   the one that launches probe pods (`dns_resolution`) and owns
   `resolveProbeImage`.
@@ -132,7 +140,7 @@ kustomize is the source of truth for all deployable YAML.
 | `config/components/` | Opt-in overlays (e.g. Prometheus ServiceMonitor). |
 | `config/network-policy/` | NetworkPolicy for metrics traffic. |
 | `config/manifests/`, `config/scorecard/` | OLM bundle + scorecard scaffolding. |
-| `config/samples/` | Example `AddonCheck` CRs (cert-manager, CoreDNS, ESO, Cilium). |
+| `config/samples/` | Example CRs for every Fathom kind, including AddonCheck samples for all built-in adapters. |
 
 ## `test/`
 

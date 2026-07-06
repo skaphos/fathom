@@ -21,15 +21,15 @@ for the generated, field-level CRD reference see
 
 | Guide | Read it to… |
 | --- | --- |
-| [Add-on checks](addon-checks.md) | Configure `AddonCheck`s for the four built-in adapters (cert-manager, CoreDNS, External Secrets, Cilium) — families, thresholds, roll-up, troubleshooting. |
+| [Add-on checks](addon-checks.md) | Configure `AddonCheck`s for the eight built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [Node certificate checks](node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before it causes an outage. |
 | [Monitoring & alerting](monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and deployment gates. |
 
 ## Conventions used in these guides
 
 - Examples place checks in the `fathom-system` namespace (where the operator is
-  installed). Any namespace works; `ClusterHealth` aggregation is
-  same-namespace in this build.
+  installed). Any namespace works; `ClusterHealth` selects `HealthCheck`
+  wrappers in its own namespace.
 - Results everywhere use the severity ordering
   `Pass < Skipped < Warn < Unknown < Fail < Error`; aggregation is worst-case.
 - Threshold values in `spec.policy.<family>.thresholds` are **strings**, even

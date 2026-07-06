@@ -22,7 +22,7 @@ relevant sections rather than restated here:
 
 Fathom is a Kubernetes operator (API group `fathom.skaphos.io`) that validates
 the health of platform add-ons — cert-manager, CoreDNS, External Secrets
-Operator, and others reachable through an adapter. It reconciles four custom
+Operator, and others reachable through an adapter. It reconciles five custom
 resources, runs adapter-defined checks against the cluster, persists the
 results as history, and rolls those results up into a single cluster-wide
 verdict that dashboards, alerting, and deployment gates can consume.
@@ -157,10 +157,10 @@ reconcile with no status change issues no API write.
   honor. A missing addon ServiceAccount surfaces as an adapter-level `Error`
   rather than a fall-back to broader access. See
   [Adapter RBAC](reference/rbac.md).
-- **Run trigger:** an adapter run happens only when the adapter is ready **and**
-  (`status.lastRunTime == nil` **or** the observed generation changed). There is
-  no periodic requeue — see [Known limitation](#known-limitations) on
-  `spec.interval`.
+- **Run trigger:** an adapter run happens when the adapter is ready **and** the
+  check is first observed (`status.lastRunTime == nil`), the observed generation
+  changed, `spec.interval` has elapsed, or the `fathom.skaphos.io/run-now`
+  annotation carries a fresh non-empty value.
 - **Timeout:** bounded by `spec.timeout` if set and positive, else a built-in
   default of `30s` (`defaultAddonCheckTimeout`). The run executes under a
   `context.WithTimeout`.
@@ -246,14 +246,17 @@ adapter level is forced to `Error`.
 
 ### Requeue / interval handling
 
-The three projection/aggregation reconcilers (`AddonCheck`, `HealthCheck`,
-`ClusterHealth`) do not return a `RequeueAfter`; their re-reconciliation is
-event-driven (spec edits, owned-object changes, cross-resource watches). The
-`NodeCertificateCheckReconciler` is the exception: it requeues after
-`spec.interval` (default `1h`) to refresh the rolled-up report, in addition to
-the ConfigMap-watch events its agents generate. See
-[Known limitations](#known-limitations) for what event-driven reconciliation
-means for `spec.interval` on the other kinds.
+`AddonCheckReconciler` and `NodeCertificateCheckReconciler` both return
+`RequeueAfter` based on their effective `spec.interval` (`5m` and `1h` defaults,
+respectively). `AddonCheck` uses that cadence to re-run the adapter and refresh
+`status.lastRunTime`; it creates a new `HealthReport` only for the first run or
+an aggregate-result transition. `NodeCertificateCheck` uses the cadence to
+refresh the rolled-up node-agent report, in addition to the ConfigMap-watch
+events its agents generate.
+
+`HealthCheckReconciler` and `ClusterHealthReconciler` are projection/
+aggregation controllers with no timer; they are event-driven by spec edits and
+cross-resource watches.
 
 ## The In-Process Adapter Contract
 
@@ -398,11 +401,6 @@ layout is in [code-map.md](code-map.md).
 
 ## Known Limitations
 
-- **`spec.interval` is not yet honored.** `AddonCheckSpec.Interval` exists in the
-  schema, but `AddonCheckReconciler.Reconcile` returns no `RequeueAfter`; an
-  adapter run is triggered only on first reconcile (`lastRunTime == nil`) or on a
-  generation change. Periodic re-runs are not driven by the operator today.
-  Treat `interval` as advisory until periodic requeue lands.
 - **Single supported wrapper target.** `HealthCheck` only mirrors `AddonCheck`
   in this build; other `checkRef.kind` values are rejected with
   `Ready=False / UnsupportedKind`.

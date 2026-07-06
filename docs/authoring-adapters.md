@@ -35,11 +35,11 @@ is served by exactly one registered adapter. The reconciler just looks the
 adapter up by `addonType`, and the registry rejects two adapters that claim the
 same type — a declarative `Engine` and a Go adapter can't both answer for one
 add-on. Whether that single adapter is a declarative `Engine` or a Go type is
-your call. Of the four built-ins, **CoreDNS** (DNS-resolution probe pod) and
-**cert-manager** (admission dry-run `create`) are Go; **External Secrets** and
-**Cilium** are declarative. The planned build-out is ~14 declarative and ~2–3 Go
-(istio being the notable Go one). Default to Path A and only reach for Go when a
-check genuinely can't be a read-and-compare.
+your call. Of the eight built-ins, **CoreDNS** (DNS-resolution probe pod) and
+**cert-manager** (admission dry-run `create`) are Go; **External Secrets**,
+**Cilium**, **external-dns**, **metrics-server**, **Envoy Gateway**, and
+**Istio** are declarative. Default to Path A and only reach for Go when a check
+genuinely can't be a read-and-compare.
 
 ---
 
