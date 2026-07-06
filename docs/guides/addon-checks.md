@@ -415,7 +415,9 @@ spec: {}   # empty selector matches all HealthChecks in this namespace
 Read the conditions: `kubectl describe addoncheck <name>` shows `Accepted`,
 `Ready`, and (when paused) `Paused`. `Accepted=False` means the spec/policy was
 rejected and no adapter run happens until it is corrected — the exact problems
-are in the `Accepted` condition message. Common `Ready=False` reasons:
+are in the `Accepted` condition message. The full status contract is in
+[Status and conditions](../reference/status-conditions.md). Common
+`Ready=False` reasons:
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
