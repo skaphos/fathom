@@ -143,6 +143,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // idempotent. The only supported target kind in v0.1 is AddonCheck.
 func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) {
 	if hc.Spec.CheckRef.Kind != healthCheckTargetKindAddonCheck {
+		clearMirroredHealthCheckStatus(hc)
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
 			Type:               healthCheckConditionReady,
 			Status:             metav1.ConditionFalse,
@@ -160,6 +161,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 	var target fathomv1alpha1.AddonCheck
 	err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hc.Spec.CheckRef.Name}, &target)
 	if err != nil {
+		clearMirroredHealthCheckStatus(hc)
 		reason := "TargetLookupFailed"
 		if apierrors.IsNotFound(err) {
 			reason = "TargetNotFound"
@@ -186,6 +188,13 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 		Reason:             "TargetMirrored",
 		Message:            "HealthCheck mirrored the referenced check's status.",
 	})
+}
+
+func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
+	hc.Status.Result = ""
+	hc.Status.SourceObservedAt = nil
+	hc.Status.LastReportName = ""
+	hc.Status.Summary = ""
 }
 
 // summarizeFromConditions extracts a human-readable one-liner from the source

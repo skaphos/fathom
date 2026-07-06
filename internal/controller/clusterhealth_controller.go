@@ -95,6 +95,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	selector, err := selectorFromSpec(ch.Spec.Selector)
 	if err != nil {
+		clearClusterHealthAggregateStatus(&ch)
 		apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 			Type:               clusterHealthConditionReady,
 			Status:             metav1.ConditionFalse,
@@ -109,6 +110,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			client.InNamespace(ch.Namespace),
 			client.MatchingLabelsSelector{Selector: selector},
 		); listErr != nil {
+			clearClusterHealthAggregateStatus(&ch)
 			apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 				Type:               clusterHealthConditionReady,
 				Status:             metav1.ConditionFalse,
@@ -172,6 +174,13 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		Reason:             "Aggregated",
 		Message:            "ClusterHealth aggregated the selected HealthChecks.",
 	})
+}
+
+func clearClusterHealthAggregateStatus(ch *fathomv1alpha1.ClusterHealth) {
+	ch.Status.Result = ""
+	ch.Status.MatchedCount = 0
+	ch.Status.Children = nil
+	ch.Status.ObservedAt = nil
 }
 
 func selectorFromSpec(sel *metav1.LabelSelector) (labels.Selector, error) {
