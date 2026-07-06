@@ -363,6 +363,13 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal("AwaitingReports"))
+
+		reportCM := &corev1.ConfigMap{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      nodecert.NodeReportConfigMapName(check.Name, "node-a"),
+			Namespace: name.Namespace,
+		}, reportCM)).To(Succeed())
+		Expect(metav1.IsControlledBy(reportCM, check)).To(BeFalse())
 	})
 
 	It("removes the node-agent DaemonSet while paused", func() {
