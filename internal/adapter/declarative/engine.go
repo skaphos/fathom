@@ -37,7 +37,9 @@ type Engine struct {
 //
 // Validation catches programmer errors at manager startup (before Register):
 // non-empty AddonType, non-empty Families, unique family names, each
-// WorkloadCheck.Kind known, and each CRDCheck carrying at least one name.
+// WorkloadCheck.Kind known, each CRDCheck carrying at least one name, and each
+// WebhookCheck naming a known configuration kind with a complete (or absent)
+// backing-service reference.
 func NewEngine(def AddonDefinition) (*Engine, error) {
 	if def.AddonType == "" {
 		return nil, fmt.Errorf("declarative: AddonType must not be empty")
@@ -88,6 +90,19 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 					// per-run Error — catch the definition bug at construction.
 					return nil, fmt.Errorf("declarative: adapter %q family %q has a %s ConditionCheck with an empty name", def.AddonType, f.Name, m.Kind)
 				}
+			}
+		}
+		for _, w := range f.Webhooks {
+			if w.Kind != KindMutatingWebhookConfiguration && w.Kind != KindValidatingWebhookConfiguration {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a WebhookCheck with unknown kind %q", def.AddonType, f.Name, w.Kind)
+			}
+			if w.Name == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a WebhookCheck with an empty name", def.AddonType, f.Name)
+			}
+			if (w.ExpectedService == "") != (w.ServiceNamespace == "") {
+				// Half a service reference can never match any entry at run
+				// time — catch the definition bug at construction.
+				return nil, fmt.Errorf("declarative: adapter %q family %q WebhookCheck %q must set ExpectedService and ServiceNamespace together", def.AddonType, f.Name, w.Name)
 			}
 		}
 	}
