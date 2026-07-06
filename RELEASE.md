@@ -1,15 +1,19 @@
 # Release Process
 
-Fathom releases via Release Please on `main` and a tag-triggered publish
-workflow that pushes operator, bundle, and catalog images to GHCR.
+Fathom releases via stock Release Please on `main`
+(`.github/workflows/release-please.yml`) and a tag-triggered publish workflow
+(`.github/workflows/release.yml`) that builds and pushes the operator, probe,
+bundle, and catalog images plus the Helm chart to GHCR.
 
 ## Prerequisites
 
 - Push access to `main`.
-- Optional: `RELEASE_PLEASE_TOKEN` configured as a GitHub Actions secret with
-  permission to open PRs and create tags on this repository. Without it the
-  workflow falls back to `github.token`, which maintains the release PR but
-  may not reliably trigger the downstream tag-push workflow.
+- The `skaphos-release-bot` GitHub App must be installed with `RELEASE_BOT_APP_ID`
+  (repo/org variable) and `RELEASE_BOT_PRIVATE_KEY` (secret) configured. The
+  Release Please workflow mints a short-lived app token from these to open the
+  release PR and push the release tag. This is not optional: a tag pushed by the
+  default `GITHUB_TOKEN` does **not** trigger other workflows, so the app-token
+  tag push is what cascades into `release.yml`.
 - CI is green on `main`.
 - Images publish to `ghcr.io/skaphos/fathom-operator`,
   `ghcr.io/skaphos/fathom-probe`, `ghcr.io/skaphos/fathom-operator-bundle`, and

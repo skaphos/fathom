@@ -1,16 +1,16 @@
 # Graph Report - rebase-pr-121  (2026-07-06)
 
 ## Corpus Check
-- 149 files · ~155,914 words
+- 149 files · ~155,946 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2289 nodes · 3695 edges · 174 communities (154 shown, 20 thin omitted)
+- 2289 nodes · 3695 edges · 173 communities (154 shown, 19 thin omitted)
 - Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 543 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `636c5149`
+- Built from commit: `44f7268c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -154,18 +154,17 @@
 - [[_COMMUNITY_Community 137|Community 137]]
 - [[_COMMUNITY_Community 138|Community 138]]
 - [[_COMMUNITY_Community 139|Community 139]]
-- [[_COMMUNITY_Community 140|Community 140]]
+- [[_COMMUNITY_Community 143|Community 143]]
 - [[_COMMUNITY_Community 144|Community 144]]
 - [[_COMMUNITY_Community 145|Community 145]]
 - [[_COMMUNITY_Community 146|Community 146]]
 - [[_COMMUNITY_Community 147|Community 147]]
-- [[_COMMUNITY_Community 148|Community 148]]
-- [[_COMMUNITY_Community 166|Community 166]]
+- [[_COMMUNITY_Community 165|Community 165]]
+- [[_COMMUNITY_Community 167|Community 167]]
 - [[_COMMUNITY_Community 168|Community 168]]
 - [[_COMMUNITY_Community 169|Community 169]]
-- [[_COMMUNITY_Community 170|Community 170]]
+- [[_COMMUNITY_Community 171|Community 171]]
 - [[_COMMUNITY_Community 172|Community 172]]
-- [[_COMMUNITY_Community 173|Community 173]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `join()` - 53 edges
@@ -199,7 +198,7 @@
 - **Prometheus ServiceMonitor opt-in overlay path** — kustomize_default, kustomize_default_prometheus_component, kustomize_prometheus_component, prometheus_servicemonitor, prometheus_tls_patch [EXTRACTED 0.90]
 - **Probe pod model: ADR, hardening, RBAC, sample usage** — adr_0003_decision_single_shot_pod, adr_0003_hardening_profile, rbac_pods_verbs, sample_addoncheck_coredns, readme_probe_pods [EXTRACTED 0.85]
 
-## Communities (174 total, 20 thin omitted)
+## Communities (173 total, 19 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
@@ -282,8 +281,8 @@ Cohesion: 0.15
 Nodes (23): main(), run(), runDNS(), runTCPConnect(), runTCPListen(), claimAndReleasePort(), TestJoin(), TestRunDispatchesToDNS() (+15 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.24
-Nodes (23): Load(), newTestFlags(), TestDefaultOptions_MatchFlagDefaults(), TestLoad_ConfigOverridesDefault(), TestLoad_EnvOverridesConfig(), TestLoad_FlagOverridesEverything(), TestLoad_MalformedConfig_Errors(), TestLoad_MetricsAllowInsecureFlag() (+15 more)
+Cohesion: 0.08
+Nodes (25): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:bash (IMAGE=ghcr.io/skaphos/fathom-operator:vX.Y.Z), code:bash (cosign verify \) (+17 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.08
@@ -298,16 +297,16 @@ Cohesion: 0.08
 Nodes (25): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:bash (IMAGE=ghcr.io/skaphos/fathom-operator:vX.Y.Z), code:bash (cosign verify \) (+17 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.08
-Nodes (25): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:bash (IMAGE=ghcr.io/skaphos/fathom-operator:vX.Y.Z), code:bash (cosign verify \) (+17 more)
+Cohesion: 0.2
+Nodes (18): GetNonEmptyLines(), GetProjectDir(), InstallCertManager(), InstallPrometheusOperator(), IsCertManagerCRDsInstalled(), IsPrometheusCRDsInstalled(), LoadImageToKindClusterWithName(), Run() (+10 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.15
-Nodes (18): appFakeAdapter, DefaultOptions(), TestValidate(), TestValidate_MultipleErrorsAccumulate(), BuildAdapterRegistry(), BuildManagerOptions(), TestBuildAdapterRegistry_RegistersBuiltInAdapters(), TestBuildAdapterRegistry_WrapsRegistrationErrors() (+10 more)
+Nodes (19): AddonRBAC, TestFilesRejectsIncompleteRule(), k8sObject, objectMeta, policyRule, clusterRules(), Files(), groupsCell() (+11 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.2
-Nodes (18): GetNonEmptyLines(), GetProjectDir(), InstallCertManager(), InstallPrometheusOperator(), IsCertManagerCRDsInstalled(), IsPrometheusCRDsInstalled(), LoadImageToKindClusterWithName(), Run() (+10 more)
+Cohesion: 0.18
+Nodes (20): minimalKubeconfig, DefaultCertPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs(), classify(), classifyAll(), daysFromDuration() (+12 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.09
@@ -318,56 +317,56 @@ Cohesion: 0.1
 Nodes (16): Adapter, IsAbsent(), MarkVersionGate(), TestFamilyOutcome(), TestMarkAbsentAndIsAbsent(), TestMarkVersionGate(), TestOutcomeValid(), Capabilities (+8 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.16
-Nodes (19): AddonRBAC, TestFilesRejectsIncompleteRule(), k8sObject, objectMeta, policyRule, clusterRules(), Collect(), Files() (+11 more)
-
-### Community 30 - "Community 30"
 Cohesion: 0.1
 Nodes (20): 0. Decisions that shape this plan, 1.1 Shipped, 1.2 Corrections to the record (from the v1 review), 1. Where we are today (and what v1 got wrong), 2.1 Declarative-first adapter (Decision 2), 2.2 Execution model (Decision 1), 2.3 Absence semantics (Decision 3), 2.4 Per-addon least-privilege client (Decision 4) (+12 more)
 
-### Community 31 - "Community 31"
+### Community 30 - "Community 30"
 Cohesion: 0.1
 Nodes (21): Kustomization: config/manager, Args: --leader-elect --health-probe-bind-address=:8081, Container: manager, ContainerSecurityContext: drop ALL caps, no priv escalation, Deployment: controller-manager, Image: controller:latest, Liveness probe: /healthz:8081, Namespace: system (+13 more)
 
+### Community 31 - "Community 31"
+Cohesion: 0.17
+Nodes (15): appFakeAdapter, DefaultOptions(), TestValidate(), TestValidate_MultipleErrorsAccumulate(), BuildManagerOptions(), TestBuildAdapterRegistry_WrapsRegistrationErrors(), TestBuildManagerOptions_CertWatchers(), TestBuildManagerOptions_DefaultsHaveNoCertWatchers() (+7 more)
+
 ### Community 32 - "Community 32"
+Cohesion: 0.19
+Nodes (14): addonAdapterLookup, addonCheckDueForRun(), addonCheckInterval(), addonCheckPolicy(), addonCheckTargetRef(), addonCheckTimeout(), aggregateHealthReportResult(), copyStringMap() (+6 more)
+
+### Community 33 - "Community 33"
 Cohesion: 0.1
 Nodes (19): A minimal check, Cadence, pausing, and history, Choosing which nodes run the agent, code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (kubectl apply -f node-certificates.yaml), code:block3 (NAME                RESULT   REPORTING   DESIRED   AGE), code:block4 (/etc/kubernetes/pki              # apiserver, kubelet-client), code:yaml (spec:) (+11 more)
 
-### Community 33 - "Community 33"
+### Community 34 - "Community 34"
 Cohesion: 0.31
 Nodes (18): deepCopyContract(), fullyPopulatedAddonCheck(), fullyPopulatedClusterHealth(), fullyPopulatedHealthCheck(), fullyPopulatedHealthReport(), fullyPopulatedNodeCertificateCheck(), runtimeObjectContract(), TestDeepCopy_AddonCheck() (+10 more)
 
-### Community 34 - "Community 34"
-Cohesion: 0.19
-Nodes (17): DefaultCertPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs(), Scan(), makeCertPEM(), TestClassifyBoundaries(), TestDaysFromDuration() (+9 more)
-
 ### Community 35 - "Community 35"
-Cohesion: 0.11
-Nodes (18): Alpha — `vNalphaM`, Beta — `vNbetaM`, code:block1 (/api/**                       @skaphos/maintainers), Conversion, CRD API Versioning Standard, Deprecation and removal, Enforcement and tooling, Introducing a new version (+10 more)
+Cohesion: 0.15
+Nodes (14): PolicyRule, AddonServiceAccountName(), IsReadVerb(), TestAddonServiceAccountName(), TestIsReadVerb(), RBACDeclarer, allowedWrites(), repoRoot() (+6 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.11
-Nodes (18): 1. Install the operator, 2. Declare your first check, 3. Read the result, 4. Roll checks up into one verdict, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:block10 (AddonCheck ──runs──▶ status + HealthReport (history)), code:sh (kubectl -n fathom-system get deploy,pod), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+10 more)
+Nodes (18): Alpha — `vNalphaM`, Beta — `vNbetaM`, code:block1 (/api/**                       @skaphos/maintainers), Conversion, CRD API Versioning Standard, Deprecation and removal, Enforcement and tooling, Introducing a new version (+10 more)
 
 ### Community 37 - "Community 37"
 Cohesion: 0.11
-Nodes (18): 1. Read status with `kubectl`, 2. Scrape Prometheus metrics, 3. Tracing, 4. Alerting patterns, 5. Deployment gates, Add-on check results — read the status, not a metric, Certificate expiry (the clean case), code:sh (# One verdict for the namespace:) (+10 more)
+Nodes (18): 1. Install the operator, 2. Declare your first check, 3. Read the result, 4. Roll checks up into one verdict, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:block10 (AddonCheck ──runs──▶ status + HealthReport (history)), code:sh (kubectl -n fathom-system get deploy,pod), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+10 more)
 
 ### Community 38 - "Community 38"
+Cohesion: 0.11
+Nodes (18): 1. Read status with `kubectl`, 2. Scrape Prometheus metrics, 3. Tracing, 4. Alerting patterns, 5. Deployment gates, Add-on check results — read the status, not a metric, Certificate expiry (the clean case), code:sh (# One verdict for the namespace:) (+10 more)
+
+### Community 39 - "Community 39"
 Cohesion: 0.12
 Nodes (6): checkResult, corednsCheck, corednsHealthReport, eventList, healthReport, healthReportList
 
-### Community 39 - "Community 39"
-Cohesion: 0.15
-Nodes (13): PolicyRule, AddonServiceAccountName(), IsReadVerb(), TestAddonServiceAccountName(), TestIsReadVerb(), RBACDeclarer, allowedWrites(), repoRoot() (+5 more)
-
 ### Community 40 - "Community 40"
-Cohesion: 0.14
-Nodes (10): crdAbsenceEngine(), TestCRD_AbsenceResolution(), Engine, endRunSpan(), MustEngine(), NewEngine(), TestNewEngine_Validation(), validWorkloadKind() (+2 more)
-
-### Community 41 - "Community 41"
 Cohesion: 0.27
 Nodes (17): absenceEngine(), deployEngine(), notReadyPod(), podWithRestarts(), runEngine(), statefulSet(), stsEngine(), TestWorkload_AbsenceResolution() (+9 more)
+
+### Community 41 - "Community 41"
+Cohesion: 0.14
+Nodes (10): crdAbsenceEngine(), TestCRD_AbsenceResolution(), Engine, endRunSpan(), MustEngine(), NewEngine(), TestNewEngine_Validation(), validWorkloadKind() (+2 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.25
@@ -378,59 +377,59 @@ Cohesion: 0.14
 Nodes (5): newFakeClientWithErrors(), TestRun_CRDGetErrorReportsError(), TestRun_DaemonSetGetErrorReportsError(), TestRun_DeploymentGetErrorReportsError(), TestRun_PodListErrorReportsError()
 
 ### Community 44 - "Community 44"
-Cohesion: 0.29
-Nodes (15): podInNamespace(), NewIstioEngine(), istioAmbientObjects(), istioCRDObjects(), istiodControlPlane(), istioHealthyObjects(), istioInjectorConfig(), istioValidatorConfig() (+7 more)
+Cohesion: 0.36
+Nodes (16): Load(), newTestFlags(), TestDefaultOptions_MatchFlagDefaults(), TestLoad_ConfigOverridesDefault(), TestLoad_EnvOverridesConfig(), TestLoad_FlagOverridesEverything(), TestLoad_MalformedConfig_Errors(), TestLoad_MetricsAllowInsecureFlag() (+8 more)
 
 ### Community 45 - "Community 45"
 Cohesion: 0.35
 Nodes (16): mutatingConfig(), runWebhook(), runWebhookPolicy(), TestWebhook_AbsenceResolution(), TestWebhook_BothProblemsOneResult(), TestWebhook_MisdirectedServiceFails(), TestWebhook_NameThresholdOverride(), TestWebhook_NoEntriesFails() (+8 more)
 
 ### Community 46 - "Community 46"
+Cohesion: 0.29
+Nodes (15): podInNamespace(), NewIstioEngine(), istioAmbientObjects(), istioCRDObjects(), istiodControlPlane(), istioHealthyObjects(), istioInjectorConfig(), istioValidatorConfig() (+7 more)
+
+### Community 47 - "Community 47"
 Cohesion: 0.26
 Nodes (10): fakeAdapter, New(), newFake(), TestCapabilities(), TestConcurrentAccess(), TestLookup(), TestRegister(), TestRegister_DuplicateAddonType() (+2 more)
 
-### Community 47 - "Community 47"
+### Community 48 - "Community 48"
+Cohesion: 0.29
+Nodes (15): Scan(), makeCertPEM(), TestScanBundleEmitsPerCert(), TestScanDefaultsWhenNoPaths(), TestScanDirectoryRecursiveAndIgnoresNonCerts(), TestScanKubeconfig(), TestScanMissingPathIsSilent(), TestScanPermissionDeniedIsSkippedNotError() (+7 more)
+
+### Community 49 - "Community 49"
 Cohesion: 0.24
 Nodes (14): deploymentInNamespace(), detectAddonVersion(), imageTag(), pickImage(), deploymentWithImage(), deploymentWithMetaVersion(), deploymentWithTemplateVersion(), TestDetectAddonVersion() (+6 more)
 
-### Community 48 - "Community 48"
+### Community 50 - "Community 50"
 Cohesion: 0.12
 Nodes (15): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:yaml (components:), code:bash (IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \) (+7 more)
 
-### Community 49 - "Community 49"
+### Community 51 - "Community 51"
 Cohesion: 0.16
 Nodes (9): NewScheme(), TestNewScheme_RegistersAPIExtensions(), TestNewScheme_RegistersFathomTypes(), addonSA(), TestAdapterClient(), TestRunAddonCheckFailsClosedWithoutScopedClient(), fakeClientFactory, TestAddToScheme() (+1 more)
 
-### Community 50 - "Community 50"
+### Community 52 - "Community 52"
 Cohesion: 0.22
 Nodes (12): NewRootCommand(), signalAwareContext(), signalContext(), TestSignalContext_PropagatesParentCancellation(), TestSignalContext_SIGINTCancels(), TestSignalContext_SIGTERMCancels(), TestSignalContext_StopReleasesContext(), TestNewRootCommand_BasicWiring() (+4 more)
 
-### Community 51 - "Community 51"
-Cohesion: 0.25
-Nodes (10): addonAdapterLookup, addonCheckPolicy(), addonCheckTargetRef(), addonCheckTimeout(), aggregateHealthReportResult(), copyStringMap(), healthReportChecks(), healthReportForAddonCheck() (+2 more)
-
-### Community 52 - "Community 52"
-Cohesion: 0.13
-Nodes (14): AddonCheck Example, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (go -C tools tool task probe-build), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+6 more)
-
 ### Community 53 - "Community 53"
 Cohesion: 0.13
-Nodes (15): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:yaml (components:), code:bash (IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \) (+7 more)
+Nodes (14): AddonCheck Example, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (go -C tools tool task probe-build), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+6 more)
 
 ### Community 54 - "Community 54"
 Cohesion: 0.13
 Nodes (15): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:yaml (components:), code:bash (IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \) (+7 more)
 
 ### Community 55 - "Community 55"
+Cohesion: 0.13
+Nodes (15): 1. Land Releasable Commits on `main`, 2. Run Local Release Checks, 3. Review and Merge the Release PR, 4. Tag-Triggered Publish, 5. Verify the Release, code:bash (operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bund), code:yaml (components:), code:bash (IMG=ghcr.io/skaphos/fathom-operator@sha256:<digest> \) (+7 more)
+
+### Community 56 - "Community 56"
 Cohesion: 0.32
 Nodes (7): MarkAbsent(), absenceOutcome(), derefReplicas(), effectiveAbsence(), withSkipReason(), checkPods(), WorkloadCheck
 
-### Community 56 - "Community 56"
-Cohesion: 0.35
-Nodes (13): minimalKubeconfig, classify(), classifyAll(), daysFromDuration(), errorResult(), parsePEMCertificates(), scanCertFile(), scanDir() (+5 more)
-
 ### Community 57 - "Community 57"
-Cohesion: 0.14
+Cohesion: 0.18
 Nodes (14): AddonCheck Example, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (go -C tools tool task probe-build), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+6 more)
 
 ### Community 58 - "Community 58"
@@ -450,7 +449,7 @@ Cohesion: 0.14
 Nodes (14): AddonCheck Example, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (go -C tools tool task probe-build), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+6 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 0.18
+Cohesion: 0.14
 Nodes (14): AddonCheck Example, code:sh (helm install fathom oci://ghcr.io/skaphos/charts/fathom-oper), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1), code:sh (go -C tools tool task probe-build), code:yaml (apiVersion: fathom.skaphos.io/v1alpha1) (+6 more)
 
 ### Community 63 - "Community 63"
@@ -466,32 +465,32 @@ Cohesion: 0.21
 Nodes (7): version, EnsureCompatible(), parseVersion(), TestContractVersionParses(), TestEnsureCompatible(), TestParseVersion(), Registry
 
 ### Community 67 - "Community 67"
-Cohesion: 0.15
-Nodes (12): `api/v1alpha1/` — CRD types, Build and codegen, `cmd/` — entrypoints, Code Map, `config/` — manifests and packaging, `internal/adapter/` — registry and built-in adapters, `internal/app/` — process plumbing, `internal/controller/` — reconcilers (+4 more)
+Cohesion: 0.22
+Nodes (7): validateAddonCheckPolicy(), fakePolicyAdapter, badSelector(), checkWithPolicy(), TestSetAddonCheckAccepted(), TestValidateAddonCheckPolicy(), TestValidateAddonCheckPolicy_DeterministicOrder()
 
 ### Community 68 - "Community 68"
 Cohesion: 0.15
-Nodes (12): 1. In-process Go interface as the AddonAdapter contract, A. In-process Go interface, B. Out-of-process gRPC plugins, C. OCI bundle adapters launched as Pods per run, Consequences, Considered Options, Context and Problem Statement, D. Go `plugin` package (+4 more)
+Nodes (12): `api/v1alpha1/` — CRD types, Build and codegen, `cmd/` — entrypoints, Code Map, `config/` — manifests and packaging, `internal/adapter/` — registry and built-in adapters, `internal/app/` — process plumbing, `internal/controller/` — reconcilers (+4 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.15
-Nodes (12): 2. HealthReport as a first-class custom resource, A. Status conditions on the source check only, B. HealthReport as a first-class CRD, C. External time-series store, Consequences, Considered Options, Context and Problem Statement, D. Kubernetes Events (+4 more)
+Nodes (12): 1. In-process Go interface as the AddonAdapter contract, A. In-process Go interface, B. Out-of-process gRPC plugins, C. OCI bundle adapters launched as Pods per run, Consequences, Considered Options, Context and Problem Statement, D. Go `plugin` package (+4 more)
 
 ### Community 70 - "Community 70"
 Cohesion: 0.15
-Nodes (12): Build, Test, and Development Commands, Coding Style & Naming Conventions, Commit & Pull Request Guidelines, Configuration Model, Documentation Expectations, Engineering Guardrails, Project Structure & Module Organization, Repository Guidelines (+4 more)
+Nodes (12): 2. HealthReport as a first-class custom resource, A. Status conditions on the source check only, B. HealthReport as a first-class CRD, C. External time-series store, Consequences, Considered Options, Context and Problem Statement, D. Kubernetes Events (+4 more)
 
 ### Community 71 - "Community 71"
 Cohesion: 0.15
 Nodes (12): Build, Test, and Development Commands, Coding Style & Naming Conventions, Commit & Pull Request Guidelines, Configuration Model, Documentation Expectations, Engineering Guardrails, Project Structure & Module Organization, Repository Guidelines (+4 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.17
-Nodes (13): coredns.Adapter, coredns.Adapter.Run, adapterOutcome (probe.Outcome mapping), coredns.Adapter.checkDNSResolution, coredns.Adapter.checkSystemHealth, dnsProbeLauncher interface, dnsProbePodName, Rationale: probe pod for workload-perspective DNS (ADR-0003) (+5 more)
+Cohesion: 0.15
+Nodes (12): Build, Test, and Development Commands, Coding Style & Naming Conventions, Commit & Pull Request Guidelines, Configuration Model, Documentation Expectations, Engineering Guardrails, Project Structure & Module Organization, Repository Guidelines (+4 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.24
-Nodes (6): validateAddonCheckPolicy(), fakePolicyAdapter, badSelector(), checkWithPolicy(), TestValidateAddonCheckPolicy(), TestValidateAddonCheckPolicy_DeterministicOrder()
+Cohesion: 0.3
+Nodes (10): BuildAdapterRegistry(), BuiltInAdapters(), DefaultControllers(), operatorVersion(), readyzCheck(), Run(), TestBuildAdapterRegistry_RegistersBuiltInAdapters(), TestBuiltInAdapters_AllLookupable() (+2 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.17
@@ -554,8 +553,8 @@ Cohesion: 0.2
 Nodes (12): Image: quay.io/operator-framework/scorecard-test:v1.42.2, Kustomization: config/manifests, Kustomization: config/scorecard, Scorecard base Configuration, Scorecard basic patch, Scorecard OLM patch, Scorecard test: basic-check-spec, Scorecard test: olm-bundle-validation (+4 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.2
-Nodes (12): AddonCheckReconciler, AddonCheckReconciler.Reconcile, addonAdapterLookup interface, aggregateHealthReportResult, healthReportForAddonCheck, healthReportResult (outcome mapping), labels fathom.skaphos.io/source-{kind,name}, AddonCheckReconciler.pruneHealthReportHistory (+4 more)
+Cohesion: 0.18
+Nodes (12): coredns.Adapter, coredns.Adapter.Run, coredns.Adapter.checkDNSResolution, coredns.Adapter.checkSystemHealth, dnsProbeLauncher interface, dnsProbePodName, Rationale: probe pod for workload-perspective DNS (ADR-0003), runDNSProbe (+4 more)
 
 ### Community 90 - "Community 90"
 Cohesion: 0.21
@@ -578,8 +577,8 @@ Cohesion: 0.29
 Nodes (11): API Group: fathom.skaphos.io, ClusterRole: clusterhealth-admin-role, ClusterRole: healthcheck-admin-role, ClusterRole: healthcheck-editor-role, ClusterRole: healthcheck-viewer-role, ClusterRole: healthreport-admin-role, ClusterRole: healthreport-editor-role, ClusterRole: healthreport-viewer-role (+3 more)
 
 ### Community 95 - "Community 95"
-Cohesion: 0.2
-Nodes (11): AddonCheck CRD type, AddonCheckFamilyPolicy, AddonCheckSpec, AddonCheckStatus, HealthCheckReconciler, HealthCheckReconciler.SetupWithManager, healthChecksForAddonCheck (watch map), HealthCheckReconciler.mirrorTarget (+3 more)
+Cohesion: 0.18
+Nodes (11): AddonCheckReconciler, addonAdapterLookup interface, aggregateHealthReportResult, healthReportResult (outcome mapping), fakeAddonAdapter (test double), AddonCheck Controller envtest suite, adapterOutcome (probe.Outcome mapping), HealthReportResult.Severity() (+3 more)
 
 ### Community 96 - "Community 96"
 Cohesion: 0.2
@@ -590,16 +589,16 @@ Cohesion: 0.24
 Nodes (9): adapterName(), disableHTTP2(), firstEnvtestBinaryDir(), TestAdapterName_NilReturnsPlaceholder(), TestAdapterName_NonNilReturnsName(), TestDisableHTTP2(), TestMain(), TestRun_HappyPath_DefaultControllers() (+1 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.31
-Nodes (8): Family, NewEnvoyGatewayEngine(), egHealthyObjects(), gatewayObject(), TestEnvoyGateway_AdapterMetadata(), TestEnvoyGateway_GatewayConditionScoring(), TestEnvoyGateway_HealthyAndNoGatewaysSkipped(), TestEnvoyGateway_MissingDeploymentFails()
-
-### Community 99 - "Community 99"
 Cohesion: 0.42
 Nodes (8): NewMetricsServerEngine(), apiService(), msHealthyObjects(), TestMetricsServer_AdapterMetadata(), TestMetricsServer_HealthyPassesAllFamilies(), TestMetricsServer_MissingAPIServiceFails(), TestMetricsServer_MissingDeploymentFails(), TestMetricsServer_UnavailableAPIServiceFails()
 
+### Community 99 - "Community 99"
+Cohesion: 0.31
+Nodes (8): Family, NewEnvoyGatewayEngine(), egHealthyObjects(), gatewayObject(), TestEnvoyGateway_AdapterMetadata(), TestEnvoyGateway_GatewayConditionScoring(), TestEnvoyGateway_HealthyAndNoGatewaysSkipped(), TestEnvoyGateway_MissingDeploymentFails()
+
 ### Community 100 - "Community 100"
-Cohesion: 0.24
-Nodes (7): addonCheckDueForRun(), addonCheckInterval(), resolveAddonAdapter(), setAddonCheckAccepted(), TestSetAddonCheckAccepted(), endReconcileSpan(), reconcilerTracer()
+Cohesion: 0.27
+Nodes (4): summarizeFromConditions(), HealthCheckReconciler, endReconcileSpan(), reconcilerTracer()
 
 ### Community 101 - "Community 101"
 Cohesion: 0.2
@@ -613,25 +612,25 @@ Nodes (10): code:bash (IMAGE=ghcr.io/skaphos/fathom-operator:vX.Y.Z), code:bash 
 Cohesion: 0.2
 Nodes (10): code:bash (IMAGE=ghcr.io/skaphos/fathom-operator:vX.Y.Z), code:bash (cosign verify \), code:bash (gh attestation verify "oci://${IMAGE}" --owner skaphos), code:bash (cosign verify-attestation \), code:bash (gh release download "vX.Y.Z" --repo skaphos/fathom --pattern), code:bash (syft "${IMAGE}" -o spdx-json), Inspect the SBOM, Supply-Chain Verification (+2 more)
 
-### Community 105 - "Community 105"
-Cohesion: 0.25
-Nodes (7): flagBinding, MetricsOptions, Options, bindings(), RegisterFlags(), TracingOptions, WebhookOptions
+### Community 104 - "Community 104"
+Cohesion: 0.22
+Nodes (10): AddonCheckReconciler.Reconcile, healthReportForAddonCheck, labels fathom.skaphos.io/source-{kind,name}, AddonCheckReconciler.pruneHealthReportHistory, resolveAddonAdapter, AddonCheckReconciler.runAddonCheck, HealthReport CRD type, HealthReportCheck (+2 more)
 
-### Community 106 - "Community 106"
-Cohesion: 0.42
-Nodes (7): NewExternalDNSEngine(), extdnsHealthyObjects(), TestExternalDNS_AdapterMetadata(), TestExternalDNS_DeploymentNameThresholdOverride(), TestExternalDNS_HealthyPassesAllFamilies(), TestExternalDNS_MissingCRDSkippedOptional(), TestExternalDNS_MissingDeploymentFails()
+### Community 105 - "Community 105"
+Cohesion: 0.2
+Nodes (10): ClusterHealthReconciler.SetupWithManager, ClusterHealth CRD type, ClusterHealthSpec, TestAddToScheme, HealthCheckReconciler.Reconcile, HealthCheckReconciler.mirrorTarget, summarizeFromConditions, CheckTargetRef (+2 more)
 
 ### Community 107 - "Community 107"
 Cohesion: 0.25
-Nodes (5): ClientFactory, factory, SAUsername(), TestClientForSetsImpersonationAndMemoizes(), TestSAUsername()
+Nodes (7): flagBinding, MetricsOptions, Options, bindings(), RegisterFlags(), TracingOptions, WebhookOptions
 
 ### Community 108 - "Community 108"
-Cohesion: 0.25
-Nodes (8): ClusterHealthChildSummary, TestDeepCopyRoundTrip, HealthCheckStatus, HealthReportResult enum, HealthReportResult.Severity(), TestHealthReportResultSeverity_EmptyAndUnrecognizedReturnZero, TestHealthReportResultSeverity_OrderingAcrossEnumValues, TestHealthReportResultSeverity_PassIsLowestNonZero
+Cohesion: 0.42
+Nodes (7): NewExternalDNSEngine(), extdnsHealthyObjects(), TestExternalDNS_AdapterMetadata(), TestExternalDNS_DeploymentNameThresholdOverride(), TestExternalDNS_HealthyPassesAllFamilies(), TestExternalDNS_MissingCRDSkippedOptional(), TestExternalDNS_MissingDeploymentFails()
 
 ### Community 109 - "Community 109"
-Cohesion: 0.39
-Nodes (7): BuiltInAdapters(), DefaultControllers(), operatorVersion(), readyzCheck(), Run(), TestReadyzCheck(), Setupper
+Cohesion: 0.25
+Nodes (5): ClientFactory, factory, SAUsername(), TestClientForSetsImpersonationAndMemoizes(), TestSAUsername()
 
 ### Community 110 - "Community 110"
 Cohesion: 0.25
@@ -643,19 +642,19 @@ Nodes (7): Branching and Commits, Coding Standards, Contributing Guidelines, Dev
 
 ### Community 112 - "Community 112"
 Cohesion: 0.25
-Nodes (8): ClusterHealth CRD type, ClusterHealthSpec, ClusterHealthStatus, TestAddToScheme, HealthReport CRD type, HealthReportCheck, HealthReportSpec, HealthReportTargetRef
+Nodes (8): AddonCheck CRD type, AddonCheckFamilyPolicy, AddonCheckSpec, HealthCheckReconciler, HealthCheckReconciler.SetupWithManager, healthChecksForAddonCheck (watch map), Rationale: HealthCheck as wrapper (ADR-0004), HealthCheck Controller envtest suite
 
 ### Community 113 - "Community 113"
-Cohesion: 0.29
-Nodes (8): ClusterHealthReconciler, ClusterHealthReconciler.Reconcile, ClusterHealthReconciler.SetupWithManager, ClusterHealthReconciler.aggregate, clusterHealthsForHealthCheck (watch map), Invariant: ClusterHealth never reads HealthReport (ADR-0004), selectorFromSpec, ClusterHealth Controller envtest suite
-
-### Community 114 - "Community 114"
 Cohesion: 0.62
 Nodes (6): attrValue(), installInMemoryTracer(), newControllerScheme(), spanByName(), TestClusterHealthReconcile_EmitsSpan(), TestHealthCheckReconcile_EmitsSpan()
 
-### Community 115 - "Community 115"
+### Community 114 - "Community 114"
 Cohesion: 0.43
 Nodes (4): NewExternalSecretsEngine(), esoHealthyObjects(), TestExternalSecrets_HealthyAndEmptySyncSkipped(), TestExternalSecrets_MissingDeploymentFails()
+
+### Community 116 - "Community 116"
+Cohesion: 0.29
+Nodes (7): Branching and Commits, Coding Standards, Contributing Guidelines, Development Setup, Pull Requests, Safety Expectations, Testing
 
 ### Community 117 - "Community 117"
 Cohesion: 0.29
@@ -678,10 +677,14 @@ Cohesion: 0.29
 Nodes (7): Branching and Commits, Coding Standards, Contributing Guidelines, Development Setup, Pull Requests, Safety Expectations, Testing
 
 ### Community 122 - "Community 122"
-Cohesion: 0.29
-Nodes (7): Branching and Commits, Coding Standards, Contributing Guidelines, Development Setup, Pull Requests, Safety Expectations, Testing
+Cohesion: 0.33
+Nodes (7): ClusterHealthReconciler, ClusterHealthReconciler.Reconcile, ClusterHealthReconciler.aggregate, clusterHealthsForHealthCheck (watch map), Invariant: ClusterHealth never reads HealthReport (ADR-0004), selectorFromSpec, ClusterHealth Controller envtest suite
 
 ### Community 123 - "Community 123"
+Cohesion: 0.33
+Nodes (6): AddonCheckStatus, ClusterHealthChildSummary, ClusterHealthStatus, TestDeepCopyRoundTrip, HealthCheckStatus, HealthReportResult enum
+
+### Community 124 - "Community 124"
 Cohesion: 0.4
 Nodes (3): appendEntry(), WebhookCheck, webhookEntry
 
@@ -701,43 +704,39 @@ Nodes (5): ClusterRole clusterhealth-editor-role, ClusterRole clusterhealth-view
 Cohesion: 0.83
 Nodes (3): normalizeShell(), stripShellComment(), TestCoverageGateSkipsNoPackages()
 
-### Community 131 - "Community 131"
+### Community 132 - "Community 132"
 Cohesion: 0.83
 Nodes (3): hasResource(), hasVerb(), TestRBACRulesDeclaresDryRunException()
 
-### Community 132 - "Community 132"
+### Community 133 - "Community 133"
 Cohesion: 0.83
 Nodes (3): hasResource(), hasVerb(), TestRBACRulesDeclaresProbeException()
 
-### Community 133 - "Community 133"
+### Community 134 - "Community 134"
 Cohesion: 0.83
 Nodes (3): restoreGlobalProvider(), TestInit_DisabledInstallsNoopProvider(), TestInit_EnabledInstallsRecordingProvider()
 
-### Community 135 - "Community 135"
+### Community 136 - "Community 136"
 Cohesion: 0.5
 Nodes (4): app.NewRootCommand (cobra root), signalAwareContext, Taskfile.yml (task runner), Fathom CLI Entrypoint
 
-### Community 136 - "Community 136"
-Cohesion: 0.5
-Nodes (3): NetworkPolicy allow-metrics-traffic, Service controller-manager-metrics-service, config/network-policy/kustomization.yaml
-
 ### Community 137 - "Community 137"
 Cohesion: 0.5
-Nodes (4): HealthCheckReconciler.Reconcile, CheckTargetRef, HealthCheck CRD type, HealthCheckSpec
+Nodes (3): NetworkPolicy allow-metrics-traffic, Service controller-manager-metrics-service, config/network-policy/kustomization.yaml
 
 ## Knowledge Gaps
 - **711 isolated node(s):** `config`, `RBACDeclarer`, `version`, `Adapter`, `Capabilities` (+706 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `join()` connect `Community 20` to `Community 1`, `Community 130`, `Community 2`, `Community 6`, `Community 8`, `Community 140`, `Community 17`, `Community 18`, `Community 19`, `Community 25`, `Community 26`, `Community 29`, `Community 34`, `Community 39`, `Community 55`, `Community 73`, `Community 91`, `Community 97`, `Community 100`, `Community 105`, `Community 123`?**
+- **Why does `join()` connect `Community 44` to `Community 1`, `Community 130`, `Community 131`, `Community 2`, `Community 6`, `Community 8`, `Community 139`, `Community 17`, `Community 18`, `Community 19`, `Community 24`, `Community 25`, `Community 31`, `Community 32`, `Community 35`, `Community 48`, `Community 56`, `Community 67`, `Community 91`, `Community 97`, `Community 107`, `Community 124`?**
   _High betweenness centrality (0.118) - this node is a cross-community bridge._
-- **Why does `NewScheme()` connect `Community 49` to `Community 3`, `Community 5`, `Community 7`, `Community 9`, `Community 107`, `Community 109`, `Community 14`, `Community 17`, `Community 114`, `Community 25`?**
+- **Why does `NewScheme()` connect `Community 51` to `Community 3`, `Community 5`, `Community 7`, `Community 73`, `Community 9`, `Community 109`, `Community 14`, `Community 113`, `Community 17`, `Community 31`?**
   _High betweenness centrality (0.062) - this node is a cross-community bridge._
-- **Why does `FamilyOutcome()` connect `Community 1` to `Community 2`, `Community 40`, `Community 9`, `Community 10`, `Community 14`, `Community 18`, `Community 28`?**
+- **Why does `FamilyOutcome()` connect `Community 1` to `Community 2`, `Community 41`, `Community 10`, `Community 9`, `Community 14`, `Community 18`, `Community 28`?**
   _High betweenness centrality (0.041) - this node is a cross-community bridge._
 - **Are the 51 inferred relationships involving `join()` (e.g. with `normalizeShell()` and `runMain()`) actually correct?**
   _`join()` has 51 INFERRED edges - model-reasoned connections that need verification._
