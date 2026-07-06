@@ -14,6 +14,7 @@ env:
   IMAGE_NAMESPACE: skaphos
   IMAGE_NAME: fathom-operator
   PROBE_NAME: fathom-probe
+  NODE_AGENT_NAME: fathom-node-agent
   BUNDLE_NAME: fathom-operator-bundle
   CATALOG_NAME: fathom-operator-catalog
 
@@ -22,7 +23,7 @@ jobs:
     name: Publish operator images
     # Least-privilege scopes for a signing/attesting release job:
     #   contents:write     - create the GitHub release and upload assets (install.yaml, SBOMs)
-    #   packages:write      - push operator/probe/bundle/catalog images + Helm chart to GHCR
+    #   packages:write      - push operator/probe/node-agent/bundle/catalog images + Helm chart to GHCR
     #                         and the provenance attestation manifests alongside them
     #   id-token:write      - mint the OIDC token for keyless cosign signing + provenance
     #   attestations:write  - record build provenance via actions/attest-build-provenance
@@ -79,6 +80,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:v${VERSION}"
           PROBE_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${PROBE_NAME}:v${VERSION}"
+          NODE_AGENT_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${NODE_AGENT_NAME}:v${VERSION}"
           BUNDLE_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${BUNDLE_NAME}:v${VERSION}"
           CATALOG_IMG="${REGISTRY}/${IMAGE_NAMESPACE}/${CATALOG_NAME}:v${VERSION}"
           # Bare (untagged) repository names. cosign signs and
@@ -88,10 +90,12 @@ jobs:
             echo "version=${VERSION}"
             echo "img=${IMG}"
             echo "probe_img=${PROBE_IMG}"
+            echo "node_agent_img=${NODE_AGENT_IMG}"
             echo "bundle_img=${BUNDLE_IMG}"
             echo "catalog_img=${CATALOG_IMG}"
             echo "img_name=${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}"
             echo "probe_name=${REGISTRY}/${IMAGE_NAMESPACE}/${PROBE_NAME}"
+            echo "node_agent_name=${REGISTRY}/${IMAGE_NAMESPACE}/${NODE_AGENT_NAME}"
             echo "bundle_name=${REGISTRY}/${IMAGE_NAMESPACE}/${BUNDLE_NAME}"
             echo "catalog_name=${REGISTRY}/${IMAGE_NAMESPACE}/${CATALOG_NAME}"
             echo "chart_name=${REGISTRY}/${IMAGE_NAMESPACE}/charts/${IMAGE_NAME}"
@@ -118,6 +122,16 @@ jobs:
           set -euo pipefail
           go -C tools tool task probe-docker-buildx-push PROBE_IMG="${PROBE_IMG}"
           DIGEST=$(docker buildx imagetools inspect "${PROBE_IMG}" --format '{{.Manifest.Digest}}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push node-agent image (multi-arch)
+        id: node_agent
+        env:
+          NODE_AGENT_IMG: ${{ steps.vars.outputs.node_agent_img }}
+        run: |
+          set -euo pipefail
+          go -C tools tool task node-agent-docker-buildx-push NODE_AGENT_IMG="${NODE_AGENT_IMG}"
+          DIGEST=$(docker buildx imagetools inspect "${NODE_AGENT_IMG}" --format '{{.Manifest.Digest}}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Generate install.yaml
@@ -184,12 +198,13 @@ jobs:
           COSIGN_YES: "true"
           OPERATOR_REF: ${{ steps.vars.outputs.img_name }}@${{ steps.operator.outputs.digest }}
           PROBE_REF: ${{ steps.vars.outputs.probe_name }}@${{ steps.probe.outputs.digest }}
+          NODE_AGENT_REF: ${{ steps.vars.outputs.node_agent_name }}@${{ steps.node_agent.outputs.digest }}
           BUNDLE_REF: ${{ steps.vars.outputs.bundle_name }}@${{ steps.bundle.outputs.digest }}
           CATALOG_REF: ${{ steps.vars.outputs.catalog_name }}@${{ steps.catalog.outputs.digest }}
           CHART_REF: ${{ steps.vars.outputs.chart_name }}@${{ steps.chart.outputs.digest }}
         run: |
           set -euo pipefail
-          for ref in "$OPERATOR_REF" "$PROBE_REF" "$BUNDLE_REF" "$CATALOG_REF" "$CHART_REF"; do
+          for ref in "$OPERATOR_REF" "$PROBE_REF" "$NODE_AGENT_REF" "$BUNDLE_REF" "$CATALOG_REF" "$CHART_REF"; do
             echo "Signing ${ref}"
             cosign sign --yes "${ref}"
           done
@@ -206,6 +221,13 @@ jobs:
         with:
           subject-name: ${{ steps.vars.outputs.probe_name }}
           subject-digest: ${{ steps.probe.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest node-agent image provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.vars.outputs.node_agent_name }}
+          subject-digest: ${{ steps.node_agent.outputs.digest }}
           push-to-registry: true
 
       - name: Attest OLM bundle provenance
@@ -246,6 +268,14 @@ jobs:
           image: ${{ steps.vars.outputs.probe_img }}
           format: spdx-json
           output-file: dist/sbom/fathom-probe-${{ steps.vars.outputs.version }}.spdx.json
+          upload-artifact: false
+
+      - name: Generate SBOM for node-agent image
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.vars.outputs.node_agent_img }}
+          format: spdx-json
+          output-file: dist/sbom/fathom-node-agent-${{ steps.vars.outputs.version }}.spdx.json
           upload-artifact: false
 
       - name: Create GitHub release with install.yaml and SBOMs
