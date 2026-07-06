@@ -191,7 +191,9 @@ adapter level is forced to `Error`.
   `HealthCheck.status` shape (`result`, `summary`, `sourceObservedAt`,
   `lastReportName`). The only supported `checkRef.kind` in this build is
   `AddonCheck`; any other kind yields `Ready=False / UnsupportedKind`. A missing
-  target yields `Ready=False / TargetNotFound`.
+  target yields `Ready=False / TargetNotFound`. `checkRef.namespace` may point
+  at an `AddonCheck` in another namespace; when it is omitted, the
+  `HealthCheck` namespace is used.
 - **Paused:** when `spec.paused`, mirroring is suspended and the last snapshot
   is preserved (`Ready=False / Paused`).
 
@@ -204,8 +206,10 @@ adapter level is forced to `Error`.
   `clusterHealthsForHealthCheck`), so a member's status change re-enqueues every
   `ClusterHealth` whose selector matches it.
 - **Selection:** lists `HealthCheck`s in the **same namespace** matching
-  `spec.selector` (nil/empty selector matches all in-namespace). Cross-namespace
-  aggregation is intentionally unsupported in v0.1.
+  `spec.selector` (nil/empty selector matches all in-namespace).
+  Cross-namespace aggregation selects no remote `HealthCheck`s; however, a
+  selected local `HealthCheck` may mirror a target in another namespace through
+  its explicit `checkRef.namespace`.
 - **Aggregation:** worst-case `Result` over children with a non-empty
   `Status.Result`; a deterministic `children` summary sorted by name;
   `matchedCount`; and `observedAt` set to the latest child `SourceObservedAt`
@@ -402,6 +406,8 @@ layout is in [code-map.md](code-map.md).
 - **Single supported wrapper target.** `HealthCheck` only mirrors `AddonCheck`
   in this build; other `checkRef.kind` values are rejected with
   `Ready=False / UnsupportedKind`.
-- **Same-namespace aggregation only.** `ClusterHealth` selects `HealthCheck`s in
-  its own namespace; cross-namespace roll-up is intentionally out of scope for
-  v0.1.
+- **Same-namespace wrapper selection.** `ClusterHealth` selects `HealthCheck`s
+  in its own namespace only. A selected `HealthCheck` can still mirror an
+  explicit `checkRef.namespace`, so namespace tenancy depends on who is allowed
+  to create wrappers in the aggregate namespace and on the operator's RBAC to
+  read the referenced target.

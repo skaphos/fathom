@@ -204,7 +204,9 @@ check in the namespace. As you add more `AddonCheck`s and wrap each in a
 
 > `ClusterHealth` aggregates `HealthCheck` status **only** — never raw
 > `HealthReport` history — so its external contract stays stable regardless of
-> how Fathom stores history. Aggregation is same-namespace in this build.
+> how Fathom stores history. It selects `HealthCheck` wrappers only in its own
+> namespace; a selected wrapper may mirror an explicit cross-namespace
+> `checkRef.namespace`.
 
 ## What you have now
 

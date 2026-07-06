@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,12 +30,9 @@ var _ = Describe("HealthCheck Controller", func() {
 		return &HealthCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 	}
 
-	// createAddonCheckWithStatus creates an AddonCheck and writes the supplied
-	// status fields via the status subresource. envtest preserves status writes,
-	// so the HealthCheck reconciler can read them back.
-	createAddonCheckWithStatus := func(name string, status fathomv1alpha1.AddonCheckStatus) *fathomv1alpha1.AddonCheck {
+	createAddonCheckWithStatusInNamespace := func(namespace, name string, status fathomv1alpha1.AddonCheckStatus) *fathomv1alpha1.AddonCheck {
 		ac := &fathomv1alpha1.AddonCheck{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, ac)).To(Succeed())
@@ -44,6 +42,13 @@ var _ = Describe("HealthCheck Controller", func() {
 		ac.Status = status
 		Expect(k8sClient.Status().Update(ctx, ac)).To(Succeed())
 		return ac
+	}
+
+	// createAddonCheckWithStatus creates an AddonCheck and writes the supplied
+	// status fields via the status subresource. envtest preserves status writes,
+	// so the HealthCheck reconciler can read them back.
+	createAddonCheckWithStatus := func(name string, status fathomv1alpha1.AddonCheckStatus) *fathomv1alpha1.AddonCheck {
+		return createAddonCheckWithStatusInNamespace("default", name, status)
 	}
 
 	createHealthCheck := func(name string, spec fathomv1alpha1.HealthCheckSpec) *fathomv1alpha1.HealthCheck {
@@ -118,6 +123,69 @@ var _ = Describe("HealthCheck Controller", func() {
 			}
 		}
 		Expect(found).To(BeTrue(), "expected to find a fathom_reconcile_total series for kind=HealthCheck")
+	})
+
+	It("mirrors an explicit cross-namespace target while ClusterHealth aggregates the local wrapper", func() {
+		targetNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "hc-cross-target-"}}
+		Expect(k8sClient.Create(ctx, targetNamespace)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, targetNamespace))).To(Succeed())
+		})
+
+		runTime := metav1.NewTime(time.Now().Add(-time.Minute))
+		createAddonCheckWithStatusInNamespace(targetNamespace.Name, "ac-cross-target", fathomv1alpha1.AddonCheckStatus{
+			LastResult:     "Pass",
+			LastRunTime:    &runTime,
+			LastReportName: "ac-cross-target-1",
+			Conditions: []metav1.Condition{{
+				Type:               healthCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             "RunCompleted",
+				Message:            "cross-namespace source is healthy",
+				LastTransitionTime: metav1.Now(),
+			}},
+		})
+		hc := &fathomv1alpha1.HealthCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hc-cross-namespace",
+				Namespace: "default",
+				Labels:    map[string]string{"scope": "cross-namespace"},
+			},
+			Spec: fathomv1alpha1.HealthCheckSpec{
+				CheckRef: fathomv1alpha1.CheckTargetRef{
+					Kind:      "AddonCheck",
+					Namespace: targetNamespace.Name,
+					Name:      "ac-cross-target",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, hc)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, hc))).To(Succeed()) })
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		ch := &fathomv1alpha1.ClusterHealth{
+			ObjectMeta: metav1.ObjectMeta{Name: "ch-cross-namespace-wrapper", Namespace: "default"},
+			Spec: fathomv1alpha1.ClusterHealthSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"scope": "cross-namespace"}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ch)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ch))).To(Succeed()) })
+
+		_, err = (&ClusterHealthReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}, &got)).To(Succeed())
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(got.Status.MatchedCount).To(Equal(int32(1)))
+		Expect(got.Status.Children).To(HaveLen(1))
+		Expect(got.Status.Children[0].Name).To(Equal(hc.Name))
 	})
 
 	It("records TargetNotFound when the referenced AddonCheck does not exist", func() {
