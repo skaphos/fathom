@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1](https://github.com/skaphos/fathom/compare/v0.3.0...v0.3.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* clear stale aggregate status ([49aa696](https://github.com/skaphos/fathom/commit/49aa696fbe18e4f021eb219b46ce4b72d5dfa6b4))
+* **controller:** reuse health reports after status conflicts ([c65ff5f](https://github.com/skaphos/fathom/commit/c65ff5fd40f24a210d22c4d9a5daf5d6346e607b))
+* **controller:** validate health report reuse ([b74578b](https://github.com/skaphos/fathom/commit/b74578ba03e4cdea251706aff15942d9ee67beee))
+* **controller:** validate node reports before adoption ([7af300e](https://github.com/skaphos/fathom/commit/7af300ed55aecd087e5c249d66f324d14555efd0))
+* **healthcheck:** clarify namespace aggregation contract ([9703995](https://github.com/skaphos/fathom/commit/97039958788db3f30c5b5307fa2467ebb7fb84fe))
+* **olm:** own node certificate checks ([11c2407](https://github.com/skaphos/fathom/commit/11c240777ef8e7492eb6a45d202f63960e7a2f0e))
+* publish node-agent release image ([8ce80d6](https://github.com/skaphos/fathom/commit/8ce80d667d11de2342d9f83504a71d800a1c903b))
+* require complete fresh node cert reports ([f150d07](https://github.com/skaphos/fathom/commit/f150d07ec15cb180877164212c3627be40b7575d))
+
 ## [0.0.2](https://github.com/skaphos/fathom/compare/v0.0.1...v0.0.2) (2026-05-17)
 
 
