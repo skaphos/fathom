@@ -13,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -439,6 +440,38 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		Expect(ready.Reason).To(Equal("RunCompleted"))
+	})
+
+	It("reuses a HealthReport after a status update conflict", func() {
+		name := types.NamespacedName{Name: "addoncheck-status-conflict", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
+
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
+
+		conflict := true
+		r := &AddonCheckReconciler{
+			Client:   conflictOnceStatusClient{Client: k8sClient, conflict: &conflict},
+			Scheme:   k8sClient.Scheme(),
+			Adapters: adapters,
+		}
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(apierrors.IsConflict(err)).To(BeTrue())
+		Expect(healthReportCount(ctx, name)).To(Equal(1))
+
+		_, err = (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(healthReportCount(ctx, name)).To(Equal(1))
+
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastReportName).NotTo(BeEmpty())
 	})
 
 	It("counts absent components into status.absent (SKA-526)", func() {
