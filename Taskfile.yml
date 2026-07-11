@@ -265,8 +265,9 @@ tasks:
 
   images:refresh:
     desc: |
-      Re-resolve and rewrite the pinned base-image digests in Dockerfile and
-      Dockerfile.probe (SKA-295). For each `FROM` pin it reads the
+      Re-resolve and rewrite the pinned base-image digests in Dockerfile,
+      Dockerfile.probe, and Dockerfile.node-agent (SKA-295). For each `FROM`
+      pin it reads the
       human-readable tag, resolves the current multi-arch index digest from the
       registry, and rewrites the trailing `@sha256:...` in place (the tag is
       kept). Prefers `crane`, falls back to `docker buildx imagetools`. Safe to
