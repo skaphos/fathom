@@ -2,7 +2,7 @@
 # Build the manager binary
 # Base image pinned by digest for reproducible, tamper-evident builds (SKA-295).
 # Refresh with `go -C tools tool task images:refresh`.
-FROM golang:1.26.4@sha256:32c0e6e5c4f6707717051091b4d0b077464a679eaab563e11474efc5328e2aa5 AS builder
+FROM golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 # Runtime base pinned by digest (SKA-295); refresh with `go -C tools tool task images:refresh`.
-FROM gcr.io/distroless/static:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
+FROM gcr.io/distroless/static:nonroot@sha256:d29e660cc75a5b6b1334e03c5c81ccf9bc0884a002c6000dbf0fb96034814478
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532

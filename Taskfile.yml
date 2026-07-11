@@ -6,9 +6,9 @@ vars:
   KUSTOMIZE: go run sigs.k8s.io/kustomize/kustomize/v5@v5.8.1
   SETUP_ENVTEST: go run sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.24.1
   GOLANGCI_RUNNER: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-  GOIMPORTS_RUNNER: go run golang.org/x/tools/cmd/goimports@v0.45.0
+  GOIMPORTS_RUNNER: go run golang.org/x/tools/cmd/goimports@v0.48.0
   STATICCHECK_RUNNER: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0
-  GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0
+  GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
   CRD_REF_DOCS: go -C tools tool github.com/elastic/crd-ref-docs
   ENVTEST_K8S_VERSION: "1.36"
   IMG: '{{.IMG | default "controller:latest"}}'
@@ -265,8 +265,9 @@ tasks:
 
   images:refresh:
     desc: |
-      Re-resolve and rewrite the pinned base-image digests in Dockerfile and
-      Dockerfile.probe (SKA-295). For each `FROM` pin it reads the
+      Re-resolve and rewrite the pinned base-image digests in Dockerfile,
+      Dockerfile.probe, and Dockerfile.node-agent (SKA-295). For each `FROM`
+      pin it reads the
       human-readable tag, resolves the current multi-arch index digest from the
       registry, and rewrites the trailing `@sha256:...` in place (the tag is
       kept). Prefers `crane`, falls back to `docker buildx imagetools`. Safe to
@@ -304,9 +305,10 @@ tasks:
           echo "repinned $ref -> $digest in $file"
         }
 
-        repin Dockerfile       golang:1.26.4
-        repin Dockerfile       gcr.io/distroless/static:nonroot
-        repin Dockerfile.probe golang:1.26.4
+        repin Dockerfile            golang:1.26.5
+        repin Dockerfile            gcr.io/distroless/static:nonroot
+        repin Dockerfile.probe      golang:1.26.5
+        repin Dockerfile.node-agent golang:1.26.5
 
   build-installer:
     desc: Render consolidated install.yaml under dist/
