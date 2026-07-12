@@ -117,6 +117,23 @@ func int32Threshold(policy adapter.FamilyPolicy, key string, dflt int32) int32 {
 	return int32(parsed)
 }
 
+// durationThreshold returns the parsed Go-duration threshold for key, or dflt
+// when the key is absent, negative, or unparseable.
+func durationThreshold(policy adapter.FamilyPolicy, key string, dflt time.Duration) time.Duration {
+	if policy.Thresholds == nil {
+		return dflt
+	}
+	value, ok := policy.Thresholds[key]
+	if !ok {
+		return dflt
+	}
+	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return dflt
+	}
+	return parsed
+}
+
 // deploymentAvailable reports whether the Deployment carries Available=True.
 func deploymentAvailable(d *appsv1.Deployment) bool {
 	for _, condition := range d.Status.Conditions {

@@ -15,11 +15,15 @@ rules:
   - addon-cert-manager
   - addon-cilium
   - addon-coredns
+  - addon-descheduler
   - addon-envoy-gateway
   - addon-external-dns
   - addon-external-secrets
   - addon-istio
+  - addon-keda
+  - addon-kured
   - addon-metrics-server
+  - addon-vpa
   resources:
   - serviceaccounts
   verbs:

@@ -319,6 +319,10 @@ and a set of families:
 | `metrics-server` | `internal/adapter/declarative` (`metricsserver.go`) | `system_health`, `api_availability` |
 | `envoy-gateway` | `internal/adapter/declarative` (`envoygateway.go`) | `system_health`, `crd_health`, `gateway_status` |
 | `istio` | `internal/adapter/declarative` (`istio.go`) | `system_health`, `ztunnel_health`, `istio_cni_health`, `crd_health` |
+| `keda` | `internal/adapter/declarative` (`keda.go`) | `system_health`, `crd_health`, `scaling_health` |
+| `vpa` | `internal/adapter/declarative` (`vpa.go`) | `system_health`, `crd_health`, `recommendation_health` |
+| `descheduler` | `internal/adapter/declarative` (`descheduler.go`) | `system_health`, `policy_validity`, `last_run` |
+| `kured` | `internal/adapter/declarative` (`kured.go`) | `system_health`, `reboot_state` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`

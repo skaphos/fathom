@@ -105,6 +105,32 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				return nil, fmt.Errorf("declarative: adapter %q family %q WebhookCheck %q must set ExpectedService and ServiceNamespace together", def.AddonType, f.Name, w.Name)
 			}
 		}
+		for _, c := range f.CronJobs {
+			if c.DefaultName == "" && c.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a CronJobCheck with no name", def.AddonType, f.Name)
+			}
+		}
+		for _, c := range f.ConfigMaps {
+			if c.DefaultName == "" && c.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a ConfigMapCheck with no name", def.AddonType, f.Name)
+			}
+			if c.Key == "" {
+				// A check with no key would score every ConfigMap as missing its
+				// (empty) key — a silent definition bug.
+				return nil, fmt.Errorf("declarative: adapter %q family %q ConfigMapCheck %q has no Key", def.AddonType, f.Name, c.DefaultName)
+			}
+		}
+		for _, a := range f.Annotations {
+			if a.APIVersion == "" || a.Kind == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has an AnnotationStalenessCheck with no APIVersion/Kind", def.AddonType, f.Name)
+			}
+			if a.AnnotationKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has an AnnotationStalenessCheck with no AnnotationKey", def.AddonType, f.Name)
+			}
+			if a.ListKind == "" && a.DefaultName == "" && a.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a named AnnotationStalenessCheck with no name", def.AddonType, f.Name)
+			}
+		}
 	}
 	return &Engine{def: def}, nil
 }

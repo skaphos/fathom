@@ -35,7 +35,11 @@ SPDX-License-Identifier: MIT
 // per addon, not aggregated onto the operator role.
 package declarative
 
-import "github.com/skaphos/fathom/pkg/adapter"
+import (
+	"time"
+
+	"github.com/skaphos/fathom/pkg/adapter"
+)
 
 // Posture declares how the absence of a named singleton target is scored.
 type Posture string
@@ -151,7 +155,8 @@ func (d AddonDefinition) defaultPosture() Posture {
 // FamilyDefinition is one policy-keyed check family. Each typed component slice
 // contributes zero or more CheckResults, all tagged with Name. The engine
 // evaluates components in a fixed within-family order: Workloads, then CRDs,
-// then ManagedResources, then APIServices, then Webhooks.
+// then ManagedResources, then APIServices, then Webhooks, then CronJobs, then
+// ConfigMaps, then Annotations.
 type FamilyDefinition struct {
 	// Name is the adapter-defined family identifier and the Request.Policy key.
 	Name adapter.Family
@@ -172,12 +177,28 @@ type FamilyDefinition struct {
 	// Webhooks verify admission webhook configurations are present and wired
 	// (caBundle populated, expected backing service).
 	Webhooks []WebhookCheck
+
+	// CronJobs verify a batch/v1 CronJob singleton: present, not suspended, and
+	// (optionally) its last successful run is recent — the descheduler
+	// system_health-as-CronJob and last_run signals.
+	CronJobs []CronJobCheck
+	// ConfigMaps verify a named ConfigMap holds a data key that parses as YAML
+	// (and, optionally, carries a recognized policy apiVersion) — the descheduler
+	// policy_validity signal that catches the silent no-op of an unparseable
+	// DeschedulerPolicy.
+	ConfigMaps []ConfigMapCheck
+	// Annotations score the staleness of a timestamp carried in an object's
+	// metadata annotation — the kured reboot_state signal for a lock that has
+	// been held too long (wedged) or a node that has waited on a reboot window
+	// beyond a threshold.
+	Annotations []AnnotationStalenessCheck
 }
 
 // evaluators returns the family's components in the fixed within-family order.
 func (f FamilyDefinition) evaluators() []Evaluator {
 	evals := make([]Evaluator, 0,
-		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.APIServices)+len(f.Webhooks))
+		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.APIServices)+
+			len(f.Webhooks)+len(f.CronJobs)+len(f.ConfigMaps)+len(f.Annotations))
 	for _, w := range f.Workloads {
 		evals = append(evals, w)
 	}
@@ -192,6 +213,15 @@ func (f FamilyDefinition) evaluators() []Evaluator {
 	}
 	for _, w := range f.Webhooks {
 		evals = append(evals, w)
+	}
+	for _, c := range f.CronJobs {
+		evals = append(evals, c)
+	}
+	for _, c := range f.ConfigMaps {
+		evals = append(evals, c)
+	}
+	for _, a := range f.Annotations {
+		evals = append(evals, a)
 	}
 	return evals
 }
@@ -328,4 +358,132 @@ type WebhookCheck struct {
 	// Absence scores a NotFound configuration (Required -> Fail, Optional ->
 	// Skipped), always tagged with the adapter.DetailAbsent marker.
 	Absence Posture
+}
+
+// CronJobCheck evaluates one batch/v1 CronJob singleton. It scores three
+// distinct failure modes an addon that runs as a scheduled Job (the descheduler
+// CronJob deployment mode) can silently fall into: the CronJob is absent, it is
+// suspended (spec.suspend), or — when DefaultSuccessMaxAge is set — its last
+// successful run is stale (status.lastSuccessfulTime older than the window, or
+// it has scheduled a Job that never completed successfully). A CronJob that has
+// simply not fired yet is healthy. Unlike WorkloadCheck it reads no pods: a
+// CronJob has no long-running replica set to inspect.
+type CronJobCheck struct {
+	// DefaultNamespace is used when policy.Namespaces is empty.
+	DefaultNamespace string
+	// NameThresholdKey overrides the CronJob name from policy thresholds; ""
+	// disables the override.
+	NameThresholdKey string
+	// DefaultName is the CronJob name when no threshold override applies.
+	DefaultName string
+	// Component is the label value recorded in Details["component"].
+	Component string
+	// Absence scores a NotFound CronJob (Required -> Fail, Optional -> Skipped).
+	Absence Posture
+
+	// SuccessMaxAgeThresholdKey overrides the last-success staleness window from
+	// policy thresholds (a Go duration, e.g. "24h"); "" disables the override.
+	SuccessMaxAgeThresholdKey string
+	// DefaultSuccessMaxAge is the maximum age of status.lastSuccessfulTime before
+	// a run is scored stale. Zero disables the recency check entirely — the
+	// CronJob is scored on existence and suspend only (the system_health mode).
+	DefaultSuccessMaxAge time.Duration
+	// StaleOutcome scores a stale or never-successful CronJob; defaults to
+	// OutcomeWarn.
+	StaleOutcome adapter.Outcome
+}
+
+// ConfigMapCheck verifies a named ConfigMap holds a well-formed policy document.
+// It scores the silent no-op failure mode where an addon keeps running against
+// a ConfigMap whose policy key is missing or unparseable (the descheduler
+// deschedules nothing when its DeschedulerPolicy fails to parse). The check is
+// deliberately shape-level: it confirms the key exists, the value parses as
+// YAML, and — when RecognizedAPIVersions is set — that the document declares a
+// recognized policy apiVersion. It does not validate individual strategy or
+// plugin names against a specific addon release; that is version-coupled
+// addon-specific knowledge the generic engine does not carry.
+type ConfigMapCheck struct {
+	// DefaultNamespace is used when policy.Namespaces is empty.
+	DefaultNamespace string
+	// NameThresholdKey overrides the ConfigMap name from policy thresholds; ""
+	// disables the override.
+	NameThresholdKey string
+	// DefaultName is the ConfigMap name when no threshold override applies.
+	DefaultName string
+	// Component is the label value recorded in Details["component"].
+	Component string
+	// Absence scores a NotFound ConfigMap (Required -> Fail, Optional -> Skipped).
+	Absence Posture
+
+	// Key is the data key holding the policy document (e.g. "policy.yaml").
+	Key string
+	// RecognizedAPIVersions, when non-empty, requires the parsed document's
+	// top-level apiVersion to be one of these values; otherwise the check scores
+	// UnrecognizedOutcome. Empty skips the apiVersion assertion.
+	RecognizedAPIVersions []string
+	// UnrecognizedOutcome scores a document whose apiVersion is not recognized;
+	// defaults to OutcomeWarn.
+	UnrecognizedOutcome adapter.Outcome
+	// InvalidOutcome scores a missing key or a value that does not parse as YAML;
+	// defaults to OutcomeFail.
+	InvalidOutcome adapter.Outcome
+}
+
+// AnnotationStalenessCheck scores the age of a timestamp carried in an object's
+// metadata annotation. It generalizes the "how long has this been held / how
+// long has this been waiting" question that has no status.conditions to read:
+//
+//   - Named mode (ListKind empty): Get one object (e.g. the kured DaemonSet that
+//     carries the reboot lock in weave.works/kured-node-lock). A NotFound object
+//     is scored by Absence. When the annotation is absent the object is healthy
+//     (nothing held) -> Pass. When present, its timestamp is parsed and a value
+//     older than the window is scored StaleOutcome (a wedged lock).
+//   - List mode (ListKind set): list objects of the kind (e.g. Nodes carrying
+//     weave.works/kured-most-recent-reboot-needed) and score only those that
+//     carry the annotation. Objects without it are not emitted — a cluster with
+//     no node waiting on a reboot is quiet. An empty match set is Skipped.
+type AnnotationStalenessCheck struct {
+	// APIVersion is the group/version of the object read (e.g. "apps/v1", "v1").
+	APIVersion string
+	// Kind is the object kind (e.g. "DaemonSet", "Node").
+	Kind string
+	// ListKind, when set, switches the check to list mode (e.g. "NodeList").
+	ListKind string
+	// ListName is the stable placeholder Name on list-level results (list
+	// failure, no-matching-objects); defaults to Kind.
+	ListName string
+	// ClusterScoped lists (or gets) without a namespace when true.
+	ClusterScoped bool
+	// DefaultNamespace is used when policy.Namespaces is empty and the object is
+	// namespaced.
+	DefaultNamespace string
+	// NameThresholdKey overrides the named-mode object name from policy
+	// thresholds; "" disables the override.
+	NameThresholdKey string
+	// DefaultName is the named-mode object name when no threshold override
+	// applies. Ignored in list mode.
+	DefaultName string
+	// Component is the label value recorded in Details["component"].
+	Component string
+	// Absence scores a NotFound named object (Required -> Fail, Optional ->
+	// Skipped). Only meaningful in named mode.
+	Absence Posture
+
+	// AnnotationKey is the metadata annotation inspected (e.g.
+	// "weave.works/kured-node-lock").
+	AnnotationKey string
+	// TimestampJSONField, when set, parses the annotation value as a JSON object
+	// and reads this field as an RFC3339 timestamp (the kured lock stores its
+	// acquisition time under "created"); otherwise the whole annotation value is
+	// parsed as an RFC3339 timestamp.
+	TimestampJSONField string
+	// MaxAgeThresholdKey overrides the staleness window from policy thresholds (a
+	// Go duration, e.g. "1h"); "" disables the override.
+	MaxAgeThresholdKey string
+	// DefaultMaxAge is the maximum age of the parsed timestamp before the value
+	// is scored stale.
+	DefaultMaxAge time.Duration
+	// StaleOutcome scores a timestamp older than the window; defaults to
+	// OutcomeWarn.
+	StaleOutcome adapter.Outcome
 }

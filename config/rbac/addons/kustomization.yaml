@@ -6,11 +6,15 @@ resources:
 - addon-cert-manager.yaml
 - addon-cilium.yaml
 - addon-coredns.yaml
+- addon-descheduler.yaml
 - addon-envoy-gateway.yaml
 - addon-external-dns.yaml
 - addon-external-secrets.yaml
 - addon-istio.yaml
+- addon-keda.yaml
+- addon-kured.yaml
 - addon-metrics-server.yaml
+- addon-vpa.yaml
 - operator-impersonate.yaml
 configurations:
 - kustomizeconfig.yaml
