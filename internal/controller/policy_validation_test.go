@@ -12,6 +12,7 @@ import (
 
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -51,9 +52,9 @@ func TestValidateAddonCheckPolicy(t *testing.T) {
 		wantContains []string
 	}{
 		{"empty policy is valid", nil, adapterWith("system_health"), 0, nil},
-		{"known family, no selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Enabled: true}}, adapterWith("system_health"), 0, nil},
+		{"known family, no selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 0, nil},
 		{"known family, good selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: goodSelector}}, adapterWith("system_health"), 0, nil},
-		{"unknown family key", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"bogus": {Enabled: true}}, adapterWith("system_health"), 1, []string{`unknown family "bogus"`}},
+		{"unknown family key", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"bogus": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 1, []string{`unknown family "bogus"`}},
 		{"invalid selector on known family", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: badSelector()}}, adapterWith("system_health"), 1, []string{`family "system_health" has an invalid labelSelector:`}},
 		{"nil adapter skips family check but validates selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {LabelSelector: badSelector()}}, nil, 1, []string{`family "anything" has an invalid labelSelector:`}},
 		{"unknown family and bad selector both reported", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"bogus": {LabelSelector: badSelector()}}, adapterWith("system_health"), 2, []string{`unknown family "bogus"`, `family "bogus" has an invalid labelSelector:`}},
@@ -78,7 +79,7 @@ func TestValidateAddonCheckPolicy(t *testing.T) {
 // Accepted-condition message depends on (map iteration is randomized).
 func TestValidateAddonCheckPolicy_DeterministicOrder(t *testing.T) {
 	policy := map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-		"zeta": {Enabled: true}, "alpha": {Enabled: true}, "mu": {Enabled: true},
+		"zeta": {Enabled: ptr.To(true)}, "alpha": {Enabled: ptr.To(true)}, "mu": {Enabled: ptr.To(true)},
 	}
 	adp := fakePolicyAdapter{families: []adapter.Family{"system_health"}}
 	want := []string{`unknown family "alpha"`, `unknown family "mu"`, `unknown family "zeta"`}

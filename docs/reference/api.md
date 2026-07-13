@@ -55,7 +55,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled gates execution of this family. |  | Optional: \{\} <br /> |
+| `enabled` _boolean_ | Enabled gates execution of this family. | true | Optional: \{\} <br /> |
 | `namespaces` _string array_ | Namespaces narrows this family to resources in specific namespaces. Empty<br />means all namespaces the adapter can read. |  | Optional: \{\} <br /> |
 | `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | LabelSelector narrows this family to resources matching the selector. |  | Optional: \{\} <br /> |
 | `thresholds` _object (keys:string, values:string)_ | Thresholds carries adapter-specific string knobs, such as warnDays or<br />failDays. Adapter documentation defines the supported keys. |  | Optional: \{\} <br /> |

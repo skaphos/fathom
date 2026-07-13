@@ -129,7 +129,7 @@ func (a AnnotationStalenessCheck) list(ec EvalContext, gv schema.GroupVersion) (
 		var list unstructured.UnstructuredList
 		list.SetGroupVersionKind(listGVK)
 		if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns)); err != nil {
-			r := result(ec.Family, listRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s in namespace %q: %v", a.Kind, ns, err), a.baseDetails(), started)
+			r := result(ec.Family, listRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s in %s: %v", a.Kind, namespaceScope(ns), err), a.baseDetails(), started)
 			return nil, &r
 		}
 		items = append(items, list.Items...)

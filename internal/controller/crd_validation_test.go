@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 )
@@ -43,6 +44,33 @@ var _ = Describe("CRD schema validation", func() {
 
 		It("accepts a spec with no interval or timeout set", func() {
 			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{}))).To(Succeed())
+		})
+
+		It("defaults an explicitly configured family to enabled", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}},
+			}})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
+			Expect(*obj.Spec.Policy["system_health"].Enabled).To(BeTrue())
+		})
+
+		It("preserves an explicitly disabled family", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				"system_health": {Enabled: ptr.To(false)},
+			}})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
+			Expect(*obj.Spec.Policy["system_health"].Enabled).To(BeFalse())
+		})
+
+		It("rejects changing addonType", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.AddonType = "cert-manager"
+			err := k8sClient.Update(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("addonType is immutable"))
 		})
 
 		It("rejects a zero timeout", func() {

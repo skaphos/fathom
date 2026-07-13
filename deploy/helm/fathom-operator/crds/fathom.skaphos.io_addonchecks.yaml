@@ -45,6 +45,9 @@ spec:
                   cert-manager, coredns, or external-secrets.
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: addonType is immutable
+                  rule: self == oldSelf
               historyLimit:
                 default: 10
                 description: |-
@@ -70,6 +73,7 @@ spec:
                     family of checks.
                   properties:
                     enabled:
+                      default: true
                       description: Enabled gates execution of this family.
                       type: boolean
                     labelSelector:

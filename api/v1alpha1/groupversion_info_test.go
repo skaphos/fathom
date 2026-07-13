@@ -10,6 +10,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 )
 
 func TestGroupVersion(t *testing.T) {
@@ -85,7 +86,7 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 		orig := &AddonCheck{Spec: AddonCheckSpec{
 			AddonType: "cert-manager",
 			Policy: map[string]AddonCheckFamilyPolicy{
-				"system_health": {Enabled: true, Thresholds: map[string]string{"warnDays": "14"}},
+				"system_health": {Enabled: ptr.To(true), Thresholds: map[string]string{"warnDays": "14"}},
 			},
 		}}
 		clone, ok := orig.DeepCopyObject().(*AddonCheck)

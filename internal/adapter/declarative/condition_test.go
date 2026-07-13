@@ -10,8 +10,12 @@ import (
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 
@@ -179,8 +183,8 @@ func TestPolicyNamespaceResolution(t *testing.T) {
 	// policyNamespaces + firstNamespace are pure; test them directly (the fake
 	// client mishandles multiple same-GVK unstructured objects, so an engine-
 	// level multi-namespace list can't be exercised reliably).
-	if got := policyNamespaces(adapter.FamilyPolicy{}, "kube-system"); len(got) != 1 || got[0] != "kube-system" {
-		t.Fatalf("empty policy: got %v, want [kube-system]", got)
+	if got := policyNamespaces(adapter.FamilyPolicy{}, "kube-system"); len(got) != 1 || got[0] != "" {
+		t.Fatalf("empty policy: got %v, want an all-namespaces selector", got)
 	}
 	if got := policyNamespaces(adapter.FamilyPolicy{Namespaces: []string{"a", "b"}}, "kube-system"); len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Fatalf("explicit namespaces: got %v, want [a b]", got)
@@ -191,6 +195,102 @@ func TestPolicyNamespaceResolution(t *testing.T) {
 	if got := firstNamespace(adapter.FamilyPolicy{}, "def"); got != "def" {
 		t.Fatalf("firstNamespace default: got %q, want def", got)
 	}
+}
+
+type noMatchListClient struct{ client.Client }
+
+func (c noMatchListClient) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return &apimeta.NoResourceMatchError{PartialResource: schema.GroupVersionResource{
+		Group: "example.io", Version: "v1", Resource: "widgets",
+	}}
+}
+
+func (c noMatchListClient) Get(context.Context, client.ObjectKey, client.Object, ...client.GetOption) error {
+	return &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "example.io", Kind: "Widget"}}
+}
+
+type failingListClient struct{ client.Client }
+
+func (c failingListClient) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return apierrors.NewServiceUnavailable("list failed")
+}
+
+func TestCondition_ListErrorDescribesNamespaceScope(t *testing.T) {
+	cc := widgetCheck()
+	base := newFakeClient(t)
+
+	for _, tc := range []struct {
+		name        string
+		policy      adapter.FamilyPolicy
+		wantSummary string
+	}{
+		{name: "all namespaces", wantSummary: "in all namespaces"},
+		{name: "explicit namespace", policy: adapter.FamilyPolicy{Namespaces: []string{"tenant-a"}}, wantSummary: `in namespace "tenant-a"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks, err := cc.Evaluate(EvalContext{
+				Ctx:    context.Background(),
+				Client: failingListClient{Client: base},
+				Family: "widget_health",
+				Policy: tc.policy,
+			})
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeError, tc.wantSummary)
+		})
+	}
+}
+
+func TestCondition_NoMatchUsesAddonAbsencePosture(t *testing.T) {
+	cc := widgetCheck()
+	base := newFakeClient(t)
+
+	for _, tc := range []struct {
+		name    string
+		posture Posture
+		want    adapter.Outcome
+	}{
+		{name: "required", posture: Required, want: adapter.OutcomeFail},
+		{name: "optional", posture: Optional, want: adapter.OutcomeSkipped},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks, err := cc.Evaluate(EvalContext{
+				Ctx:            context.Background(),
+				Client:         noMatchListClient{Client: base},
+				Family:         "widget_health",
+				DefaultPosture: tc.posture,
+			})
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			assertHasOutcome(t, checks, "Widget", "widgets", tc.want, "API is not installed")
+			assertHasDetail(t, checks, "Widget", "widgets", adapter.DetailAbsent, "true")
+		})
+	}
+}
+
+func TestResourceAbsent_DoesNotTreatMissingNamespaceAsMissingAPI(t *testing.T) {
+	err := apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "missing")
+	if resourceAbsent(err) {
+		t.Fatal("missing namespace must remain an evaluation error, not addon absence")
+	}
+}
+
+func TestCondition_NamedNoMatchUsesAddonAbsencePosture(t *testing.T) {
+	cc := widgetCheck()
+	cc.Names = []string{"primary"}
+	checks, err := cc.Evaluate(EvalContext{
+		Ctx:            context.Background(),
+		Client:         noMatchListClient{Client: newFakeClient(t)},
+		Family:         "widget_health",
+		DefaultPosture: Optional,
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	assertHasOutcome(t, checks, "Widget", "primary", adapter.OutcomeSkipped, "not found")
+	assertHasDetail(t, checks, "Widget", "primary", adapter.DetailAbsent, "true")
 }
 
 func TestCondition_ClusterScopedListsWithoutNamespace(t *testing.T) {

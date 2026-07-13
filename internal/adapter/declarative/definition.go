@@ -313,8 +313,8 @@ type ConditionCheck struct {
 	Absence Posture
 	// ClusterScoped lists (or, in named mode, gets) without a namespace when true.
 	ClusterScoped bool
-	// DefaultNamespace is used when policy.Namespaces is empty and the objects
-	// are namespaced.
+	// DefaultNamespace is used only in named mode when policy.Namespaces is
+	// empty. Collection mode scans all namespaces when the policy is empty.
 	DefaultNamespace string
 	// ConditionType is the status condition inspected (e.g. "Ready").
 	ConditionType string

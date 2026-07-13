@@ -78,13 +78,20 @@ func firstNamespace(policy adapter.FamilyPolicy, def string) string {
 	return def
 }
 
-// policyNamespaces resolves the namespace set a collection is listed across:
-// the policy namespaces, or {def} when the policy list is empty.
-func policyNamespaces(policy adapter.FamilyPolicy, def string) []string {
+// policyNamespaces resolves the namespace set a collection is listed across.
+// An empty policy means all namespaces, represented by client.InNamespace("").
+func policyNamespaces(policy adapter.FamilyPolicy, _ string) []string {
 	if len(policy.Namespaces) > 0 {
 		return policy.Namespaces
 	}
-	return []string{def}
+	return []string{""}
+}
+
+func namespaceScope(namespace string) string {
+	if namespace == "" {
+		return "all namespaces"
+	}
+	return "namespace " + strconv.Quote(namespace)
 }
 
 // stringThreshold returns the trimmed threshold value for key, or dflt when the

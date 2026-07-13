@@ -556,7 +556,7 @@ func (Adapter) checkIssuers(ctx context.Context, c client.Client, policy adapter
 			if policy.LabelSelector != nil {
 				selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
 				if err != nil {
-					checks = append(checks, check(FamilyIssuerHealth, adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Issuer", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("issuer label selector is invalid: %v", err), nil, time.Now()))
+					checks = append(checks, check(FamilyIssuerHealth, adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Issuer", Namespace: namespace, Name: "issuers"}, adapter.OutcomeError, fmt.Sprintf("issuer label selector is invalid: %v", err), nil, time.Now()))
 					continue
 				}
 				listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
@@ -621,7 +621,7 @@ func (Adapter) checkCertificates(ctx context.Context, c client.Client, policy ad
 		if policy.LabelSelector != nil {
 			selector, err := metav1.LabelSelectorAsSelector(policy.LabelSelector)
 			if err != nil {
-				checks = append(checks, check(FamilyCertHealth, adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Namespace: namespace, Name: namespace}, adapter.OutcomeError, fmt.Sprintf("certificate label selector is invalid: %v", err), nil, time.Now()))
+				checks = append(checks, check(FamilyCertHealth, adapter.TargetRef{APIVersion: "cert-manager.io/v1", Kind: "Certificate", Namespace: namespace, Name: "certificates"}, adapter.OutcomeError, fmt.Sprintf("certificate label selector is invalid: %v", err), nil, time.Now()))
 				continue
 			}
 			listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
@@ -678,7 +678,7 @@ func certificateCheck(obj *unstructured.Unstructured, policy adapter.FamilyPolic
 
 func policyNamespaces(policy adapter.FamilyPolicy) []string {
 	if len(policy.Namespaces) == 0 {
-		return []string{defaultNamespace}
+		return []string{""}
 	}
 	return policy.Namespaces
 }

@@ -17,6 +17,7 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -262,7 +263,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Spec: fathomv1alpha1.AddonCheckSpec{
 				AddonType: "cert-manager",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"system_health": {Enabled: true},
+					"system_health": {Enabled: ptr.To(true)},
 				},
 			},
 		}
@@ -400,7 +401,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Spec: fathomv1alpha1.AddonCheckSpec{
 				AddonType: "cert-manager",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"system_health": {Enabled: true, Thresholds: map[string]string{"warnDays": "14"}},
+					"system_health": {Enabled: ptr.To(true), Thresholds: map[string]string{"warnDays": "14"}},
 				},
 			},
 		}
@@ -487,7 +488,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Spec: fathomv1alpha1.AddonCheckSpec{
 				AddonType: "absent-addon",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"system_health": {Enabled: true},
+					"system_health": {Enabled: ptr.To(true)},
 				},
 			},
 		}
@@ -561,7 +562,7 @@ var _ = Describe("AddonCheck Controller", func() {
 				AddonType: "cert-manager",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
 					// fakeAddonAdapter advertises only "system_health".
-					"bogus_family": {Enabled: true},
+					"bogus_family": {Enabled: ptr.To(true)},
 				},
 			},
 		}
@@ -615,7 +616,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Spec: fathomv1alpha1.AddonCheckSpec{
 				AddonType: "cert-manager",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"bogus_family": {Enabled: true},
+					"bogus_family": {Enabled: ptr.To(true)},
 				},
 			},
 		}

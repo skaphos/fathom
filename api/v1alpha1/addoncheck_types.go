@@ -13,7 +13,8 @@ import (
 type AddonCheckFamilyPolicy struct {
 	// Enabled gates execution of this family.
 	// +optional
-	Enabled bool `json:"enabled,omitempty"`
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// Namespaces narrows this family to resources in specific namespaces. Empty
 	// means all namespaces the adapter can read.
@@ -38,6 +39,7 @@ type AddonCheckSpec struct {
 	// AddonType selects the adapter responsible for this check, such as
 	// cert-manager, coredns, or external-secrets.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="addonType is immutable"
 	AddonType string `json:"addonType"`
 
 	// Interval is the cadence at which the adapter re-runs and the HealthReport
