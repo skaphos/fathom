@@ -258,6 +258,12 @@ func TestNewEngine_Validation(t *testing.T) {
 		{"crd without supported versions", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CRDs: []CRDCheck{{Names: []string{"foos.example.io"}}}}}}},
 		{"managed resource with empty name", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", ManagedResources: []ConditionCheck{{Kind: "Widget", Names: []string{""}}}}}}},
 		{"apiservice with empty name", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", APIServices: []ConditionCheck{{Kind: "APIService", Names: []string{"good", ""}}}}}}},
+		{"cronjob without name", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CronJobs: []CronJobCheck{{DefaultNamespace: "ns"}}}}}},
+		{"cronjob without namespace", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", CronJobs: []CronJobCheck{{DefaultName: "c"}}}}}},
+		{"configmap without namespace", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", ConfigMaps: []ConfigMapCheck{{DefaultName: "c", Key: "policy.yaml"}}}}}},
+		{"configmap without key", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", ConfigMaps: []ConfigMapCheck{{DefaultName: "c", DefaultNamespace: "ns"}}}}}},
+		{"annotation without key", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", Annotations: []AnnotationStalenessCheck{{APIVersion: "apps/v1", Kind: "DaemonSet", DefaultName: "d", DefaultNamespace: "ns"}}}}}},
+		{"namespaced annotation without namespace", AddonDefinition{AddonType: "x", Families: []FamilyDefinition{{Name: "f", Annotations: []AnnotationStalenessCheck{{APIVersion: "apps/v1", Kind: "DaemonSet", DefaultName: "d", AnnotationKey: "k"}}}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
