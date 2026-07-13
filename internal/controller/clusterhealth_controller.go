@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"time"
@@ -146,11 +147,23 @@ func (r *ClusterHealthReconciler) listSelectedHealthChecks(ctx context.Context, 
 			client.InNamespace(ns),
 			client.MatchingLabelsSelector{Selector: selector},
 		); err != nil {
-			return nil, err
+			// The scope lands in the Ready/ListFailed condition message; without
+			// it an RBAC or transient failure is undiagnosable when
+			// spec.namespaces lists several namespaces.
+			return nil, fmt.Errorf("listing HealthChecks in %s: %w", namespaceScope(ns), err)
 		}
 		out = append(out, hcs.Items...)
 	}
 	return out, nil
+}
+
+// namespaceScope names a list scope for error messages: all namespaces for
+// the empty namespace, the quoted namespace otherwise.
+func namespaceScope(namespace string) string {
+	if namespace == "" {
+		return "all namespaces"
+	}
+	return fmt.Sprintf("namespace %q", namespace)
 }
 
 // aggregate populates ch.Status from the selected HealthChecks. It computes
