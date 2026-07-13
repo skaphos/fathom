@@ -8,7 +8,10 @@ CRDs:
   addonchecks, clusterhealths, healthchecks, healthreports (fathom.skaphos.io)
   installed from the chart's crds/ directory. Helm installs CRDs on first
   install only and never upgrades or deletes them. For breaking schema changes,
-  apply the new CRD with kubectl before `helm upgrade`.
+  apply the new CRD with kubectl before `helm upgrade`. A scope change (e.g.
+  clusterhealths became cluster-scoped in chart 0.2.13) cannot be applied in
+  place: delete the old CRD first — this removes its objects — then apply the
+  new one and recreate your resources.
 
 Metrics:
 {{- if eq .Values.metrics.bindAddress "0" }}

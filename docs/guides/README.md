@@ -28,8 +28,9 @@ for the generated, field-level CRD reference see
 ## Conventions used in these guides
 
 - Examples place checks in the `fathom-system` namespace (where the operator is
-  installed). Any namespace works; `ClusterHealth` selects `HealthCheck`
-  wrappers in its own namespace.
+  installed). Any namespace works; `ClusterHealth` is cluster-scoped and
+  selects `HealthCheck` wrappers across all namespaces (narrow with
+  `spec.namespaces` and/or `spec.selector`).
 - Results everywhere use the severity ordering
   `Pass < Skipped < Warn < Unknown < Fail < Error`; aggregation is worst-case.
 - Threshold values in `spec.policy.<family>.thresholds` are **strings**, even

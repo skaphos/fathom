@@ -15,10 +15,20 @@ import (
 // alerting, gates).
 type ClusterHealthSpec struct {
 	// Selector selects the HealthChecks whose status this aggregate rolls up.
-	// An empty or nil selector matches all HealthChecks in the same namespace
-	// as this ClusterHealth.
+	// An empty or nil selector matches every HealthCheck in scope (all
+	// namespaces, or those listed in Namespaces).
 	// +optional
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// Namespaces narrows the aggregate to HealthChecks in these namespaces.
+	// Empty means all namespaces.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Namespaces []string `json:"namespaces,omitempty"`
 
 	// Description is a human-readable purpose for this aggregate.
 	// +optional
@@ -30,6 +40,11 @@ type ClusterHealthSpec struct {
 // aggregate. The aggregator never reads HealthReport history; it derives this
 // snapshot solely from HealthCheck.Status (per the AGENTS.md invariant).
 type ClusterHealthChildSummary struct {
+	// Namespace of the contributing HealthCheck.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace"`
+
 	// Name of the contributing HealthCheck.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
@@ -77,6 +92,7 @@ type ClusterHealthStatus struct {
 	// Children summarizes each selected HealthCheck's contribution.
 	// +optional
 	// +listType=map
+	// +listMapKey=namespace
 	// +listMapKey=name
 	Children []ClusterHealthChildSummary `json:"children,omitempty"`
 
@@ -86,12 +102,15 @@ type ClusterHealthStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.result`
 // +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchedCount`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ClusterHealth is the Schema for the clusterhealths API.
+// ClusterHealth is the Schema for the clusterhealths API. It is
+// cluster-scoped: one object rolls up HealthChecks across all namespaces
+// (optionally narrowed by spec.namespaces).
 type ClusterHealth struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

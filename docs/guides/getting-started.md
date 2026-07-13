@@ -51,7 +51,11 @@ A few things worth knowing up front:
 
 - **CRDs install once.** Helm installs CRDs from the chart's `crds/` directory
   on first install only; it never upgrades or removes them. Before a breaking
-  `helm upgrade`, apply the new CRDs with `kubectl` yourself.
+  `helm upgrade`, apply the new CRDs with `kubectl` yourself. The exception is
+  a CRD whose **scope** changed (e.g. `clusterhealths` became cluster-scoped in
+  chart 0.2.13): the API server rejects an in-place scope change, so delete the
+  old CRD first (`kubectl delete crd clusterhealths.fathom.skaphos.io` — this
+  removes its objects), apply the new one, and recreate your resources.
 - **The probe image is not a separate Deployment.** Some checks launch
   short-lived probe pods on demand; you do not run or scale them. Point at a
   specific build with `--set probeImage.tag=vX.Y.Z` if you mirror images
@@ -182,15 +186,15 @@ apiVersion: fathom.skaphos.io/v1alpha1
 kind: ClusterHealth
 metadata:
   name: platform
-  namespace: fathom-system
 spec:
-  description: "Worst-case Result across every HealthCheck in this namespace."
-  # An omitted/empty selector matches all HealthChecks in the same namespace.
+  description: "Worst-case Result across every HealthCheck in the cluster."
+  # ClusterHealth is cluster-scoped. An omitted/empty selector matches all
+  # HealthChecks in all namespaces; narrow with spec.namespaces.
 ```
 
 ```sh
 kubectl apply -f rollup.yaml
-kubectl -n fathom-system get clusterhealth platform
+kubectl get clusterhealth platform
 ```
 
 `ClusterHealth.status.result` is now the single verdict over every wrapped

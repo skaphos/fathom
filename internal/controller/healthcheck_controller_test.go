@@ -168,7 +168,7 @@ var _ = Describe("HealthCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		ch := &fathomv1alpha1.ClusterHealth{
-			ObjectMeta: metav1.ObjectMeta{Name: "ch-cross-namespace-wrapper", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "ch-cross-namespace-wrapper"},
 			Spec: fathomv1alpha1.ClusterHealthSpec{
 				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"scope": "cross-namespace"}},
 			},
@@ -177,11 +177,11 @@ var _ = Describe("HealthCheck Controller", func() {
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ch))).To(Succeed()) })
 
 		_, err = (&ClusterHealthReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
-			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}})
+			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
 		Expect(err).NotTo(HaveOccurred())
 
 		var got fathomv1alpha1.ClusterHealth
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name, Namespace: ch.Namespace}, &got)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name}, &got)).To(Succeed())
 		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
 		Expect(got.Status.MatchedCount).To(Equal(int32(1)))
 		Expect(got.Status.Children).To(HaveLen(1))

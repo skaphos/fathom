@@ -105,7 +105,7 @@ func TestClusterHealthReconcile_EmitsSpan(t *testing.T) {
 
 	r := &ClusterHealthReconciler{Client: cl, Scheme: scheme}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Namespace: "platform", Name: "all"},
+		NamespacedName: types.NamespacedName{Name: "all"},
 	}); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}

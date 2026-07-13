@@ -180,11 +180,11 @@ now, status is the source of truth.)
 ## 5. Deployment gates
 
 Because `ClusterHealth.status.result` is one machine-readable verdict, you can
-gate a deploy or promotion on it — e.g. a CI/CD step that waits for the
-namespace's `ClusterHealth` to read `Pass` before proceeding:
+gate a deploy or promotion on it — e.g. a CI/CD step that waits for a
+`ClusterHealth` to read `Pass` before proceeding:
 
 ```sh
-kubectl -n fathom-system get clusterhealth platform \
+kubectl get clusterhealth platform \
   -o jsonpath='{.status.result}'
 ```
 

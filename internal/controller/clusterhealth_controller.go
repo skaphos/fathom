@@ -7,6 +7,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -105,11 +107,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		})
 		// Fall through to the diff/Update so the failure is visible.
 	} else {
-		var hcs fathomv1alpha1.HealthCheckList
-		if listErr := r.List(ctx, &hcs,
-			client.InNamespace(ch.Namespace),
-			client.MatchingLabelsSelector{Selector: selector},
-		); listErr != nil {
+		if hcs, listErr := r.listSelectedHealthChecks(ctx, &ch, selector); listErr != nil {
 			clearClusterHealthAggregateStatus(&ch)
 			apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 				Type:               clusterHealthConditionReady,
@@ -119,7 +117,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				Message:            listErr.Error(),
 			})
 		} else {
-			r.aggregate(&ch, hcs.Items)
+			r.aggregate(&ch, hcs)
 		}
 	}
 
@@ -133,14 +131,54 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
+// listSelectedHealthChecks lists the HealthChecks the aggregate rolls up:
+// cluster-wide when spec.namespaces is empty, otherwise one list per listed
+// namespace. spec.namespaces is schema-capped (MaxItems), so the loop is
+// bounded.
+func (r *ClusterHealthReconciler) listSelectedHealthChecks(ctx context.Context, ch *fathomv1alpha1.ClusterHealth, selector labels.Selector) ([]fathomv1alpha1.HealthCheck, error) {
+	namespaces := ch.Spec.Namespaces
+	if len(namespaces) == 0 {
+		namespaces = []string{""} // client.InNamespace("") lists all namespaces.
+	}
+	var out []fathomv1alpha1.HealthCheck
+	for _, ns := range namespaces {
+		var hcs fathomv1alpha1.HealthCheckList
+		if err := r.List(ctx, &hcs,
+			client.InNamespace(ns),
+			client.MatchingLabelsSelector{Selector: selector},
+		); err != nil {
+			// The scope lands in the Ready/ListFailed condition message; without
+			// it an RBAC or transient failure is undiagnosable when
+			// spec.namespaces lists several namespaces.
+			return nil, fmt.Errorf("listing HealthChecks in %s: %w", namespaceScope(ns), err)
+		}
+		out = append(out, hcs.Items...)
+	}
+	return out, nil
+}
+
+// namespaceScope names a list scope for error messages: all namespaces for
+// the empty namespace, the quoted namespace otherwise.
+func namespaceScope(namespace string) string {
+	if namespace == "" {
+		return "all namespaces"
+	}
+	return fmt.Sprintf("namespace %q", namespace)
+}
+
 // aggregate populates ch.Status from the selected HealthChecks. It computes
 // the worst-case Result over those with a non-empty Status.Result, builds a
-// deterministic Children summary (sorted by name), and sets ObservedAt to the
-// latest input freshness across children (not wall-clock — that would defeat
-// no-op idempotency, and a "when did inputs last move" timestamp is what
-// dashboards actually want).
+// deterministic Children summary (sorted by namespace, then name), and sets
+// ObservedAt to the latest input freshness across children (not wall-clock —
+// that would defeat no-op idempotency, and a "when did inputs last move"
+// timestamp is what dashboards actually want).
 func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) {
-	sort.Slice(hcs, func(i, j int) bool { return hcs[i].Name < hcs[j].Name })
+	sort.Slice(hcs, func(i, j int) bool {
+		if hcs[i].Namespace != hcs[j].Namespace {
+			return hcs[i].Namespace < hcs[j].Namespace
+		}
+		return hcs[i].Name < hcs[j].Name
+	})
 
 	ch.Status.MatchedCount = int32(len(hcs))
 	ch.Status.Children = make([]fathomv1alpha1.ClusterHealthChildSummary, 0, len(hcs))
@@ -151,6 +189,7 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	for i := range hcs {
 		hc := &hcs[i]
 		ch.Status.Children = append(ch.Status.Children, fathomv1alpha1.ClusterHealthChildSummary{
+			Namespace:  hc.Namespace,
 			Name:       hc.Name,
 			Result:     hc.Status.Result,
 			Summary:    hc.Status.Summary,
@@ -205,22 +244,25 @@ func (r *ClusterHealthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// clusterHealthsForHealthCheck returns the namespaced names of every
-// ClusterHealth in hc's namespace whose Selector matches hc's labels.
-// Cross-namespace aggregation is intentionally not supported in v0.1; the
-// schema documents that an empty/nil Selector means "same namespace".
+// clusterHealthsForHealthCheck returns the names of every ClusterHealth whose
+// scope covers hc: the selector matches hc's labels and spec.namespaces is
+// empty or contains hc's namespace. ClusterHealth is cluster-scoped, so the
+// requests carry no namespace.
 func (r *ClusterHealthReconciler) clusterHealthsForHealthCheck(ctx context.Context, obj client.Object) []reconcile.Request {
 	hc, ok := obj.(*fathomv1alpha1.HealthCheck)
 	if !ok {
 		return nil
 	}
 	var list fathomv1alpha1.ClusterHealthList
-	if err := r.List(ctx, &list, client.InNamespace(hc.Namespace)); err != nil {
+	if err := r.List(ctx, &list); err != nil {
 		return nil
 	}
 	hcLabels := labels.Set(hc.Labels)
 	var out []reconcile.Request
 	for _, ch := range list.Items {
+		if !clusterHealthCoversNamespace(&ch, hc.Namespace) {
+			continue
+		}
 		sel, err := selectorFromSpec(ch.Spec.Selector)
 		if err != nil {
 			continue
@@ -228,7 +270,13 @@ func (r *ClusterHealthReconciler) clusterHealthsForHealthCheck(ctx context.Conte
 		if !sel.Matches(hcLabels) {
 			continue
 		}
-		out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ch.Namespace, Name: ch.Name}})
+		out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
 	}
 	return out
+}
+
+// clusterHealthCoversNamespace reports whether ch aggregates HealthChecks in
+// namespace: spec.namespaces is empty (all namespaces) or lists it.
+func clusterHealthCoversNamespace(ch *fathomv1alpha1.ClusterHealth, namespace string) bool {
+	return len(ch.Spec.Namespaces) == 0 || slices.Contains(ch.Spec.Namespaces, namespace)
 }
