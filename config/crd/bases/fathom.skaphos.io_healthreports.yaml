@@ -37,7 +37,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: HealthReportSpec defines the desired state of HealthReport.
+            description: |-
+              Spec is immutable: a HealthReport is a point-in-time history record.
+              The operator only ever creates reports (createOrReuseHealthReport);
+              mutating one after the fact would rewrite history (SKA-576).
             properties:
               adapterName:
                 description: AdapterName is the adapter identity that produced this
@@ -176,6 +179,9 @@ spec:
             - result
             - sourceRef
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
           status:
             description: HealthReportStatus defines the observed state of HealthReport.
             type: object

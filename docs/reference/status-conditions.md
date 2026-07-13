@@ -104,7 +104,9 @@ kubectl -n fathom-system annotate addoncheck cert-manager-system-health \
 ## HealthCheck
 
 `HealthCheck` is a projection layer. It mirrors one `AddonCheck` into a uniform
-status shape for `ClusterHealth`.
+status shape for `ClusterHealth`. `spec.checkRef` is immutable — retargeting a
+wrapper would repoint its mirrored history at a different check, so replace the
+wrapper instead.
 
 Status fields to start with:
 
@@ -119,8 +121,8 @@ Status fields to start with:
 | `Paused` | `False / RunEnabled` | Mirroring is enabled. | None. |
 | `Paused` | `True / Paused` | `spec.paused=true`; mirroring is suspended and the previous mirrored snapshot is preserved. | Unset `spec.paused` to resume. |
 | `Ready` | `True / TargetMirrored` | The referenced `AddonCheck` was read and mirrored. | Check `status.result` and `sourceObservedAt`. |
-| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not supported. This build supports `AddonCheck` only. Mirrored fields are cleared. | Set `checkRef.kind: AddonCheck`. |
-| `Ready` | `False / TargetNotFound` | The referenced `AddonCheck` does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target or correct `checkRef.name` / `checkRef.namespace`. |
+| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not supported. This build supports `AddonCheck` only. Mirrored fields are cleared. | Replace the wrapper with one whose `checkRef.kind` is `AddonCheck` (`checkRef` is immutable). |
+| `Ready` | `False / TargetNotFound` | The referenced `AddonCheck` does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the ref is wrong (`checkRef` is immutable). |
 | `Ready` | `False / TargetLookupFailed` | Reading the target failed for another API error. Mirrored fields are cleared. | Check controller logs and RBAC. |
 | `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
 
@@ -213,8 +215,9 @@ kubectl -n fathom-system get healthreport \
 
 ## HealthReport
 
-`HealthReport` is an immutable history object created by the controllers. It has
-no meaningful status conditions today; read `spec`.
+`HealthReport` is an immutable history object created by the controllers; the
+CRD schema rejects any `spec` update. It has no meaningful status conditions
+today; read `spec`.
 
 Important labels:
 

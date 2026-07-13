@@ -154,4 +154,70 @@ var _ = Describe("CRD schema validation", func() {
 			Expect(err.Error()).To(ContainSubstring("timeout must not exceed interval"))
 		})
 	})
+
+	Describe("HealthCheck", func() {
+		newHealthCheck := func() *fathomv1alpha1.HealthCheck {
+			return &fathomv1alpha1.HealthCheck{
+				ObjectMeta: metav1.ObjectMeta{GenerateName: "vhc-", Namespace: "default"},
+				Spec: fathomv1alpha1.HealthCheckSpec{
+					CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "target"},
+				},
+			}
+		}
+
+		It("rejects changing checkRef", func() {
+			obj := newHealthCheck()
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.CheckRef.Name = "other-target"
+			err := k8sClient.Update(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("checkRef is immutable"))
+		})
+
+		It("accepts updates that leave checkRef unchanged", func() {
+			obj := newHealthCheck()
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.Description = "still the same target"
+			obj.Spec.Paused = true
+			Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		})
+	})
+
+	Describe("HealthReport", func() {
+		newHealthReport := func() *fathomv1alpha1.HealthReport {
+			return &fathomv1alpha1.HealthReport{
+				ObjectMeta: metav1.ObjectMeta{GenerateName: "vhr-", Namespace: "default"},
+				Spec: fathomv1alpha1.HealthReportSpec{
+					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: "source"},
+					Result:     fathomv1alpha1.HealthReportResultPass,
+					ObservedAt: metav1.Now(),
+					Checks: []fathomv1alpha1.HealthReportCheck{{
+						Family:     "system_health",
+						Result:     fathomv1alpha1.HealthReportResultPass,
+						TargetRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "Deployment", Name: "coredns"},
+						ObservedAt: metav1.Now(),
+					}},
+				},
+			}
+		}
+
+		It("rejects any spec mutation — reports are immutable history", func() {
+			obj := newHealthReport()
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.Result = fathomv1alpha1.HealthReportResultFail
+			err := k8sClient.Update(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec is immutable"))
+		})
+
+		It("accepts metadata-only updates", func() {
+			obj := newHealthReport()
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			if obj.Labels == nil {
+				obj.Labels = map[string]string{}
+			}
+			obj.Labels["fathom.skaphos.io/retained"] = "true"
+			Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		})
+	})
 })

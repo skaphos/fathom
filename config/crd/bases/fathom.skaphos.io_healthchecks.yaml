@@ -57,8 +57,10 @@ spec:
               execute checks itself.
             properties:
               checkRef:
-                description: CheckRef identifies the specialized check resource this
-                  HealthCheck wraps.
+                description: |-
+                  CheckRef identifies the specialized check resource this HealthCheck wraps.
+                  It is immutable: retargeting a wrapper would silently repoint the mirrored
+                  history at a different check; replace the HealthCheck instead (SKA-576).
                 properties:
                   apiVersion:
                     description: |-
@@ -86,6 +88,9 @@ spec:
                 - kind
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: checkRef is immutable
+                  rule: self == oldSelf
               description:
                 description: Description is a human-readable purpose for this HealthCheck.
                 maxLength: 1024
