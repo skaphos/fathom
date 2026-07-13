@@ -41,8 +41,8 @@ type CheckTargetRef struct {
 // execute checks itself.
 type HealthCheckSpec struct {
 	// CheckRef identifies the specialized check resource this HealthCheck wraps.
-	// It is immutable: retargeting a wrapper would silently repoint the mirrored
-	// history at a different check; replace the HealthCheck instead (SKA-576).
+	// It is immutable: retargeting a wrapper would silently repoint its mirrored
+	// status snapshot at a different check; replace the HealthCheck instead (SKA-576).
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="checkRef is immutable"
 	CheckRef CheckTargetRef `json:"checkRef"`
 

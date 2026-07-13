@@ -302,7 +302,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `checkRef` _[CheckTargetRef](#checktargetref)_ | CheckRef identifies the specialized check resource this HealthCheck wraps.<br />It is immutable: retargeting a wrapper would silently repoint the mirrored<br />history at a different check; replace the HealthCheck instead (SKA-576). |  |  |
+| `checkRef` _[CheckTargetRef](#checktargetref)_ | CheckRef identifies the specialized check resource this HealthCheck wraps.<br />It is immutable: retargeting a wrapper would silently repoint its mirrored<br />status snapshot at a different check; replace the HealthCheck instead (SKA-576). |  |  |
 | `description` _string_ | Description is a human-readable purpose for this HealthCheck. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 | `paused` _boolean_ | Paused suspends mirroring of the referenced check's status into this<br />HealthCheck. The most recent Status snapshot is preserved while paused. |  | Optional: \{\} <br /> |
 
