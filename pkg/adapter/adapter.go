@@ -15,9 +15,9 @@ import (
 )
 
 // Adapter is the contract an addon adapter implements to be invoked by
-// Beacon during AddonCheck reconciliation.
+// Fathom during AddonCheck reconciliation.
 //
-// Implementations must be safe for concurrent use: Beacon may invoke Run on
+// Implementations must be safe for concurrent use: Fathom may invoke Run on
 // the same Adapter instance from multiple goroutines for distinct AddonCheck
 // resources.
 type Adapter interface {
@@ -31,11 +31,11 @@ type Adapter interface {
 	Version() string
 
 	// ContractVersion returns the SemVer-formatted contract version this
-	// adapter was built against. Compared against Beacon's [ContractVersion]
+	// adapter was built against. Compared against Fathom's [ContractVersion]
 	// via [EnsureCompatible] before Run is invoked.
 	ContractVersion() string
 
-	// Capabilities describes what this adapter can check. Beacon uses this to
+	// Capabilities describes what this adapter can check. Fathom uses this to
 	// validate AddonCheck policy and to route reconciliations.
 	Capabilities() Capabilities
 
@@ -49,7 +49,7 @@ type Adapter interface {
 }
 
 // Capabilities advertises what addon kinds and check families an adapter
-// supports. Beacon validates AddonCheck policy against this set.
+// supports. Fathom validates AddonCheck policy against this set.
 type Capabilities struct {
 	// AddonTypes are the addon-kind identifiers this adapter handles.
 	// Most adapters declare exactly one (e.g. "cert-manager"); generic
@@ -61,13 +61,30 @@ type Capabilities struct {
 	Families []Family
 }
 
+// ThresholdAdvertiser is an optional interface an [Adapter] may implement to
+// advertise the policy threshold keys each family understands. When present,
+// Fathom validates AddonCheck spec.policy.<family>.thresholds keys against
+// the advertised set and surfaces unknown keys on the Accepted condition
+// instead of silently ignoring them.
+//
+// This is an optional interface rather than a [Capabilities] field so that
+// adding it — and evolving the surface later — stays additive under the 1.x
+// contract: adapters that do not implement it simply opt out of threshold
+// validation.
+type ThresholdAdvertiser interface {
+	// ThresholdKeys returns, per family, the threshold keys the adapter
+	// understands. A family absent from the map advertises nothing and its
+	// threshold keys are not validated.
+	ThresholdKeys() map[Family][]string
+}
+
 // Family is the adapter-defined identifier for a group of related checks
 // (e.g. "system_health", "issuer_health"). Family names are scoped to the
-// adapter that declares them; Beacon does not impose a global namespace.
+// adapter that declares them; Fathom does not impose a global namespace.
 type Family string
 
 // Request carries everything an Adapter needs to perform a single Run.
-// Beacon constructs and owns the Request; adapters should treat all fields
+// Fathom constructs and owns the Request; adapters should treat all fields
 // as read-only.
 type Request struct {
 	// Client is a controller-runtime client scoped with the adapter's
@@ -88,7 +105,7 @@ type Request struct {
 	Policy map[Family]FamilyPolicy
 
 	// Timeout is the upper bound for this Run, mirroring the AddonCheck's
-	// spec.timeout. Adapters should also honor ctx.Done() — Beacon may
+	// spec.timeout. Adapters should also honor ctx.Done() — Fathom may
 	// cancel mid-Run for reasons unrelated to the timeout.
 	Timeout time.Duration
 

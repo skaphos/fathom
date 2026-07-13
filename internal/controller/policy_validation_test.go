@@ -75,6 +75,75 @@ func TestValidateAddonCheckPolicy(t *testing.T) {
 	}
 }
 
+// fakeAdvertisingAdapter additionally implements adapter.ThresholdAdvertiser.
+type fakeAdvertisingAdapter struct {
+	fakePolicyAdapter
+	keys map[adapter.Family][]string
+}
+
+func (f fakeAdvertisingAdapter) ThresholdKeys() map[adapter.Family][]string { return f.keys }
+
+func TestValidateAddonCheckPolicy_ThresholdKeys(t *testing.T) {
+	advertising := fakeAdvertisingAdapter{
+		fakePolicyAdapter: fakePolicyAdapter{families: []adapter.Family{"system_health", "cert_health"}},
+		keys:              map[adapter.Family][]string{"system_health": {"restartWarnCount", "workloadName"}},
+	}
+	plain := fakePolicyAdapter{families: []adapter.Family{"system_health"}}
+
+	tests := []struct {
+		name         string
+		policy       map[string]fathomv1alpha1.AddonCheckFamilyPolicy
+		adapter      adapter.Adapter
+		wantCount    int
+		wantContains []string
+	}{
+		{
+			"advertised keys accepted",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}}},
+			advertising, 0, nil,
+		},
+		{
+			"unknown key on an advertised family rejected",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCont": "3"}}},
+			advertising, 1, []string{`family "system_health" has an unknown threshold key "restartWarnCont"`},
+		},
+		{
+			"unknown keys reported deterministically sorted",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"zzz": "1", "aaa": "2"}}},
+			advertising, 2, []string{`unknown threshold key "aaa"`, `unknown threshold key "zzz"`},
+		},
+		{
+			"unadvertised family is not validated",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"cert_health": {Thresholds: map[string]string{"whatever": "x"}}},
+			advertising, 0, nil,
+		},
+		{
+			"adapter without ThresholdAdvertiser skips threshold validation",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"whatever": "x"}}},
+			plain, 0, nil,
+		},
+		{
+			"nil adapter skips threshold validation",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]string{"whatever": "x"}}},
+			nil, 0, nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateAddonCheckPolicy(checkWithPolicy(tc.policy), tc.adapter)
+			if len(got) != tc.wantCount {
+				t.Fatalf("problems: got %d %v, want %d", len(got), got, tc.wantCount)
+			}
+			joined := strings.Join(got, "\n")
+			for _, sub := range tc.wantContains {
+				if !strings.Contains(joined, sub) {
+					t.Errorf("problems %v missing %q", got, sub)
+				}
+			}
+		})
+	}
+}
+
 // TestValidateAddonCheckPolicy_DeterministicOrder guards the stable ordering the
 // Accepted-condition message depends on (map iteration is randomized).
 func TestValidateAddonCheckPolicy_DeterministicOrder(t *testing.T) {

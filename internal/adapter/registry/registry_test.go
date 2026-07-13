@@ -85,7 +85,7 @@ func TestRegister(t *testing.T) {
 			name: "incompatible contract version rejected",
 			adapter: fakeAdapter{
 				name:            "from-the-future",
-				contractVersion: "1.0.0", // current is 0.1.0; pre-1.0 minor mismatch is breaking
+				contractVersion: "2.0.0", // current is 1.x; a major mismatch is breaking
 				addonTypes:      []string{"future-addon"},
 			},
 			wantErr:     true,
