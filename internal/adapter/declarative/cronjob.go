@@ -22,7 +22,10 @@ import (
 // override) is positive — last-success recency:
 //
 //   - never scheduled a Job yet -> Pass (a freshly installed CronJob is healthy).
-//   - scheduled a Job but no successful completion recorded -> StaleOutcome.
+//   - scheduled a Job but no success yet, last schedule within the window ->
+//     Pass (the first run may still be in progress; not stuck).
+//   - scheduled a Job but no success and last schedule older than the window ->
+//     StaleOutcome.
 //   - last successful completion older than the window -> StaleOutcome.
 //   - last successful completion within the window -> Pass.
 //
@@ -69,11 +72,20 @@ func (c CronJobCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 
 	last := cj.Status.LastSuccessfulTime
 	if last == nil {
-		if cj.Status.LastScheduleTime == nil {
+		schedule := cj.Status.LastScheduleTime
+		if schedule == nil {
 			return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob has not scheduled a run yet", details, started)}, nil
 		}
-		details["lastScheduleTime"] = cj.Status.LastScheduleTime.UTC().Format(time.RFC3339)
-		return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob has scheduled a run but never completed successfully", details, started)}, nil
+		// Scheduled but no success recorded yet. Only stale once the schedule
+		// itself is older than the window: a run that was just scheduled (or is
+		// still in progress) is awaiting its first completion, not stuck — so a
+		// fresh install or a long first run does not falsely Warn.
+		details["lastScheduleTime"] = schedule.UTC().Format(time.RFC3339)
+		details["successMaxAge"] = maxAge.String()
+		if time.Since(schedule.Time) > maxAge {
+			return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob has not completed a successful run within the freshness window", details, started)}, nil
+		}
+		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob scheduled a run recently and is awaiting its first successful completion", details, started)}, nil
 	}
 
 	age := time.Since(last.Time)

@@ -130,7 +130,6 @@ addons:
     - cronjobs
     verbs:
     - get
-    - list
   - apiGroups:
     - ""
     resources:
@@ -143,7 +142,6 @@ addons:
     - configmaps
     verbs:
     - get
-    - list
 - name: envoy-gateway
   rules:
   - apiGroups:
@@ -312,7 +310,6 @@ addons:
     resources:
     - nodes
     verbs:
-    - get
     - list
 - name: metrics-server
   rules:

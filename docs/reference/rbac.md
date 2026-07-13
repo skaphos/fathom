@@ -59,9 +59,9 @@ ServiceAccount: `fathom-addon-descheduler` (namespace `fathom-system`)
 | API group | Resources | Verbs | Justification (why this, and why not less) |
 | --- | --- | --- | --- |
 | apps | deployments | get, list | Read the descheduler Deployment (long-lived deployment mode) to score readiness. list because descheduler is Optional and may run as a CronJob instead, and the name/namespace are policy-overridable; read-only. |
-| batch | cronjobs | get, list | Read the descheduler CronJob (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. list because it may run as a Deployment instead and the name is policy-overridable; read-only. |
+| batch | cronjobs | get | Get the descheduler CronJob by name (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. get only — the check fetches exactly one named CronJob (a policy-overridable name still resolves to a single Get); read-only. |
 | core | pods | list | List the descheduler Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
-| core | configmaps | get, list | Read the DeschedulerPolicy ConfigMap to verify its policy.yaml parses and declares a recognized apiVersion. list because the ConfigMap name/namespace are policy-overridable (Helm release fullname); read-only, and the descheduler policy holds no secret material. |
+| core | configmaps | get | Get the DeschedulerPolicy ConfigMap by name to verify its policy.yaml parses and declares a recognized apiVersion. get only — the check fetches exactly one named ConfigMap (a policy-overridable name still resolves to a single Get); read-only, and the descheduler policy holds no secret material. |
 
 ## envoy-gateway
 
@@ -127,7 +127,7 @@ ServiceAccount: `fathom-addon-kured` (namespace `fathom-system`)
 | --- | --- | --- | --- |
 | apps | daemonsets | get, list | Read the kured DaemonSet to score readiness and to read its reboot-lock annotation. list because kured is Optional and may be absent and the name/namespace are policy-overridable; read-only. |
 | core | pods | list | List the kured Pods by label selector for restart counts and readiness behind the DaemonSet. list (not get) because Pod names are dynamic; read-only. |
-| core | nodes | get, list | List Nodes to read the weave.works/kured-most-recent-reboot-needed annotation and surface nodes waiting too long on a reboot. list because the check spans all nodes; read-only, and only node metadata annotations are inspected. |
+| core | nodes | list | List Nodes to read the weave.works/kured-most-recent-reboot-needed annotation and surface nodes waiting too long on a reboot. list only — the node check lists all nodes and never Gets one by name; read-only, and only node metadata annotations are inspected. |
 
 ## metrics-server
 

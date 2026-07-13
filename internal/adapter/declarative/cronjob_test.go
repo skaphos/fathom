@@ -67,7 +67,8 @@ func TestCronJobCheck(t *testing.T) {
 		{"suspended warns", systemHealth, cronJob("descheduler", "kube-system", true, &recent, &recent), adapter.OutcomeWarn, "suspended"},
 		{"recent success passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, &recent), adapter.OutcomePass, "recent"},
 		{"stale success warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, &stale), adapter.OutcomeWarn, "older than the freshness window"},
-		{"scheduled but never succeeded warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, nil), adapter.OutcomeWarn, "never completed successfully"},
+		{"recently scheduled, not yet successful passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, nil), adapter.OutcomePass, "awaiting its first successful completion"},
+		{"stale schedule, never successful warns", lastRun, cronJob("descheduler", "kube-system", false, &stale, nil), adapter.OutcomeWarn, "not completed a successful run within the freshness window"},
 		{"never scheduled passes", lastRun, cronJob("descheduler", "kube-system", false, nil, nil), adapter.OutcomePass, "not scheduled a run yet"},
 	}
 	for _, tc := range tests {

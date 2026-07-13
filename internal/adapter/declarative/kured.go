@@ -46,8 +46,8 @@ var KuredDefinition = AddonDefinition{
 			Justification: "Read the kured DaemonSet to score readiness and to read its reboot-lock annotation. list because kured is Optional and may be absent and the name/namespace are policy-overridable; read-only."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
 			Justification: "List the kured Pods by label selector for restart counts and readiness behind the DaemonSet. list (not get) because Pod names are dynamic; read-only."},
-		{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list"},
-			Justification: "List Nodes to read the weave.works/kured-most-recent-reboot-needed annotation and surface nodes waiting too long on a reboot. list because the check spans all nodes; read-only, and only node metadata annotations are inspected."},
+		{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"list"},
+			Justification: "List Nodes to read the weave.works/kured-most-recent-reboot-needed annotation and surface nodes waiting too long on a reboot. list only — the node check lists all nodes and never Gets one by name; read-only, and only node metadata annotations are inspected."},
 	},
 	Families: []FamilyDefinition{
 		{

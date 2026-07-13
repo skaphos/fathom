@@ -38,12 +38,12 @@ var DeschedulerDefinition = AddonDefinition{
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list"},
 			Justification: "Read the descheduler Deployment (long-lived deployment mode) to score readiness. list because descheduler is Optional and may run as a CronJob instead, and the name/namespace are policy-overridable; read-only."},
-		{APIGroups: []string{"batch"}, Resources: []string{"cronjobs"}, Verbs: []string{"get", "list"},
-			Justification: "Read the descheduler CronJob (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. list because it may run as a Deployment instead and the name is policy-overridable; read-only."},
+		{APIGroups: []string{"batch"}, Resources: []string{"cronjobs"}, Verbs: []string{"get"},
+			Justification: "Get the descheduler CronJob by name (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. get only — the check fetches exactly one named CronJob (a policy-overridable name still resolves to a single Get); read-only."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
 			Justification: "List the descheduler Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only."},
-		{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"get", "list"},
-			Justification: "Read the DeschedulerPolicy ConfigMap to verify its policy.yaml parses and declares a recognized apiVersion. list because the ConfigMap name/namespace are policy-overridable (Helm release fullname); read-only, and the descheduler policy holds no secret material."},
+		{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"get"},
+			Justification: "Get the DeschedulerPolicy ConfigMap by name to verify its policy.yaml parses and declares a recognized apiVersion. get only — the check fetches exactly one named ConfigMap (a policy-overridable name still resolves to a single Get); read-only, and the descheduler policy holds no secret material."},
 	},
 	Families: []FamilyDefinition{
 		{
