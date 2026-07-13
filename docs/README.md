@@ -23,6 +23,7 @@ Task-oriented guides for installing and using Fathom live in
 | [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the eight built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Newer kind — included in recent builds; not in older ones.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
+| [Agent operations](guides/agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |
 
 ## Reference & internals
 
@@ -58,10 +59,12 @@ Living planning docs for in-flight epics (draft; not stable references):
 
 ## Other repository docs
 
-- [`../README.md`](../README.md) — install via Helm and per-adapter `AddonCheck`
-  examples.
-- [`../AGENTS.md`](../AGENTS.md) — contributor and AI-agent briefing (build,
-  test, guardrails). `CLAUDE.md` is a symlink to it.
+- [`../README.md`](../README.md) — project overview, quick-start install, and
+  pointers into these docs.
+- [`../AGENTS.md`](../AGENTS.md) — contributor and AI-agent briefing for working
+  *on the codebase* (build, test, guardrails). `CLAUDE.md` is a symlink to it.
+  For pointing an agent at a cluster to *operate* Fathom, see
+  [Agent operations](guides/agent-operations.md).
 
 > The CRD API reference ([reference/api.md](reference/api.md)) is generated.
 > Regenerate it with `go -C tools tool task docs:api-ref`; do not hand-edit it.

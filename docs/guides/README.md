@@ -25,6 +25,12 @@ for the generated, field-level CRD reference see
 | [Node certificate checks](node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before it causes an outage. |
 | [Monitoring & alerting](monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and deployment gates. |
 
+## Automating Fathom
+
+| Guide | Read it to… |
+| --- | --- |
+| [Agent operations](agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |
+
 ## Conventions used in these guides
 
 - Examples place checks in the `fathom-system` namespace (where the operator is
