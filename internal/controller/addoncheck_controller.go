@@ -597,9 +597,13 @@ func unknownThresholdKeys(family string, thresholds map[string]string, advertise
 	if !ok {
 		return nil
 	}
+	known := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		known[key] = struct{}{}
+	}
 	var problems []string
 	for _, key := range slices.Sorted(maps.Keys(thresholds)) {
-		if !slices.Contains(keys, key) {
+		if _, ok := known[key]; !ok {
 			problems = append(problems, fmt.Sprintf("family %q has an unknown threshold key %q", family, key))
 		}
 	}
