@@ -157,6 +157,10 @@ type HealthReport struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// Spec is immutable: a HealthReport is a point-in-time history record.
+	// The operator only ever creates reports (createOrReuseHealthReport);
+	// mutating one after the fact would rewrite history (SKA-576).
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable"
 	Spec   HealthReportSpec   `json:"spec,omitempty"`
 	Status HealthReportStatus `json:"status,omitempty"`
 }
