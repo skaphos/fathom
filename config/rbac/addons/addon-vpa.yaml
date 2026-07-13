@@ -25,7 +25,6 @@ rules:
   - deployments
   verbs:
   - get
-  - list
 - apiGroups:
   - ""
   resources:
@@ -38,13 +37,11 @@ rules:
   - customresourcedefinitions
   verbs:
   - get
-  - list
 - apiGroups:
   - autoscaling.k8s.io
   resources:
   - verticalpodautoscalers
   verbs:
-  - get
   - list
 - apiGroups:
   - admissionregistration.k8s.io

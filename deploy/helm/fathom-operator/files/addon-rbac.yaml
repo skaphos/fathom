@@ -123,7 +123,6 @@ addons:
     - deployments
     verbs:
     - get
-    - list
   - apiGroups:
     - batch
     resources:
@@ -263,7 +262,6 @@ addons:
     - deployments
     verbs:
     - get
-    - list
   - apiGroups:
     - ""
     resources:
@@ -276,13 +274,11 @@ addons:
     - customresourcedefinitions
     verbs:
     - get
-    - list
   - apiGroups:
     - keda.sh
     resources:
     - scaledobjects
     verbs:
-    - get
     - list
   - apiGroups:
     - admissionregistration.k8s.io
@@ -298,7 +294,6 @@ addons:
     - daemonsets
     verbs:
     - get
-    - list
   - apiGroups:
     - ""
     resources:
@@ -339,7 +334,6 @@ addons:
     - deployments
     verbs:
     - get
-    - list
   - apiGroups:
     - ""
     resources:
@@ -352,13 +346,11 @@ addons:
     - customresourcedefinitions
     verbs:
     - get
-    - list
   - apiGroups:
     - autoscaling.k8s.io
     resources:
     - verticalpodautoscalers
     verbs:
-    - get
     - list
   - apiGroups:
     - admissionregistration.k8s.io

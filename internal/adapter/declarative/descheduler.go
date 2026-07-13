@@ -36,8 +36,8 @@ var DeschedulerDefinition = AddonDefinition{
 	AdapterVersion: "0.1.0",
 	Optional:       true,
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list"},
-			Justification: "Read the descheduler Deployment (long-lived deployment mode) to score readiness. list because descheduler is Optional and may run as a CronJob instead, and the name/namespace are policy-overridable; read-only."},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
+			Justification: "Get the descheduler Deployment by name (long-lived deployment mode) to score readiness. get only — a single named Get (a policy-overridable name still resolves to one Get) and the impersonating client is cache-free, so no list/watch; read-only."},
 		{APIGroups: []string{"batch"}, Resources: []string{"cronjobs"}, Verbs: []string{"get"},
 			Justification: "Get the descheduler CronJob by name (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. get only — the check fetches exactly one named CronJob (a policy-overridable name still resolves to a single Get); read-only."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},

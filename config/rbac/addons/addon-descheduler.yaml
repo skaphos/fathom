@@ -25,7 +25,6 @@ rules:
   - deployments
   verbs:
   - get
-  - list
 - apiGroups:
   - batch
   resources:

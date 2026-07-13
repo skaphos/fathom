@@ -25,7 +25,6 @@ rules:
   - daemonsets
   verbs:
   - get
-  - list
 - apiGroups:
   - ""
   resources:

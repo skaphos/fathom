@@ -42,8 +42,8 @@ var KuredDefinition = AddonDefinition{
 	// on a version — gating is opt-in (SKA-527).
 	VersionSource: &VersionSource{Kind: KindDaemonSet, Namespace: "kube-system", Name: "kured"},
 	RBAC: []adapter.PolicyRule{
-		{APIGroups: []string{"apps"}, Resources: []string{"daemonsets"}, Verbs: []string{"get", "list"},
-			Justification: "Read the kured DaemonSet to score readiness and to read its reboot-lock annotation. list because kured is Optional and may be absent and the name/namespace are policy-overridable; read-only."},
+		{APIGroups: []string{"apps"}, Resources: []string{"daemonsets"}, Verbs: []string{"get"},
+			Justification: "Get the kured DaemonSet by name to score readiness and to read its reboot-lock annotation. get only — both the WorkloadCheck and the named lock check fetch the DaemonSet by name and the impersonating client is cache-free, so no list/watch; read-only."},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"list"},
 			Justification: "List the kured Pods by label selector for restart counts and readiness behind the DaemonSet. list (not get) because Pod names are dynamic; read-only."},
 		{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"list"},
