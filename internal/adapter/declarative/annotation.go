@@ -95,8 +95,15 @@ func (a AnnotationStalenessCheck) evaluateList(ec EvalContext, gv schema.GroupVe
 		out = append(out, a.scoreAnnotation(ec, ref, value, time.Now()))
 	}
 	if len(out) == 0 {
-		return []adapter.CheckResult{skippedResult(ec.Family, listRef,
-			fmt.Sprintf("no %s objects carry annotation %s", a.Kind, a.AnnotationKey), "NoMatchingObjects")}
+		// Carry the same annotation/component details the scored and error results
+		// include, so a NoMatchingObjects skip stays disambiguated when a family
+		// has more than one AnnotationStalenessCheck over the same kind.
+		skip := skippedResult(ec.Family, listRef,
+			fmt.Sprintf("no %s objects carry annotation %s", a.Kind, a.AnnotationKey), "NoMatchingObjects")
+		for k, v := range a.baseDetails() {
+			skip.Details[k] = v
+		}
+		return []adapter.CheckResult{skip}
 	}
 	return out
 }

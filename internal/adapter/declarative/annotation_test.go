@@ -118,6 +118,8 @@ func TestAnnotationStaleness_NodeList(t *testing.T) {
 	t.Run("no annotated node is skipped", func(t *testing.T) {
 		checks := runAnnotation(t, nodeRebootCheck(), nodeWithAnnotations("node1", nil), nodeWithAnnotations("node2", nil))
 		assertHasOutcome(t, checks, "Node", "nodes", adapter.OutcomeSkipped, "no Node objects carry annotation")
+		// The skip carries disambiguating details, not just skipReason.
+		assertHasDetail(t, checks, "Node", "nodes", "annotation", rebootKey)
 	})
 	t.Run("recently-flagged node passes", func(t *testing.T) {
 		ann := map[string]string{rebootKey: time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)}
