@@ -51,7 +51,11 @@ A few things worth knowing up front:
 
 - **CRDs install once.** Helm installs CRDs from the chart's `crds/` directory
   on first install only; it never upgrades or removes them. Before a breaking
-  `helm upgrade`, apply the new CRDs with `kubectl` yourself.
+  `helm upgrade`, apply the new CRDs with `kubectl` yourself. The exception is
+  a CRD whose **scope** changed (e.g. `clusterhealths` became cluster-scoped in
+  chart 0.2.13): the API server rejects an in-place scope change, so delete the
+  old CRD first (`kubectl delete crd clusterhealths.fathom.skaphos.io` — this
+  removes its objects), apply the new one, and recreate your resources.
 - **The probe image is not a separate Deployment.** Some checks launch
   short-lived probe pods on demand; you do not run or scale them. Point at a
   specific build with `--set probeImage.tag=vX.Y.Z` if you mirror images
