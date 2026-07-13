@@ -21,7 +21,10 @@ import (
 // last-schedule / last-success times (nil leaves the status field unset).
 func cronJob(name, namespace string, suspend bool, lastSchedule, lastSuccess *time.Time) *batchv1.CronJob {
 	cj := &batchv1.CronJob{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		// CreationTimestamp defaults to now so recency cases exercise the schedule
+		// / success logic, not the object-age gate; the perpetual-failure test
+		// overrides it explicitly.
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, CreationTimestamp: metav1.Time{Time: time.Now()}},
 		Spec:       batchv1.CronJobSpec{Suspend: &suspend},
 	}
 	if lastSchedule != nil {
@@ -68,8 +71,7 @@ func TestCronJobCheck(t *testing.T) {
 		{"suspended warns", systemHealth, cronJob("descheduler", "kube-system", true, &recent, &recent), adapter.OutcomeWarn, "suspended"},
 		{"recent success passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, &recent), adapter.OutcomePass, "recent"},
 		{"stale success warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, &stale), adapter.OutcomeWarn, "older than the freshness window"},
-		{"recently scheduled, not yet successful passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, nil), adapter.OutcomePass, "awaiting its first successful completion"},
-		{"stale schedule, never successful warns", lastRun, cronJob("descheduler", "kube-system", false, &stale, nil), adapter.OutcomeWarn, "not completed a successful run within the freshness window"},
+		{"young cronjob, not yet successful passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, nil), adapter.OutcomePass, "awaiting its first successful completion"},
 		{"future success time warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, &future), adapter.OutcomeWarn, "in the future"},
 		{"future schedule, never successful warns", lastRun, cronJob("descheduler", "kube-system", false, &future, nil), adapter.OutcomeWarn, "in the future"},
 		{"never scheduled passes", lastRun, cronJob("descheduler", "kube-system", false, nil, nil), adapter.OutcomePass, "not scheduled a run yet"},
@@ -80,6 +82,24 @@ func TestCronJobCheck(t *testing.T) {
 			assertHasOutcome(t, checks, "CronJob", "descheduler", tc.outcome, tc.summary)
 		})
 	}
+}
+
+func TestCronJobCheck_PerpetualFailurePastWindowWarns(t *testing.T) {
+	// A CronJob that keeps scheduling (recent LastScheduleTime) but has never
+	// succeeded, and has existed longer than the freshness window, is stuck. The
+	// object-age gate catches it even though LastScheduleTime stays recent.
+	recent := time.Now().Add(-1 * time.Minute)
+	cj := cronJob("descheduler", "kube-system", false, &recent, nil)
+	cj.CreationTimestamp = metav1.Time{Time: time.Now().Add(-48 * time.Hour)}
+	check := CronJobCheck{
+		DefaultNamespace:     "kube-system",
+		DefaultName:          "descheduler",
+		Component:            "descheduler",
+		DefaultSuccessMaxAge: 24 * time.Hour,
+		StaleOutcome:         adapter.OutcomeWarn,
+	}
+	checks := runCronJob(t, check, cj)
+	assertHasOutcome(t, checks, "CronJob", "descheduler", adapter.OutcomeWarn, "not completed a successful run within the freshness window")
 }
 
 func TestCronJobCheck_AbsentInheritsOptional(t *testing.T) {

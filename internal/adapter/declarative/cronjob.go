@@ -22,10 +22,12 @@ import (
 // override) is positive — last-success recency:
 //
 //   - never scheduled a Job yet -> Pass (a freshly installed CronJob is healthy).
-//   - scheduled a Job but no success yet, last schedule within the window ->
+//   - scheduled a Job but never succeeded, CronJob younger than the window ->
 //     Pass (the first run may still be in progress; not stuck).
-//   - scheduled a Job but no success and last schedule older than the window ->
-//     StaleOutcome.
+//   - scheduled a Job but never succeeded and the CronJob is older than the
+//     window -> StaleOutcome (it keeps scheduling but never completes — gating
+//     on object age, not the last schedule, catches perpetual fast-failing runs
+//     whose LastScheduleTime stays recent forever).
 //   - last successful completion older than the window -> StaleOutcome.
 //   - last successful completion within the window -> Pass.
 //
@@ -81,11 +83,16 @@ func (c CronJobCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		// still in progress) is awaiting its first completion, not stuck — so a
 		// fresh install or a long first run does not falsely Warn.
 		details["lastScheduleTime"] = schedule.UTC().Format(time.RFC3339)
+		details["createdAt"] = cj.CreationTimestamp.UTC().Format(time.RFC3339)
 		details["successMaxAge"] = maxAge.String()
 		if isFutureTimestamp(schedule.Time) {
 			return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob last schedule time is in the future (clock skew or malformed status)", details, started)}, nil
 		}
-		if time.Since(schedule.Time) > maxAge {
+		// Never succeeded: stale once the CronJob has existed longer than the
+		// freshness window. Gate on the object's age, not the last schedule — a
+		// CronJob whose every run fails fast keeps LastScheduleTime recent
+		// forever and would otherwise stay Pass despite never completing.
+		if time.Since(cj.CreationTimestamp.Time) > maxAge {
 			return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob has not completed a successful run within the freshness window", details, started)}, nil
 		}
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob scheduled a run recently and is awaiting its first successful completion", details, started)}, nil
