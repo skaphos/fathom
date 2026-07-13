@@ -97,7 +97,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 					return []adapter.CheckResult{cc.absentListResult(ec, kindRef, started)}, nil
 				}
 				return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-					fmt.Sprintf("failed to list %s in namespace %q: %v", cc.Kind, ns, err), cc.listDetails(), started)}, nil
+					fmt.Sprintf("failed to list %s in %s: %v", cc.Kind, namespaceScope(ns), err), cc.listDetails(), started)}, nil
 			}
 			items = append(items, list.Items...)
 		}

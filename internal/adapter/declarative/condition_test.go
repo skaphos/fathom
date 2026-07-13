@@ -209,6 +209,39 @@ func (c noMatchListClient) Get(context.Context, client.ObjectKey, client.Object,
 	return &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "example.io", Kind: "Widget"}}
 }
 
+type failingListClient struct{ client.Client }
+
+func (c failingListClient) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return apierrors.NewServiceUnavailable("list failed")
+}
+
+func TestCondition_ListErrorDescribesNamespaceScope(t *testing.T) {
+	cc := widgetCheck()
+	base := newFakeClient(t)
+
+	for _, tc := range []struct {
+		name        string
+		policy      adapter.FamilyPolicy
+		wantSummary string
+	}{
+		{name: "all namespaces", wantSummary: "in all namespaces"},
+		{name: "explicit namespace", policy: adapter.FamilyPolicy{Namespaces: []string{"tenant-a"}}, wantSummary: `in namespace "tenant-a"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks, err := cc.Evaluate(EvalContext{
+				Ctx:    context.Background(),
+				Client: failingListClient{Client: base},
+				Family: "widget_health",
+				Policy: tc.policy,
+			})
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			assertHasOutcome(t, checks, "Widget", "widgets", adapter.OutcomeError, tc.wantSummary)
+		})
+	}
+}
+
 func TestCondition_NoMatchUsesAddonAbsencePosture(t *testing.T) {
 	cc := widgetCheck()
 	base := newFakeClient(t)

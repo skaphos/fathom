@@ -408,8 +408,8 @@
     "hash": "4e6b9d99678b0bb6beec4e285466b517"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/evaluator.go": {
-    "mtime": 1783912943.7184122,
-    "hash": "89f314793422dcc50b0e37289ca7980d"
+    "mtime": 1783917074.2174118,
+    "hash": "5b82b1a39f19b4d9cd01a3c7a2c62a8a"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/engine.go": {
     "mtime": 1783908040.9864712,
@@ -440,8 +440,8 @@
     "hash": "b7cdbf517b9073dac1b8bc9ccedb2548"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/condition.go": {
-    "mtime": 1783915873.0344143,
-    "hash": "f1a67365bb160f2bf136a5da696beb9c"
+    "mtime": 1783917074.3853579,
+    "hash": "f76b7be641749128a7f7560d8cc23f37"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/istio_test.go": {
     "mtime": 1783323108.0756433,
@@ -472,8 +472,8 @@
     "hash": "74e0af57c36adf2833bca1a4217ac454"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/condition_test.go": {
-    "mtime": 1783915797.4867039,
-    "hash": "c99564834dea358583dc0d3b345f0def"
+    "mtime": 1783917135.1175556,
+    "hash": "b7d49db52cc062451fc6c36bb6e0a440"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/keda.go": {
     "mtime": 1783908040.9864712,
@@ -532,8 +532,8 @@
     "hash": "92acb317d0d37428d302b8421df7c7a2"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/annotation.go": {
-    "mtime": 1783908040.9864712,
-    "hash": "0e2232caecc8a7ff70c6229cbfba0fd6"
+    "mtime": 1783917074.5493052,
+    "hash": "6f897f3a92561a71cad523b95b064652"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/impersonation/factory.go": {
     "mtime": 1783289162.640456,

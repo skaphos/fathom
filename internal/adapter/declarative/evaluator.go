@@ -87,6 +87,13 @@ func policyNamespaces(policy adapter.FamilyPolicy, _ string) []string {
 	return []string{""}
 }
 
+func namespaceScope(namespace string) string {
+	if namespace == "" {
+		return "all namespaces"
+	}
+	return "namespace " + strconv.Quote(namespace)
+}
+
 // stringThreshold returns the trimmed threshold value for key, or dflt when the
 // key is absent or blank.
 func stringThreshold(policy adapter.FamilyPolicy, key, dflt string) string {
