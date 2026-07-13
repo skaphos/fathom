@@ -470,9 +470,11 @@ output drifts from your rules.
 | `ContractVersion` | The [`pkg/adapter`](../pkg/adapter/version.go) contract you target — currently **`1.0.0`**. Embed the constant; don't hard-code a string. | Never by you — it tracks the contract. |
 
 Contract compatibility is enforced at registration by `EnsureCompatible`. At
-`1.0.0` the contract is stable and **major-only**: any `1.x` adapter runs on
-any `1.x` host, and minor/patch releases only add surface (new `Request`
-fields, new optional interfaces) that existing adapters may ignore. A major
+`1.0.0` the contract is stable: an adapter is compatible when it shares the
+host's major version and targets an **equal-or-older minor**. Minor/patch
+releases only add surface (new `Request` fields, new optional interfaces) that
+older adapters may ignore — but an adapter built against a *newer* minor than
+the host is rejected, since it may rely on surface the host lacks. A major
 bump is a breaking rebuild. Because you embed `adapter.ContractVersion`, a
 contract bump surfaces at build time.
 

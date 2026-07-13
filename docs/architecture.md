@@ -292,9 +292,10 @@ registers every built-in adapter at startup via `builtInAdapters()`.
 At registration, `Registry.Register` calls
 `adapter.EnsureCompatible(a.ContractVersion())` (`pkg/adapter/version.go`). The
 host contract version is the constant `adapter.ContractVersion` (currently
-`0.2.0`). Compatibility rules:
+`1.0.0`). Compatibility rules:
 
-- `>= 1.0.0`: same major version is compatible.
+- `>= 1.0.0`: same major version, and the adapter's minor must not exceed the
+  host's (a newer-minor adapter may rely on contract surface the host lacks).
 - `0.x.y` (pre-stable): same major **and** same minor are required — a minor
   bump is treated as breaking.
 

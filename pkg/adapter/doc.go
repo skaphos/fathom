@@ -16,9 +16,11 @@ SPDX-License-Identifier: MIT
 //
 // The contract follows Semantic Versioning. Fathom (the host that loads
 // adapters) and adapters each report a contract version; an adapter is
-// considered compatible with a Fathom build when the two versions share the
-// same major component. Minor and patch releases are additive: an adapter
-// built against 1.0.0 keeps working on a 1.x host. Use [EnsureCompatible] to
+// considered compatible with a Fathom build when the two share a major
+// component and the adapter's minor does not exceed the host's. Minor and
+// patch releases are additive: an adapter built against 1.0.0 keeps working
+// on any 1.x host, while an adapter targeting a newer minor than the host is
+// rejected (it may rely on surface the host lacks). Use [EnsureCompatible] to
 // validate an adapter's reported contract version before invoking it.
 //
 // The current contract version is exported as [ContractVersion].

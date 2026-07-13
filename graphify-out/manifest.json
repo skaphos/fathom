@@ -64,7 +64,7 @@
     "hash": "8ad17e55d1c618906da5c7b64605f414"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1783919676.4027085,
+    "mtime": 1783921964.3745213,
     "hash": "985cc2a47bd35bea6745b4d28978dc8d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/rbac.go": {
@@ -76,23 +76,23 @@
     "hash": "3c82e96cb11464a56526e2d631dc239d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/doc.go": {
-    "mtime": 1783919417.189938,
-    "hash": "9e1b8afb5d725a44485ea53c84445dc2"
+    "mtime": 1783921674.9234102,
+    "hash": "d4dd915aa1a2d11e8503f90c633275f0"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/version_test.go": {
-    "mtime": 1783919442.4066231,
-    "hash": "a912508994648a1c428a813ce400c768"
+    "mtime": 1783921655.874912,
+    "hash": "04cc714733c8365a9aff82fa5f0a40e0"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/adapter_test.go": {
     "mtime": 1783919311.1513214,
     "hash": "2b47c60a5e3922253b22dd29da0a578c"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/version.go": {
-    "mtime": 1783919400.3017166,
-    "hash": "3af77cfde43138f4b668ea6e16f15a2a"
+    "mtime": 1783921642.0063283,
+    "hash": "bb941cb60e955f422e31ffb1c4acadd7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/pkg/adapter/adapter.go": {
-    "mtime": 1783919463.5555987,
+    "mtime": 1783921552.6655502,
     "hash": "30fa4f3aa037ce1043b2e23e4698e610"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/test/utils/utils_test.go": {
@@ -204,8 +204,8 @@
     "hash": "56c2e8519f532b22fec116483f07f0dc"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/clusterhealth_controller.go": {
-    "mtime": 1783919311.145446,
-    "hash": "517c57f2c7a310b201948f88b47c1436"
+    "mtime": 1783921121.8217938,
+    "hash": "e554720c8974a68496f9302ea24d5338"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/healthreport_idempotency_test.go": {
     "mtime": 1783919311.145446,
@@ -236,11 +236,11 @@
     "hash": "a7e2372f916d5cbc3b84e3c7b524e6e4"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/addoncheck_controller.go": {
-    "mtime": 1783919498.2963624,
+    "mtime": 1783921552.6655502,
     "hash": "79f91fb2db45d99af35cbb52519bab42"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/policy_validation_test.go": {
-    "mtime": 1783919551.5606098,
+    "mtime": 1783921552.6655502,
     "hash": "ae827149e2754fb29b694135b76b3903"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/healthreport_idempotency.go": {
@@ -254,6 +254,10 @@
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/crd_validation_test.go": {
     "mtime": 1783919311.145446,
     "hash": "5db7be525085e6d698a72b35f02aa8fe"
+  },
+  "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/clusterhealth_listscope_test.go": {
+    "mtime": 1783921121.8217938,
+    "hash": "b637fc1320edc37179b777f5c9038f51"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/controller/addoncheck_controller_test.go": {
     "mtime": 1783919311.145446,
@@ -344,12 +348,12 @@
     "hash": "28e5c2cf8c3737d099b34d47aa41f198"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/adapter/registry/registry.go": {
-    "mtime": 1783919400.302287,
+    "mtime": 1783921552.6655502,
     "hash": "4f72abc815a3289ccada92b1a2c3cf79"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/adapter/registry/registry_test.go": {
-    "mtime": 1783919311.14375,
-    "hash": "87b675cecd93f8cabe59da6c2dcf112d"
+    "mtime": 1783921552.6655502,
+    "hash": "892db4b0576bd19a7e719f22c0fc774c"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/internal/adapter/rbacgen/files_test.go": {
     "mtime": 1783919311.1427915,
@@ -624,8 +628,8 @@
     "hash": "7407af4f00440c98fa9caa50ace56ba9"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/deploy/helm/fathom-operator/templates/NOTES.txt": {
-    "mtime": 1783919311.1222794,
-    "hash": "c761345c69bf236d8641ede00c06cb29"
+    "mtime": 1783921552.6334336,
+    "hash": "e3b22c5abbad7b4aab93c97ea6dc93ab"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/deploy/helm/fathom-operator/templates/serviceaccount.yaml": {
     "mtime": 1783919311.1230266,
@@ -680,23 +684,23 @@
     "hash": "d3159b0e0b5653f5fdb206754b749be5"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1783919674.4056475,
+    "mtime": 1783921962.5190666,
     "hash": "4e237a26c7643c4f6b68f5b91303e41b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783919674.4056475,
+    "mtime": 1783921962.5230222,
     "hash": "e8bcf60ae72679c86bd7f6e8ca63bab1"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783919674.4297543,
+    "mtime": 1783921962.5625784,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783919674.4056475,
+    "mtime": 1783921962.5190666,
     "hash": "5cdc99bb2c2ceb89c80a42ce7b0b025e"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1783919674.4056475,
+    "mtime": 1783921962.5190666,
     "hash": "d27a198258be2936cd9532f3747d82eb"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/default/metrics_service.yaml": {
@@ -804,7 +808,7 @@
     "hash": "913c62b01d1a78bc4f74b57e895634f8"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/rbac/role.yaml": {
-    "mtime": 1783919674.2931485,
+    "mtime": 1783921962.4043539,
     "hash": "3bd57a1c88d1f9c9d26ea4b75cebdd18"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/rbac/nodecertificatecheck_admin_role.yaml": {
@@ -952,7 +956,7 @@
     "hash": "e9d892ef0c7a2a3155d1f2facb429ab2"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/config/manager/kustomization.yaml": {
-    "mtime": 1783919311.1068084,
+    "mtime": 1783921550.3147182,
     "hash": "b9c55aa3eee69d0752a479c31fcb1363"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/hack/boilerplate.go.txt": {
@@ -960,12 +964,12 @@
     "hash": "ded978aeb0bb46b71449bc612ebdcccd"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/docs/authoring-adapters.md": {
-    "mtime": 1783919576.2744312,
-    "hash": "4b58607cf91d93490f0f3225cdf5118c"
+    "mtime": 1783921674.9232419,
+    "hash": "6518d07f21aca796f250ab11000263a7"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/docs/architecture.md": {
-    "mtime": 1783919311.1251302,
-    "hash": "8cf5aba7fc067b702a730decd708009a"
+    "mtime": 1783921674.9235442,
+    "hash": "542af21caf053733c179388d71bd6d84"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/docs/code-map.md": {
     "mtime": 1783919311.1251302,
@@ -996,8 +1000,8 @@
     "hash": "abb1d313dcdcd31d9b000da1185b058b"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/docs/guides/getting-started.md": {
-    "mtime": 1783919311.1275365,
-    "hash": "e2fa8fe773e6a59a8ed718293f489165"
+    "mtime": 1783921552.6334336,
+    "hash": "8b0bc66ea7e13521fde8d89598bb4c8d"
   },
   "/home/sstratton/work/skaphos/fathom/.claude/worktrees/ska-580-contract-v1/docs/guides/concepts.md": {
     "mtime": 1783919311.1275365,

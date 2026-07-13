@@ -60,10 +60,11 @@ func TestParseVersion(t *testing.T) {
 }
 
 func TestEnsureCompatible(t *testing.T) {
-	// ContractVersion is "1.0.0": the stable regime, where only the major
-	// component must match. Minor and patch drift in either direction is
-	// additive-compatible. The pre-1.0 minor-breaking rule remains covered
-	// because adapters may still report 0.x versions.
+	// ContractVersion is "1.0.0": the stable regime. The major component must
+	// match and the adapter's minor must not exceed the host's — older-minor
+	// adapters are additive-compatible; newer-minor adapters may rely on
+	// surface the host lacks. The pre-1.0 rules remain covered because
+	// adapters may still report 0.x versions.
 	if ContractVersion != "1.0.0" {
 		t.Logf("note: ContractVersion is %q; some stable-regime cases below may no longer apply", ContractVersion)
 	}
@@ -75,9 +76,14 @@ func TestEnsureCompatible(t *testing.T) {
 		errContains string
 	}{
 		{name: "exact match", reported: "1.0.0"},
-		{name: "same major, newer minor", reported: "1.5.2"},
 		{name: "same major, newer patch", reported: "1.0.7"},
 		{name: "same major, pre-release", reported: "1.0.0-rc.1"},
+		{
+			name:        "same major, newer minor rejected",
+			reported:    "1.5.2",
+			wantErr:     true,
+			errContains: "newer than fathom contract version",
+		},
 		{
 			name:        "pre-stable adapter against stable host",
 			reported:    "0.2.0",
