@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 )
@@ -50,7 +51,17 @@ var _ = Describe("CRD schema validation", func() {
 				"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}},
 			}})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-			Expect(obj.Spec.Policy["system_health"].Enabled).To(BeTrue())
+			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
+			Expect(*obj.Spec.Policy["system_health"].Enabled).To(BeTrue())
+		})
+
+		It("preserves an explicitly disabled family", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				"system_health": {Enabled: ptr.To(false)},
+			}})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
+			Expect(*obj.Spec.Policy["system_health"].Enabled).To(BeFalse())
 		})
 
 		It("rejects changing addonType", func() {

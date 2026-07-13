@@ -388,6 +388,25 @@ func TestPolicyNamespaces_EmptyMeansAllNamespaces(t *testing.T) {
 	}
 }
 
+func TestRun_AllNamespaceSelectorErrorsUseStableTargetNames(t *testing.T) {
+	invalid := &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+		Key: "app", Operator: metav1.LabelSelectorOperator("invalid"),
+	}}}
+	result, err := New().Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{
+			FamilyIssuerHealth: {Enabled: true, LabelSelector: invalid},
+			FamilyCertHealth:   {Enabled: true, LabelSelector: invalid},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Issuer", "issuers", adapter.OutcomeError, "selector is invalid")
+	assertHasOutcome(t, result.Checks, "Certificate", "certificates", adapter.OutcomeError, "selector is invalid")
+}
+
 func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome, summaryContains string) {
 	t.Helper()
 	for _, check := range checks {

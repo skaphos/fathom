@@ -121,7 +121,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 }
 
 func resourceAbsent(err error) bool {
-	return apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err)
+	return apimeta.IsNoMatchError(err)
 }
 
 func (cc ConditionCheck) absentListResult(ec EvalContext, ref adapter.TargetRef, started time.Time) adapter.CheckResult {
@@ -151,7 +151,7 @@ func (cc ConditionCheck) evaluateNamed(ec EvalContext, gvk schema.GroupVersionKi
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(gvk)
 		if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj); err != nil {
-			if resourceAbsent(err) {
+			if resourceAbsent(err) || apierrors.IsNotFound(err) {
 				o := absenceOutcome(effectiveAbsence(cc.Absence, ec.DefaultPosture))
 				out = append(out, result(ec.Family, ref, o,
 					fmt.Sprintf("%s %s not found", cc.Kind, name),

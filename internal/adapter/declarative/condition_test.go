@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -233,6 +234,13 @@ func TestCondition_NoMatchUsesAddonAbsencePosture(t *testing.T) {
 			assertHasOutcome(t, checks, "Widget", "widgets", tc.want, "API is not installed")
 			assertHasDetail(t, checks, "Widget", "widgets", adapter.DetailAbsent, "true")
 		})
+	}
+}
+
+func TestResourceAbsent_DoesNotTreatMissingNamespaceAsMissingAPI(t *testing.T) {
+	err := apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "missing")
+	if resourceAbsent(err) {
+		t.Fatal("missing namespace must remain an evaluation error, not addon absence")
 	}
 }
 

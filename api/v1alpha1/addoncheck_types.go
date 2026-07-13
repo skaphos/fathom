@@ -14,7 +14,7 @@ type AddonCheckFamilyPolicy struct {
 	// Enabled gates execution of this family.
 	// +optional
 	// +kubebuilder:default=true
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// Namespaces narrows this family to resources in specific namespaces. Empty
 	// means all namespaces the adapter can read.

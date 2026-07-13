@@ -583,8 +583,12 @@ func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapt
 	}
 	policy := make(map[adapter.Family]adapter.FamilyPolicy, len(check.Spec.Policy))
 	for family, familyPolicy := range check.Spec.Policy {
+		enabled := true
+		if familyPolicy.Enabled != nil {
+			enabled = *familyPolicy.Enabled
+		}
 		policy[adapter.Family(family)] = adapter.FamilyPolicy{
-			Enabled:       familyPolicy.Enabled,
+			Enabled:       enabled,
 			Namespaces:    append([]string(nil), familyPolicy.Namespaces...),
 			LabelSelector: familyPolicy.LabelSelector.DeepCopy(),
 			Thresholds:    copyStringMap(familyPolicy.Thresholds),
