@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,7 +56,7 @@ const (
 	// annotationRunNow forces an immediate adapter run, out of band from the
 	// interval, whenever its value changes. The controller records the consumed
 	// value in Status.LastRunTrigger so a given trigger fires exactly once —
-	// callers (beaconctl's on-demand run, SKA-45) must therefore write a fresh
+	// callers (the fathom CLI's on-demand run, SKA-45) must therefore write a fresh
 	// value each time (e.g. a timestamp or nonce), not a constant.
 	annotationRunNow = "fathom.skaphos.io/run-now"
 
@@ -537,11 +539,10 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 //
 // Family validation is skipped when selectedAdapter is nil (a paused or
 // unregistered addonType), since the valid family set is not yet known; selector
-// validation is adapter-independent and always runs. Threshold values are
-// intentionally not validated: threshold keys and types are adapter-private and
-// not advertised in Capabilities, so a malformed threshold cannot be
-// distinguished from an unknown key here (tracked as a follow-up needing an
-// adapter contract surface).
+// validation is adapter-independent and always runs. Threshold keys are
+// validated only when the adapter implements [adapter.ThresholdAdvertiser]
+// and advertises keys for the family; threshold values remain adapter-private
+// and are never validated here.
 func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) []string {
 	if len(check.Spec.Policy) == 0 {
 		return nil
@@ -553,6 +554,11 @@ func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter 
 		for _, f := range families {
 			known[f] = struct{}{}
 		}
+	}
+
+	var advertised map[adapter.Family][]string
+	if ta, ok := selectedAdapter.(adapter.ThresholdAdvertiser); ok {
+		advertised = ta.ThresholdKeys()
 	}
 
 	names := make([]string, 0, len(check.Spec.Policy))
@@ -572,6 +578,29 @@ func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter 
 			if _, err := metav1.LabelSelectorAsSelector(sel); err != nil {
 				problems = append(problems, fmt.Sprintf("family %q has an invalid labelSelector: %v", family, err))
 			}
+		}
+		problems = append(problems, unknownThresholdKeys(family, check.Spec.Policy[family].Thresholds, advertised)...)
+	}
+	return problems
+}
+
+// unknownThresholdKeys reports policy threshold keys the adapter does not
+// advertise for family. Validation is opt-in twice over: it runs only when the
+// adapter implements ThresholdAdvertiser (advertised non-nil) and only for
+// families it advertises keys for — an unadvertised family stays unvalidated
+// rather than rejecting every key.
+func unknownThresholdKeys(family string, thresholds map[string]string, advertised map[adapter.Family][]string) []string {
+	if len(thresholds) == 0 || advertised == nil {
+		return nil
+	}
+	keys, ok := advertised[adapter.Family(family)]
+	if !ok {
+		return nil
+	}
+	var problems []string
+	for _, key := range slices.Sorted(maps.Keys(thresholds)) {
+		if !slices.Contains(keys, key) {
+			problems = append(problems, fmt.Sprintf("family %q has an unknown threshold key %q", family, key))
 		}
 	}
 	return problems

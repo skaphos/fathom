@@ -3,12 +3,12 @@ SPDX-FileCopyrightText: 2026 Skaphos
 SPDX-License-Identifier: MIT
 */
 
-// Package registry holds the set of [adapter.Adapter] implementations Beacon
-// can dispatch to during AddonCheck reconciliation. It is a Beacon-internal
+// Package registry holds the set of [adapter.Adapter] implementations Fathom
+// can dispatch to during AddonCheck reconciliation. It is a Fathom-internal
 // runtime concern; out-of-tree adapter authors interact only with the
 // contract in [github.com/skaphos/fathom/pkg/adapter].
 //
-// The current loading model is in-process and explicit: Beacon's manager
+// The current loading model is in-process and explicit: Fathom's manager
 // startup constructs a [Registry] and calls [Registry.Register] for each
 // compiled-in adapter. A future out-of-process loader can register adapters
 // against the same Registry without changing this package's external API.
@@ -27,7 +27,7 @@ import (
 // ErrNotFound is returned by [Registry.Lookup] when no adapter is registered
 // for the requested addon type. Callers should treat this as terminal under
 // the v0.1 loading model — adapters are registered at process start, so a
-// missing entry will not appear later in the same Beacon process.
+// missing entry will not appear later in the same Fathom process.
 var ErrNotFound = errors.New("registry: no adapter registered for addon type")
 
 // Registry is the in-memory index of adapters keyed by addon type. The zero
@@ -55,7 +55,7 @@ func New(logger logr.Logger) *Registry {
 // type from a is added (the registry is left unchanged):
 //
 //   - a is nil.
-//   - a.ContractVersion() is incompatible with this build of Beacon, as
+//   - a.ContractVersion() is incompatible with this build of Fathom, as
 //     determined by [adapter.EnsureCompatible].
 //   - a.Capabilities().AddonTypes is empty — an adapter that handles no
 //     addon types cannot be dispatched to.

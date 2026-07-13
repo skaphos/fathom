@@ -467,12 +467,20 @@ output drifts from your rules.
 | Version | What it is | When to bump |
 | --- | --- | --- |
 | `AdapterVersion` / `Version()` | Your adapter's SemVer. | When you change what the adapter checks. |
-| `ContractVersion` | The [`pkg/adapter`](../pkg/adapter/version.go) contract you target — currently **`0.2.0`**. Embed the constant; don't hard-code a string. | Never by you — it tracks the contract. |
+| `ContractVersion` | The [`pkg/adapter`](../pkg/adapter/version.go) contract you target — currently **`1.0.0`**. Embed the constant; don't hard-code a string. | Never by you — it tracks the contract. |
 
-Contract compatibility is enforced at registration by `EnsureCompatible`:
-`>=1.0.0` needs a matching major; **pre-1.0 (`0.x.y`) needs matching major *and*
-minor** — a `0.1.0` adapter is rejected against a `0.2.0` host. Because you
-embed `adapter.ContractVersion`, a contract bump surfaces at build time.
+Contract compatibility is enforced at registration by `EnsureCompatible`. At
+`1.0.0` the contract is stable and **major-only**: any `1.x` adapter runs on
+any `1.x` host, and minor/patch releases only add surface (new `Request`
+fields, new optional interfaces) that existing adapters may ignore. A major
+bump is a breaking rebuild. Because you embed `adapter.ContractVersion`, a
+contract bump surfaces at build time.
+
+Optional contract surfaces are plain Go interface upgrades: implement
+`adapter.ThresholdAdvertiser` to declare the threshold keys each family
+understands, and the host will reject unknown
+`spec.policy.<family>.thresholds` keys on the `Accepted` condition instead of
+silently ignoring them. Families you leave out of the map are not validated.
 
 Repo expectations for the PR:
 

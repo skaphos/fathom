@@ -14,11 +14,11 @@ SPDX-License-Identifier: MIT
 //
 // # Contract versioning
 //
-// The contract follows Semantic Versioning. Beacon (the host that loads
+// The contract follows Semantic Versioning. Fathom (the host that loads
 // adapters) and adapters each report a contract version; an adapter is
-// considered compatible with a Beacon build when the two versions share the
-// same major component. Pre-1.0 contract versions are considered unstable: at
-// 0.x.y, a minor bump is treated as breaking. Use [EnsureCompatible] to
+// considered compatible with a Fathom build when the two versions share the
+// same major component. Minor and patch releases are additive: an adapter
+// built against 1.0.0 keeps working on a 1.x host. Use [EnsureCompatible] to
 // validate an adapter's reported contract version before invoking it.
 //
 // The current contract version is exported as [ContractVersion].
@@ -27,7 +27,7 @@ SPDX-License-Identifier: MIT
 //
 // Implement the [Adapter] interface in your own module and import this
 // package. Embed [ContractVersion] in your adapter so a contract bump in
-// Beacon will be visible at adapter-build time:
+// Fathom will be visible at adapter-build time:
 //
 //	import "github.com/skaphos/fathom/pkg/adapter"
 //
@@ -57,7 +57,8 @@ SPDX-License-Identifier: MIT
 //
 // # Stability
 //
-// The current contract version is [ContractVersion]. Until 1.0.0, any minor
-// version bump may introduce breaking changes. Adapter authors should pin the
-// contract version they target and rebuild against new minor releases.
+// The current contract version is [ContractVersion]. From 1.0.0 the contract
+// is a stable public extension point: breaking changes require a major bump,
+// and minor/patch releases only add surface (new Request fields, new optional
+// interfaces) that existing adapters may ignore.
 package adapter

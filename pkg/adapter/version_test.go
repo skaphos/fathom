@@ -60,12 +60,12 @@ func TestParseVersion(t *testing.T) {
 }
 
 func TestEnsureCompatible(t *testing.T) {
-	// ContractVersion at the time this test was written is "0.2.0", which
-	// puts us in the pre-stable regime: minor bumps are breaking. The cases
-	// below are written against that fact and will need to be reconsidered
-	// when the contract reaches 1.0.0.
-	if ContractVersion != "0.2.0" {
-		t.Logf("note: ContractVersion is %q; some pre-stable cases below may no longer apply", ContractVersion)
+	// ContractVersion is "1.0.0": the stable regime, where only the major
+	// component must match. Minor and patch drift in either direction is
+	// additive-compatible. The pre-1.0 minor-breaking rule remains covered
+	// because adapters may still report 0.x versions.
+	if ContractVersion != "1.0.0" {
+		t.Logf("note: ContractVersion is %q; some stable-regime cases below may no longer apply", ContractVersion)
 	}
 
 	tests := []struct {
@@ -74,24 +74,19 @@ func TestEnsureCompatible(t *testing.T) {
 		wantErr     bool
 		errContains string
 	}{
-		{name: "exact match", reported: "0.2.0"},
-		{name: "same major+minor, newer patch", reported: "0.2.5"},
-		{name: "same major+minor, pre-release", reported: "0.2.0-rc.1"},
+		{name: "exact match", reported: "1.0.0"},
+		{name: "same major, newer minor", reported: "1.5.2"},
+		{name: "same major, newer patch", reported: "1.0.7"},
+		{name: "same major, pre-release", reported: "1.0.0-rc.1"},
 		{
-			name:        "pre-1.0 minor bump down",
-			reported:    "0.1.0",
+			name:        "pre-stable adapter against stable host",
+			reported:    "0.2.0",
 			wantErr:     true,
-			errContains: "pre-1.0 minor version mismatch",
-		},
-		{
-			name:        "pre-1.0 minor bump up",
-			reported:    "0.3.0",
-			wantErr:     true,
-			errContains: "pre-1.0 minor version mismatch",
+			errContains: "major version mismatch",
 		},
 		{
 			name:        "major bump",
-			reported:    "1.0.0",
+			reported:    "2.0.0",
 			wantErr:     true,
 			errContains: "major version mismatch",
 		},
