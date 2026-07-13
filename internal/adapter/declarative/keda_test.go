@@ -10,24 +10,10 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/skaphos/fathom/pkg/adapter"
 )
-
-// allFamiliesSelector enables the named families with an empty (match-all)
-// LabelSelector. The engine's ManagedResources list uses the policy's
-// LabelSelector; a nil selector resolves to labels.Nothing() (matching no
-// objects), so tests that expect a managed-resource CR to be scored must supply
-// a non-nil selector — mirroring the reconciler, which always populates one.
-func allFamiliesSelector(families ...adapter.Family) map[adapter.Family]adapter.FamilyPolicy {
-	policy := make(map[adapter.Family]adapter.FamilyPolicy, len(families))
-	for _, f := range families {
-		policy[f] = adapter.FamilyPolicy{Enabled: true, LabelSelector: &metav1.LabelSelector{}}
-	}
-	return policy
-}
 
 var kedaDeployments = []string{"keda-operator", "keda-operator-metrics-apiserver", "keda-admission-webhooks"}
 
@@ -75,7 +61,6 @@ func TestKeda_HealthyWithReadyScaledObject(t *testing.T) {
 		Client: newFakeClient(t, objs...),
 		Logger: logr.Discard(),
 		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "keda"},
-		Policy: allFamiliesSelector("system_health", "crd_health", "scaling_health"),
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -95,7 +80,7 @@ func TestKeda_HealthyWithReadyScaledObject(t *testing.T) {
 func TestKeda_UnreadyScaledObjectFails(t *testing.T) {
 	objs := append(kedaHealthyObjects(),
 		conditionCR("keda.sh/v1alpha1", "ScaledObject", "team-a", "broken", map[string]string{"Ready": "False"}))
-	result, err := NewKedaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard(), Policy: allFamiliesSelector("scaling_health")})
+	result, err := NewKedaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -105,7 +90,7 @@ func TestKeda_UnreadyScaledObjectFails(t *testing.T) {
 func TestKeda_PausedScaledObjectWarns(t *testing.T) {
 	objs := append(kedaHealthyObjects(),
 		conditionCR("keda.sh/v1alpha1", "ScaledObject", "team-a", "held", map[string]string{"Ready": "True", "Paused": "True"}))
-	result, err := NewKedaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard(), Policy: allFamiliesSelector("scaling_health")})
+	result, err := NewKedaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

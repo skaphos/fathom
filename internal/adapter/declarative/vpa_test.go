@@ -40,7 +40,6 @@ func TestVpa_HealthyWithRecommendation(t *testing.T) {
 		Client: newFakeClient(t, objs...),
 		Logger: logr.Discard(),
 		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "vpa"},
-		Policy: allFamiliesSelector("system_health", "crd_health", "recommendation_health"),
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -62,7 +61,7 @@ func TestVpa_NoRecommendationWarns(t *testing.T) {
 	// Warn, not a Fail — it is often young or has no matching pods.
 	objs := append(vpaHealthyObjects(),
 		conditionCR("autoscaling.k8s.io/v1", "VerticalPodAutoscaler", "team-a", "cold", nil))
-	result, err := NewVpaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard(), Policy: allFamiliesSelector("recommendation_health")})
+	result, err := NewVpaEngine().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objs...), Logger: logr.Discard()})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
