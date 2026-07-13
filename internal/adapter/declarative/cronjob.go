@@ -78,10 +78,9 @@ func (c CronJobCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		if schedule == nil {
 			return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob has not scheduled a run yet", details, started)}, nil
 		}
-		// Scheduled but no success recorded yet. Only stale once the schedule
-		// itself is older than the window: a run that was just scheduled (or is
-		// still in progress) is awaiting its first completion, not stuck — so a
-		// fresh install or a long first run does not falsely Warn.
+		// Scheduled but no success recorded yet: capture the schedule/creation
+		// context, treat a future schedule as anomalous, then gate staleness on
+		// the CronJob's age (below) rather than the last schedule.
 		details["lastScheduleTime"] = schedule.UTC().Format(time.RFC3339)
 		details["createdAt"] = cj.CreationTimestamp.UTC().Format(time.RFC3339)
 		details["successMaxAge"] = maxAge.String()
