@@ -524,21 +524,27 @@ apiVersion: fathom.skaphos.io/v1alpha1
 kind: ClusterHealth
 metadata:
   name: platform
-  namespace: fathom-system
-spec: {}   # empty selector matches all HealthChecks in this namespace
+spec: {}   # empty spec matches all HealthChecks in all namespaces
 ```
 
 - One `HealthCheck` per `AddonCheck` you want in the roll-up.
-- A `ClusterHealth` with an empty selector folds in **every** `HealthCheck` in
-  its namespace; use `spec.selector` (label selector) to scope it.
-- Aggregation selects `HealthCheck` wrappers in the **same namespace** as the
-  `ClusterHealth`. A wrapper may explicitly set `checkRef.namespace` to mirror
-  an `AddonCheck` in another namespace, so use RBAC on `HealthCheck` creation to
-  control which teams can proxy remote addon status into an aggregate namespace.
+- `ClusterHealth` is cluster-scoped. An empty spec folds in **every**
+  `HealthCheck` in the cluster; use `spec.selector` (label selector) and/or
+  `spec.namespaces` (namespace list) to scope it.
+- Any `HealthCheck` the scope covers contributes to the aggregate, and a
+  wrapper may explicitly set `checkRef.namespace` to mirror an `AddonCheck` in
+  another namespace — so use RBAC on `HealthCheck` creation to control which
+  teams can surface status into a cluster-wide aggregate.
 
 > `HealthCheck` can only wrap `AddonCheck` (`checkRef.kind: AddonCheck`). The
 > newer `NodeCertificateCheck` kind, where present, reports its own
 > status directly and is not aggregated through `HealthCheck`/`ClusterHealth`.
+
+> **Upgrading from a release where `ClusterHealth` was namespaced:** Kubernetes
+> cannot change a CRD's scope in place. Delete the old CRD first — this removes
+> existing `ClusterHealth` objects — then install the new manifests and
+> recreate your aggregates as cluster-scoped objects:
+> `kubectl delete crd clusterhealths.fathom.skaphos.io`.
 
 ## Troubleshooting
 

@@ -86,6 +86,7 @@ func fullyPopulatedClusterHealth() *ClusterHealth {
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"managed-by": "fathom"},
 			},
+			Namespaces: []string{"default", "kube-system"},
 		},
 		Status: ClusterHealthStatus{
 			Conditions: []metav1.Condition{{
@@ -94,6 +95,7 @@ func fullyPopulatedClusterHealth() *ClusterHealth {
 				LastTransitionTime: observedAt,
 			}},
 			Children: []ClusterHealthChildSummary{{
+				Namespace:  "default",
 				Name:       "coredns-sample",
 				Result:     "Pass",
 				Summary:    "ok",

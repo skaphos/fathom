@@ -208,13 +208,12 @@ adapter level is forced to `Error`.
 - **Watches:** `ClusterHealth` (`For`) **and** `HealthCheck` (`Watches` with
   `clusterHealthsForHealthCheck`), so a member's status change re-enqueues every
   `ClusterHealth` whose selector matches it.
-- **Selection:** lists `HealthCheck`s in the **same namespace** matching
-  `spec.selector` (nil/empty selector matches all in-namespace).
-  Cross-namespace aggregation selects no remote `HealthCheck`s; however, a
-  selected local `HealthCheck` may mirror a target in another namespace through
-  its explicit `checkRef.namespace`.
+- **Selection:** `ClusterHealth` is cluster-scoped; it lists `HealthCheck`s
+  across **all namespaces** matching `spec.selector` (nil/empty selector
+  matches all), optionally narrowed to `spec.namespaces` when set.
 - **Aggregation:** worst-case `Result` over children with a non-empty
-  `Status.Result`; a deterministic `children` summary sorted by name;
+  `Status.Result`; a deterministic `children` summary sorted by namespace,
+  then name;
   `matchedCount`; and `observedAt` set to the latest child `SourceObservedAt`
   (input freshness, not wall-clock — wall-clock would defeat the no-op guard).
 
@@ -411,8 +410,9 @@ layout is in [code-map.md](code-map.md).
 - **Single supported wrapper target.** `HealthCheck` only mirrors `AddonCheck`
   in this build; other `checkRef.kind` values are rejected with
   `Ready=False / UnsupportedKind`.
-- **Same-namespace wrapper selection.** `ClusterHealth` selects `HealthCheck`s
-  in its own namespace only. A selected `HealthCheck` can still mirror an
-  explicit `checkRef.namespace`, so namespace tenancy depends on who is allowed
-  to create wrappers in the aggregate namespace and on the operator's RBAC to
-  read the referenced target.
+- **Cluster-wide wrapper selection.** `ClusterHealth` is cluster-scoped and
+  selects `HealthCheck`s across all namespaces (optionally narrowed by
+  `spec.namespaces`). A selected `HealthCheck` can also mirror an explicit
+  `checkRef.namespace`, so tenancy depends on who is allowed to create
+  wrappers anywhere in the cluster and on the operator's RBAC to read the
+  referenced target.

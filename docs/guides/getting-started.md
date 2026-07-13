@@ -182,15 +182,15 @@ apiVersion: fathom.skaphos.io/v1alpha1
 kind: ClusterHealth
 metadata:
   name: platform
-  namespace: fathom-system
 spec:
-  description: "Worst-case Result across every HealthCheck in this namespace."
-  # An omitted/empty selector matches all HealthChecks in the same namespace.
+  description: "Worst-case Result across every HealthCheck in the cluster."
+  # ClusterHealth is cluster-scoped. An omitted/empty selector matches all
+  # HealthChecks in all namespaces; narrow with spec.namespaces.
 ```
 
 ```sh
 kubectl apply -f rollup.yaml
-kubectl -n fathom-system get clusterhealth platform
+kubectl get clusterhealth platform
 ```
 
 `ClusterHealth.status.result` is now the single verdict over every wrapped

@@ -124,15 +124,16 @@ Status fields to start with:
 | `Ready` | `False / TargetLookupFailed` | Reading the target failed for another API error. Mirrored fields are cleared. | Check controller logs and RBAC. |
 | `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
 
-Namespace contract: `ClusterHealth` selects `HealthCheck` wrappers only in its
-own namespace. A wrapper may still mirror an `AddonCheck` in another namespace
-with `spec.checkRef.namespace`, so control who can create wrappers in aggregate
-namespaces.
+Namespace contract: `ClusterHealth` is cluster-scoped and selects `HealthCheck`
+wrappers across all namespaces (narrow with `spec.namespaces`). A wrapper may
+mirror an `AddonCheck` in another namespace with `spec.checkRef.namespace`, so
+control who can create wrappers anywhere in the cluster.
 
 ## ClusterHealth
 
-`ClusterHealth` aggregates `HealthCheck.status` in its own namespace. It never
-reads `AddonCheck` directly and never reads `HealthReport` history.
+`ClusterHealth` aggregates `HealthCheck.status` across all namespaces
+(optionally narrowed by `spec.namespaces`). It never reads `AddonCheck`
+directly and never reads `HealthReport` history.
 
 Status fields to start with:
 
@@ -140,7 +141,7 @@ Status fields to start with:
   results.
 - `status.matchedCount` - number of selected `HealthCheck` objects.
 - `status.children` - deterministic summary of selected children, sorted by
-  name.
+  namespace, then name.
 - `status.observedAt` - newest `sourceObservedAt` among selected children.
 
 | Condition | Status / reason | Meaning | Operator action |

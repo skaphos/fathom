@@ -12,7 +12,7 @@ spec:
     listKind: ClusterHealthList
     plural: clusterhealths
     singular: clusterhealth
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.result
@@ -27,7 +27,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClusterHealth is the Schema for the clusterhealths API.
+        description: |-
+          ClusterHealth is the Schema for the clusterhealths API. It is
+          cluster-scoped: one object rolls up HealthChecks across all namespaces
+          (optionally narrowed by spec.namespaces).
         properties:
           apiVersion:
             description: |-
@@ -57,11 +60,23 @@ spec:
                 description: Description is a human-readable purpose for this aggregate.
                 maxLength: 1024
                 type: string
+              namespaces:
+                description: |-
+                  Namespaces narrows the aggregate to HealthChecks in these namespaces.
+                  Empty means all namespaces.
+                items:
+                  maxLength: 63
+                  minLength: 1
+                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                  type: string
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: set
               selector:
                 description: |-
                   Selector selects the HealthChecks whose status this aggregate rolls up.
-                  An empty or nil selector matches all HealthChecks in the same namespace
-                  as this ClusterHealth.
+                  An empty or nil selector matches every HealthCheck in scope (all
+                  namespaces, or those listed in Namespaces).
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -123,6 +138,11 @@ spec:
                       maxLength: 253
                       minLength: 1
                       type: string
+                    namespace:
+                      description: Namespace of the contributing HealthCheck.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
                     observedAt:
                       description: |-
                         ObservedAt mirrors the contributing HealthCheck's
@@ -146,9 +166,11 @@ spec:
                       type: string
                   required:
                   - name
+                  - namespace
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
+                - namespace
                 - name
                 x-kubernetes-list-type: map
               conditions:

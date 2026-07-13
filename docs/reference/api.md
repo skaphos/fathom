@@ -148,7 +148,9 @@ _Appears in:_
 
 
 
-ClusterHealth is the Schema for the clusterhealths API.
+ClusterHealth is the Schema for the clusterhealths API. It is
+cluster-scoped: one object rolls up HealthChecks across all namespaces
+(optionally narrowed by spec.namespaces).
 
 
 
@@ -179,6 +181,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `namespace` _string_ | Namespace of the contributing HealthCheck. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
 | `name` _string_ | Name of the contributing HealthCheck. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result mirrors the contributing HealthCheck's Status.Result. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `summary` _string_ | Summary mirrors the contributing HealthCheck's Status.Summary. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
@@ -219,7 +222,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches all HealthChecks in the same namespace<br />as this ClusterHealth. |  | Optional: \{\} <br /> |
+| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches every HealthCheck in scope (all<br />namespaces, or those listed in Namespaces). |  | Optional: \{\} <br /> |
+| `namespaces` _string array_ | Namespaces narrows the aggregate to HealthChecks in these namespaces.<br />Empty means all namespaces. |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
 | `description` _string_ | Description is a human-readable purpose for this aggregate. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 
 

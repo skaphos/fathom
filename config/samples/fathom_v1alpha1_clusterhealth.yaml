@@ -6,6 +6,13 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: platform
 spec:
-  description: "Aggregate the worst-case Result across every HealthCheck in this namespace."
-  # An empty/omitted selector matches all HealthChecks in the same namespace
-  # as this ClusterHealth.
+  description: "Aggregate the worst-case Result across every HealthCheck in the cluster."
+  # ClusterHealth is cluster-scoped. An empty/omitted selector matches all
+  # HealthChecks in all namespaces; narrow with spec.namespaces and/or a
+  # label selector, e.g.:
+  #
+  #   namespaces:
+  #     - fathom-system
+  #   selector:
+  #     matchLabels:
+  #       team: platform
