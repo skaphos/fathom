@@ -52,6 +52,17 @@ ServiceAccount: `fathom-addon-coredns` (namespace `fathom-system`)
 | core | pods | create, delete | WRITE EXCEPTION: launch and immediately tear down a single-shot DNS probe Pod per check to measure resolution from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; no in-process read can observe real in-cluster DNS. The Pod is deleted as soon as it completes — no update, no long-lived workload. |
 | discovery.k8s.io | endpointslices | get, list, watch | Read the EndpointSlices behind the DNS Service to confirm it has ready backends. list is required to enumerate slices for the Service; read-only. |
 
+## descheduler
+
+ServiceAccount: `fathom-addon-descheduler` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the descheduler Deployment by name (long-lived deployment mode) to score readiness. get only — a single named Get (a policy-overridable name still resolves to one Get) and the impersonating client is cache-free, so no list/watch; read-only. |
+| batch | cronjobs | get | Get the descheduler CronJob by name (CronJob deployment mode) to score presence, suspend state, and last-successful-run recency. get only — the check fetches exactly one named CronJob (a policy-overridable name still resolves to a single Get); read-only. |
+| core | pods | list | List the descheduler Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
+| core | configmaps | get | Get the DeschedulerPolicy ConfigMap by name to verify its policy.yaml parses and declares a recognized apiVersion. get only — the check fetches exactly one named ConfigMap (a policy-overridable name still resolves to a single Get); read-only, and the descheduler policy holds no secret material. |
+
 ## envoy-gateway
 
 ServiceAccount: `fathom-addon-envoy-gateway` (namespace `fathom-system`)
@@ -96,6 +107,28 @@ ServiceAccount: `fathom-addon-istio` (namespace `fathom-system`)
 | apiextensions.k8s.io | customresourcedefinitions | get | Get the core networking.istio.io and security.istio.io CRDs by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only. |
 | admissionregistration.k8s.io | mutatingwebhookconfigurations, validatingwebhookconfigurations | get | Get the istio-sidecar-injector and istio-validator webhook configurations by name to verify istiod's admission wiring (caBundle populated, backed by the istiod Service). get only — exactly two named Gets; read-only. |
 
+## keda
+
+ServiceAccount: `fathom-addon-keda` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the three KEDA Deployments (operator, metrics-apiserver, admission-webhooks) by name to score readiness. get only — each is a single named Get (a policy-overridable name still resolves to one Get) and the impersonating client is cache-free, so no list/watch; read-only. |
+| core | pods | list | List the KEDA Pods by label selector for restart counts and readiness behind the Deployments. list (not get) because Pod names are dynamic; read-only. |
+| apiextensions.k8s.io | customresourcedefinitions | get | Get each KEDA CRD by name to verify it is Established and serves a supported version. get only — the check fetches each CRD by name in turn, never lists; read-only. |
+| keda.sh | scaledobjects | list | List ScaledObjects cluster-wide to score their Ready/Paused conditions. list only — the scan enumerates ScaledObjects and never Gets one by name. Scoped to the keda.sh group and to ScaledObjects only — not TriggerAuthentications, which can reference trigger credentials — and read-only. |
+| admissionregistration.k8s.io | validatingwebhookconfigurations | get | Get the keda-admission ValidatingWebhookConfiguration by name to verify it is present and its caBundle is populated. get only — the check fetches exactly one named configuration. |
+
+## kured
+
+ServiceAccount: `fathom-addon-kured` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | daemonsets | get | Get the kured DaemonSet by name to score readiness and to read its reboot-lock annotation. get only — both the WorkloadCheck and the named lock check fetch the DaemonSet by name and the impersonating client is cache-free, so no list/watch; read-only. |
+| core | pods | list | List the kured Pods by label selector for restart counts and readiness behind the DaemonSet. list (not get) because Pod names are dynamic; read-only. |
+| core | nodes | list | List Nodes to read the weave.works/kured-most-recent-reboot-needed annotation and surface nodes waiting too long on a reboot. list only — the node check lists all nodes and never Gets one by name; read-only, and only node metadata annotations are inspected. |
+
 ## metrics-server
 
 ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)
@@ -105,6 +138,18 @@ ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)
 | apps | deployments | get | Get the metrics-server Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only. |
 | core | pods | list | List the metrics-server Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
 | apiregistration.k8s.io | apiservices | get | Get the v1beta1.metrics.k8s.io APIService by name to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs. |
+
+## vpa
+
+ServiceAccount: `fathom-addon-vpa` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the three VPA Deployments (recommender, updater, admission-controller) by name to score readiness. get only — each is a single named Get and the impersonating client is cache-free, so no list/watch; read-only. |
+| core | pods | list | List the VPA Pods by label selector for restart counts and readiness behind the Deployments. list (not get) because Pod names are dynamic; read-only. |
+| apiextensions.k8s.io | customresourcedefinitions | get | Get each VPA CRD by name to verify it is Established and serves a supported version. get only — the check fetches each CRD by name in turn, never lists; read-only. |
+| autoscaling.k8s.io | verticalpodautoscalers | list | List VerticalPodAutoscaler objects cluster-wide to score their RecommendationProvided condition. list only — the scan enumerates VPAs and never Gets one by name. Scoped to VerticalPodAutoscalers only — not the Checkpoints, which are read solely as CRDs — and read-only. |
+| admissionregistration.k8s.io | mutatingwebhookconfigurations | get | Get the vpa-webhook-config MutatingWebhookConfiguration by name to verify it is present and its caBundle is populated (an unpopulated caBundle silently disables VPA's in-place pod sizing). get only — exactly one named configuration. |
 
 ## Operator impersonation grant
 

@@ -115,6 +115,32 @@ addons:
     - get
     - list
     - watch
+- name: descheduler
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - get
+  - apiGroups:
+    - batch
+    resources:
+    - cronjobs
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - configmaps
+    verbs:
+    - get
 - name: envoy-gateway
   rules:
   - apiGroups:
@@ -228,6 +254,58 @@ addons:
     - validatingwebhookconfigurations
     verbs:
     - get
+- name: keda
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - get
+  - apiGroups:
+    - keda.sh
+    resources:
+    - scaledobjects
+    verbs:
+    - list
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - validatingwebhookconfigurations
+    verbs:
+    - get
+- name: kured
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - daemonsets
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - list
 - name: metrics-server
   rules:
   - apiGroups:
@@ -246,5 +324,37 @@ addons:
     - apiregistration.k8s.io
     resources:
     - apiservices
+    verbs:
+    - get
+- name: vpa
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - list
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - get
+  - apiGroups:
+    - autoscaling.k8s.io
+    resources:
+    - verticalpodautoscalers
+    verbs:
+    - list
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - mutatingwebhookconfigurations
     verbs:
     - get

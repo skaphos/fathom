@@ -35,11 +35,12 @@ is served by exactly one registered adapter. The reconciler just looks the
 adapter up by `addonType`, and the registry rejects two adapters that claim the
 same type — a declarative `Engine` and a Go adapter can't both answer for one
 add-on. Whether that single adapter is a declarative `Engine` or a Go type is
-your call. Of the eight built-ins, **CoreDNS** (DNS-resolution probe pod) and
+your call. Of the twelve built-ins, **CoreDNS** (DNS-resolution probe pod) and
 **cert-manager** (admission dry-run `create`) are Go; **External Secrets**,
-**Cilium**, **external-dns**, **metrics-server**, **Envoy Gateway**, and
-**Istio** are declarative. Default to Path A and only reach for Go when a check
-genuinely can't be a read-and-compare.
+**Cilium**, **external-dns**, **metrics-server**, **Envoy Gateway**, **Istio**,
+**KEDA**, **VPA**, **descheduler**, and **kured** are declarative. Default to
+Path A and only reach for Go when a check genuinely can't be a
+read-and-compare.
 
 ---
 
@@ -78,7 +79,8 @@ declarative.AddonDefinition{
 
 A `FamilyDefinition` is one policy-keyed family (`spec.policy.<name>`). It holds
 typed slices of checks, evaluated in a **fixed within-family order: Workloads →
-CRDs → ManagedResources → APIServices → Webhooks**.
+CRDs → ManagedResources → APIServices → Webhooks → CronJobs → ConfigMaps →
+Annotations**.
 
 ```go
 declarative.FamilyDefinition{
@@ -89,6 +91,9 @@ declarative.FamilyDefinition{
     ManagedResources: []declarative.ConditionCheck{ /* … */ },
     APIServices:    []declarative.ConditionCheck{ /* … */ },
     Webhooks:       []declarative.WebhookCheck{ /* … */ },
+    CronJobs:       []declarative.CronJobCheck{ /* … */ },
+    ConfigMaps:     []declarative.ConfigMapCheck{ /* … */ },
+    Annotations:    []declarative.AnnotationStalenessCheck{ /* … */ },
 }
 ```
 
@@ -222,6 +227,75 @@ family's resolved namespace (first policy namespace, else
 installed. Backing-service *endpoint* readiness is deliberately not
 checked — the serving workload is the same one a `WorkloadCheck` in the
 family already scores (see the istio definition).
+
+#### `CronJobCheck` — a scheduled Job's health and recency
+
+Verifies one `batch/v1` CronJob is present, not suspended, and — when
+`DefaultSuccessMaxAge` (or its policy override) is positive — that its last
+successful run is recent. A CronJob that has never fired is healthy; one that
+scheduled a run but never completed successfully, or whose last success is older
+than the window, scores `StaleOutcome` (default `Warn`). It reads no pods.
+
+```go
+declarative.CronJobCheck{
+    DefaultNamespace:          "kube-system",
+    NameThresholdKey:          "cronJobName",
+    DefaultName:               "descheduler",
+    Component:                 "descheduler",
+    SuccessMaxAgeThresholdKey: "successMaxAge", // policy override (a Go duration)
+    DefaultSuccessMaxAge:      24 * time.Hour,  // 0 = existence + suspend only
+    StaleOutcome:              adapter.OutcomeWarn,
+}
+```
+
+Leave `DefaultSuccessMaxAge` zero for a system_health-style existence check; set
+it for a last-run recency check. Both can target the same CronJob from different
+families (see the descheduler definition).
+
+#### `ConfigMapCheck` — a policy document is well-formed
+
+Verifies a named ConfigMap holds a `Key` whose value parses as YAML, and — when
+`RecognizedAPIVersions` is set — declares a recognized top-level `apiVersion`. It
+catches the silent no-op where an addon runs against a policy it can never load.
+It is deliberately shape-level: it does not validate individual field values
+against a specific addon release.
+
+```go
+declarative.ConfigMapCheck{
+    DefaultNamespace:      "kube-system",
+    DefaultName:           "descheduler",
+    Component:             "descheduler",
+    Key:                   "policy.yaml",
+    RecognizedAPIVersions: []string{"descheduler/v1alpha1", "descheduler/v1alpha2"},
+    UnrecognizedOutcome:   adapter.OutcomeWarn, // apiVersion not in the set
+    InvalidOutcome:        adapter.OutcomeFail, // missing key / unparseable YAML
+}
+```
+
+#### `AnnotationStalenessCheck` — a timestamp annotation's age
+
+Scores the age of a timestamp carried in an object's metadata annotation — the
+"how long has this been held / waiting" question with no `status.conditions` to
+read. In **named mode** it Gets one object (an absent annotation is a `Pass`;
+a timestamp older than the window is `StaleOutcome`); in **list mode**
+(`ListKind` set) it lists a kind and scores only the objects that carry the
+annotation, skipping the rest. `TimestampJSONField` extracts the timestamp from a
+JSON-object annotation (e.g. kured's lock); otherwise the whole value is parsed
+as RFC3339.
+
+```go
+declarative.AnnotationStalenessCheck{
+    APIVersion:         "apps/v1",
+    Kind:               "DaemonSet",
+    DefaultName:        "kured",
+    Component:          "kured",
+    AnnotationKey:      "weave.works/kured-node-lock",
+    TimestampJSONField: "created",     // "" = parse the whole value as RFC3339
+    MaxAgeThresholdKey: "lockMaxAge",  // policy override (a Go duration)
+    DefaultMaxAge:      time.Hour,
+    StaleOutcome:       adapter.OutcomeWarn,
+}
+```
 
 ### Absence semantics
 

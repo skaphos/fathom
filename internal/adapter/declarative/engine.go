@@ -105,6 +105,47 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				return nil, fmt.Errorf("declarative: adapter %q family %q WebhookCheck %q must set ExpectedService and ServiceNamespace together", def.AddonType, f.Name, w.Name)
 			}
 		}
+		for _, c := range f.CronJobs {
+			if c.DefaultName == "" && c.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a CronJobCheck with no name", def.AddonType, f.Name)
+			}
+			if c.DefaultNamespace == "" {
+				// A CronJob is always namespaced; an empty default would Get with an
+				// empty namespace when policy names none — a run-time error from a
+				// definition bug. Require the fallback namespace at construction.
+				return nil, fmt.Errorf("declarative: adapter %q family %q CronJobCheck %q has no DefaultNamespace", def.AddonType, f.Name, c.DefaultName)
+			}
+		}
+		for _, c := range f.ConfigMaps {
+			if c.DefaultName == "" && c.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a ConfigMapCheck with no name", def.AddonType, f.Name)
+			}
+			if c.DefaultNamespace == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q ConfigMapCheck %q has no DefaultNamespace", def.AddonType, f.Name, c.DefaultName)
+			}
+			if c.Key == "" {
+				// A check with no key would score every ConfigMap as missing its
+				// (empty) key — a silent definition bug.
+				return nil, fmt.Errorf("declarative: adapter %q family %q ConfigMapCheck %q has no Key", def.AddonType, f.Name, c.DefaultName)
+			}
+		}
+		for _, a := range f.Annotations {
+			if a.APIVersion == "" || a.Kind == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has an AnnotationStalenessCheck with no APIVersion/Kind", def.AddonType, f.Name)
+			}
+			if a.AnnotationKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has an AnnotationStalenessCheck with no AnnotationKey", def.AddonType, f.Name)
+			}
+			if a.ListKind == "" && a.DefaultName == "" && a.NameThresholdKey == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a named AnnotationStalenessCheck with no name", def.AddonType, f.Name)
+			}
+			if !a.ClusterScoped && a.DefaultNamespace == "" {
+				// A namespaced check (named Get or per-namespace List) would resolve
+				// to an empty namespace when policy names none. Cluster-scoped checks
+				// (e.g. Nodes) legitimately carry no namespace.
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a namespaced AnnotationStalenessCheck with no DefaultNamespace", def.AddonType, f.Name)
+			}
+		}
 	}
 	return &Engine{def: def}, nil
 }

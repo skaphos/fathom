@@ -76,6 +76,16 @@ func runManaged(t *testing.T, cc ConditionCheck, policy map[adapter.Family]adapt
 // dynamic CRs, but scoreObject is a pure function of the object. Evaluate's
 // list-level paths (skip / error) are covered through the engine below.
 
+func TestCondition_NilSelectorMatchesAll(t *testing.T) {
+	// Per the FamilyPolicy contract a nil LabelSelector means "no label-based
+	// narrowing" (match all). metav1.LabelSelectorAsSelector maps nil to
+	// Nothing(), so the engine must special-case it — otherwise a family enabled
+	// without a labelSelector would silently score zero managed resources.
+	checks := runManaged(t, widgetCheck(), nil, widget("default", "w1", "Ready", "True"))
+	assertHasOutcome(t, checks, "Widget", "w1", adapter.OutcomePass, "Ready")
+	assertNoOutcome(t, checks, "Widget", "widgets", adapter.OutcomeSkipped)
+}
+
 func TestCondition_ScoreObject(t *testing.T) {
 	cc := widgetCheck()
 	ec := EvalContext{Family: "widget_health"}

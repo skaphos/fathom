@@ -21,7 +21,7 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio>
+  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured>
   interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
@@ -83,6 +83,10 @@ runs.
 | [`metrics-server`](#metrics-server) | `system_health`, `api_availability` | metrics-server workloads + the aggregated resource-metrics APIService |
 | [`envoy-gateway`](#envoy-gateway) | `system_health`, `crd_health`, `gateway_status` | Envoy Gateway controller, Gateway API CRDs, and Gateway conditions |
 | [`istio`](#istio) | `system_health`, `ztunnel_health`, `istio_cni_health`, `crd_health` | istiod + its admission webhooks, the ambient data plane, and core mesh CRDs |
+| [`keda`](#keda) | `system_health`, `crd_health`, `scaling_health` | KEDA operator/metrics-apiserver/webhook workloads, CRDs, and ScaledObject Ready/Paused state |
+| [`vpa`](#vpa) | `system_health`, `crd_health`, `recommendation_health` | VPA recommender/updater/admission workloads, CRDs, and whether VPAs are producing recommendations |
+| [`descheduler`](#descheduler) | `system_health`, `policy_validity`, `last_run` | descheduler Deployment or CronJob, DeschedulerPolicy well-formedness, and last-run recency |
+| [`kured`](#kured) | `system_health`, `reboot_state` | kured DaemonSet, and whether the reboot lock is wedged or a node has waited too long for a reboot |
 
 ### cert-manager
 
@@ -354,6 +358,132 @@ their target not installed — the required-absent Fails and the optional-absent
 alike. It makes "not installed" queryable and distinct from "unhealthy" (a `Fail`
 whose target exists) and "disabled" (a `Skipped` family), so a dashboard can tell an
 absent Cilium apart from a broken one without parsing per-check details (SKA-526).
+
+### keda
+
+```yaml
+spec:
+  addonType: keda
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - keda
+      thresholds:
+        webhookConfigurationName: "keda-admission"
+        restartWarnCount: "3"
+    crd_health:
+      enabled: true
+    scaling_health:
+      enabled: true
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `keda-operator`, `keda-operator-metrics-apiserver`, and `keda-admission-webhooks` Deployments and their pods, plus the `keda-admission` ValidatingWebhookConfiguration is present and its `caBundle` is populated. | `restartWarnCount`, `webhookConfigurationName` |
+| `crd_health` | The `ScaledObject`, `ScaledJob`, `TriggerAuthentication`, and `ClusterTriggerAuthentication` CRDs are Established and serve a supported version. | — |
+| `scaling_health` | Every `ScaledObject` (cluster-wide) reports `Ready=True`; a `Ready=False` object is a `Fail` (it is not autoscaling its workload), and a `Paused=True` object is surfaced as a `Warn`. | — |
+
+KEDA is **Optional**: on a cluster that does not run KEDA every target is
+`Skipped` with the `absent` detail rather than a `Fail`, and an empty cluster
+yields a `Skipped` `scaling_health`.
+
+### vpa
+
+```yaml
+spec:
+  addonType: vpa
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        restartWarnCount: "3"
+    crd_health:
+      enabled: true
+    recommendation_health:
+      enabled: true
+      thresholds:
+        webhookConfigurationName: "vpa-webhook-config"
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `vpa-recommender`, `vpa-updater`, and `vpa-admission-controller` Deployments and their pods. | `restartWarnCount` |
+| `crd_health` | The `VerticalPodAutoscaler` and `VerticalPodAutoscalerCheckpoint` CRDs are Established and serve a supported version. | — |
+| `recommendation_health` | Every `VerticalPodAutoscaler` (cluster-wide) reports `RecommendationProvided=True`, and the `vpa-webhook-config` MutatingWebhookConfiguration is present and wired. A VPA not yet producing a recommendation is a `Warn`, not a `Fail`. | `webhookConfigurationName` |
+
+The recommender is blind without metrics-server; pair this adapter with a
+`metrics-server` AddonCheck. VPA is **Optional**: absent targets are `Skipped`
+with the `absent` detail.
+
+### descheduler
+
+```yaml
+spec:
+  addonType: descheduler
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        deploymentName: "descheduler"
+        cronJobName: "descheduler"
+        restartWarnCount: "3"
+    policy_validity:
+      enabled: true
+      thresholds:
+        configMapName: "descheduler"
+    last_run:
+      enabled: true
+      thresholds:
+        successMaxAge: "24h"
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The descheduler Deployment (loop mode) or CronJob (scheduled mode) is healthy. A real install is one mode or the other, so the mode not in use is `Skipped`. | `deploymentName`, `cronJobName`, `restartWarnCount` |
+| `policy_validity` | The DeschedulerPolicy ConfigMap holds a `policy.yaml` that parses as YAML and declares a recognized descheduler apiVersion. Catches the silent no-op where an unparseable policy means nothing is ever descheduled. | `configMapName` |
+| `last_run` | The CronJob's last scheduled run completed successfully and is recent. `Skipped` on a Deployment-mode install. | `cronJobName`, `successMaxAge` (a Go duration) |
+
+The policy check is shape-level (valid YAML + recognized apiVersion); it does
+not validate individual strategy/plugin names against the running descheduler
+release. descheduler is **Optional**: absent targets are `Skipped` with the
+`absent` detail.
+
+### kured
+
+```yaml
+spec:
+  addonType: kured
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        daemonSetName: "kured"
+        restartWarnCount: "3"
+    reboot_state:
+      enabled: true
+      thresholds:
+        lockMaxAge: "1h"
+        rebootPendingMaxAge: "24h"
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `kured` DaemonSet and its pods are Ready. | `daemonSetName`, `restartWarnCount` |
+| `reboot_state` | The reboot lock (the `weave.works/kured-node-lock` annotation on the DaemonSet) has not been held past `lockMaxAge` — a wedged lock means reboots have stopped progressing. With `--annotate-nodes` enabled, a node carrying `weave.works/kured-most-recent-reboot-needed` past `rebootPendingMaxAge` has waited too long. | `lockMaxAge`, `rebootPendingMaxAge` (Go durations) |
+
+An idle cluster with no lock held and no node awaiting a reboot yields a quiet
+`reboot_state` (the lock check passes; the node scan is `Skipped`). Node-level
+reboot detection requires kured's `--annotate-nodes`; without it the node scan
+is `Skipped` — the honest signal that the data is not published, not a false
+all-clear. kured is **Optional**: absent targets are `Skipped` with the
+`absent` detail.
 
 ## Probe image
 

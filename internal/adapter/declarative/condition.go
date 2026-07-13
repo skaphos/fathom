@@ -13,6 +13,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -59,7 +60,7 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 			absent, mismatch), nil
 	}
 
-	sel, err := metav1.LabelSelectorAsSelector(ec.Policy.LabelSelector)
+	sel, err := policySelector(ec.Policy.LabelSelector)
 	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
 			fmt.Sprintf("invalid label selector: %v", err), cc.listDetails(), started)}, nil
@@ -177,6 +178,19 @@ func (cc ConditionCheck) listDetails() map[string]string {
 		return nil
 	}
 	return map[string]string{"conditionType": cc.ConditionType}
+}
+
+// policySelector converts a family policy's LabelSelector to a labels.Selector,
+// honoring the FamilyPolicy contract that a nil selector means "no label-based
+// narrowing" (match everything). metav1.LabelSelectorAsSelector maps nil to
+// labels.Nothing() — which would silently match zero managed resources when an
+// AddonCheck enables a family without a labelSelector — so a nil is mapped to
+// labels.Everything() here, matching ClusterHealth's selectorFromSpec.
+func policySelector(sel *metav1.LabelSelector) (labels.Selector, error) {
+	if sel == nil {
+		return labels.Everything(), nil
+	}
+	return metav1.LabelSelectorAsSelector(sel)
 }
 
 // listName is the stable placeholder Name for list-level results, defaulting to
