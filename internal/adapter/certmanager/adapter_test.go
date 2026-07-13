@@ -381,6 +381,13 @@ func TestRun_EmptyClusterSkippedFamilyAttribution(t *testing.T) {
 	assertFamily(t, result.Checks, "Certificate", "certificates", FamilyCertHealth)
 }
 
+func TestPolicyNamespaces_EmptyMeansAllNamespaces(t *testing.T) {
+	got := policyNamespaces(adapter.FamilyPolicy{})
+	if len(got) != 1 || got[0] != "" {
+		t.Fatalf("policyNamespaces(empty) = %v, want an all-namespaces selector", got)
+	}
+}
+
 func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome, summaryContains string) {
 	t.Helper()
 	for _, check := range checks {

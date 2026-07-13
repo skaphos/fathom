@@ -99,7 +99,10 @@ declarative.FamilyDefinition{
 
 Family gating: a `nil` policy enables every `DefaultEnabled` family; a non-nil
 policy that omits the family key disables it; a present entry is gated by its
-`enabled`.
+`enabled`, which defaults to `true` when omitted. For collection checks, an
+empty `policy.namespaces` scans every namespace the adapter can read; explicit
+entries narrow that scope. Named singleton checks continue to use their
+`DefaultNamespace` when no namespace is supplied.
 
 #### `WorkloadCheck` — a controller singleton (+ its pods)
 

@@ -11,6 +11,7 @@ import (
 
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -80,6 +81,9 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 		var list unstructured.UnstructuredList
 		list.SetGroupVersionKind(listGVK)
 		if err := ec.Client.List(ec.Ctx, &list, client.MatchingLabelsSelector{Selector: sel}); err != nil {
+			if resourceAbsent(err) {
+				return []adapter.CheckResult{cc.absentListResult(ec, kindRef, started)}, nil
+			}
 			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
 				fmt.Sprintf("failed to list %s: %v", cc.Kind, err), cc.listDetails(), started)}, nil
 		}
@@ -89,6 +93,9 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 			var list unstructured.UnstructuredList
 			list.SetGroupVersionKind(listGVK)
 			if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: sel}); err != nil {
+				if resourceAbsent(err) {
+					return []adapter.CheckResult{cc.absentListResult(ec, kindRef, started)}, nil
+				}
 				return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
 					fmt.Sprintf("failed to list %s in namespace %q: %v", cc.Kind, ns, err), cc.listDetails(), started)}, nil
 			}
@@ -113,6 +120,17 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	return out, nil
 }
 
+func resourceAbsent(err error) bool {
+	return apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err)
+}
+
+func (cc ConditionCheck) absentListResult(ec EvalContext, ref adapter.TargetRef, started time.Time) adapter.CheckResult {
+	details := cc.listDetails()
+	details = adapter.MarkAbsent(details)
+	return result(ec.Family, ref, absenceOutcome(effectiveAbsence(cc.Absence, ec.DefaultPosture)),
+		fmt.Sprintf("%s API is not installed", cc.Kind), details, started)
+}
+
 // evaluateNamed is the named (get-by-name) mode: each entry in Names is
 // fetched and scored individually. A NotFound name is a verdict — the
 // effective Absence posture (Required, the default -> Fail; Optional ->
@@ -133,7 +151,7 @@ func (cc ConditionCheck) evaluateNamed(ec EvalContext, gvk schema.GroupVersionKi
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(gvk)
 		if err := ec.Client.Get(ec.Ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj); err != nil {
-			if apierrors.IsNotFound(err) {
+			if resourceAbsent(err) {
 				o := absenceOutcome(effectiveAbsence(cc.Absence, ec.DefaultPosture))
 				out = append(out, result(ec.Family, ref, o,
 					fmt.Sprintf("%s %s not found", cc.Kind, name),

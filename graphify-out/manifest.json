@@ -32,8 +32,8 @@
     "hash": "19c3766e1518c4db33579147a0f22f7f"
   },
   "/home/sstratton/work/skaphos/fathom/api/v1alpha1/addoncheck_types.go": {
-    "mtime": 1783289162.6284559,
-    "hash": "6e3e3a4649914eddeb7fca7868b056d6"
+    "mtime": 1783913021.6772401,
+    "hash": "8c013f406966b76718cf7db805bab562"
   },
   "/home/sstratton/work/skaphos/fathom/api/v1alpha1/healthcheck_types.go": {
     "mtime": 1778465889.947392,
@@ -64,7 +64,7 @@
     "hash": "eb6b401c139b11f92f985e87d30b81ae"
   },
   "/home/sstratton/work/skaphos/fathom/api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1782616722.829385,
+    "mtime": 1783913660.2022736,
     "hash": "d466f4663f5074177818a75f302651ab"
   },
   "/home/sstratton/work/skaphos/fathom/pkg/adapter/rbac.go": {
@@ -236,7 +236,7 @@
     "hash": "a7e2372f916d5cbc3b84e3c7b524e6e4"
   },
   "/home/sstratton/work/skaphos/fathom/internal/controller/addoncheck_controller.go": {
-    "mtime": 1783792174.5233388,
+    "mtime": 1783913021.8708403,
     "hash": "60c50eacc9f7f1af266f8dfaf805ba0b"
   },
   "/home/sstratton/work/skaphos/fathom/internal/controller/policy_validation_test.go": {
@@ -252,8 +252,8 @@
     "hash": "a9222bb402c1ac671372a8834d0bbb78"
   },
   "/home/sstratton/work/skaphos/fathom/internal/controller/crd_validation_test.go": {
-    "mtime": 1783198215.4129674,
-    "hash": "14f0eaa75c00149f56caac8216b501ca"
+    "mtime": 1783913022.0556402,
+    "hash": "bd134c96c2cfea4334b6f424e0a80314"
   },
   "/home/sstratton/work/skaphos/fathom/internal/controller/addoncheck_controller_test.go": {
     "mtime": 1783792174.5233388,
@@ -320,12 +320,12 @@
     "hash": "d82f3fe1d9d60a7e59b74133b728e799"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/certmanager/adapter_test.go": {
-    "mtime": 1783291013.0482633,
-    "hash": "77b3987e4cc7598dc9865a432ce63cc5"
+    "mtime": 1783913007.8739526,
+    "hash": "6ad7fdb00ec1f0e0ce800c975c5cc2d7"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/certmanager/adapter.go": {
-    "mtime": 1783291013.0482633,
-    "hash": "5387b03685de8bf1dc94d20a12baf840"
+    "mtime": 1783912944.0704122,
+    "hash": "bb4f1eed31b608d0147201eb27d2d2a2"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/coredns/rbac_test.go": {
     "mtime": 1783289162.640456,
@@ -392,8 +392,8 @@
     "hash": "91ebd9a89654d2b54e2818fdbe2f1510"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/definition.go": {
-    "mtime": 1783908040.9864712,
-    "hash": "784e3c7f7b106594d95fbef7217bbc5c"
+    "mtime": 1783913123.1909614,
+    "hash": "82c21ab807a9b9b2f542d6d03683089f"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/workload.go": {
     "mtime": 1783237565.2917917,
@@ -408,8 +408,8 @@
     "hash": "4e6b9d99678b0bb6beec4e285466b517"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/evaluator.go": {
-    "mtime": 1783908040.9864712,
-    "hash": "0935f399377bcc7e9379c40f3653c61a"
+    "mtime": 1783912943.7184122,
+    "hash": "89f314793422dcc50b0e37289ca7980d"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/engine.go": {
     "mtime": 1783908040.9864712,
@@ -440,8 +440,8 @@
     "hash": "b7cdbf517b9073dac1b8bc9ccedb2548"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/condition.go": {
-    "mtime": 1783908040.9864712,
-    "hash": "1e80cb5aa8d9eae624156108f0b77273"
+    "mtime": 1783913092.0608647,
+    "hash": "fdc7de66b251a0b1a8d98dc709ee03a5"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/istio_test.go": {
     "mtime": 1783323108.0756433,
@@ -472,8 +472,8 @@
     "hash": "74e0af57c36adf2833bca1a4217ac454"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/condition_test.go": {
-    "mtime": 1783908040.9864712,
-    "hash": "0075a59dccf16988c25f52442156637b"
+    "mtime": 1783913092.2588646,
+    "hash": "055bb174155c0dd9bcf0375283e5d379"
   },
   "/home/sstratton/work/skaphos/fathom/internal/adapter/declarative/keda.go": {
     "mtime": 1783908040.9864712,
@@ -596,31 +596,31 @@
     "hash": "552b099ad64c54b7d27fcfa149625d68"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1779666461.7667806,
+    "mtime": 1783913662.5605352,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.5605674,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783198215.4129674,
+    "mtime": 1783913662.5606,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783289162.6358814,
-    "hash": "aead0b7f41525a23cf23cf7663b4feb3"
+    "mtime": 1783913662.5604472,
+    "hash": "5cdc99bb2c2ceb89c80a42ce7b0b025e"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1779666461.7667806,
+    "mtime": 1783913662.5605004,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/files/addon-rbac.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3758736,
     "hash": "4c2dddff859340e68b64b358fc2c218c"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/files/manager-rules.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.5676284,
     "hash": "7407af4f00440c98fa9caa50ace56ba9"
   },
   "/home/sstratton/work/skaphos/fathom/deploy/helm/fathom-operator/templates/NOTES.txt": {
@@ -680,23 +680,23 @@
     "hash": "d3159b0e0b5653f5fdb206754b749be5"
   },
   "/home/sstratton/work/skaphos/fathom/config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1779666461.7623806,
+    "mtime": 1783913662.5033195,
     "hash": "f48c74c7e058a2d53080fd15ee15958f"
   },
   "/home/sstratton/work/skaphos/fathom/config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1783289162.6317894,
+    "mtime": 1783913662.5033195,
     "hash": "647beb00216379bedf2b00827aa1e8d9"
   },
   "/home/sstratton/work/skaphos/fathom/config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1783198215.4085674,
+    "mtime": 1783913662.5297196,
     "hash": "c0cece703ec6c2487e20933be40010bf"
   },
   "/home/sstratton/work/skaphos/fathom/config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1783289162.6284559,
-    "hash": "aead0b7f41525a23cf23cf7663b4feb3"
+    "mtime": 1783913662.4989195,
+    "hash": "5cdc99bb2c2ceb89c80a42ce7b0b025e"
   },
   "/home/sstratton/work/skaphos/fathom/config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1779666461.7623806,
+    "mtime": 1783913662.5033195,
     "hash": "49e0d70612fd83fb61a67d02f89e2ea7"
   },
   "/home/sstratton/work/skaphos/fathom/config/default/metrics_service.yaml": {
@@ -804,7 +804,7 @@
     "hash": "913c62b01d1a78bc4f74b57e895634f8"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/role.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.3845196,
     "hash": "3bd57a1c88d1f9c9d26ea4b75cebdd18"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/nodecertificatecheck_admin_role.yaml": {
@@ -868,59 +868,59 @@
     "hash": "d406c8069de2bd540899a7344e3ff019"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/kustomization.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3670735,
     "hash": "52a573a2ca9a2c74033e084ada591761"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-envoy-gateway.yaml": {
-    "mtime": 1783323108.0534756,
+    "mtime": 1783913662.3670735,
     "hash": "863908aed88152c9a16cce8bff7a1c93"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-metrics-server.yaml": {
-    "mtime": 1783323108.0534756,
+    "mtime": 1783913662.3714736,
     "hash": "f1f3a618f11467fc763d1b1ed862d13d"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-external-dns.yaml": {
-    "mtime": 1783323108.0534756,
+    "mtime": 1783913662.3714736,
     "hash": "b1a993951d6d7b46de1608e5c9a5250b"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-coredns.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.3670735,
     "hash": "16f200b70217efe8d28da2817bf35716"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-cert-manager.yaml": {
-    "mtime": 1783289162.6317894,
+    "mtime": 1783913662.3670735,
     "hash": "03f957ddd583921feb706b9309d95bad"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-istio.yaml": {
-    "mtime": 1783323108.0534756,
+    "mtime": 1783913662.3714736,
     "hash": "a5f251c50ee41f74bcf37035399e0eed"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-kured.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3714736,
     "hash": "dd33d4a9fd436f8b66a5ce59e0b1bb5e"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-vpa.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3714736,
     "hash": "d4c982b587159889809395ac948219a1"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/kustomizeconfig.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.3714736,
     "hash": "e65eb9ba47025507e19f1f583bdb3661"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-cilium.yaml": {
-    "mtime": 1783289162.6358814,
+    "mtime": 1783913662.3714736,
     "hash": "24ac45ecd388c802d8be635534a68981"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-descheduler.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3714736,
     "hash": "2c1fb316844e62ad07d01cc3bcae6ddc"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/operator-impersonate.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3758736,
     "hash": "1ce3275e713f93a6857dca4903112b22"
   },
   "/home/sstratton/work/skaphos/fathom/config/rbac/addons/addon-keda.yaml": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3670735,
     "hash": "c2a82d1d93a499915efdbdbe9432dd63"
   },
   "/home/sstratton/work/skaphos/fathom/config/manifests/kustomization.yaml": {
@@ -952,7 +952,7 @@
     "hash": "e9d892ef0c7a2a3155d1f2facb429ab2"
   },
   "/home/sstratton/work/skaphos/fathom/config/manager/kustomization.yaml": {
-    "mtime": 1782591482.6832387,
+    "mtime": 1783913639.3462741,
     "hash": "b9c55aa3eee69d0752a479c31fcb1363"
   },
   "/home/sstratton/work/skaphos/fathom/hack/boilerplate.go.txt": {
@@ -964,8 +964,8 @@
     "hash": "9c8b52d913a1e45c0f899cab0d146972"
   },
   "/home/sstratton/work/skaphos/fathom/docs/authoring-adapters.md": {
-    "mtime": 1783908040.9864712,
-    "hash": "6d38797a68a1eb7da58bf4a0db8cbfe6"
+    "mtime": 1783913122.9973614,
+    "hash": "dd55bef27b33fd5ca32f6c2e412ef56c"
   },
   "/home/sstratton/work/skaphos/fathom/docs/architecture.md": {
     "mtime": 1783908040.9864712,
@@ -992,11 +992,11 @@
     "hash": "fd841b9c66a3d0aed6105fd6712dd132"
   },
   "/home/sstratton/work/skaphos/fathom/docs/reference/api.md": {
-    "mtime": 1783289162.6358814,
-    "hash": "3f0db554278e434c42051ca701d83d92"
+    "mtime": 1783913663.2689195,
+    "hash": "360bb71783ad0668791b8b28f065e144"
   },
   "/home/sstratton/work/skaphos/fathom/docs/reference/rbac.md": {
-    "mtime": 1783908040.9864712,
+    "mtime": 1783913662.3714736,
     "hash": "abb1d313dcdcd31d9b000da1185b058b"
   },
   "/home/sstratton/work/skaphos/fathom/docs/guides/getting-started.md": {

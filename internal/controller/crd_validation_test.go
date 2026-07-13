@@ -45,6 +45,23 @@ var _ = Describe("CRD schema validation", func() {
 			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{}))).To(Succeed())
 		})
 
+		It("defaults an explicitly configured family to enabled", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}},
+			}})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Policy["system_health"].Enabled).To(BeTrue())
+		})
+
+		It("rejects changing addonType", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.AddonType = "cert-manager"
+			err := k8sClient.Update(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("addonType is immutable"))
+		})
+
 		It("rejects a zero timeout", func() {
 			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Timeout: dur(0)}))
 			Expect(err).To(HaveOccurred())

@@ -678,7 +678,7 @@ func certificateCheck(obj *unstructured.Unstructured, policy adapter.FamilyPolic
 
 func policyNamespaces(policy adapter.FamilyPolicy) []string {
 	if len(policy.Namespaces) == 0 {
-		return []string{defaultNamespace}
+		return []string{""}
 	}
 	return policy.Namespaces
 }
