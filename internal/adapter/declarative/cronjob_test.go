@@ -52,6 +52,7 @@ func runCronJob(t *testing.T, cc CronJobCheck, objs ...clientObject) []adapter.C
 func TestCronJobCheck(t *testing.T) {
 	recent := time.Now().Add(-1 * time.Minute)
 	stale := time.Now().Add(-48 * time.Hour)
+	future := time.Now().Add(1 * time.Hour) // beyond the clock-skew grace
 
 	systemHealth := CronJobCheck{DefaultNamespace: "kube-system", DefaultName: "descheduler", Component: "descheduler"}
 	lastRun := CronJobCheck{DefaultNamespace: "kube-system", DefaultName: "descheduler", Component: "descheduler", DefaultSuccessMaxAge: 24 * time.Hour, StaleOutcome: adapter.OutcomeWarn}
@@ -69,6 +70,8 @@ func TestCronJobCheck(t *testing.T) {
 		{"stale success warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, &stale), adapter.OutcomeWarn, "older than the freshness window"},
 		{"recently scheduled, not yet successful passes", lastRun, cronJob("descheduler", "kube-system", false, &recent, nil), adapter.OutcomePass, "awaiting its first successful completion"},
 		{"stale schedule, never successful warns", lastRun, cronJob("descheduler", "kube-system", false, &stale, nil), adapter.OutcomeWarn, "not completed a successful run within the freshness window"},
+		{"future success time warns", lastRun, cronJob("descheduler", "kube-system", false, &recent, &future), adapter.OutcomeWarn, "in the future"},
+		{"future schedule, never successful warns", lastRun, cronJob("descheduler", "kube-system", false, &future, nil), adapter.OutcomeWarn, "in the future"},
 		{"never scheduled passes", lastRun, cronJob("descheduler", "kube-system", false, nil, nil), adapter.OutcomePass, "not scheduled a run yet"},
 	}
 	for _, tc := range tests {

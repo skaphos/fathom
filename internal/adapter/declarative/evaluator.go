@@ -117,6 +117,21 @@ func int32Threshold(policy adapter.FamilyPolicy, key string, dflt int32) int32 {
 	return int32(parsed)
 }
 
+// clockSkewGrace is how far a status timestamp may sit in the future before a
+// recency check treats it as anomalous rather than fresh. It absorbs benign
+// clock skew between the operator and the API server (whose clock stamps object
+// status times) while still surfacing a clearly-future timestamp — from a
+// malformed payload or a badly-skewed node — instead of scoring it a healthy
+// Pass (a naive now-minus-timestamp age goes negative for a future stamp and
+// would otherwise slip under any freshness window).
+const clockSkewGrace = 5 * time.Minute
+
+// isFutureTimestamp reports whether ts sits more than clockSkewGrace in the
+// future relative to now.
+func isFutureTimestamp(ts time.Time) bool {
+	return time.Until(ts) > clockSkewGrace
+}
+
 // durationThreshold returns the parsed Go-duration threshold for key, or dflt
 // when the key is absent, negative, or unparseable.
 func durationThreshold(policy adapter.FamilyPolicy, key string, dflt time.Duration) time.Duration {

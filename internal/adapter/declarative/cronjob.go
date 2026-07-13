@@ -82,16 +82,21 @@ func (c CronJobCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		// fresh install or a long first run does not falsely Warn.
 		details["lastScheduleTime"] = schedule.UTC().Format(time.RFC3339)
 		details["successMaxAge"] = maxAge.String()
+		if isFutureTimestamp(schedule.Time) {
+			return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob last schedule time is in the future (clock skew or malformed status)", details, started)}, nil
+		}
 		if time.Since(schedule.Time) > maxAge {
 			return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob has not completed a successful run within the freshness window", details, started)}, nil
 		}
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob scheduled a run recently and is awaiting its first successful completion", details, started)}, nil
 	}
 
-	age := time.Since(last.Time)
 	details["lastSuccessfulTime"] = last.UTC().Format(time.RFC3339)
 	details["successMaxAge"] = maxAge.String()
-	if age > maxAge {
+	if isFutureTimestamp(last.Time) {
+		return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob last successful run time is in the future (clock skew or malformed status)", details, started)}, nil
+	}
+	if time.Since(last.Time) > maxAge {
 		return []adapter.CheckResult{result(ec.Family, target, stale, "cronjob last successful run is older than the freshness window", details, started)}, nil
 	}
 	return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomePass, "cronjob last successful run is recent", details, started)}, nil

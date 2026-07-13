@@ -152,10 +152,13 @@ func (a AnnotationStalenessCheck) scoreAnnotation(ec EvalContext, ref adapter.Ta
 			fmt.Sprintf("%s annotation is present but its timestamp is unreadable: %v", a.AnnotationKey, err), details, started)
 	}
 
-	age := time.Since(ts)
 	details["timestamp"] = ts.UTC().Format(time.RFC3339)
 	details["maxAge"] = maxAge.String()
-	if age > maxAge {
+	if isFutureTimestamp(ts) {
+		return result(ec.Family, ref, stale,
+			fmt.Sprintf("%s annotation timestamp is in the future (clock skew or malformed payload)", a.AnnotationKey), details, started)
+	}
+	if time.Since(ts) > maxAge {
 		return result(ec.Family, ref, stale,
 			fmt.Sprintf("%s annotation is older than the freshness window", a.AnnotationKey), details, started)
 	}

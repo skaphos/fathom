@@ -80,6 +80,11 @@ func TestAnnotationStaleness_NamedLock(t *testing.T) {
 		checks := runAnnotation(t, lockCheck(), daemonSetWithAnnotations("kured", "kube-system", lock))
 		assertHasOutcome(t, checks, "DaemonSet", "kured", adapter.OutcomeWarn, "older than the freshness window")
 	})
+	t.Run("future lock timestamp warns", func(t *testing.T) {
+		lock := map[string]string{"weave.works/kured-node-lock": lockJSON(time.Now().Add(1 * time.Hour))}
+		checks := runAnnotation(t, lockCheck(), daemonSetWithAnnotations("kured", "kube-system", lock))
+		assertHasOutcome(t, checks, "DaemonSet", "kured", adapter.OutcomeWarn, "in the future")
+	})
 	t.Run("unparseable lock warns", func(t *testing.T) {
 		lock := map[string]string{"weave.works/kured-node-lock": "not-json"}
 		checks := runAnnotation(t, lockCheck(), daemonSetWithAnnotations("kured", "kube-system", lock))
