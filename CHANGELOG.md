@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/skaphos/fathom/compare/v0.3.1...v0.4.0) (2026-07-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** the ClusterHealth CRD is now cluster-scoped. Upgrading requires deleting the old CRD (which removes existing ClusterHealth objects) and recreating aggregates as cluster-scoped resources.
+
+### Features
+
+* **adapters:** add KEDA, VPA, descheduler, and kured adapters ([#135](https://github.com/skaphos/fathom/issues/135)) ([8a5a6f3](https://github.com/skaphos/fathom/commit/8a5a6f34bd1b084f98d954d1d89ed0e8a1a68ff0))
+* **adapter:** stabilize the contract at 1.0.0 (SKA-580) ([#139](https://github.com/skaphos/fathom/issues/139)) ([b2a38a8](https://github.com/skaphos/fathom/commit/b2a38a80dd7efe76d830eb84047bb01fcc324357))
+* **api:** make ClusterHealth cluster-scoped (SKA-575) ([#137](https://github.com/skaphos/fathom/issues/137)) ([e35d574](https://github.com/skaphos/fathom/commit/e35d57468e9c53b07c311226899947ee20b71c36))
+
+
+### Bug Fixes
+
+* **api:** enforce checkRef and HealthReport spec immutability (SKA-576) ([#138](https://github.com/skaphos/fathom/issues/138)) ([6ff73a8](https://github.com/skaphos/fathom/commit/6ff73a8db00bcd5a0c5b18d020d0133214f80840))
+* **deps:** upgrade Go toolchain to 1.26.5 and refresh dependencies ([#133](https://github.com/skaphos/fathom/issues/133)) ([4476d38](https://github.com/skaphos/fathom/commit/4476d386653938e10c2e2891a04095675a19fecf))
+* harden addon policy and absence semantics ([#136](https://github.com/skaphos/fathom/issues/136)) ([9eba01f](https://github.com/skaphos/fathom/commit/9eba01f64e934244109a51af23ca317adaae7e37))
+
 ## [0.3.1](https://github.com/skaphos/fathom/compare/v0.3.0...v0.3.1) (2026-07-06)
 
 
