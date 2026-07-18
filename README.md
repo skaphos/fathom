@@ -198,3 +198,9 @@ branch naming, DCO sign-off, and PR expectations — is in
 
 Fathom is licensed under the terms in [`LICENSE`](LICENSE); the repository is
 [REUSE](https://reuse.software/)-compliant (see [`LICENSES/`](LICENSES/)).
+
+---
+
+Skaphos is a project of [Rillan AI LLC](https://skaphos.io), a Missouri
+limited liability company. © 2026 Rillan AI LLC. Released under
+the [MIT License](LICENSE).

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
 # SPDX-License-Identifier: MIT
 #
 # Scans on-disk X.509 certificates on every node and reports time-to-expiry.
