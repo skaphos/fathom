@@ -367,7 +367,7 @@ matches real workloads rather than the operator (see
 The probe image precedence chain (resolved per check by the CoreDNS adapter's
 `resolveProbeImage`) is: per-`AddonCheck` `probeImage` threshold → operator-level
 `--probe-image` (`adapter.Request.ProbeImage`) → adapter-hardcoded fallback
-(`ghcr.io/skaphos/fathom-probe:v0.0.2`). The operator default is
+(`ghcr.io/skaphos/fathom-probe:v0.4.0`). The operator default is
 `DefaultProbeImage` in `internal/app/options.go`.
 
 ## Runtime Shape

@@ -194,7 +194,7 @@ kubectl -n fathom-system get healthreport \
 
 The node-agent is a **dedicated, purpose-built image** — never the operator or
 probe image. The operator passes it to the DaemonSet via `--node-agent-image`
-(default `ghcr.io/skaphos/fathom-node-agent:v0.0.2`).
+(default `ghcr.io/skaphos/fathom-node-agent:v0.4.0`).
 
 - **Helm:** set `nodeAgent.image.repository` / `nodeAgent.image.tag` (tag
   defaults to the chart's appVersion). Teams mirroring images privately set
