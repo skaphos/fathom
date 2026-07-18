@@ -51,8 +51,11 @@ const (
 	// per-AddonCheck probeImage threshold nor the operator-level
 	// adapter.Request.ProbeImage is set. Keeping a non-empty fallback means a
 	// misconfigured operator produces a clear ImagePullBackOff against this
-	// reference instead of an empty Pod spec.
-	fallbackProbeImage   = "ghcr.io/skaphos/fathom-probe:v0.0.2"
+	// reference instead of an empty Pod spec. The version tag is bumped
+	// automatically in lockstep with the operator release by release-please
+	// (x-release-please-version; see release-please-config.json) and enforced by
+	// scripts/check-version-lockstep.sh — do not hand-edit it.
+	fallbackProbeImage   = "ghcr.io/skaphos/fathom-probe:v0.4.0" // x-release-please-version
 	defaultProbeTimeout  = 10 * time.Second
 	probePodNameMaxLabel = 30
 

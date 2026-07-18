@@ -26,14 +26,19 @@ vars:
   E2E_IMG: '{{.E2E_IMG | default "fathom-operator:e2e"}}'
   # The probe image tag must match the operator's compiled-in DefaultProbeImage
   # so kind's locally-loaded image satisfies the operator's pull request via
-  # IfNotPresent. Keep in lockstep with internal/app/options.go DefaultProbeImage
-  # and internal/adapter/coredns/adapter.go fallbackProbeImage.
-  E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.0.2"}}'
+  # IfNotPresent. Bumped automatically in lockstep with the operator release by
+  # release-please (x-release-please-version; see release-please-config.json) and
+  # enforced by scripts/check-version-lockstep.sh alongside
+  # internal/app/options.go DefaultProbeImage and
+  # internal/adapter/coredns/adapter.go fallbackProbeImage.
+  E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.4.0"}}' # x-release-please-version
   # The node-agent image tag must match the operator's compiled-in
   # DefaultNodeAgentImage so kind's locally-loaded image satisfies the
-  # NodeCertificateCheck controller's IfNotPresent pull. Keep in lockstep with
-  # internal/app/options.go DefaultNodeAgentImage.
-  E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.0.2"}}'
+  # NodeCertificateCheck controller's IfNotPresent pull. Bumped automatically in
+  # lockstep with the operator release by release-please
+  # (x-release-please-version) and enforced by scripts/check-version-lockstep.sh
+  # alongside internal/app/options.go DefaultNodeAgentImage.
+  E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.4.0"}}' # x-release-please-version
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
 
 tasks:
@@ -83,6 +88,11 @@ tasks:
           echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
+
+  verify-version-lockstep:
+    desc: Fail if the compiled probe/node-agent defaults, Helm chart version/appVersion, or e2e image tags drift from the released version (SKA-579)
+    cmds:
+      - ./scripts/check-version-lockstep.sh
 
   # --- Helm chart (derived from config/; kustomize stays source of truth) ---
 
@@ -460,6 +470,7 @@ tasks:
   ci:
     desc: Run standard CI workflow locally
     cmds:
+      - task: verify-version-lockstep
       - task: lint
       - task: test
       - task: staticcheck

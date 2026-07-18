@@ -77,6 +77,16 @@ jobs:
       - name: Re-run generators and check for drift
         run: go -C tools tool task verify-generated
 
+  version-lockstep:
+    name: Version Lockstep
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Check operator<->probe/node-agent version lockstep
+        run: ./scripts/check-version-lockstep.sh
+
   lint:
     name: Lint
     permissions:
@@ -133,7 +143,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    needs: [dco, reuse, generated, lint, test, quality]
+    needs: [dco, reuse, generated, version-lockstep, lint, test, quality]
     # `dco` is skipped on push events (PR-only). GitHub Actions normally
     # propagates `skipped` to dependents, so without this guard `build`
     # would be skipped on every push to main. Allow `dco == skipped`,
@@ -143,6 +153,7 @@ jobs:
         always() &&
         needs.reuse.result == 'success' &&
         needs.generated.result == 'success' &&
+        needs.version-lockstep.result == 'success' &&
         needs.lint.result == 'success' &&
         needs.test.result == 'success' &&
         needs.quality.result == 'success' &&
@@ -161,7 +172,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    needs: [dco, reuse, generated, lint, test, quality, build]
+    needs: [dco, reuse, generated, version-lockstep, lint, test, quality, build]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Publish workflow summary
@@ -169,18 +180,19 @@ jobs:
           DCO_RESULT: ${{ needs.dco.result }}
           REUSE_RESULT: ${{ needs.reuse.result }}
           GENERATED_RESULT: ${{ needs.generated.result }}
+          VERSION_LOCKSTEP_RESULT: ${{ needs.version-lockstep.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
-          total=7
+          total=8
           success=0
           failed=0
           skipped=0
           cancelled=0
 
-          for result in "$DCO_RESULT" "$REUSE_RESULT" "$GENERATED_RESULT" "$LINT_RESULT" "$TEST_RESULT" "$QUALITY_RESULT" "$BUILD_RESULT"; do
+          for result in "$DCO_RESULT" "$REUSE_RESULT" "$GENERATED_RESULT" "$VERSION_LOCKSTEP_RESULT" "$LINT_RESULT" "$TEST_RESULT" "$QUALITY_RESULT" "$BUILD_RESULT"; do
             case "$result" in
               success) success=$((success + 1)) ;;
               failure) failed=$((failed + 1)) ;;
@@ -198,6 +210,7 @@ jobs:
             echo "| dco | $DCO_RESULT |"
             echo "| reuse | $REUSE_RESULT |"
             echo "| generated | $GENERATED_RESULT |"
+            echo "| version-lockstep | $VERSION_LOCKSTEP_RESULT |"
             echo "| lint | $LINT_RESULT |"
             echo "| test | $TEST_RESULT |"
             echo "| quality | $QUALITY_RESULT |"

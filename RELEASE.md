@@ -222,20 +222,41 @@ This makes `dist/install.yaml` and the OLM bundle reference an immutable,
 content-addressed manager image. The `newTag: latest` default in the
 transformer is for local development only.
 
-## Probe Image / Default Drift Prevention
+## Probe / Node-Agent Version Lockstep (Automated)
 
-The probe image tag the operator falls back to is hardcoded in two Go
-constants:
+The probe and node-agent image tags the operator falls back to are compiled
+into the binary, and the Helm chart renders every image tag from its
+`appVersion`. All of these must equal the operator's own release version, or a
+plain `kustomize`/`helm install` from a checkout launches stale or unpublished
+workloads (this human-gated contract failed for 0.3.0 and 0.3.1, SKA-579).
 
-- `DefaultProbeImage` in `internal/app/options.go`
-- `fallbackProbeImage` in `internal/adapter/coredns/adapter.go`
+This is now automated — you no longer hand-edit version tags at release time:
 
-Both must be bumped to `vX.Y.Z` in lockstep with the Release Please version
-bump. The Release Please PR is the gate — before merging it, update both
-constants (and the user-visible samples in `README.md` and
-`config/samples/`) to the version the PR is cutting. This is what keeps the
-operator's compiled-in default from referencing a probe image that does not
-exist in GHCR.
+- **release-please bumps every site in the release PR.** Each site carries an
+  `x-release-please-version` annotation and is listed under `extra-files` in
+  `release-please-config.json`:
+  - `DefaultProbeImage` / `DefaultNodeAgentImage` in `internal/app/options.go`
+  - `fallbackProbeImage` in `internal/adapter/coredns/adapter.go`
+  - `version` and `appVersion` in `deploy/helm/fathom-operator/Chart.yaml`
+  - `E2E_PROBE_IMG` / `E2E_NODE_AGENT_IMG` in `Taskfile.yml`
+- **CI enforces lockstep.** The `version-lockstep` job (and
+  `go -C tools tool task verify-version-lockstep`) runs
+  `scripts/check-version-lockstep.sh`, which fails the build if any of those
+  sites drifts from the version in `.release-please-manifest.json`. A guard test
+  (`scripts/version_lockstep_gate_test.go`) also asserts the gate stays in sync
+  and actually detects drift.
+
+So the flow is: land Conventional Commits, review the release PR (which already
+carries the bumped tags), merge. If you ever hand-bump a tag, the
+`version-lockstep` gate catches a missed sibling before merge.
+
+**Follow-ups (not in scope here):** the compiled defaults are pinned by tag, not
+digest — digest pinning is impractical for the compiled default because the
+probe/node-agent digest does not exist until the release build runs (after the
+release PR is cut); if desired, pin at deploy time via `--probe-image` /
+`--node-agent-image` with a `@sha256:` reference. The node-agent image is not
+yet published at all (SKA-531). User-facing docs and samples that mention the
+default image tag are corrected per release but are not yet part of the gate.
 
 ## Notes
 
