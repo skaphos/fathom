@@ -177,9 +177,16 @@ Freshness and coverage rules:
   `spec.interval + spec.timeout` and not implausibly in the future.
 - Reports are keyed by node; duplicate reports for a node collapse to the newest
   observed report.
-- The operator rolls up only when fresh reports are complete for the DaemonSet's
-  desired node count. Partial/mismatched coverage clears `lastResult`,
-  `lastRunTime`, and `lastReportName`.
+- The operator rolls up only once the DaemonSet has fully converged to its
+  current spec (`status.observedGeneration == metadata.generation`, every desired
+  pod updated and ready) and fresh reports cover the desired node count, so a
+  roll-up is never computed from stale-template pods that are still rolling out.
+- Coverage tolerates transient node-count churn: a report from a node that was
+  removed or deselected survives (it is owner-referenced by the check) until it
+  ages out, so a surplus of fresh reports (`reportingNodes > desiredNodes`) still
+  counts as complete rather than clearing the roll-up.
+- Partial coverage (`reportingNodes < desiredNodes`) or a not-yet-converged
+  rollout clears `lastResult`, `lastRunTime`, and `lastReportName`.
 - A report ConfigMap is adopted only after its decoded payload belongs to the
   current check (`report.checkName == metadata.name`), so mislabeled reports are
   ignored and not garbage-collected by the wrong check.
@@ -189,16 +196,15 @@ Freshness and coverage rules:
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. Structural invalid specs are normally rejected by the API server from CRD validation before reconciliation. | Continue to `AgentReady` and `Ready`. |
 | `Paused` | `False / RunEnabled` | The node-agent is eligible to run. | None. |
 | `Paused` | `True / Paused` | `spec.paused=true`; the operator deletes the agent DaemonSet and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
-| `AgentReady` | `True / RolledOut` | The DaemonSet reports all desired nodes ready. | Continue to `Ready`. |
-| `AgentReady` | `False / RollingOut` | The DaemonSet exists but not all selected pods are ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
+| `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged: the current generation is observed and every desired pod is updated and ready. | Continue to `Ready`. |
+| `AgentReady` | `False / RollingOut` | The DaemonSet exists but has not fully converged: the current generation is not yet observed, or not every desired pod is updated and ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
 | `AgentReady` | `False / Paused` | The node-agent is intentionally stopped. | Unset `spec.paused` to resume. |
 | `Ready` | `True / Reporting` | Complete, fresh reports were rolled up into a `HealthReport`. | Read `lastResult` and the referenced `HealthReport`. |
 | `Ready` | `False / NoMatchingNodes` | No nodes match the DaemonSet. | Fix `spec.nodeSelector`, tolerations, or node labels. |
 | `Ready` | `False / AwaitingReports` | No fresh reports have been consumed yet. | Check node-agent pods and ConfigMaps. |
 | `Ready` | `False / PartialReports` | Some, but not all, selected nodes have fresh reports. | Find missing/stale node-agent pods or report ConfigMaps. |
-| `Ready` | `False / ReportMismatch` | Fresh report count exceeds desired node count. | Look for stale/mislabeled report ConfigMaps or node identity churn. |
-| `Ready` | `False / AgentRollingOut` | Reports exist, but the DaemonSet is still rolling out. | Wait for rollout or inspect pod scheduling/image pulls. |
+| `Ready` | `False / AgentRollingOut` | Reports cover the desired node count, but the DaemonSet has not fully converged (a pod is not ready or an update is still rolling). A surplus of reports from node churn is tolerated here, not flagged. | Wait for rollout or inspect pod scheduling/image pulls. |
 | `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
 | `Ready` | `False / Paused` | The check is paused. | Unset `spec.paused`. |

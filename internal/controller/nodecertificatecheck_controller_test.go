@@ -77,14 +77,25 @@ func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCert
 	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
 }
 
+// setNodeAgentDaemonSetStatus marks the DaemonSet fully rolled out: every desired
+// pod is updated and `ready` of them are ready, and the controller has observed
+// the current generation. Use setNodeAgentDaemonSetStatusFull to simulate a
+// partially-rolled-out DaemonSet.
 func setNodeAgentDaemonSetStatus(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, desired, ready int32) {
+	setNodeAgentDaemonSetStatusFull(ctx, check, desired, desired, ready)
+}
+
+func setNodeAgentDaemonSetStatusFull(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, desired, updated, ready int32) {
 	ds := &appsv1.DaemonSet{}
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, ds)).To(Succeed())
 	ds.Status.DesiredNumberScheduled = desired
 	ds.Status.CurrentNumberScheduled = desired
-	ds.Status.UpdatedNumberScheduled = desired
+	ds.Status.UpdatedNumberScheduled = updated
 	ds.Status.NumberAvailable = ready
 	ds.Status.NumberReady = ready
+	// Mirror a healthy controller: the DaemonSet controller has observed the
+	// current generation. nodeAgentRolledOut gates on this.
+	ds.Status.ObservedGeneration = ds.Generation
 	Expect(k8sClient.Status().Update(ctx, ds)).To(Succeed())
 }
 
@@ -166,6 +177,118 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		ds2 := &appsv1.DaemonSet{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-idempotent-node-agent", Namespace: "default"}, ds2)).To(Succeed())
 		Expect(ds2.ResourceVersion).To(Equal(ds1.ResourceVersion), "DaemonSet must not be rewritten on a no-op reconcile")
+		Expect(ds2.Annotations).To(HaveKey(nodeAgentSpecHashAnnotation), "spec-hash annotation must be stamped on the DaemonSet")
+	})
+
+	It("does not churn the DaemonSet template as agents rewrite report ConfigMaps (SKA-589)", func() {
+		name := types.NamespacedName{Name: "nc-nochurn", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		created := &appsv1.DaemonSet{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-nochurn-node-agent", Namespace: "default"}, created)).To(Succeed())
+		// metadata.generation only advances when the spec changes; a DaemonSet
+		// rewrite (rolling restart) is exactly what SKA-589 must prevent.
+		firstGen := created.Generation
+		setNodeAgentDaemonSetStatus(ctx, check, 1, 1)
+
+		// Simulate the agent publishing successive fresh scans (each rewrites the
+		// report ConfigMap and, via the watch, wakes the reconciler).
+		for i := 0; i < 3; i++ {
+			writeNodeReportAt(ctx, check, "node-a", time.Now().Add(time.Duration(i)*time.Second), []nodecert.CertResult{
+				{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+			})
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		after := &appsv1.DaemonSet{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-nochurn-node-agent", Namespace: "default"}, after)).To(Succeed())
+		Expect(after.Generation).To(Equal(firstGen), "DaemonSet spec must not be rewritten across reconciles driven by report ConfigMap churn")
+	})
+
+	It("does not roll up while the DaemonSet is still rolling out (SKA-589)", func() {
+		name := types.NamespacedName{Name: "nc-midrollout", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		// Two nodes desired, both ready, but only one pod updated to the current
+		// template: the rollout has not converged, so no rollup may be stamped.
+		setNodeAgentDaemonSetStatusFull(ctx, check, 2, 1, 2)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+		writeNodeReport(ctx, check, "node-b", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(BeEmpty(), "must not roll up from stale-template pods mid-rollout")
+		Expect(updated.Status.LastReportName).To(BeEmpty())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("AgentRollingOut"))
+	})
+
+	It("tolerates a removed node's surviving report without blanking status (SKA-589)", func() {
+		name := types.NamespacedName{Name: "nc-node-removed", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+		writeNodeReport(ctx, check, "node-b", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		rolledUp := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, rolledUp)).To(Succeed())
+		Expect(rolledUp.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+
+		// node-b is removed: desired drops to 1 while its report ConfigMap survives
+		// (still fresh). reportCount (2) now exceeds desired (1); status must not be
+		// blanked, and Ready must stay True.
+		setNodeAgentDaemonSetStatus(ctx, check, 1, 1)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.ReportingNodes).To(Equal(int32(2)))
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)), "surplus report must not blank the rollup")
+		Expect(updated.Status.LastReportName).NotTo(BeEmpty())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(ready.Reason).To(Equal("Reporting"))
 	})
 
 	It("rolls up per-node report ConfigMaps into a HealthReport and mirrors status", func() {
