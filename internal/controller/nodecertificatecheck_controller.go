@@ -622,8 +622,11 @@ func nodeCertReportFresh(report nodecert.NodeReport, now time.Time, maxAge time.
 // gate on this so status is never stamped from stale-template pods that are
 // mid-rollout (SKA-589).
 func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
+	// ObservedGeneration == Generation: the DaemonSet controller never observes a
+	// generation ahead of the spec, so equality matches the documented contract
+	// and the e2e assertion exactly (no more permissive than either).
 	return ds.Status.DesiredNumberScheduled > 0 &&
-		ds.Status.ObservedGeneration >= ds.Generation &&
+		ds.Status.ObservedGeneration == ds.Generation &&
 		ds.Status.UpdatedNumberScheduled == ds.Status.DesiredNumberScheduled &&
 		ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled
 }
