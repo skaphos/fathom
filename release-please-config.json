@@ -20,8 +20,8 @@
       "extra-files": [
         "internal/app/options.go",
         "internal/adapter/coredns/adapter.go",
-        "deploy/helm/fathom-operator/Chart.yaml",
-        "Taskfile.yml"
+        {"type": "generic", "path": "deploy/helm/fathom-operator/Chart.yaml"},
+        {"type": "generic", "path": "Taskfile.yml"}
       ]
     }
   }
