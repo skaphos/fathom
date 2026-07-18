@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 Skaphos
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
 SPDX-License-Identifier: MIT
 -->
 # 3. Probe-pod model for active in-cluster network checks
