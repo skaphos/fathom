@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 Skaphos
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
 SPDX-License-Identifier: MIT
 -->
 # 4. HealthCheck as a thin wrapper over a specialized check
