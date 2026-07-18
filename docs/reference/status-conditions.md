@@ -197,7 +197,7 @@ Freshness and coverage rules:
 | `Paused` | `False / RunEnabled` | The node-agent is eligible to run. | None. |
 | `Paused` | `True / Paused` | `spec.paused=true`; the operator deletes the agent DaemonSet and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged: the current generation is observed and every desired pod is updated and ready. | Continue to `Ready`. |
-| `AgentReady` | `False / RollingOut` | The DaemonSet exists but not all selected pods are ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
+| `AgentReady` | `False / RollingOut` | The DaemonSet exists but has not fully converged: the current generation is not yet observed, or not every desired pod is updated and ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
 | `AgentReady` | `False / Paused` | The node-agent is intentionally stopped. | Unset `spec.paused` to resume. |
 | `Ready` | `True / Reporting` | Complete, fresh reports were rolled up into a `HealthReport`. | Read `lastResult` and the referenced `HealthReport`. |
