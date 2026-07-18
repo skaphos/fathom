@@ -7,6 +7,9 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"time"
@@ -59,6 +62,15 @@ const (
 	// DaemonSet selector is stable and pods are discoverable.
 	nodeAgentComponentLabel = "fathom.skaphos.io/component"
 	nodeAgentComponentValue = "node-agent"
+
+	// nodeAgentSpecHashAnnotation records a hash of the pod template and selector
+	// the controller last applied to the node-agent DaemonSet. ensureDaemonSet
+	// rewrites Spec.Template only when this hash changes, so server-defaulted
+	// fields on the live object never masquerade as drift and trigger an endless
+	// rolling restart (SKA-589). nodeAgentSpecHashLength keeps the 256-bit digest
+	// short enough for an annotation value while staying collision-safe here.
+	nodeAgentSpecHashAnnotation = "fathom.skaphos.io/spec-hash"
+	nodeAgentSpecHashLength     = 32
 
 	// nodeCertReportFamily is the HealthReportCheck family for on-disk
 	// certificate observations.
@@ -312,6 +324,7 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, saName string) (*appsv1.DaemonSet, error) {
 	name := agentResourceName(check)
 	desired := r.desiredDaemonSet(check, saName)
+	desiredHash := nodeAgentSpecHash(desired)
 
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ds, func() error {
@@ -320,7 +333,18 @@ func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, ch
 			// Selector is immutable: set it only on create.
 			ds.Spec.Selector = desired.Spec.Selector
 		}
-		ds.Spec.Template = desired.Spec.Template
+		// Rewrite the pod template only when our own computed intent changes.
+		// Comparing a stored hash of the desired template (rather than the live
+		// object) keeps API-server defaulting from looking like drift, which
+		// would otherwise churn the DaemonSet into a perpetual rolling restart
+		// every time an agent rewrites its report ConfigMap (SKA-589).
+		if ds.Annotations[nodeAgentSpecHashAnnotation] != desiredHash {
+			ds.Spec.Template = desired.Spec.Template
+			if ds.Annotations == nil {
+				ds.Annotations = make(map[string]string, 1)
+			}
+			ds.Annotations[nodeAgentSpecHashAnnotation] = desiredHash
+		}
 		return controllerutil.SetControllerReference(check, ds, r.Scheme)
 	}); err != nil {
 		return nil, err
@@ -330,6 +354,28 @@ func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, ch
 		return nil, err
 	}
 	return ds, nil
+}
+
+// nodeAgentSpecHash returns a stable digest of the parts of the DaemonSet the
+// controller authors: the pod template and the selector. ensureDaemonSet stores
+// it as an annotation and only rewrites the template when the digest changes, so
+// the update decision is driven by our intent rather than server-side defaulting.
+func nodeAgentSpecHash(desired *appsv1.DaemonSet) string {
+	payload := struct {
+		Template corev1.PodTemplateSpec `json:"template"`
+		Selector *metav1.LabelSelector  `json:"selector"`
+	}{
+		Template: desired.Spec.Template,
+		Selector: desired.Spec.Selector,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		// A PodTemplateSpec always marshals; on the impossible error, return an
+		// empty hash so the template is rewritten rather than silently pinned.
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])[:nodeAgentSpecHashLength]
 }
 
 func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeCertificateCheck, saName string) *appsv1.DaemonSet {
@@ -554,8 +600,26 @@ func nodeCertReportFresh(report nodecert.NodeReport, now time.Time, maxAge time.
 	return now.Sub(report.ObservedAt) <= maxAge
 }
 
+// nodeAgentRolledOut reports whether the DaemonSet has fully converged to its
+// current spec: the controller has observed the latest generation and every
+// desired pod is updated and ready. Rollups and the RolledOut/Ready conditions
+// gate on this so status is never stamped from stale-template pods that are
+// mid-rollout (SKA-589).
+func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
+	return ds.Status.DesiredNumberScheduled > 0 &&
+		ds.Status.ObservedGeneration >= ds.Generation &&
+		ds.Status.UpdatedNumberScheduled == ds.Status.DesiredNumberScheduled &&
+		ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled
+}
+
 func nodeCertReportsComplete(ds *appsv1.DaemonSet, reportCount int) bool {
-	return ds.Status.DesiredNumberScheduled > 0 && int32(reportCount) == ds.Status.DesiredNumberScheduled
+	// Require a fully converged rollout so a rollup is never computed from
+	// stale-template pods, and tolerate transient node-count churn: a report from
+	// a node that was removed or deselected survives (owner-referenced by the
+	// check) until it ages out, so accept reportCount >= desired rather than exact
+	// equality, which would otherwise blank the rollup for up to interval+timeout
+	// (SKA-589).
+	return nodeAgentRolledOut(ds) && int32(reportCount) >= ds.Status.DesiredNumberScheduled
 }
 
 func clearNodeCertRollupStatus(check *fathomv1alpha1.NodeCertificateCheck) {
@@ -572,7 +636,7 @@ func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.Nod
 	case ds.Status.DesiredNumberScheduled == 0:
 		reason = "NoMatchingNodes"
 		message = "No nodes match the node-agent DaemonSet; nothing to scan."
-	case ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled:
+	case nodeAgentRolledOut(ds):
 		status = metav1.ConditionTrue
 		reason = "RolledOut"
 		message = "Node-agent DaemonSet is ready on all selected nodes."
@@ -594,9 +658,10 @@ func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1
 		r.setReady(check, metav1.ConditionFalse, "AwaitingReports", "Waiting for node-agents to publish fresh scan results.")
 	case int32(reportCount) < ds.Status.DesiredNumberScheduled:
 		r.setReady(check, metav1.ConditionFalse, "PartialReports", "Waiting for every selected node-agent to publish a fresh scan result.")
-	case int32(reportCount) > ds.Status.DesiredNumberScheduled:
-		r.setReady(check, metav1.ConditionFalse, "ReportMismatch", "Fresh node-agent reports do not match the selected node count.")
-	case ds.Status.NumberReady < ds.Status.DesiredNumberScheduled:
+	case !nodeAgentRolledOut(ds):
+		// reportCount >= desired but the DaemonSet has not fully converged (a pod
+		// is not ready or an update is still rolling). A surplus of reports here is
+		// tolerated as transient node-count churn rather than flagged as a mismatch.
 		r.setReady(check, metav1.ConditionFalse, "AgentRollingOut", "Node-agent DaemonSet is still rolling out.")
 	default:
 		r.setReady(check, metav1.ConditionTrue, "Reporting", "Node-agents are reporting and a HealthReport was rolled up.")

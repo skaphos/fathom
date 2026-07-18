@@ -56,10 +56,16 @@ var _ = Describe("NodeCertificateCheck", Ordered, func() {
 
 	It("should roll out the node-agent DaemonSet on the (control-plane) node", func() {
 		verify := func(g Gomega) {
-			ready, desired, err := daemonSetReadiness(nodeCertDaemonSet, nodeCertSampleNS)
+			ds, err := daemonSetRollout(nodeCertDaemonSet, nodeCertSampleNS)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to fetch node-agent DaemonSet")
-			g.Expect(desired).To(BeNumerically(">", 0), "DaemonSet scheduled on no nodes (tolerations/selector?)")
-			g.Expect(ready).To(Equal(desired), "node-agent DaemonSet not fully ready (%d/%d)", ready, desired)
+			g.Expect(ds.desired).To(BeNumerically(">", 0), "DaemonSet scheduled on no nodes (tolerations/selector?)")
+			g.Expect(ds.ready).To(Equal(ds.desired), "node-agent DaemonSet not fully ready (%d/%d)", ds.ready, ds.desired)
+			// Assert the rollout actually settled rather than flapping: every pod
+			// updated to the current template and the controller observed the
+			// current generation. Before SKA-589 the DaemonSet churned into a
+			// perpetual rolling restart and these never converged (timeout).
+			g.Expect(ds.updated).To(Equal(ds.desired), "node-agent DaemonSet still rolling (%d/%d updated)", ds.updated, ds.desired)
+			g.Expect(ds.observedGeneration).To(Equal(ds.generation), "DaemonSet rollout has not converged (observedGeneration %d != generation %d)", ds.observedGeneration, ds.generation)
 		}
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed(),
 			"node-agent DaemonSet did not become ready within timeout")
@@ -107,22 +113,41 @@ var _ = Describe("NodeCertificateCheck", Ordered, func() {
 	})
 })
 
-func daemonSetReadiness(name, ns string) (ready, desired int, err error) {
+type dsRollout struct {
+	desired            int
+	ready              int
+	updated            int
+	generation         int64
+	observedGeneration int64
+}
+
+func daemonSetRollout(name, ns string) (dsRollout, error) {
 	cmd := exec.Command("kubectl", "get", "daemonset", name, "-n", ns, "-o", "json")
 	out, err := utils.Run(cmd)
 	if err != nil {
-		return 0, 0, fmt.Errorf("kubectl get daemonset: %w", err)
+		return dsRollout{}, fmt.Errorf("kubectl get daemonset: %w", err)
 	}
 	var ds struct {
+		Metadata struct {
+			Generation int64 `json:"generation"`
+		} `json:"metadata"`
 		Status struct {
-			DesiredNumberScheduled int `json:"desiredNumberScheduled"`
-			NumberReady            int `json:"numberReady"`
+			DesiredNumberScheduled int   `json:"desiredNumberScheduled"`
+			NumberReady            int   `json:"numberReady"`
+			UpdatedNumberScheduled int   `json:"updatedNumberScheduled"`
+			ObservedGeneration     int64 `json:"observedGeneration"`
 		} `json:"status"`
 	}
 	if err := json.Unmarshal([]byte(out), &ds); err != nil {
-		return 0, 0, fmt.Errorf("unmarshal daemonset: %w", err)
+		return dsRollout{}, fmt.Errorf("unmarshal daemonset: %w", err)
 	}
-	return ds.Status.NumberReady, ds.Status.DesiredNumberScheduled, nil
+	return dsRollout{
+		desired:            ds.Status.DesiredNumberScheduled,
+		ready:              ds.Status.NumberReady,
+		updated:            ds.Status.UpdatedNumberScheduled,
+		generation:         ds.Metadata.Generation,
+		observedGeneration: ds.Status.ObservedGeneration,
+	}, nil
 }
 
 type nodeCertStatusView struct {
