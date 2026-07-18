@@ -1,5 +1,4 @@
-version: "3"
-
+version: 0.4.1
 vars:
   TASK_RUNNER: go -C tools tool task -d ..
   CONTROLLER_GEN: go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0
@@ -10,7 +9,7 @@ vars:
   STATICCHECK_RUNNER: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0
   GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
   CRD_REF_DOCS: go -C tools tool github.com/elastic/crd-ref-docs
-  ENVTEST_K8S_VERSION: "1.36"
+  ENVTEST_K8S_VERSION: '1.36'
   IMG: '{{.IMG | default "controller:latest"}}'
   PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
   PROBE_PLATFORMS: '{{.PROBE_PLATFORMS | default "linux/amd64,linux/arm64"}}'
@@ -19,68 +18,65 @@ vars:
   VERSION: '{{.VERSION | default "0.0.1"}}'
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
-  CATALOG_IMG: '{{.CATALOG_IMG | default (printf "%s-catalog:v%s" .IMAGE_TAG_BASE .VERSION)}}'
+  CATALOG_IMG: >-
+    {{.CATALOG_IMG | default (printf "%s-catalog:v%s" .IMAGE_TAG_BASE
+    .VERSION)}}
   E2E_KIND_CLUSTER: '{{.E2E_KIND_CLUSTER | default "fathom-e2e"}}'
   E2E_KIND_CONFIG: '{{.E2E_KIND_CONFIG | default "test/e2e/fixtures/kind-cluster.yaml"}}'
   E2E_HELMFILE: '{{.E2E_HELMFILE | default "test/e2e/fixtures/helmfile.yaml"}}'
   E2E_IMG: '{{.E2E_IMG | default "fathom-operator:e2e"}}'
-  # The probe image tag must match the operator's compiled-in DefaultProbeImage
-  # so kind's locally-loaded image satisfies the operator's pull request via
-  # IfNotPresent. Bumped automatically in lockstep with the operator release by
-  # release-please (x-release-please-version; see release-please-config.json) and
-  # enforced by scripts/check-version-lockstep.sh alongside
-  # internal/app/options.go DefaultProbeImage and
-  # internal/adapter/coredns/adapter.go fallbackProbeImage.
-  E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.4.0"}}' # x-release-please-version
-  # The node-agent image tag must match the operator's compiled-in
-  # DefaultNodeAgentImage so kind's locally-loaded image satisfies the
-  # NodeCertificateCheck controller's IfNotPresent pull. Bumped automatically in
-  # lockstep with the operator release by release-please
-  # (x-release-please-version) and enforced by scripts/check-version-lockstep.sh
-  # alongside internal/app/options.go DefaultNodeAgentImage.
-  E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.4.0"}}' # x-release-please-version
+  E2E_PROBE_IMG: '{{.E2E_PROBE_IMG | default "ghcr.io/skaphos/fathom-probe:v0.4.0"}}'
+  E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.4.0"}}'
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
-
 tasks:
   default:
     desc: List available tasks
     cmds:
       - '{{.TASK_RUNNER}} --list'
-
   list:
     desc: List available tasks
     cmds:
       - '{{.TASK_RUNNER}} --list'
-
-  # --- Codegen ---
-
   manifests:
     desc: Generate CRDs, RBAC, and webhook manifests via controller-gen
     cmds:
-      - '{{.CONTROLLER_GEN}} rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases'
-
+      - >-
+        {{.CONTROLLER_GEN}} rbac:roleName=manager-role crd webhook paths="./..."
+        output:crd:artifacts:config=config/crd/bases
   generate:
     desc: Generate DeepCopy implementations via controller-gen
     cmds:
-      - '{{.CONTROLLER_GEN}} object:headerFile="hack/boilerplate.go.txt" paths="./..."'
-
+      - >-
+        {{.CONTROLLER_GEN}} object:headerFile="hack/boilerplate.go.txt"
+        paths="./..."
   gen:addon-rbac:
-    desc: Generate per-addon RBAC (config/rbac/addons/), the operator impersonate Role, the Helm data file, and the RBAC docs matrix from the adapters' declared RBAC (SKA-58)
+    desc: >-
+      Generate per-addon RBAC (config/rbac/addons/), the operator impersonate
+      Role, the Helm data file, and the RBAC docs matrix from the adapters'
+      declared RBAC (SKA-58)
     cmds:
       - go run ./internal/adapter/rbacgen/cmd
-
   verify-generated:
-    desc: Re-run generators and fail if anything changed (CI gate against stale codegen)
+    desc: >-
+      Re-run generators and fail if anything changed (CI gate against stale
+      codegen)
     cmds:
       - task: manifests
       - task: generate
       - task: gen:addon-rbac
       - task: helm:sync
       - task: docs:api-ref
-      - |
-        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
-        untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
-        if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
+      - >
+        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/
+        {{.HELM_CHART_DIR}}/files/manager-rules.yaml
+        {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md
+        docs/reference/rbac.md"
+
+        untracked_generated="$(git ls-files --others --exclude-standard --
+        $paths)"
+
+        if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ];
+        then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
@@ -88,40 +84,34 @@ tasks:
           echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
-
   verify-version-lockstep:
-    desc: Fail if the compiled probe/node-agent defaults, Helm chart version/appVersion, or e2e image tags drift from the released version (SKA-579)
+    desc: >-
+      Fail if the compiled probe/node-agent defaults, Helm chart
+      version/appVersion, or e2e image tags drift from the released version
+      (SKA-579)
     cmds:
       - ./scripts/check-version-lockstep.sh
-
-  # --- Helm chart (derived from config/; kustomize stays source of truth) ---
-
   helm:sync:
     desc: Regenerate the chart's derived CRDs and manager RBAC rules from config/
     cmds:
-      # CRDs: Helm-native crds/ dir is installed as-is (never upgraded by Helm).
       - task: manifests
       - rm -f {{.HELM_CHART_DIR}}/crds/*.yaml
       - cp config/crd/bases/*.yaml {{.HELM_CHART_DIR}}/crds/
-      # Manager RBAC rules: extract just the `rules:` list (no metadata) so the
-      # clusterrole template can embed it via .Files.Get. No yq dependency —
-      # print the lines after `rules:` up to the next top-level key. List items
-      # start with `-`, so they are never mistaken for a key. Deterministic
-      # everywhere (incl. CI): role.yaml is itself controller-gen output.
-      - |
+      - >
         set -euo pipefail
+
         out="{{.HELM_CHART_DIR}}/files/manager-rules.yaml"
+
         mkdir -p "$(dirname "$out")"
-        awk 'f && /^[A-Za-z]/ {f=0} /^rules:/ {f=1; next} f' config/rbac/role.yaml > "$out"
 
-  # --- Docs ---
-
+        awk 'f && /^[A-Za-z]/ {f=0} /^rules:/ {f=1; next} f'
+        config/rbac/role.yaml > "$out"
   docs:api-ref:
-    desc: Regenerate the CRD API reference (docs/reference/api.md) from api/v1alpha1 doc comments
+    desc: >-
+      Regenerate the CRD API reference (docs/reference/api.md) from api/v1alpha1
+      doc comments
     cmds:
       - mkdir -p docs/reference
-      # `go -C tools tool` changes cwd into tools/, so pass repo-root-anchored
-      # absolute paths captured from the task's working directory.
       - |
         set -euo pipefail
         root="$(pwd)"
@@ -130,52 +120,35 @@ tasks:
           --config="$root/docs/.crd-ref-docs.yaml" \
           --renderer=markdown \
           --output-path="$root/docs/reference/api.md"
-
-  # --- Quality ---
-
   fmt:
     desc: Format code
     cmds:
-      # Exclude controller-gen output: zz_generated*.go files carry a
-      # "DO NOT EDIT" header and are owned by the generator. goimports would
-      # otherwise add a redundant `v1` alias to version-suffixed import paths
-      # (e.g. apimachinery .../meta/v1) that controller-gen deliberately omits,
-      # which fights the `verify-generated` gate. golangci-lint already skips
-      # generated files (formatters exclusions: generated: lax), so this keeps
-      # `fmt` and `lint` consistent. gofmt (go fmt) is alias-neutral, so the
-      # generated files stay gofmt-clean below.
-      - "{{.GOIMPORTS_RUNNER}} -w $(find . -type f -name '*.go' -not -name 'zz_generated*.go' -not -path './bin/*')"
+      - >-
+        {{.GOIMPORTS_RUNNER}} -w $(find . -type f -name '*.go' -not -name
+        'zz_generated*.go' -not -path './bin/*')
       - go fmt ./...
-
   vet:
     desc: Run go vet
     cmds:
       - go vet ./...
-
   lint:
     desc: Run golangci-lint
     cmds:
       - task: manifests
       - task: generate
       - '{{.GOLANGCI_RUNNER}} run ./...'
-
   lint-fix:
     desc: Run golangci-lint with --fix
     cmds:
       - '{{.GOLANGCI_RUNNER}} run --fix ./...'
-
   staticcheck:
     desc: Run staticcheck
     cmds:
       - '{{.STATICCHECK_RUNNER}} ./...'
-
   vuln:
     desc: Run vulnerability scan
     cmds:
       - '{{.GOVULNCHECK_RUNNER}} ./...'
-
-  # --- Tests ---
-
   test:
     desc: Run unit tests against envtest
     cmds:
@@ -183,26 +156,28 @@ tasks:
       - task: generate
       - task: fmt
       - task: vet
-      - |
+      - >
         set -euo pipefail
-        ASSETS="$({{.SETUP_ENVTEST}} use {{.ENVTEST_K8S_VERSION}} -p path)"
-        KUBEBUILDER_ASSETS="$ASSETS" go test $(go list ./... | grep -v /e2e) -coverprofile=coverage.out
 
+        ASSETS="$({{.SETUP_ENVTEST}} use {{.ENVTEST_K8S_VERSION}} -p path)"
+
+        KUBEBUILDER_ASSETS="$ASSETS" go test $(go list ./... | grep -v /e2e)
+        -coverprofile=coverage.out
   test-e2e:
-    desc: Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm + helmfile required)
+    desc: >-
+      Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm +
+      helmfile required)
     cmds:
       - task: manifests
       - task: generate
       - task: fmt
       - task: vet
       - task: e2e:cluster:up
-      - defer: {task: e2e:cluster:down}
+      - defer:
+          task: e2e:cluster:down
       - task: e2e:cluster:addons
       - task: e2e:cluster:fathom
       - go test ./test/e2e/ -v -ginkgo.v
-
-  # --- Build ---
-
   build:
     desc: Build manager binary
     cmds:
@@ -211,7 +186,6 @@ tasks:
       - task: fmt
       - task: vet
       - go build -o bin/manager cmd/main.go
-
   run:
     desc: Run the controller from your host
     cmds:
@@ -219,60 +193,60 @@ tasks:
       - task: generate
       - task: fmt
       - task: vet
-      # Leader election defaults on (SKA-303); disable it for single-process
-      # local dev so the manager starts without contending for a lease.
       - go run ./cmd/main.go --leader-elect=false
-
   docker-build:
     desc: Build container image (IMG={{.IMG}})
     cmds:
       - docker build -t {{.IMG}} .
-
   probe-build:
     desc: Build probe binary
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o bin/probe ./cmd/probe
-
+      - >-
+        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o bin/probe
+        ./cmd/probe
   probe-docker-build:
     desc: Build probe container image (PROBE_IMG={{.PROBE_IMG}})
     cmds:
       - docker build -f Dockerfile.probe -t {{.PROBE_IMG}} .
-
   probe-docker-push:
     desc: Push probe container image (PROBE_IMG={{.PROBE_IMG}})
     cmds:
       - docker push {{.PROBE_IMG}}
-
   probe-docker-buildx-push:
-    desc: Multi-arch build + push probe image (PROBE_IMG={{.PROBE_IMG}}, PROBE_PLATFORMS={{.PROBE_PLATFORMS}})
+    desc: >-
+      Multi-arch build + push probe image (PROBE_IMG={{.PROBE_IMG}},
+      PROBE_PLATFORMS={{.PROBE_PLATFORMS}})
     cmds:
-      - docker buildx build --push --platform {{.PROBE_PLATFORMS}} -f Dockerfile.probe -t {{.PROBE_IMG}} .
-
+      - >-
+        docker buildx build --push --platform {{.PROBE_PLATFORMS}} -f
+        Dockerfile.probe -t {{.PROBE_IMG}} .
   node-agent-build:
     desc: Build node-agent binary
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o bin/node-agent ./cmd/node-agent
-
+      - >-
+        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o
+        bin/node-agent ./cmd/node-agent
   node-agent-docker-build:
     desc: Build node-agent container image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}})
     cmds:
       - docker build -f Dockerfile.node-agent -t {{.NODE_AGENT_IMG}} .
-
   node-agent-docker-push:
     desc: Push node-agent container image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}})
     cmds:
       - docker push {{.NODE_AGENT_IMG}}
-
   node-agent-docker-buildx-push:
-    desc: Multi-arch build + push node-agent image (NODE_AGENT_IMG={{.NODE_AGENT_IMG}}, NODE_AGENT_PLATFORMS={{.NODE_AGENT_PLATFORMS}})
+    desc: >-
+      Multi-arch build + push node-agent image
+      (NODE_AGENT_IMG={{.NODE_AGENT_IMG}},
+      NODE_AGENT_PLATFORMS={{.NODE_AGENT_PLATFORMS}})
     cmds:
-      - docker buildx build --push --platform {{.NODE_AGENT_PLATFORMS}} -f Dockerfile.node-agent -t {{.NODE_AGENT_IMG}} .
-
+      - >-
+        docker buildx build --push --platform {{.NODE_AGENT_PLATFORMS}} -f
+        Dockerfile.node-agent -t {{.NODE_AGENT_IMG}} .
   docker-push:
     desc: Push container image (IMG={{.IMG}})
     cmds:
       - docker push {{.IMG}}
-
   images:refresh:
     desc: |
       Re-resolve and rewrite the pinned base-image digests in Dockerfile,
@@ -319,7 +293,6 @@ tasks:
         repin Dockerfile            gcr.io/distroless/static:nonroot
         repin Dockerfile.probe      golang:1.26.5
         repin Dockerfile.node-agent golang:1.26.5
-
   build-installer:
     desc: Render consolidated install.yaml under dist/
     cmds:
@@ -328,128 +301,145 @@ tasks:
       - mkdir -p dist
       - (cd config/manager && {{.KUSTOMIZE}} edit set image controller={{.IMG}})
       - '{{.KUSTOMIZE}} build config/default > dist/install.yaml'
-
-  # --- Cluster lifecycle ---
-
   install:
     desc: Install CRDs into the current cluster
     cmds:
       - task: manifests
       - '{{.KUSTOMIZE}} build config/crd | kubectl apply -f -'
-
   uninstall:
     desc: Remove CRDs from the current cluster
     cmds:
       - task: manifests
-      - '{{.KUSTOMIZE}} build config/crd | kubectl delete --ignore-not-found=true -f -'
-
+      - >-
+        {{.KUSTOMIZE}} build config/crd | kubectl delete --ignore-not-found=true
+        -f -
   deploy:
     desc: Deploy the operator to the current cluster
     cmds:
       - task: manifests
       - (cd config/manager && {{.KUSTOMIZE}} edit set image controller={{.IMG}})
       - '{{.KUSTOMIZE}} build config/default | kubectl apply -f -'
-
   undeploy:
     desc: Undeploy the operator from the current cluster
     cmds:
-      - '{{.KUSTOMIZE}} build config/default | kubectl delete --ignore-not-found=true -f -'
-
-  # --- OLM bundle + catalog ---
-
+      - >-
+        {{.KUSTOMIZE}} build config/default | kubectl delete
+        --ignore-not-found=true -f -
   bundle:
     desc: Generate OLM bundle manifests + metadata
     cmds:
       - task: manifests
-      - |
+      - >
         set -euo pipefail
-        command -v operator-sdk >/dev/null 2>&1 || { echo "operator-sdk not found; install version from .tool-versions" >&2; exit 1; }
-        operator-sdk generate kustomize manifests -q
-        (cd config/manager && {{.KUSTOMIZE}} edit set image controller={{.IMG}})
-        {{.KUSTOMIZE}} build config/manifests | operator-sdk generate bundle -q --overwrite --version {{.VERSION}}
-        operator-sdk bundle validate ./bundle
 
+        command -v operator-sdk >/dev/null 2>&1 || { echo "operator-sdk not
+        found; install version from .tool-versions" >&2; exit 1; }
+
+        operator-sdk generate kustomize manifests -q
+
+        (cd config/manager && {{.KUSTOMIZE}} edit set image controller={{.IMG}})
+
+        {{.KUSTOMIZE}} build config/manifests | operator-sdk generate bundle -q
+        --overwrite --version {{.VERSION}}
+
+        operator-sdk bundle validate ./bundle
   bundle-build:
     desc: Build the OLM bundle image
-    # Depends on `bundle`: `operator-sdk generate bundle` produces bundle.Dockerfile
-    # (and bundle/), which are generated artifacts not tracked in git. Without this,
-    # `task bundle-build` on a clean clone fails with "bundle.Dockerfile: no such file".
-    deps: [bundle]
+    deps:
+      - bundle
     cmds:
       - docker build -f bundle.Dockerfile -t {{.BUNDLE_IMG}} .
-
   bundle-push:
     desc: Push the OLM bundle image
     cmds:
       - docker push {{.BUNDLE_IMG}}
-
   catalog-build:
     desc: Build an OLM catalog image containing the bundle (requires opm)
     cmds:
-      - |
+      - >
         set -euo pipefail
-        command -v opm >/dev/null 2>&1 || { echo "opm not found in PATH" >&2; exit 1; }
-        opm index add --container-tool docker --mode semver --tag {{.CATALOG_IMG}} --bundles {{.BUNDLE_IMG}}
 
+        command -v opm >/dev/null 2>&1 || { echo "opm not found in PATH" >&2;
+        exit 1; }
+
+        opm index add --container-tool docker --mode semver --tag
+        {{.CATALOG_IMG}} --bundles {{.BUNDLE_IMG}}
   catalog-push:
     desc: Push the OLM catalog image
     cmds:
       - docker push {{.CATALOG_IMG}}
-
-  # --- End-to-end (local kind stack) ---
-
   e2e:cluster:up:
     desc: Create the e2e kind cluster from {{.E2E_KIND_CONFIG}}
     cmds:
-      - |
+      - >
         set -euo pipefail
-        command -v kind >/dev/null 2>&1 || { echo "kind not found in PATH" >&2; exit 1; }
+
+        command -v kind >/dev/null 2>&1 || { echo "kind not found in PATH" >&2;
+        exit 1; }
+
         if kind get clusters | grep -qx "{{.E2E_KIND_CLUSTER}}"; then
           echo "kind cluster {{.E2E_KIND_CLUSTER}} already exists; skipping create"
         else
           kind create cluster --name {{.E2E_KIND_CLUSTER}} --config {{.E2E_KIND_CONFIG}}
         fi
-
   e2e:cluster:addons:
-    desc: Install Cilium (CNI) + cert-manager + external-secrets via helmfile ({{.E2E_HELMFILE}})
+    desc: >-
+      Install Cilium (CNI) + cert-manager + external-secrets via helmfile
+      ({{.E2E_HELMFILE}})
     cmds:
-      - |
+      - >
         set -euo pipefail
-        command -v helmfile >/dev/null 2>&1 || { echo "helmfile not found in PATH (https://github.com/helmfile/helmfile)" >&2; exit 1; }
-        command -v helm >/dev/null 2>&1 || { echo "helm not found in PATH" >&2; exit 1; }
-        kubectl config use-context kind-{{.E2E_KIND_CLUSTER}}
-        helmfile -f {{.E2E_HELMFILE}} sync
 
+        command -v helmfile >/dev/null 2>&1 || { echo "helmfile not found in
+        PATH (https://github.com/helmfile/helmfile)" >&2; exit 1; }
+
+        command -v helm >/dev/null 2>&1 || { echo "helm not found in PATH" >&2;
+        exit 1; }
+
+        kubectl config use-context kind-{{.E2E_KIND_CLUSTER}}
+
+        helmfile -f {{.E2E_HELMFILE}} sync
   e2e:cluster:fathom:
-    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom
+    desc: >-
+      Build + load operator, probe, and node-agent images into kind, then deploy
+      Fathom
     cmds:
       - task: docker-build
-        vars: {IMG: '{{.E2E_IMG}}'}
+        vars:
+          IMG: '{{.E2E_IMG}}'
       - task: probe-docker-build
-        vars: {PROBE_IMG: '{{.E2E_PROBE_IMG}}'}
+        vars:
+          PROBE_IMG: '{{.E2E_PROBE_IMG}}'
       - task: node-agent-docker-build
-        vars: {NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG}}'}
+        vars:
+          NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG}}'
       - kind load docker-image {{.E2E_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_PROBE_IMG}} --name {{.E2E_KIND_CLUSTER}}
-      - kind load docker-image {{.E2E_NODE_AGENT_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      - >-
+        kind load docker-image {{.E2E_NODE_AGENT_IMG}} --name
+        {{.E2E_KIND_CLUSTER}}
       - task: install
       - task: deploy
-        vars: {IMG: '{{.E2E_IMG}}'}
-
+        vars:
+          IMG: '{{.E2E_IMG}}'
   e2e:cluster:samples:
-    desc: Apply check samples (CoreDNS, cert-manager, external-secrets, Cilium, node-certificates)
+    desc: >-
+      Apply check samples (CoreDNS, cert-manager, external-secrets, Cilium,
+      node-certificates)
     cmds:
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_coredns.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck.yaml
-      - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml
+      - >-
+        kubectl apply -f
+        config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml
       - kubectl apply -f config/samples/fathom_v1alpha1_addoncheck_cilium.yaml
-      - kubectl apply -f config/samples/fathom_v1alpha1_nodecertificatecheck.yaml
-
+      - >-
+        kubectl apply -f
+        config/samples/fathom_v1alpha1_nodecertificatecheck.yaml
   e2e:cluster:down:
     desc: Delete the e2e kind cluster
     cmds:
       - kind delete cluster --name {{.E2E_KIND_CLUSTER}}
-
   e2e:up:
     desc: Full local e2e stack — cluster + addons + Fathom + samples
     cmds:
@@ -457,16 +447,12 @@ tasks:
       - task: e2e:cluster:addons
       - task: e2e:cluster:fathom
       - task: e2e:cluster:samples
-
-  # --- Housekeeping ---
-
   clean:
     desc: Remove build outputs and test caches
     cmds:
       - go clean ./...
       - go clean -testcache
       - rm -rf bin dist coverage.out
-
   ci:
     desc: Run standard CI workflow locally
     cmds:

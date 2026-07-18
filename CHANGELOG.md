@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/skaphos/fathom/compare/v0.4.0...v0.4.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* automate operator↔probe/node-agent version lockstep (SKA-579) ([#142](https://github.com/skaphos/fathom/issues/142)) ([f6eb7a7](https://github.com/skaphos/fathom/commit/f6eb7a75b2c56bfe7fbda4c63295b9e836721bb0))
+* **nodecert:** stop node-agent DaemonSet rollout churn and gate rollup on convergence (SKA-49, SKA-589) ([#143](https://github.com/skaphos/fathom/issues/143)) ([8a0bb44](https://github.com/skaphos/fathom/commit/8a0bb44a29b9a1ccc4e4e28ec364d2ff30e0eb4b))
+
 ## [0.4.0](https://github.com/skaphos/fathom/compare/v0.3.1...v0.4.0) (2026-07-15)
 
 
