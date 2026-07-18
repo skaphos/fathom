@@ -112,10 +112,11 @@ type Options struct {
 
 // DefaultProbeImage is the published probe image this build of Fathom ships
 // with. Probe-using adapters fall back to this when neither a per-AddonCheck
-// threshold nor an operator-level --probe-image flag is set. The version tag is
-// bumped automatically in lockstep with the operator release by release-please
-// (the x-release-please-version annotation; see release-please-config.json) and
-// enforced by scripts/check-version-lockstep.sh — do not hand-edit it.
+// probeImage threshold nor an operator-level --probe-image flag is set. The
+// version tag is bumped automatically in lockstep with the operator release by
+// release-please (the x-release-please-version annotation; see
+// release-please-config.json) and enforced by
+// scripts/check-version-lockstep.sh — do not hand-edit it.
 const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.4.0" // x-release-please-version
 
 // DefaultNodeAgentImage is the published node-agent image this build of Fathom

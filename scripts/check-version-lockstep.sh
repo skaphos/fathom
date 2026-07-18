@@ -28,8 +28,19 @@ cd "$root"
 manifest=".release-please-manifest.json"
 
 # Read the root ("."), package version from the manifest without a jq
-# dependency (jq is not guaranteed on contributor machines).
-version="${LOCKSTEP_VERSION:-$(sed -n 's/.*"\."[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest")}"
+# dependency (jq is not guaranteed on contributor machines). LOCKSTEP_VERSION
+# overrides it (tests) and skips the manifest read entirely; otherwise the
+# manifest must exist, so a partial checkout or a pre-release-please tree fails
+# with a clear diagnostic instead of a raw sed error under `set -e`.
+if [[ -n "${LOCKSTEP_VERSION:-}" ]]; then
+  version="$LOCKSTEP_VERSION"
+else
+  if [[ ! -f "$manifest" ]]; then
+    echo "check-version-lockstep: $manifest not found; run release-please or set LOCKSTEP_VERSION" >&2
+    exit 1
+  fi
+  version="$(sed -n 's/.*"\."[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest")"
+fi
 if [[ -z "$version" || "$version" == "null" ]]; then
   echo "check-version-lockstep: could not read root package version from $manifest" >&2
   exit 1
