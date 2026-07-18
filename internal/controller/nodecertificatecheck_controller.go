@@ -67,8 +67,9 @@ const (
 	// the controller last applied to the node-agent DaemonSet. ensureDaemonSet
 	// rewrites Spec.Template only when this hash changes, so server-defaulted
 	// fields on the live object never masquerade as drift and trigger an endless
-	// rolling restart (SKA-589). nodeAgentSpecHashLength keeps the 256-bit digest
-	// short enough for an annotation value while staying collision-safe here.
+	// rolling restart (SKA-589). nodeAgentSpecHashLength truncates the SHA-256 hex
+	// digest to 32 characters (128 bits) — short enough for an annotation value
+	// while staying collision-safe for this single-object use.
 	nodeAgentSpecHashAnnotation = "fathom.skaphos.io/spec-hash"
 	nodeAgentSpecHashLength     = 32
 
@@ -337,13 +338,18 @@ func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, ch
 		// Comparing a stored hash of the desired template (rather than the live
 		// object) keeps API-server defaulting from looking like drift, which
 		// would otherwise churn the DaemonSet into a perpetual rolling restart
-		// every time an agent rewrites its report ConfigMap (SKA-589).
-		if ds.Annotations[nodeAgentSpecHashAnnotation] != desiredHash {
+		// every time an agent rewrites its report ConfigMap (SKA-589). An empty
+		// desiredHash (the impossible marshal failure) forces the write so a
+		// create still produces a valid template, and we never stamp the empty
+		// hash — a later reconcile then recomputes and converges.
+		if nodeAgentTemplateNeedsWrite(ds.Annotations[nodeAgentSpecHashAnnotation], desiredHash) {
 			ds.Spec.Template = desired.Spec.Template
-			if ds.Annotations == nil {
-				ds.Annotations = make(map[string]string, 1)
+			if desiredHash != "" {
+				if ds.Annotations == nil {
+					ds.Annotations = make(map[string]string, 1)
+				}
+				ds.Annotations[nodeAgentSpecHashAnnotation] = desiredHash
 			}
-			ds.Annotations[nodeAgentSpecHashAnnotation] = desiredHash
 		}
 		return controllerutil.SetControllerReference(check, ds, r.Scheme)
 	}); err != nil {
@@ -354,6 +360,16 @@ func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, ch
 		return nil, err
 	}
 	return ds, nil
+}
+
+// nodeAgentTemplateNeedsWrite reports whether ensureDaemonSet must (re)write the
+// pod template. It writes when the stored hash differs from the desired hash, and
+// always when desiredHash is empty: an empty hash means the digest could not be
+// computed, so skipping the write would (on create) leave an invalid, empty pod
+// template. The caller must not stamp an empty hash, so a later reconcile
+// recomputes and converges.
+func nodeAgentTemplateNeedsWrite(storedHash, desiredHash string) bool {
+	return desiredHash == "" || storedHash != desiredHash
 }
 
 // nodeAgentSpecHash returns a stable digest of the parts of the DaemonSet the
