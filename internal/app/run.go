@@ -16,12 +16,18 @@ import (
 	"sync/atomic"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -39,6 +45,7 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/controller"
 	"github.com/skaphos/fathom/internal/metrics"
+	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/tracing"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -152,7 +159,46 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 		HealthProbeBindAddress: opts.HealthProbeBindAddress,
 		LeaderElection:         opts.LeaderElect,
 		LeaderElectionID:       opts.LeaderElectionID,
+		Cache:                  scopedCacheOptions(),
 	}, watchers, nil
+}
+
+// scopedCacheOptions restricts the manager's shared informer cache for the
+// generic Kubernetes types the operator manages, so it never lists or caches
+// the whole cluster's objects of those kinds. Without this, the nodecert
+// controller's cluster-wide ConfigMap watch would pull every ConfigMap body
+// (e.g. tens of thousands of Helm release ConfigMaps) into memory and OOM the
+// operator on large clusters (SKA-581 / #164).
+//
+// The label selector is safe only for kinds whose every cached read targets a
+// Fathom-managed object carrying fathom.skaphos.io/managed-by=fathom:
+//   - ConfigMap: only the node-agent report CMs are cached (List+Watch in the
+//     NodeCertificateCheck controller); the node-agent stamps managed-by=fathom.
+//     Adapters read arbitrary addon ConfigMaps through the uncached impersonating
+//     client, so they are unaffected by the cache filter.
+//   - DaemonSet / RoleBinding: only the node-agent DaemonSet and RoleBinding are
+//     cached (Owns + CreateOrUpdate); both carry managed-by=fathom via agentLabels.
+//     Addon DaemonSets/RBAC are read via the uncached impersonating client.
+//
+// ServiceAccount is deliberately NOT filtered here: AddonCheck reconciliation
+// does a *cached* List of per-addon ServiceAccounts labeled
+// fathom.skaphos.io/addon=<addon> (never managed-by=fathom), so a
+// managed-by=fathom selector would empty that list and break every AddonCheck.
+// ServiceAccounts are also small and few relative to ConfigMaps, so leaving them
+// cluster-wide is not a meaningful memory cost.
+func scopedCacheOptions() cache.Options {
+	managedByFathom := cache.ByObject{
+		Label: labels.SelectorFromSet(labels.Set{
+			nodecert.LabelManagedBy: nodecert.ManagedByValue,
+		}),
+	}
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}:   managedByFathom,
+			&appsv1.DaemonSet{}:   managedByFathom,
+			&rbacv1.RoleBinding{}: managedByFathom,
+		},
+	}
 }
 
 // DefaultControllers returns the operator's built-in reconcilers, configured
