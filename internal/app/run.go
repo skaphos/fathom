@@ -165,9 +165,7 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // (SKA-162). Out-of-cluster runs may leave it empty.
 func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	if opts.Namespace == "" && impersonation.RunningInCluster() {
-		return nil, fmt.Errorf(
-			"namespace is empty while running in-cluster; set FATHOM_NAMESPACE (downward API) or --namespace so adapter impersonation cannot fail open (SKA-162)",
-		)
+		return nil, impersonation.ErrNamespaceRequiredInCluster
 	}
 	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), BuiltInAdapters()...)
 	if err != nil {

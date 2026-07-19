@@ -435,9 +435,7 @@ func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) 
 	}
 	if r.Namespace == "" {
 		if impersonation.RunningInCluster() {
-			return nil, fmt.Errorf(
-				"operator namespace is empty while running in-cluster; set FATHOM_NAMESPACE / --namespace so adapter impersonation cannot fail open (SKA-162)",
-			)
+			return nil, impersonation.ErrNamespaceRequiredInCluster
 		}
 		// Out-of-cluster: manager already uses a privileged kubeconfig.
 		return r.Client, nil
