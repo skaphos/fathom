@@ -160,7 +160,13 @@ spec:
   warnDays: 30      # <= this many days to expiry -> Warn
   criticalDays: 7   # <= this many days (or expired) -> Fail
   interval: 1h
+  # includeControlPlaneNodes: true   # opt in to scan control-plane certs
 ```
+
+Paths are restricted to an operator-approved allowlist (`/etc/kubernetes`,
+`/var/lib/kubelet`, `/etc/etcd`, `/var/lib/etcd`, `/var/lib/rancher`), and the
+agent schedules on control-plane nodes only when `includeControlPlaneNodes: true`
+is set — where the kubeadm apiserver/etcd certificates live.
 
 The agent defaults to non-root (uid 65532); it reads world-readable certificate
 files (e.g. kubeadm's `*.crt`, mode `0644`) and silently skips root-only

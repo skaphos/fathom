@@ -4,12 +4,17 @@
 # E2E fixture: scans explicit, world-readable kubeadm control-plane certificate
 # files that exist on the kind node (apiserver.crt and ca.crt are mode 0644, so
 # the non-root node-agent reads them). A short interval keeps the spec fast.
+#
+# The kind node is a control-plane node, so includeControlPlaneNodes must be set
+# for the agent to schedule there — control-plane scheduling is an explicit
+# opt-in (see #155). The paths are under the /etc/kubernetes allowlist prefix.
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: NodeCertificateCheck
 metadata:
   name: nodecert-e2e
   namespace: default
 spec:
+  includeControlPlaneNodes: true
   paths:
     - /etc/kubernetes/pki/apiserver.crt
     - /etc/kubernetes/pki/ca.crt

@@ -175,6 +175,10 @@ func upsertReportConfigMap(ctx context.Context, kube kubernetes.Interface, cfg c
 		nodecert.LabelSourceName: cfg.checkName,
 		nodecert.LabelNode:       sanitizeLabelValue(cfg.nodeName),
 	}
+	// The node-name annotation is the report's authenticity anchor: the operator's
+	// ValidatingAdmissionPolicy requires it to equal this agent's node claim from
+	// its ServiceAccount token, so it must carry the exact (unsanitized) node name.
+	annotations := map[string]string{nodecert.AnnotationNodeName: cfg.nodeName}
 	data := map[string]string{nodecert.ConfigMapReportKey: encoded}
 
 	cms := kube.CoreV1().ConfigMaps(cfg.checkNamespace)
@@ -182,7 +186,7 @@ func upsertReportConfigMap(ctx context.Context, kube kubernetes.Interface, cfg c
 		existing, getErr := cms.Get(ctx, cfg.configMapName, metav1.GetOptions{})
 		if apierrors.IsNotFound(getErr) {
 			_, createErr := cms.Create(ctx, &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: cfg.configMapName, Namespace: cfg.checkNamespace, Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Name: cfg.configMapName, Namespace: cfg.checkNamespace, Labels: labels, Annotations: annotations},
 				Data:       data,
 			}, metav1.CreateOptions{})
 			return createErr
@@ -196,6 +200,12 @@ func upsertReportConfigMap(ctx context.Context, kube kubernetes.Interface, cfg c
 		}
 		for k, v := range labels {
 			updated.Labels[k] = v
+		}
+		if updated.Annotations == nil {
+			updated.Annotations = map[string]string{}
+		}
+		for k, v := range annotations {
+			updated.Annotations[k] = v
 		}
 		updated.Data = data
 		_, updErr := cms.Update(ctx, updated, metav1.UpdateOptions{})

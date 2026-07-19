@@ -123,7 +123,45 @@ var _ = Describe("CRD schema validation", func() {
 				Paths: []string{"etc/kubernetes/pki/apiserver.crt"},
 			}))
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("each path must be absolute"))
+			Expect(err.Error()).To(ContainSubstring("each path must be an absolute"))
+		})
+
+		It("rejects a path outside the allowed prefixes (confused-deputy guard)", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				Paths: []string{"/root/.ssh/id_rsa"},
+			}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("allowed prefix"))
+		})
+
+		It("rejects a path containing ..", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				Paths: []string{"/etc/kubernetes/../../root/.ssh"},
+			}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("allowed prefix"))
+		})
+
+		It("rejects the host root", func() {
+			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				Paths: []string{"/"},
+			}))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("allowed prefix"))
+		})
+
+		It("accepts paths under each allowed prefix", func() {
+			obj := newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				WarnDays: i32(30), CriticalDays: i32(7),
+				Paths: []string{
+					"/etc/kubernetes/pki",
+					"/var/lib/kubelet/pki",
+					"/etc/etcd/pki",
+					"/var/lib/etcd",
+					"/var/lib/rancher/k3s/server/tls",
+				},
+			})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		})
 
 		It("accepts a positive timeout within the interval", func() {

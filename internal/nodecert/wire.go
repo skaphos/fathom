@@ -23,6 +23,19 @@ const (
 	LabelSourceName = "fathom.skaphos.io/source-name"
 	LabelNode       = "fathom.skaphos.io/node"
 
+	// AnnotationNodeName carries the raw, unsanitized node name on a per-node
+	// report ConfigMap. Unlike LabelNode (coerced into a valid label value, and
+	// therefore lossy for long or non-conforming node names), this annotation
+	// holds the exact node name. It is the authenticity anchor for a report:
+	//   - the report-authenticity ValidatingAdmissionPolicy compares it to the
+	//     writing agent's ServiceAccount-token node claim
+	//     (authentication.kubernetes.io/node-name) at admission time, so a
+	//     node-agent can only publish a report attributed to its own node; and
+	//   - the controller re-checks it equals the report payload's Node field at
+	//     collection time as defense-in-depth on clusters where the policy is not
+	//     enforced.
+	AnnotationNodeName = "fathom.skaphos.io/node-name"
+
 	// ManagedByValue is the value of LabelManagedBy on Fathom-owned objects.
 	ManagedByValue = "fathom"
 	// KindNodeCertificateCheck is the LabelSourceKind value for this check.
