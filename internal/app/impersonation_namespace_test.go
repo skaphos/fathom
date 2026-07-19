@@ -32,28 +32,8 @@ func TestDefaultControllers_InClusterRequiresNamespace(t *testing.T) {
 	}
 }
 
-// TestDefaultControllers_OutOfClusterAllowsEmptyNamespace keeps local
-// `task run` against a privileged kubeconfig working without FATHOM_NAMESPACE.
-func TestDefaultControllers_OutOfClusterAllowsEmptyNamespace(t *testing.T) {
-	// This path constructs reconcilers and needs a real manager; the happy-path
-	// Run test already covers full wiring. Here we only assert the in-cluster
-	// gate does not fire out of cluster — by ensuring RunningInCluster is false
-	// and that DefaultControllers is not rejected solely for empty Namespace
-	// before it touches mgr. We cannot call DefaultControllers(nil) once past
-	// the gate (impersonation.New(nil) panics), so this test only validates the
-	// predicate via the in-cluster helper used by DefaultControllers.
-	restore := impersonation.SetRunningInClusterForTest(false)
-	t.Cleanup(restore)
-
-	if impersonation.RunningInCluster() {
-		t.Fatal("test setup: expected out-of-cluster")
-	}
-	opts := DefaultOptions()
-	if opts.Namespace != "" {
-		t.Fatalf("DefaultOptions().Namespace = %q, want empty for out-of-cluster default", opts.Namespace)
-	}
-	// Gate condition used by DefaultControllers: empty namespace is allowed.
-	if opts.Namespace == "" && impersonation.RunningInCluster() {
-		t.Fatal("out-of-cluster empty namespace incorrectly treated as in-cluster fail-closed")
-	}
-}
+// The out-of-cluster path (empty Namespace allowed, full reconciler wiring
+// constructed) is covered end-to-end by TestRun_HappyPath_DefaultControllers,
+// which runs DefaultControllers against envtest — inherently out-of-cluster, so
+// the SKA-162 gate does not fire. No separate out-of-cluster gate test is needed
+// here.
