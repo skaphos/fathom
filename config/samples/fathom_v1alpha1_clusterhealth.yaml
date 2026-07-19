@@ -8,11 +8,15 @@ metadata:
 spec:
   description: "Aggregate the worst-case Result across every HealthCheck in the cluster."
   # ClusterHealth is cluster-scoped. An empty/omitted selector matches all
-  # HealthChecks in all namespaces; narrow with spec.namespaces and/or a
-  # label selector, e.g.:
+  # HealthChecks. Namespace scope precedence:
+  #   1. namespaces (allowlist) — definitive when set
+  #   2. else excludedNamespaces (denylist)
+  #   3. else open (all namespaces)
   #
   #   namespaces:
   #     - fathom-system
+  #   # excludedNamespaces:
+  #   #   - scratch
   #   selector:
   #     matchLabels:
   #       team: platform

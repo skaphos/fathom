@@ -530,11 +530,15 @@ spec: {}   # empty spec matches all HealthChecks in all namespaces
 - One `HealthCheck` per `AddonCheck` you want in the roll-up.
 - `ClusterHealth` is cluster-scoped. An empty spec folds in **every**
   `HealthCheck` in the cluster; use `spec.selector` (label selector) and/or
-  `spec.namespaces` (namespace list) to scope it.
+  the namespace filter to scope it:
+  - `spec.namespaces` — allowlist (definitive when set)
+  - else `spec.excludedNamespaces` — denylist
+  - else open (all namespaces)
 - Any `HealthCheck` the scope covers contributes to the aggregate, and a
   wrapper may explicitly set `checkRef.namespace` to mirror an `AddonCheck` in
-  another namespace — so use RBAC on `HealthCheck` creation to control which
-  teams can surface status into a cluster-wide aggregate.
+  another namespace — so use RBAC on `HealthCheck` creation plus the aggregate
+  namespace filter to control which teams can surface status into a
+  cluster-wide aggregate.
 
 > `HealthCheck` can only wrap `AddonCheck` (`checkRef.kind: AddonCheck`). The
 > newer `NodeCertificateCheck` kind, where present, reports its own

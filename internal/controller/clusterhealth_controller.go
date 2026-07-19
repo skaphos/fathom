@@ -131,28 +131,47 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-// listSelectedHealthChecks lists the HealthChecks the aggregate rolls up:
-// cluster-wide when spec.namespaces is empty, otherwise one list per listed
-// namespace. spec.namespaces is schema-capped (MaxItems), so the loop is
-// bounded.
+// listSelectedHealthChecks lists the HealthChecks the aggregate rolls up under
+// the namespace-scope precedence on ClusterHealthSpec (allowlist → denylist →
+// open). When Namespaces is set the list is one Get-scope per allowlisted
+// namespace (schema-capped MaxItems). When only ExcludedNamespaces is set (or
+// neither is), the list is cluster-wide and the denylist is applied in memory.
 func (r *ClusterHealthReconciler) listSelectedHealthChecks(ctx context.Context, ch *fathomv1alpha1.ClusterHealth, selector labels.Selector) ([]fathomv1alpha1.HealthCheck, error) {
-	namespaces := ch.Spec.Namespaces
-	if len(namespaces) == 0 {
-		namespaces = []string{""} // client.InNamespace("") lists all namespaces.
-	}
-	var out []fathomv1alpha1.HealthCheck
-	for _, ns := range namespaces {
-		var hcs fathomv1alpha1.HealthCheckList
-		if err := r.List(ctx, &hcs,
-			client.InNamespace(ns),
-			client.MatchingLabelsSelector{Selector: selector},
-		); err != nil {
-			// The scope lands in the Ready/ListFailed condition message; without
-			// it an RBAC or transient failure is undiagnosable when
-			// spec.namespaces lists several namespaces.
-			return nil, fmt.Errorf("listing HealthChecks in %s: %w", namespaceScope(ns), err)
+	// Allowlist path: list only the named namespaces. ExcludedNamespaces is
+	// ignored while an allowlist is present (allow is definitive).
+	if len(ch.Spec.Namespaces) > 0 {
+		var out []fathomv1alpha1.HealthCheck
+		for _, ns := range ch.Spec.Namespaces {
+			var hcs fathomv1alpha1.HealthCheckList
+			if err := r.List(ctx, &hcs,
+				client.InNamespace(ns),
+				client.MatchingLabelsSelector{Selector: selector},
+			); err != nil {
+				// The scope lands in the Ready/ListFailed condition message; without
+				// it an RBAC or transient failure is undiagnosable when
+				// spec.namespaces lists several namespaces.
+				return nil, fmt.Errorf("listing HealthChecks in %s: %w", namespaceScope(ns), err)
+			}
+			out = append(out, hcs.Items...)
 		}
-		out = append(out, hcs.Items...)
+		return out, nil
+	}
+
+	// Open or denylist: list all namespaces, then drop excluded ones.
+	var hcs fathomv1alpha1.HealthCheckList
+	if err := r.List(ctx, &hcs,
+		client.MatchingLabelsSelector{Selector: selector},
+	); err != nil {
+		return nil, fmt.Errorf("listing HealthChecks in %s: %w", namespaceScope(""), err)
+	}
+	if len(ch.Spec.ExcludedNamespaces) == 0 {
+		return hcs.Items, nil
+	}
+	out := make([]fathomv1alpha1.HealthCheck, 0, len(hcs.Items))
+	for i := range hcs.Items {
+		if clusterHealthCoversNamespace(ch, hcs.Items[i].Namespace) {
+			out = append(out, hcs.Items[i])
+		}
 	}
 	return out, nil
 }
@@ -245,9 +264,9 @@ func (r *ClusterHealthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // clusterHealthsForHealthCheck returns the names of every ClusterHealth whose
-// scope covers hc: the selector matches hc's labels and spec.namespaces is
-// empty or contains hc's namespace. ClusterHealth is cluster-scoped, so the
-// requests carry no namespace.
+// scope covers hc: the selector matches hc's labels and the namespace-scope
+// filter (allowlist / denylist / open) includes hc's namespace. ClusterHealth
+// is cluster-scoped, so the requests carry no namespace.
 func (r *ClusterHealthReconciler) clusterHealthsForHealthCheck(ctx context.Context, obj client.Object) []reconcile.Request {
 	hc, ok := obj.(*fathomv1alpha1.HealthCheck)
 	if !ok {
@@ -276,7 +295,17 @@ func (r *ClusterHealthReconciler) clusterHealthsForHealthCheck(ctx context.Conte
 }
 
 // clusterHealthCoversNamespace reports whether ch aggregates HealthChecks in
-// namespace: spec.namespaces is empty (all namespaces) or lists it.
+// namespace under the ClusterHealthSpec precedence:
+//
+//  1. Namespaces non-empty → allowlist only (ExcludedNamespaces ignored).
+//  2. Else ExcludedNamespaces non-empty → denylist.
+//  3. Else open (every namespace).
 func clusterHealthCoversNamespace(ch *fathomv1alpha1.ClusterHealth, namespace string) bool {
-	return len(ch.Spec.Namespaces) == 0 || slices.Contains(ch.Spec.Namespaces, namespace)
+	if len(ch.Spec.Namespaces) > 0 {
+		return slices.Contains(ch.Spec.Namespaces, namespace)
+	}
+	if len(ch.Spec.ExcludedNamespaces) > 0 {
+		return !slices.Contains(ch.Spec.ExcludedNamespaces, namespace)
+	}
+	return true
 }

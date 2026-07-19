@@ -209,8 +209,9 @@ adapter level is forced to `Error`.
   `clusterHealthsForHealthCheck`), so a member's status change re-enqueues every
   `ClusterHealth` whose selector matches it.
 - **Selection:** `ClusterHealth` is cluster-scoped; it lists `HealthCheck`s
-  across **all namespaces** matching `spec.selector` (nil/empty selector
-  matches all), optionally narrowed to `spec.namespaces` when set.
+  matching `spec.selector` (nil/empty selector matches all) under namespace
+  precedence: `spec.namespaces` allowlist (definitive when set) → else
+  `spec.excludedNamespaces` denylist → else open (all namespaces).
 - **Aggregation:** worst-case `Result` over children with a non-empty
   `Status.Result`; a deterministic `children` summary sorted by namespace,
   then name;
@@ -412,8 +413,8 @@ layout is in [code-map.md](code-map.md).
   in this build; other `checkRef.kind` values are rejected with
   `Ready=False / UnsupportedKind`.
 - **Cluster-wide wrapper selection.** `ClusterHealth` is cluster-scoped and
-  selects `HealthCheck`s across all namespaces (optionally narrowed by
-  `spec.namespaces`). A selected `HealthCheck` can also mirror an explicit
-  `checkRef.namespace`, so tenancy depends on who is allowed to create
-  wrappers anywhere in the cluster and on the operator's RBAC to read the
-  referenced target.
+  selects `HealthCheck`s under the allowlist / denylist / open namespace filter
+  (`spec.namespaces`, `spec.excludedNamespaces`). A selected `HealthCheck` can
+  also mirror an explicit `checkRef.namespace`, so tenancy depends on who is
+  allowed to create wrappers, the aggregate's namespace filter, and the
+  operator's RBAC to read the referenced target.

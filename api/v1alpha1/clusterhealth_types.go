@@ -13,15 +13,30 @@ import (
 // is an aggregator: it rolls up the Status of selected HealthCheck resources
 // into a single worst-case Result for cluster-wide consumers (dashboards,
 // alerting, gates).
+//
+// Namespace scope uses allowlist-then-denylist precedence:
+//
+//  1. If Namespaces is non-empty, only those namespaces are included
+//     (allowlist is definitive; ExcludedNamespaces is ignored).
+//  2. Else if ExcludedNamespaces is non-empty, every namespace except those
+//     listed is included (denylist).
+//  3. Else every namespace is in scope (open).
+//
+// Cross-namespace HealthCheck.checkRef.namespace remains intentional: a
+// HealthCheck may mirror an AddonCheck in another namespace. Tenancy is
+// enforced by who can create those objects plus this aggregate's namespace
+// filter — not by forbidding cross-namespace refs.
 type ClusterHealthSpec struct {
 	// Selector selects the HealthChecks whose status this aggregate rolls up.
-	// An empty or nil selector matches every HealthCheck in scope (all
-	// namespaces, or those listed in Namespaces).
+	// An empty or nil selector matches every HealthCheck in the namespace
+	// scope defined by Namespaces / ExcludedNamespaces.
 	// +optional
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
-	// Namespaces narrows the aggregate to HealthChecks in these namespaces.
-	// Empty means all namespaces.
+	// Namespaces is the allowlist of HealthCheck namespaces this aggregate
+	// includes. When non-empty it is definitive: only listed namespaces are
+	// considered and ExcludedNamespaces is ignored. Empty means "no allowlist"
+	// (fall through to ExcludedNamespaces, then open).
 	// +optional
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=50
@@ -29,6 +44,17 @@ type ClusterHealthSpec struct {
 	// +kubebuilder:validation:items:MaxLength=63
 	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespaces []string `json:"namespaces,omitempty"`
+
+	// ExcludedNamespaces is the denylist of HealthCheck namespaces this
+	// aggregate skips. Applied only when Namespaces is empty. Empty (with
+	// Namespaces also empty) means open — every namespace is in scope.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	ExcludedNamespaces []string `json:"excludedNamespaces,omitempty"`
 
 	// Description is a human-readable purpose for this aggregate.
 	// +optional
@@ -109,8 +135,9 @@ type ClusterHealthStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ClusterHealth is the Schema for the clusterhealths API. It is
-// cluster-scoped: one object rolls up HealthChecks across all namespaces
-// (optionally narrowed by spec.namespaces).
+// cluster-scoped: one object rolls up HealthChecks across namespaces,
+// optionally narrowed by spec.namespaces (allowlist) or
+// spec.excludedNamespaces (denylist). See ClusterHealthSpec for precedence.
 type ClusterHealth struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
