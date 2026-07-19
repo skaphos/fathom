@@ -245,6 +245,11 @@ This is now automated — you no longer hand-edit version tags at release time:
   sites drifts from the version in `.release-please-manifest.json`. A guard test
   (`scripts/version_lockstep_gate_test.go`) also asserts the gate stays in sync
   and actually detects drift.
+- **Do not hand-bump the Helm chart version on ordinary PRs.** Chart content
+  (templates, values, synced CRDs) can change mid-cycle; `version` /
+  `appVersion` stay at the last released value until the release PR. Chart
+  testing disables `check-version-increment` (`.github/ct.yaml`) so `ct lint`
+  does not fight the lockstep gate.
 
 So the flow is: land Conventional Commits, review the release PR (which already
 carries the bumped tags), merge. If you ever hand-bump a tag, the
