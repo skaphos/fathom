@@ -22,9 +22,16 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -141,6 +148,68 @@ func TestBuildManagerOptions_DefaultsHaveNoCertWatchers(t *testing.T) {
 		t.Errorf("HealthProbeBindAddress: got %q, want :8081", mgrOpts.HealthProbeBindAddress)
 	}
 }
+
+// TestBuildManagerOptions_ScopesCacheByManagedByLabel is the regression guard
+// for SKA-581 / #164: the manager cache must restrict ConfigMap, DaemonSet, and
+// RoleBinding informers to Fathom-managed objects (managed-by=fathom) so a
+// cluster-wide ConfigMap watch cannot OOM the operator, while ServiceAccount
+// must stay unfiltered (AddonCheck lists per-addon SAs that never carry that
+// label).
+func TestBuildManagerOptions_ScopesCacheByManagedByLabel(t *testing.T) {
+	scheme, err := NewScheme()
+	if err != nil {
+		t.Fatalf("NewScheme: %v", err)
+	}
+	mgrOpts, _, err := BuildManagerOptions(DefaultOptions(), scheme)
+	if err != nil {
+		t.Fatalf("BuildManagerOptions: %v", err)
+	}
+	if mgrOpts.Cache.ByObject == nil {
+		t.Fatal("Cache.ByObject is nil; expected scoped selectors")
+	}
+
+	byType := map[string]cache.ByObject{}
+	for obj, cfg := range mgrOpts.Cache.ByObject {
+		switch obj.(type) {
+		case *corev1.ConfigMap:
+			byType["ConfigMap"] = cfg
+		case *appsv1.DaemonSet:
+			byType["DaemonSet"] = cfg
+		case *rbacv1.RoleBinding:
+			byType["RoleBinding"] = cfg
+		case *corev1.ServiceAccount:
+			byType["ServiceAccount"] = cfg
+		default:
+			t.Errorf("unexpected type scoped in cache: %T", obj)
+		}
+	}
+
+	managed := labels.Set{nodecert.LabelManagedBy: nodecert.ManagedByValue}
+	for _, kind := range []string{"ConfigMap", "DaemonSet", "RoleBinding"} {
+		cfg, ok := byType[kind]
+		if !ok {
+			t.Errorf("%s: not scoped in Cache.ByObject; expected a managed-by=fathom selector", kind)
+			continue
+		}
+		if cfg.Label == nil {
+			t.Errorf("%s: Label selector is nil", kind)
+			continue
+		}
+		if !cfg.Label.Matches(managed) {
+			t.Errorf("%s: selector does not match a managed-by=fathom object", kind)
+		}
+		if cfg.Label.Matches(labels.Set{}) {
+			t.Errorf("%s: selector matches an unlabeled object; would still cache the whole cluster", kind)
+		}
+	}
+
+	if _, ok := byType["ServiceAccount"]; ok {
+		t.Error("ServiceAccount must not be label-scoped: AddonCheck lists addon SAs that lack managed-by=fathom")
+	}
+}
+
+// compile-time assurance the selector map key type stays client.Object.
+var _ map[client.Object]cache.ByObject = cache.Options{}.ByObject
 
 func TestBuildManagerOptions_InsecureMetricsHasNoFilter(t *testing.T) {
 	scheme, err := NewScheme()
