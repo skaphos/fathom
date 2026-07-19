@@ -7,7 +7,6 @@ package impersonation
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 
 	"k8s.io/client-go/rest"
@@ -67,7 +66,7 @@ func RunningInCluster() bool {
 // is shared by the startup gate (DefaultControllers) and the per-reconcile gate
 // (AddonCheckReconciler.adapterClient) so operators see — and can grep for — one
 // consistent message regardless of where the check fires.
-var ErrNamespaceRequiredInCluster = fmt.Errorf(
+var ErrNamespaceRequiredInCluster = errors.New(
 	"operator namespace is empty while running in-cluster; set FATHOM_NAMESPACE (downward API) or --namespace so adapter impersonation cannot fail open (SKA-162)",
 )
 
