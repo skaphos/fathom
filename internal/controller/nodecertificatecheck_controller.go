@@ -355,9 +355,12 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 // admissionPolicyUnsupported reports whether err means the API server does not
 // serve the ValidatingAdmissionPolicy types (feature-gate disabled or a very old
 // cluster), in which case the controller degrades gracefully rather than wedging
-// every reconcile.
+// every reconcile. Only a NoMatch error — the REST mapper cannot resolve the kind
+// — qualifies. A missing scheme registration or a bare NotFound is a
+// programming/configuration error, not an unsupported cluster, so it is
+// deliberately NOT swallowed here and instead fails the reconcile loudly.
 func admissionPolicyUnsupported(err error) bool {
-	return apiMeta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) || apierrors.IsNotFound(err)
+	return apiMeta.IsNoMatchError(err)
 }
 
 // reportAuthenticityPolicySpec is the CEL policy that binds a report ConfigMap to

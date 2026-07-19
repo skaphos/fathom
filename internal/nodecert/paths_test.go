@@ -28,6 +28,13 @@ func TestPathAllowed(t *testing.T) {
 		{"host root rejected", "/", false},
 		{"empty rejected", "", false},
 		{"relative rejected", "etc/kubernetes/pki", false},
+		// Leading whitespace must be rejected, not normalized: the CRD CEL rule
+		// validates the raw value (a leading space fails startsWith('/')), so trimming
+		// here would accept inputs the API server rejects and break Go<->CRD lockstep.
+		{"leading space rejected", " /etc/kubernetes/pki", false},
+		// A trailing space stays inside the prefix, so both PathAllowed and the CEL
+		// rule accept it — asserted here to pin that the two agree at this boundary.
+		{"trailing space matches CEL (allowed)", "/etc/kubernetes/pki ", true},
 		{"traversal rejected", "/etc/kubernetes/../../root/.ssh", false},
 		{"traversal embedded rejected", "/var/lib/kubelet/../../../etc/shadow", false},
 		{"outside allowlist rejected", "/root/.ssh/id_rsa", false},

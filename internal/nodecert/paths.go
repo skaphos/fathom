@@ -66,9 +66,11 @@ func AllowedPathPrefixes() []string {
 
 // PathAllowed reports whether p is a scannable path: absolute, clean of "..",
 // never the host root, and rooted at one of allowedPathPrefixes. It is the Go
-// twin of the CRD's path validation and must stay in lockstep with it.
+// twin of the CRD's path validation and must stay in lockstep with it. Note it
+// does NOT trim surrounding whitespace: the CRD CEL rule validates the raw value
+// (a leading space fails startsWith('/')), so normalizing here would make the
+// operator accept inputs the API server rejects and break that lockstep.
 func PathAllowed(p string) bool {
-	p = strings.TrimSpace(p)
 	if p == "" || !path.IsAbs(p) || strings.Contains(p, "..") {
 		return false
 	}
