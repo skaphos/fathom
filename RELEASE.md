@@ -199,7 +199,7 @@ Container builds are hardened for reproducibility and supply-chain integrity:
 - **Base images are pinned by digest** (SKA-295). `Dockerfile` pins the
   `golang` builder and the `gcr.io/distroless/static:nonroot` runtime;
   `Dockerfile.probe` pins the `golang` builder (its runtime is `scratch`). The
-  readable tag is retained alongside the digest (`golang:1.26.4@sha256:...`).
+  readable tag is retained alongside the digest (`golang:1.26.5@sha256:...`).
   Refresh the digests with `go -C tools tool task images:refresh`, which
   re-resolves each multi-arch index digest (via `crane` or
   `docker buildx imagetools`) and rewrites the pins in place. Run it ad hoc or
