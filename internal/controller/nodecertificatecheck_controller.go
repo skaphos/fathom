@@ -328,7 +328,10 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 		return nil
 	}); err != nil {
 		if admissionPolicyUnsupported(err) {
-			log.V(1).Info("cluster does not serve ValidatingAdmissionPolicy; skipping node-report authenticity policy", "error", err.Error())
+			// Security-significant degradation: without the policy, a compromised
+			// node-agent token can forge or suppress another node's report. Log at
+			// the default level (not V(1)) so it is visible in normal operator logs.
+			log.Info("ValidatingAdmissionPolicy is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
 			return nil
 		}
 		return err
@@ -344,7 +347,7 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 		return nil
 	}); err != nil {
 		if admissionPolicyUnsupported(err) {
-			log.V(1).Info("cluster does not serve ValidatingAdmissionPolicyBinding; skipping node-report authenticity binding", "error", err.Error())
+			log.Info("ValidatingAdmissionPolicyBinding is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
 			return nil
 		}
 		return err
@@ -646,12 +649,15 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 			log.V(1).Info("skipping node report without node name", "configmap", cm.Name)
 			continue
 		}
-		// Authenticity cross-check (defense-in-depth behind the report-authenticity
-		// ValidatingAdmissionPolicy): trust the node-name annotation the admission
-		// policy binds to the writing agent's identity, and reject a payload whose
-		// Node disagrees with it. A report missing the annotation predates the
-		// authenticity contract (or was written on a cluster without the policy) and
-		// is skipped until its agent republishes with the annotation.
+		// Consistency cross-check. The node-name annotation is an authenticity signal
+		// only because the report-authenticity ValidatingAdmissionPolicy binds it to
+		// the writing agent's ServiceAccount-token node claim at admission; this check
+		// then rejects a payload whose Node disagrees with that bound annotation, and
+		// skips a report missing it (one predating the contract, or written where the
+		// policy is unavailable). On a cluster without the policy an attacker who can
+		// write the ConfigMap can set both the payload Node and the annotation to a
+		// victim node, so this check alone enforces internal consistency, not
+		// authenticity — the admission policy is what provides authenticity.
 		if annotated := cm.Annotations[nodecert.AnnotationNodeName]; annotated == "" || annotated != report.Node {
 			log.V(1).Info("skipping node report whose payload node does not match its authenticated node-name annotation", "configmap", cm.Name, "annotatedNode", annotated, "reportNode", report.Node)
 			continue

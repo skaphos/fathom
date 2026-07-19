@@ -176,8 +176,8 @@ func upsertReportConfigMap(ctx context.Context, kube kubernetes.Interface, cfg c
 		nodecert.LabelNode:       sanitizeLabelValue(cfg.nodeName),
 	}
 	// The node-name annotation is the report's authenticity anchor: the operator's
-	// ValidatingAdmissionPolicy requires it to equal this agent's ServiceAccount
-	// -token node claim, so it must carry the exact (unsanitized) node name.
+	// ValidatingAdmissionPolicy requires it to equal this agent's node claim from
+	// its ServiceAccount token, so it must carry the exact (unsanitized) node name.
 	annotations := map[string]string{nodecert.AnnotationNodeName: cfg.nodeName}
 	data := map[string]string{nodecert.ConfigMapReportKey: encoded}
 
