@@ -159,7 +159,16 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 // against mgr. Tests substitute their own Setupper slice instead. opts carries
 // values that reconcilers need to relay into per-Run adapter requests (e.g.
 // the operator-level probe image).
+//
+// In-cluster deployments must set opts.Namespace (FATHOM_NAMESPACE / --namespace)
+// so per-addon impersonation cannot silently fall open to the operator SA
+// (SKA-162). Out-of-cluster runs may leave it empty.
 func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
+	if opts.Namespace == "" && impersonation.RunningInCluster() {
+		return nil, fmt.Errorf(
+			"namespace is empty while running in-cluster; set FATHOM_NAMESPACE (downward API) or --namespace so adapter impersonation cannot fail open (SKA-162)",
+		)
+	}
 	adapterRegistry, err := BuildAdapterRegistry(mgr.GetLogger().WithName("adapter-registry"), BuiltInAdapters()...)
 	if err != nil {
 		return nil, err

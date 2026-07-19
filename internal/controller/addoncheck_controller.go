@@ -113,7 +113,9 @@ type AddonCheckReconciler struct {
 
 	// Namespace is the operator's own namespace, where the per-addon
 	// ServiceAccounts live. Populated from FATHOM_NAMESPACE (downward API) in
-	// cluster. Empty disables impersonation (falls back to the operator client).
+	// cluster. Empty is only valid out of cluster (or when AddonClients is nil):
+	// in-cluster with an empty Namespace fails closed so adapters never run as
+	// the operator SA (SKA-162).
 	Namespace string
 }
 
@@ -420,11 +422,24 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 // ServiceAccount (SKA-58). It fails if the addon RBAC is not installed (no
 // matching ServiceAccount) rather than falling back to broader access.
 //
-// Without impersonation configured, it returns the operator client: unit tests
-// and local out-of-cluster runs, where the manager already uses a privileged
-// kubeconfig, run unscoped.
+// Without impersonation configured (AddonClients nil), it returns the operator
+// client: unit tests run unscoped.
+//
+// When AddonClients is set but Namespace is empty: out-of-cluster runs fall back
+// to the operator client (privileged kubeconfig); in-cluster fails closed so a
+// missing FATHOM_NAMESPACE cannot silently grant every adapter the operator SA's
+// cluster-wide powers (SKA-162).
 func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) (client.Client, error) {
-	if r.AddonClients == nil || r.Namespace == "" {
+	if r.AddonClients == nil {
+		return r.Client, nil
+	}
+	if r.Namespace == "" {
+		if impersonation.RunningInCluster() {
+			return nil, fmt.Errorf(
+				"operator namespace is empty while running in-cluster; set FATHOM_NAMESPACE / --namespace so adapter impersonation cannot fail open (SKA-162)",
+			)
+		}
+		// Out-of-cluster: manager already uses a privileged kubeconfig.
 		return r.Client, nil
 	}
 	var sas corev1.ServiceAccountList
