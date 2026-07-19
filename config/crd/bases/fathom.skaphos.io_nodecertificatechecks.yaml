@@ -79,6 +79,19 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              includeControlPlaneNodes:
+                default: false
+                description: |-
+                  IncludeControlPlaneNodes opts the node-agent into scheduling on control-plane
+                  nodes by adding tolerations for the standard control-plane and legacy master
+                  taints (node-role.kubernetes.io/control-plane and .../master, Exists /
+                  NoSchedule) on top of any Tolerations.
+
+                  It defaults to false. The kubeadm apiserver, etcd, and front-proxy
+                  certificates live on control-plane nodes, so set this to true to scan them —
+                  but doing so mounts control-plane host paths into the agent, which is why it
+                  is gated behind an explicit opt-in rather than applied by default.
+                type: boolean
               interval:
                 description: |-
                   Interval is the cadence at which each node-agent re-scans its
@@ -107,7 +120,15 @@ spec:
                   directory of each configured path into the agent read-only; a configured
                   directory absent on a node is created empty by the kubelet (hostPath
                   DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions.
+
+                  To prevent a namespaced tenant from turning the privileged node-agent into a
+                  confused deputy that mounts arbitrary host directories, every entry must be a
+                  traversal-free absolute path (no "..", never the host root "/") under one of
+                  the operator-approved certificate prefixes: /etc/kubernetes, /var/lib/kubelet,
+                  /etc/etcd, /var/lib/etcd, /var/lib/rancher. Paths outside this allowlist are
+                  rejected at admission.
                 items:
+                  maxLength: 512
                   type: string
                 maxItems: 64
                 type: array
@@ -124,10 +145,11 @@ spec:
                 type: string
               tolerations:
                 description: |-
-                  Tolerations are applied to the agent DaemonSet so it can schedule onto
-                  tainted nodes. When nil, a default toleration set is applied so the agent
-                  also lands on control-plane nodes (where kubeadm certificates live). Set
-                  an explicit empty list to apply no tolerations.
+                  Tolerations are applied verbatim to the agent DaemonSet so it can schedule
+                  onto nodes carrying arbitrary taints. It is empty by default. Control-plane
+                  tolerations are NOT added here — use IncludeControlPlaneNodes for that, so
+                  scheduling the privileged agent onto control-plane nodes is always an
+                  explicit, auditable opt-in rather than a silent default.
                 items:
                   description: |-
                     The pod this Toleration is attached to tolerates any taint that matches
@@ -178,8 +200,12 @@ spec:
             x-kubernetes-validations:
             - message: warnDays must be greater than or equal to criticalDays
               rule: self.warnDays >= self.criticalDays
-            - message: each path must be absolute (start with /)
-              rule: '!has(self.paths) || self.paths.all(p, p.startsWith(''/''))'
+            - message: each path must be an absolute, traversal-free path under an
+                allowed prefix (/etc/kubernetes, /var/lib/kubelet, /etc/etcd, /var/lib/etcd,
+                /var/lib/rancher)
+              rule: '!has(self.paths) || self.paths.all(p, p.startsWith(''/'') &&
+                p != ''/'' && !p.contains(''..'') && [''/etc/kubernetes'',''/var/lib/kubelet'',''/etc/etcd'',''/var/lib/etcd'',''/var/lib/rancher''].exists(a,
+                p == a || p.startsWith(a + ''/'')))'
             - message: timeout must be a positive duration
               rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
             - message: interval must be a positive duration

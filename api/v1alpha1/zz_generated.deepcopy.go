@@ -669,6 +669,11 @@ func (in *NodeCertificateCheckSpec) DeepCopyInto(out *NodeCertificateCheckSpec) 
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.IncludeControlPlaneNodes != nil {
+		in, out := &in.IncludeControlPlaneNodes, &out.IncludeControlPlaneNodes
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Interval != nil {
 		in, out := &in.Interval, &out.Interval
 		*out = new(v1.Duration)

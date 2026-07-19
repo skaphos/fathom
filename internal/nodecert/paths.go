@@ -43,6 +43,63 @@ func DefaultCertPaths() []string {
 	return append([]string(nil), defaultCertPaths...)
 }
 
+// allowedPathPrefixes is the set of host-directory roots a NodeCertificateCheck
+// may scan. It is the operator-approved allowlist that stops a namespaced tenant
+// from turning the privileged node-agent into a confused deputy that mounts
+// arbitrary host directories. Every entry in defaultCertPaths lives under one of
+// these prefixes (asserted by a unit test), and the same allowlist is mirrored
+// in the NodeCertificateCheck CRD's x-kubernetes-validations so a disallowed path
+// is rejected at admission; PathAllowed enforces it again in the operator as
+// defense-in-depth for clusters running an older CRD.
+var allowedPathPrefixes = []string{
+	"/etc/kubernetes",
+	"/var/lib/kubelet",
+	"/etc/etcd",
+	"/var/lib/etcd",
+	"/var/lib/rancher",
+}
+
+// AllowedPathPrefixes returns a copy of the operator-approved scan-path prefixes.
+func AllowedPathPrefixes() []string {
+	return append([]string(nil), allowedPathPrefixes...)
+}
+
+// PathAllowed reports whether p is a scannable path: absolute, clean of "..",
+// never the host root, and rooted at one of allowedPathPrefixes. It is the Go
+// twin of the CRD's path validation and must stay in lockstep with it. Note it
+// does NOT trim surrounding whitespace: the CRD CEL rule validates the raw value
+// (a leading space fails startsWith('/')), so normalizing here would make the
+// operator accept inputs the API server rejects and break that lockstep.
+func PathAllowed(p string) bool {
+	if p == "" || !path.IsAbs(p) || strings.Contains(p, "..") {
+		return false
+	}
+	clean := path.Clean(p)
+	if clean == "/" {
+		return false
+	}
+	for _, pre := range allowedPathPrefixes {
+		if clean == pre || strings.HasPrefix(clean, pre+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterAllowedPaths returns the entries of paths that satisfy PathAllowed,
+// preserving order. It is applied by the operator before building the agent's
+// mount set so a path that slipped past admission (e.g. an older CRD without the
+// allowlist rule) still cannot widen the agent's hostPath surface.
+func FilterAllowedPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if PathAllowed(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // certFileExtensions are the file extensions treated as raw PEM certificate
 // files when scanning a directory or classifying a single path.
 var certFileExtensions = map[string]struct{}{

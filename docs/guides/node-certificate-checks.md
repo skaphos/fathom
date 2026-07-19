@@ -118,6 +118,24 @@ directories** needed to read your paths (collapsing descendants and refusing to
 mount the host root), so a narrower `paths` list means a smaller hostPath
 surface on the DaemonSet.
 
+**Paths are restricted to an operator-approved allowlist.** Because the agent
+mounts host directories, an unconstrained `spec.paths` would let anyone who can
+create a `NodeCertificateCheck` turn the privileged agent into a confused deputy
+that reads arbitrary host files. Every entry must therefore be a traversal-free
+absolute path (no `..`, never the host root `/`) under one of these prefixes:
+
+| Allowed prefix | Covers |
+| --- | --- |
+| `/etc/kubernetes` | kubeadm PKI (`pki/`) and the embedded-cert kubeconfigs (`*.conf`) |
+| `/var/lib/kubelet` | kubelet client/serving certificates |
+| `/etc/etcd` | standalone etcd PKI |
+| `/var/lib/etcd` | etcd data-dir PKI on some distributions |
+| `/var/lib/rancher` | k3s / RKE2 server TLS material |
+
+A path outside the allowlist is **rejected at admission**. The whole default
+scan set already lives under these prefixes, so leaving `paths` empty always
+validates.
+
 ## Thresholds
 
 | Field | Default | Meaning |
@@ -129,25 +147,33 @@ surface on the DaemonSet.
 
 ```yaml
 spec:
+  includeControlPlaneNodes: true   # opt in to scanning control-plane certs
   nodeSelector:
     node-role.kubernetes.io/control-plane: ""
   tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
+    - key: dedicated
+      operator: Equal
+      value: certs
       effect: NoSchedule
 ```
 
 - **`nodeSelector`** restricts the DaemonSet to matching nodes. Empty targets
-  every node.
-- **`tolerations`** let the agent schedule onto tainted nodes. When you omit
-  `tolerations` entirely, Fathom applies a **default toleration set** so the
-  agent also lands on control-plane nodes — which is exactly where the kubeadm
-  certificates live. Set an explicit **empty list** (`tolerations: []`) to apply
-  *no* tolerations.
+  every schedulable node.
+- **`includeControlPlaneNodes`** (default `false`) opts the agent into scheduling
+  on **control-plane nodes** by adding tolerations for the standard
+  `node-role.kubernetes.io/control-plane` and legacy `.../master` taints. The
+  kubeadm apiserver, etcd, and front-proxy certificates live on control-plane
+  nodes, so **set this to `true` to scan them**.
+- **`tolerations`** let the agent schedule onto nodes with *other* taints. They
+  are applied verbatim (empty means none) and are independent of
+  `includeControlPlaneNodes`.
 
-For most clusters the control-plane certificates are the ones that cause
-outages, so the default behavior (cover every node, including control-plane) is
-the right starting point.
+> **Behavior change (v0.5.0).** Earlier builds tolerated control-plane taints by
+> default, so a `NodeCertificateCheck` silently placed the privileged agent on
+> control-plane nodes. Scheduling there — and mounting control-plane host paths —
+> is now an explicit, auditable opt-in via `includeControlPlaneNodes: true`. If
+> you relied on the old default to scan kubeadm control-plane certificates, add
+> that field to your spec.
 
 ## Cadence, pausing, and history
 
@@ -213,6 +239,20 @@ The agent is built for least privilege:
 - **Writes exactly one object** — its own per-node report ConfigMap. It needs no
   read access to the `NodeCertificateCheck` API; all scan configuration is
   passed in by the operator.
+- **Reports are bound to the writing node.** Because RBAC cannot scope a
+  `create`/`update` to a single object name, the shared node-agent
+  ServiceAccount can technically write any report ConfigMap in the namespace. To
+  stop one compromised node from forging or suppressing another node's verdict,
+  each report carries a `fathom.skaphos.io/node-name` annotation, and the
+  operator provisions a cluster-scoped **`ValidatingAdmissionPolicy`**
+  (`fathom-node-report-authenticity`) that requires this annotation to equal the
+  writing agent's ServiceAccount-token node claim
+  (`authentication.kubernetes.io/node-name`). A node-agent can therefore only
+  publish a report attributed to *its own* node. The operator additionally
+  re-checks the annotation against the report payload at collection time, so a
+  mismatched report is dropped even on a cluster where the policy is not
+  enforced. Requires ServiceAccount-token node info (GA in Kubernetes 1.33) and
+  the `ValidatingAdmissionPolicy` feature (GA 1.30).
 - **Hardened and dedicated.** It runs from its own image and serves only a
   Prometheus metrics endpoint and a health check.
 

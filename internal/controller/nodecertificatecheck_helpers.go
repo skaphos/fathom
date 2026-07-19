@@ -49,9 +49,16 @@ func mergeLabels(existing, desired map[string]string) map[string]string {
 	return existing
 }
 
+// resolveCertPaths returns the paths the agent will scan. Explicit spec.Paths are
+// filtered through the operator-approved allowlist (defense-in-depth behind the
+// CRD admission rule, e.g. for a cluster still running an older CRD); if every
+// configured path is rejected the default set is used rather than scanning
+// nothing.
 func resolveCertPaths(check *fathomv1alpha1.NodeCertificateCheck) []string {
 	if len(check.Spec.Paths) > 0 {
-		return append([]string(nil), check.Spec.Paths...)
+		if allowed := nodecert.FilterAllowedPaths(check.Spec.Paths); len(allowed) > 0 {
+			return allowed
+		}
 	}
 	return nodecert.DefaultCertPaths()
 }
@@ -74,14 +81,26 @@ func resolveThresholds(check *fathomv1alpha1.NodeCertificateCheck) (warnDays, cr
 	return warnDays, criticalDays
 }
 
-// resolveTolerations returns the DaemonSet tolerations. A nil spec value applies
-// a default set that tolerates control-plane taints so the agent reaches the
-// kubeadm certificates that live on control-plane nodes. An explicit (possibly
-// empty) list is used verbatim.
+// resolveTolerations returns the DaemonSet tolerations. Spec.Tolerations are
+// applied verbatim (nil or empty means none), and the control-plane tolerations
+// are appended only when the check explicitly opts in via IncludeControlPlaneNodes.
+// Scheduling the privileged agent onto control-plane nodes — and mounting their
+// host paths — is therefore never a silent default (SKA-590 / #155).
 func resolveTolerations(check *fathomv1alpha1.NodeCertificateCheck) []corev1.Toleration {
-	if check.Spec.Tolerations != nil {
-		return append([]corev1.Toleration(nil), check.Spec.Tolerations...)
+	var tolerations []corev1.Toleration
+	if len(check.Spec.Tolerations) > 0 {
+		tolerations = append(tolerations, check.Spec.Tolerations...)
 	}
+	if check.Spec.IncludeControlPlaneNodes != nil && *check.Spec.IncludeControlPlaneNodes {
+		tolerations = append(tolerations, controlPlaneTolerations()...)
+	}
+	return tolerations
+}
+
+// controlPlaneTolerations tolerates the standard control-plane and legacy master
+// taints so the agent can land on control-plane nodes (where the kubeadm
+// apiserver/etcd/front-proxy certificates live).
+func controlPlaneTolerations() []corev1.Toleration {
 	return []corev1.Toleration{
 		{Key: "node-role.kubernetes.io/control-plane", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
 		{Key: "node-role.kubernetes.io/master", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},

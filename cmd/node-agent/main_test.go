@@ -111,6 +111,11 @@ func TestScanAndPublishCreatesAndUpdatesConfigMap(t *testing.T) {
 	if cm.Labels[nodecert.LabelSourceName] != "nc" || cm.Labels[nodecert.LabelSourceKind] != nodecert.KindNodeCertificateCheck {
 		t.Errorf("labels wrong: %v", cm.Labels)
 	}
+	// The authenticity anchor: the raw node name is stamped as an annotation the
+	// operator's ValidatingAdmissionPolicy binds to the writer's token node claim.
+	if cm.Annotations[nodecert.AnnotationNodeName] != "node-1" {
+		t.Errorf("node-name annotation = %q, want %q", cm.Annotations[nodecert.AnnotationNodeName], "node-1")
+	}
 	decoded, err := nodecert.DecodeReport(cm.Data[nodecert.ConfigMapReportKey])
 	if err != nil {
 		t.Fatalf("decode: %v", err)
