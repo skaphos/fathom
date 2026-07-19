@@ -352,6 +352,52 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(got.Status.Children[0].Name).To(Equal("hc-nsfilter-in"))
 	})
 
+	It("excludes HealthChecks in spec.excludedNamespaces when no allowlist is set", func() {
+		ensureNamespace("ch-scope-a")
+		ensureNamespace("ch-scope-b")
+		createHealthCheckIn("ch-scope-a", "hc-denylist-keep", map[string]string{"denylist": "yes"}, fathomv1alpha1.HealthReportResultPass, "ok")
+		createHealthCheckIn("ch-scope-b", "hc-denylist-drop", map[string]string{"denylist": "yes"}, fathomv1alpha1.HealthReportResultFail, "noise")
+		createClusterHealth("ch-ns-denylist", fathomv1alpha1.ClusterHealthSpec{
+			Selector:           &metav1.LabelSelector{MatchLabels: map[string]string{"denylist": "yes"}},
+			ExcludedNamespaces: []string{"ch-scope-b"},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "ch-ns-denylist"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-ns-denylist"}, &got)).To(Succeed())
+		Expect(got.Status.MatchedCount).To(Equal(int32(1)), "denylisted namespace is dropped")
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(got.Status.Children[0].Namespace).To(Equal("ch-scope-a"))
+	})
+
+	It("treats spec.namespaces as definitive when both allow and exclude are set", func() {
+		ensureNamespace("ch-scope-a")
+		ensureNamespace("ch-scope-b")
+		createHealthCheckIn("ch-scope-a", "hc-allow-win-a", map[string]string{"allowwin": "yes"}, fathomv1alpha1.HealthReportResultPass, "ok")
+		createHealthCheckIn("ch-scope-b", "hc-allow-win-b", map[string]string{"allowwin": "yes"}, fathomv1alpha1.HealthReportResultFail, "also-listed")
+		// Allowlist includes both; denylist would drop b if it were consulted.
+		// Allow is definitive, so both contribute and worst-case is Fail.
+		createClusterHealth("ch-ns-allow-wins", fathomv1alpha1.ClusterHealthSpec{
+			Selector:           &metav1.LabelSelector{MatchLabels: map[string]string{"allowwin": "yes"}},
+			Namespaces:         []string{"ch-scope-a", "ch-scope-b"},
+			ExcludedNamespaces: []string{"ch-scope-b"},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "ch-ns-allow-wins"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-ns-allow-wins"}, &got)).To(Succeed())
+		Expect(got.Status.MatchedCount).To(Equal(int32(2)), "excludedNamespaces is ignored when namespaces is set")
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
+	})
+
 	It("orders Children by namespace before name", func() {
 		ensureNamespace("ch-scope-a")
 		ensureNamespace("ch-scope-b")
@@ -394,6 +440,26 @@ var _ = Describe("ClusterHealth Controller", func() {
 		}
 		Expect(names).To(ContainElement("ch-watch-ns-covered"))
 		Expect(names).NotTo(ContainElement("ch-watch-ns-excluded"))
+	})
+
+	It("does not enqueue a ClusterHealth that denylists the changed HealthCheck's namespace", func() {
+		ensureNamespace("ch-scope-a")
+		hc := createHealthCheckIn("ch-scope-a", "hc-watch-denylist", map[string]string{"watchdeny": "t"}, fathomv1alpha1.HealthReportResultPass, "")
+		createClusterHealth("ch-watch-deny-open", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"watchdeny": "t"}},
+		})
+		createClusterHealth("ch-watch-deny-blocked", fathomv1alpha1.ClusterHealthSpec{
+			Selector:           &metav1.LabelSelector{MatchLabels: map[string]string{"watchdeny": "t"}},
+			ExcludedNamespaces: []string{"ch-scope-a"},
+		})
+
+		got := newReconciler().clusterHealthsForHealthCheck(ctx, hc)
+		names := []string{}
+		for _, r := range got {
+			names = append(names, r.Name)
+		}
+		Expect(names).To(ContainElement("ch-watch-deny-open"))
+		Expect(names).NotTo(ContainElement("ch-watch-deny-blocked"))
 	})
 
 	It("enqueues only ClusterHealths whose selector matches the changed HealthCheck", func() {

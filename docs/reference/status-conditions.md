@@ -127,15 +127,17 @@ Status fields to start with:
 | `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
 
 Namespace contract: `ClusterHealth` is cluster-scoped and selects `HealthCheck`
-wrappers across all namespaces (narrow with `spec.namespaces`). A wrapper may
-mirror an `AddonCheck` in another namespace with `spec.checkRef.namespace`, so
-control who can create wrappers anywhere in the cluster.
+wrappers under the allowlist / denylist / open filter (`spec.namespaces`,
+`spec.excludedNamespaces`). A wrapper may mirror an `AddonCheck` in another
+namespace with `spec.checkRef.namespace`, so control who can create wrappers
+and how the aggregate filters namespaces.
 
 ## ClusterHealth
 
-`ClusterHealth` aggregates `HealthCheck.status` across all namespaces
-(optionally narrowed by `spec.namespaces`). It never reads `AddonCheck`
-directly and never reads `HealthReport` history.
+`ClusterHealth` aggregates `HealthCheck.status` under the allowlist /
+denylist / open namespace filter (`spec.namespaces` is definitive when set;
+otherwise `spec.excludedNamespaces`; otherwise all namespaces). It never reads
+`AddonCheck` directly and never reads `HealthReport` history.
 
 Status fields to start with:
 

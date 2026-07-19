@@ -189,7 +189,9 @@ metadata:
 spec:
   description: "Worst-case Result across every HealthCheck in the cluster."
   # ClusterHealth is cluster-scoped. An omitted/empty selector matches all
-  # HealthChecks in all namespaces; narrow with spec.namespaces.
+  # HealthChecks; narrow namespaces with:
+  #   namespaces: [...]            # allowlist (definitive when set)
+  #   excludedNamespaces: [...]    # denylist (only when namespaces is empty)
 ```
 
 ```sh
@@ -198,14 +200,14 @@ kubectl get clusterhealth platform
 ```
 
 `ClusterHealth.status.result` is now the single verdict over every wrapped
-check in the namespace. As you add more `AddonCheck`s and wrap each in a
+check in scope. As you add more `AddonCheck`s and wrap each in a
 `HealthCheck`, they all fold into this one object automatically.
 
 > `ClusterHealth` aggregates `HealthCheck` status **only** — never raw
 > `HealthReport` history — so its external contract stays stable regardless of
-> how Fathom stores history. It selects `HealthCheck` wrappers only in its own
-> namespace; a selected wrapper may mirror an explicit cross-namespace
-> `checkRef.namespace`.
+> how Fathom stores history. It selects `HealthCheck` wrappers under the
+> allowlist / denylist / open namespace filter; a selected wrapper may mirror
+> an explicit cross-namespace `checkRef.namespace`.
 
 ## What you have now
 

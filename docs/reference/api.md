@@ -149,8 +149,9 @@ _Appears in:_
 
 
 ClusterHealth is the Schema for the clusterhealths API. It is
-cluster-scoped: one object rolls up HealthChecks across all namespaces
-(optionally narrowed by spec.namespaces).
+cluster-scoped: one object rolls up HealthChecks across namespaces,
+optionally narrowed by spec.namespaces (allowlist) or
+spec.excludedNamespaces (denylist). See ClusterHealthSpec for precedence.
 
 
 
@@ -215,6 +216,19 @@ is an aggregator: it rolls up the Status of selected HealthCheck resources
 into a single worst-case Result for cluster-wide consumers (dashboards,
 alerting, gates).
 
+Namespace scope uses allowlist-then-denylist precedence:
+
+ 1. If Namespaces is non-empty, only those namespaces are included
+    (allowlist is definitive; ExcludedNamespaces is ignored).
+ 2. Else if ExcludedNamespaces is non-empty, every namespace except those
+    listed is included (denylist).
+ 3. Else every namespace is in scope (open).
+
+Cross-namespace HealthCheck.checkRef.namespace remains intentional: a
+HealthCheck may mirror an AddonCheck in another namespace. Tenancy is
+enforced by who can create those objects plus this aggregate's namespace
+filter — not by forbidding cross-namespace refs.
+
 
 
 _Appears in:_
@@ -222,8 +236,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches every HealthCheck in scope (all<br />namespaces, or those listed in Namespaces). |  | Optional: \{\} <br /> |
-| `namespaces` _string array_ | Namespaces narrows the aggregate to HealthChecks in these namespaces.<br />Empty means all namespaces. |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches every HealthCheck in the namespace<br />scope defined by Namespaces / ExcludedNamespaces. |  | Optional: \{\} <br /> |
+| `namespaces` _string array_ | Namespaces is the allowlist of HealthCheck namespaces this aggregate<br />includes. When non-empty it is definitive: only listed namespaces are<br />considered and ExcludedNamespaces is ignored. Empty means "no allowlist"<br />(fall through to ExcludedNamespaces, then open). |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `excludedNamespaces` _string array_ | ExcludedNamespaces is the denylist of HealthCheck namespaces this<br />aggregate skips. Applied only when Namespaces is empty. Empty (with<br />Namespaces also empty) means open — every namespace is in scope. |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
 | `description` _string_ | Description is a human-readable purpose for this aggregate. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 
 
