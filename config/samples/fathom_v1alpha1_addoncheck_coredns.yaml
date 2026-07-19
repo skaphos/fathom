@@ -27,6 +27,9 @@ spec:
         targets: "kubernetes.default.svc.cluster.local"
         # The probe image is launched as a short-lived Pod per target so DNS
         # resolution is observed from the AddonCheck's namespace network
-        # topology rather than the operator pod's. Override this for private
-        # registries or when pinning to a specific tag.
-        probeImage: "ghcr.io/skaphos/fathom-probe:v0.4.0"
+        # topology rather than the operator pod's. Keep this tag in lockstep
+        # with the operator release (x-release-please-version; see
+        # release-please-config.json and scripts/check-version-lockstep.sh) so
+        # e2e kind loads (E2E_PROBE_IMG) and this sample pin match. Override for
+        # private registries only when deliberately pinning elsewhere.
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.4.1" # x-release-please-version

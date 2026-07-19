@@ -199,7 +199,7 @@ Container builds are hardened for reproducibility and supply-chain integrity:
 - **Base images are pinned by digest** (SKA-295). `Dockerfile` pins the
   `golang` builder and the `gcr.io/distroless/static:nonroot` runtime;
   `Dockerfile.probe` pins the `golang` builder (its runtime is `scratch`). The
-  readable tag is retained alongside the digest (`golang:1.26.4@sha256:...`).
+  readable tag is retained alongside the digest (`golang:1.26.5@sha256:...`).
   Refresh the digests with `go -C tools tool task images:refresh`, which
   re-resolves each multi-arch index digest (via `crane` or
   `docker buildx imagetools`) and rewrites the pins in place. Run it ad hoc or
@@ -239,6 +239,10 @@ This is now automated — you no longer hand-edit version tags at release time:
   - `fallbackProbeImage` in `internal/adapter/coredns/adapter.go`
   - `version` and `appVersion` in `deploy/helm/fathom-operator/Chart.yaml`
   - `E2E_PROBE_IMG` / `E2E_NODE_AGENT_IMG` in `Taskfile.yml`
+  - pinned `probeImage` sample override in
+    `config/samples/fathom_v1alpha1_addoncheck_coredns.yaml` (the sample sets
+    `policy.dns_resolution.thresholds.probeImage`, which overrides the operator
+    default; the pin must match the kind-loaded e2e probe tag)
 - **CI enforces lockstep.** The `version-lockstep` job (and
   `go -C tools tool task verify-version-lockstep`) runs
   `scripts/check-version-lockstep.sh`, which fails the build if any of those

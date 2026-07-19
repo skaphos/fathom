@@ -28,10 +28,10 @@ func runLockstep(t *testing.T, versionOverride string) (bool, string) {
 }
 
 // TestVersionLockstepInSync is the regression guard for SKA-579: the compiled
-// probe/node-agent defaults, the Helm chart version/appVersion, and the e2e
-// image tags must all equal the released version in
-// .release-please-manifest.json. Bumping one lockstep site (or the release)
-// without the others turns this test red.
+// probe/node-agent defaults, the Helm chart version/appVersion, the e2e image
+// tags, and the CoreDNS sample probeImage pin must all equal the released
+// version in .release-please-manifest.json. Bumping one lockstep site (or the
+// release) without the others turns this test red.
 func TestVersionLockstepInSync(t *testing.T) {
 	ok, out := runLockstep(t, "")
 	if !ok {
