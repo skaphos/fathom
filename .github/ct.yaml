@@ -4,6 +4,13 @@ chart-dirs:
 target-branch: main
 helm-extra-args: --timeout 3m
 validate-maintainers: false
+# Do not require Chart.yaml version bumps on every chart PR.
+# Chart version and appVersion are product-release versions, kept in lockstep
+# with the operator by release-please (x-release-please-version markers +
+# scripts/check-version-lockstep.sh). Forcing a mid-cycle bump would invent a
+# version that is not yet in .release-please-manifest.json and would fail the
+# lockstep gate. Defer all chart version bumps to the release PR.
+check-version-increment: false
 # No explicit namespace: ct creates an ephemeral namespace per release and
 # deletes it afterward. The chart needs no pre-staged fixtures (ct-values
 # disables secure metrics, so no serving cert/secret is required), so the
