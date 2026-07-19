@@ -21,7 +21,8 @@
         "internal/app/options.go",
         "internal/adapter/coredns/adapter.go",
         {"type": "generic", "path": "deploy/helm/fathom-operator/Chart.yaml"},
-        {"type": "generic", "path": "Taskfile.yml"}
+        {"type": "generic", "path": "Taskfile.yml"},
+        {"type": "generic", "path": "config/samples/fathom_v1alpha1_addoncheck_coredns.yaml"}
       ]
     }
   }

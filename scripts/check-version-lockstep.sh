@@ -5,13 +5,14 @@
 # Verify the operator<->probe/node-agent version lockstep (SKA-579).
 #
 # The probe/node-agent image tags the operator compiles in, the Helm chart's
-# version/appVersion, and the e2e image tags must all equal the released version
-# recorded in .release-please-manifest.json. release-please bumps every
-# annotated site (x-release-please-version) in the release PR — see the
-# "extra-files" list in release-please-config.json. This gate fails the build if
-# any of those sites drifts out of lockstep, so the "update the constants before
-# merging the release PR" contract can no longer be silently skipped (it already
-# failed for 0.3.0 and 0.3.1).
+# version/appVersion, the e2e image tags, and the CoreDNS sample probeImage pin
+# must all equal the released version recorded in .release-please-manifest.json.
+# release-please bumps every annotated site (x-release-please-version) in the
+# release PR — see the "extra-files" list in release-please-config.json. This
+# gate fails the build if any of those sites drifts out of lockstep, so the
+# "update the constants before merging the release PR" contract can no longer
+# be silently skipped (it already failed for 0.3.0 and 0.3.1, and a stale sample
+# pin broke kind e2e after 0.4.1).
 #
 # Usage:
 #   scripts/check-version-lockstep.sh
@@ -97,6 +98,12 @@ check "Taskfile.yml E2E_PROBE_IMG" \
   "$probe_ref" "$(first_quoted 'E2E_PROBE_IMG' Taskfile.yml)"
 check "Taskfile.yml E2E_NODE_AGENT_IMG" \
   "$node_agent_ref" "$(first_quoted 'E2E_NODE_AGENT_IMG' Taskfile.yml)"
+
+# Sample AddonCheck hard-pins probeImage (overrides the operator default). It
+# must match E2E_PROBE_IMG / DefaultProbeImage or kind e2e ImagePullBackOffs
+# when the sample asks for a tag that was never kind-loaded.
+check "config/samples coredns probeImage" \
+  "$probe_ref" "$(first_quoted 'probeImage:' config/samples/fathom_v1alpha1_addoncheck_coredns.yaml)"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "::error::version lockstep check failed: ${failures} site(s) do not match release ${version}." >&2
