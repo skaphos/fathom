@@ -62,6 +62,9 @@ func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCert
 				nodecert.LabelSourceName: check.Name,
 				nodecert.LabelNode:       node,
 			},
+			// Mirror the node-agent: stamp the authenticity annotation the
+			// controller cross-checks against report.Node (#155).
+			Annotations: map[string]string{nodecert.AnnotationNodeName: node},
 		},
 		Data: map[string]string{nodecert.ConfigMapReportKey: encoded},
 	}
@@ -70,6 +73,7 @@ func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCert
 	if err == nil {
 		existing.Data = cm.Data
 		existing.Labels = cm.Labels
+		existing.Annotations = cm.Annotations
 		Expect(k8sClient.Update(ctx, existing)).To(Succeed())
 		return
 	}

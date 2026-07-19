@@ -20,6 +20,10 @@ spec:
   interval: 1h
   timeout: 30s
   historyLimit: 10
+  # Control-plane certificates (kubeadm apiserver/etcd/front-proxy) live on
+  # control-plane nodes. Scheduling the privileged agent there is an explicit
+  # opt-in; uncomment to scan them:
+  # includeControlPlaneNodes: true
   # paths: []   # omit to use the built-in default set, or pin explicit paths:
   # paths:
   #   - /etc/kubernetes/pki

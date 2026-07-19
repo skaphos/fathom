@@ -19,7 +19,7 @@ import (
 // the operator rolls those up into a single HealthReport and mirrors the
 // aggregate into Status.
 // +kubebuilder:validation:XValidation:rule="self.warnDays >= self.criticalDays",message="warnDays must be greater than or equal to criticalDays"
-// +kubebuilder:validation:XValidation:rule="!has(self.paths) || self.paths.all(p, p.startsWith('/'))",message="each path must be absolute (start with /)"
+// +kubebuilder:validation:XValidation:rule="!has(self.paths) || self.paths.all(p, p.startsWith('/') && p != '/' && !p.contains('..') && ['/etc/kubernetes','/var/lib/kubelet','/etc/etcd','/var/lib/etcd','/var/lib/rancher'].exists(a, p == a || p.startsWith(a + '/')))",message="each path must be an absolute, traversal-free path under an allowed prefix (/etc/kubernetes, /var/lib/kubelet, /etc/etcd, /var/lib/etcd, /var/lib/rancher)"
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) > duration('0s')",message="timeout must be a positive duration"
 // +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) > duration('0s')",message="interval must be a positive duration"
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
@@ -37,9 +37,17 @@ type NodeCertificateCheckSpec struct {
 	// directory of each configured path into the agent read-only; a configured
 	// directory absent on a node is created empty by the kubelet (hostPath
 	// DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions.
+	//
+	// To prevent a namespaced tenant from turning the privileged node-agent into a
+	// confused deputy that mounts arbitrary host directories, every entry must be a
+	// traversal-free absolute path (no "..", never the host root "/") under one of
+	// the operator-approved certificate prefixes: /etc/kubernetes, /var/lib/kubelet,
+	// /etc/etcd, /var/lib/etcd, /var/lib/rancher. Paths outside this allowlist are
+	// rejected at admission.
 	// +optional
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=512
 	Paths []string `json:"paths,omitempty"`
 
 	// WarnDays is the days-to-expiry threshold at or below which a certificate
@@ -62,12 +70,26 @@ type NodeCertificateCheckSpec struct {
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// Tolerations are applied to the agent DaemonSet so it can schedule onto
-	// tainted nodes. When nil, a default toleration set is applied so the agent
-	// also lands on control-plane nodes (where kubeadm certificates live). Set
-	// an explicit empty list to apply no tolerations.
+	// Tolerations are applied verbatim to the agent DaemonSet so it can schedule
+	// onto nodes carrying arbitrary taints. It is empty by default. Control-plane
+	// tolerations are NOT added here — use IncludeControlPlaneNodes for that, so
+	// scheduling the privileged agent onto control-plane nodes is always an
+	// explicit, auditable opt-in rather than a silent default.
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// IncludeControlPlaneNodes opts the node-agent into scheduling on control-plane
+	// nodes by adding tolerations for the standard control-plane and legacy master
+	// taints (node-role.kubernetes.io/control-plane and .../master, Exists /
+	// NoSchedule) on top of any Tolerations.
+	//
+	// It defaults to false. The kubeadm apiserver, etcd, and front-proxy
+	// certificates live on control-plane nodes, so set this to true to scan them —
+	// but doing so mounts control-plane host paths into the agent, which is why it
+	// is gated behind an explicit opt-in rather than applied by default.
+	// +optional
+	// +kubebuilder:default=false
+	IncludeControlPlaneNodes *bool `json:"includeControlPlaneNodes,omitempty"`
 
 	// Interval is the cadence at which each node-agent re-scans its
 	// certificates and the operator refreshes the rolled-up HealthReport.

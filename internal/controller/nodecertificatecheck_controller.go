@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -57,6 +58,15 @@ const (
 	// RoleBinding grants to the node-agent ServiceAccount (namespaced ConfigMap
 	// access only). It is shipped under config/rbac and the Helm chart.
 	defaultNodeAgentRoleName = "fathom-node-agent-role"
+
+	// reportAuthenticityPolicyName names the cluster-scoped
+	// ValidatingAdmissionPolicy (and its binding) the controller ensures at
+	// runtime to bind each per-node report ConfigMap to the writing node-agent's
+	// identity, so one node cannot forge or suppress another node's certificate
+	// verdict (#155). Like the node-agent ClusterRole it is created at runtime,
+	// not shipped statically, so kustomize's namePrefix and the OLM bundle
+	// transforms cannot rename it and break the policy↔binding pairing.
+	reportAuthenticityPolicyName = "fathom-node-report-authenticity"
 
 	// nodeAgentComponentLabel/Value tag the DaemonSet and its pods so the
 	// DaemonSet selector is stable and pods are discoverable.
@@ -119,6 +129,10 @@ type NodeCertificateCheckReconciler struct {
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch
+// The controller ensures a cluster-scoped ValidatingAdmissionPolicy + binding
+// that authenticate per-node report ConfigMaps (#155). Creating a VAP confers no
+// privilege of its own, so this grant does not trip the RBAC escalation check.
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionpolicies;validatingadmissionpolicybindings,verbs=get;list;watch;create;update;patch
 
 // Reconcile ensures the node-agent DaemonSet and its RBAC exist (or are removed
 // while paused), rolls up the per-node report ConfigMaps into a HealthReport,
@@ -179,6 +193,11 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	if err := r.ensureNodeAgentClusterRole(ctx); err != nil {
 		r.setReady(&check, metav1.ConditionFalse, "RBACProvisioningFailed", err.Error())
+		return ctrl.Result{}, err
+	}
+
+	if err := r.ensureReportAuthenticityPolicy(ctx, log); err != nil {
+		r.setReady(&check, metav1.ConditionFalse, "AdmissionPolicyProvisioningFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -288,6 +307,105 @@ func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.
 		return nil
 	})
 	return err
+}
+
+// ensureReportAuthenticityPolicy converges the cluster-scoped
+// ValidatingAdmissionPolicy and binding that authenticate per-node report
+// ConfigMaps. The policy only inspects Fathom node-report ConfigMaps written by a
+// node-agent ServiceAccount ("<check>-node-agent"), and requires the report's
+// node-name annotation to equal that writer's ServiceAccount-token node claim
+// (authentication.kubernetes.io/node-name). A node-agent token therefore can
+// only publish a report attributed to its own node, closing the report-spoofing
+// gap where the shared, namespace-wide ConfigMap write let one node forge or
+// suppress another node's verdict (#155). It fails closed. On a cluster that does
+// not serve ValidatingAdmissionPolicy the ensure is skipped — the operator's
+// collect-time cross-check in collectNodeReports still rejects mismatched reports.
+func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx context.Context, log logr.Logger) error {
+	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
+		policy.Labels = mergeLabels(policy.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
+		policy.Spec = reportAuthenticityPolicySpec()
+		return nil
+	}); err != nil {
+		if admissionPolicyUnsupported(err) {
+			log.V(1).Info("cluster does not serve ValidatingAdmissionPolicy; skipping node-report authenticity policy", "error", err.Error())
+			return nil
+		}
+		return err
+	}
+
+	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
+		binding.Labels = mergeLabels(binding.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
+		binding.Spec = admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{
+			PolicyName:        reportAuthenticityPolicyName,
+			ValidationActions: []admissionregistrationv1.ValidationAction{admissionregistrationv1.Deny},
+		}
+		return nil
+	}); err != nil {
+		if admissionPolicyUnsupported(err) {
+			log.V(1).Info("cluster does not serve ValidatingAdmissionPolicyBinding; skipping node-report authenticity binding", "error", err.Error())
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// admissionPolicyUnsupported reports whether err means the API server does not
+// serve the ValidatingAdmissionPolicy types (feature-gate disabled or a very old
+// cluster), in which case the controller degrades gracefully rather than wedging
+// every reconcile.
+func admissionPolicyUnsupported(err error) bool {
+	return apiMeta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) || apierrors.IsNotFound(err)
+}
+
+// reportAuthenticityPolicySpec is the CEL policy that binds a report ConfigMap to
+// its writing node-agent. The ObjectSelector narrows evaluation to Fathom
+// node-report ConfigMaps so the policy never fires on unrelated ConfigMap writes;
+// the writer-is-node-agent match condition exempts the operator's own owner-
+// reference updates (it does not write as a "<check>-node-agent" ServiceAccount).
+func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionPolicySpec {
+	fail := admissionregistrationv1.Fail
+	forbidden := metav1.StatusReasonForbidden
+	return admissionregistrationv1.ValidatingAdmissionPolicySpec{
+		FailurePolicy: &fail,
+		MatchConstraints: &admissionregistrationv1.MatchResources{
+			ObjectSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				nodecert.LabelManagedBy:  nodecert.ManagedByValue,
+				nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
+			}},
+			ResourceRules: []admissionregistrationv1.NamedRuleWithOperations{{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"configmaps"},
+					},
+				},
+			}},
+		},
+		MatchConditions: []admissionregistrationv1.MatchCondition{{
+			Name:       "writer-is-node-agent",
+			Expression: `request.userInfo.username.matches('^system:serviceaccount:[^:]+:[^:]+-node-agent$')`,
+		}},
+		Variables: []admissionregistrationv1.Variable{
+			{
+				Name:       "claimNode",
+				Expression: `request.userInfo.extra[?'authentication.kubernetes.io/node-name'].orValue([''])[0]`,
+			},
+			{
+				Name:       "annotatedNode",
+				Expression: `has(object.metadata.annotations) ? object.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
+			},
+		},
+		Validations: []admissionregistrationv1.Validation{{
+			Expression: `variables.claimNode != '' && variables.annotatedNode == variables.claimNode`,
+			Message:    "node-report ConfigMap fathom.skaphos.io/node-name annotation must match the writing node-agent's ServiceAccount-token node claim (authentication.kubernetes.io/node-name)",
+			Reason:     &forbidden,
+		}},
+	}
 }
 
 // ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding (both
@@ -523,6 +641,16 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 		}
 		if report.Node == "" {
 			log.V(1).Info("skipping node report without node name", "configmap", cm.Name)
+			continue
+		}
+		// Authenticity cross-check (defense-in-depth behind the report-authenticity
+		// ValidatingAdmissionPolicy): trust the node-name annotation the admission
+		// policy binds to the writing agent's identity, and reject a payload whose
+		// Node disagrees with it. A report missing the annotation predates the
+		// authenticity contract (or was written on a cluster without the policy) and
+		// is skipped until its agent republishes with the annotation.
+		if annotated := cm.Annotations[nodecert.AnnotationNodeName]; annotated == "" || annotated != report.Node {
+			log.V(1).Info("skipping node report whose payload node does not match its authenticated node-name annotation", "configmap", cm.Name, "annotatedNode", annotated, "reportNode", report.Node)
 			continue
 		}
 		if !nodeCertReportFresh(report, now, maxAge) {
