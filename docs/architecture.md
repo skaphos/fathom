@@ -360,6 +360,14 @@ matches real workloads rather than the operator (see
   pod afterward (best-effort, even on context cancellation). It tolerates up to
   3 consecutive transient `NotFound` errors and promotes a previously-observed
   terminal result if the pod vanishes after completing (SKA-429).
+- **Orphan sweeper (`internal/probe/sweeper.go`):** the launcher's delete is an
+  in-process defer, so a probe pod orphans if the operator dies between pod
+  create and cleanup — and the kubelet never garbage-collects terminated pods.
+  `Sweeper` runs on the elected leader (once at startup, then hourly) and
+  deletes probe pods — identified by the `fathom.skaphos.io/managed-by=fathom`
+  and `fathom.skaphos.io/probe` labels — that are in a terminal phase and older
+  than a 5-minute grace period. It lists through the live API reader, never the
+  manager cache, so no cluster-wide Pod informer is opened.
 - **Probe binary (`cmd/probe/main.go`):** a tiny static binary that runs the
   requested mode, writes a JSON `{outcome, summary, details}` to
   `/dev/termination-log` (and stdout), and exits. It ships as the probe image

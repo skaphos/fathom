@@ -212,8 +212,10 @@ func extractResult(pod *corev1.Pod) (Result, error) {
 
 // bestEffortDelete removes the probe pod after Run completes. It uses a
 // fresh context so cancellation of the caller's context does not skip the
-// delete; kubelets eventually clean up orphaned pods, but explicit cleanup
-// is the contract.
+// delete. This defer is the only in-process cleanup: if the operator dies
+// before it runs (OOM-kill, node drain), the pod outlives the process — the
+// kubelet does not GC terminated pods — and the leader-elected Sweeper reaps
+// it after restart (#163).
 func (l *Launcher) bestEffortDelete(pod *corev1.Pod) {
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()

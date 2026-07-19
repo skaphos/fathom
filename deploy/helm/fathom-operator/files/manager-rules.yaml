@@ -11,6 +11,13 @@
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - delete
+  - list
+- apiGroups:
+  - ""
+  resources:
   - serviceaccounts
   verbs:
   - create

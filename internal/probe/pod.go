@@ -31,6 +31,7 @@ const (
 	defaultTimeout    = 10 * time.Second
 	labelManagedBy    = "fathom.skaphos.io/managed-by"
 	labelProbeName    = "fathom.skaphos.io/probe"
+	managedByValue    = "fathom"
 )
 
 type Mode string
@@ -82,7 +83,7 @@ func Pod(req Request) (*corev1.Pod, error) {
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
-	labels := map[string]string{labelManagedBy: "fathom", labelProbeName: req.Name}
+	labels := map[string]string{labelManagedBy: managedByValue, labelProbeName: req.Name}
 	for key, value := range req.Labels {
 		labels[key] = value
 	}
