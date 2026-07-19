@@ -133,7 +133,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // listSelectedHealthChecks lists the HealthChecks the aggregate rolls up under
 // the namespace-scope precedence on ClusterHealthSpec (allowlist → denylist →
-// open). When Namespaces is set the list is one Get-scope per allowlisted
+// open). When Namespaces is set the list is one List-scope per allowlisted
 // namespace (schema-capped MaxItems). When only ExcludedNamespaces is set (or
 // neither is), the list is cluster-wide and the denylist is applied in memory.
 func (r *ClusterHealthReconciler) listSelectedHealthChecks(ctx context.Context, ch *fathomv1alpha1.ClusterHealth, selector labels.Selector) ([]fathomv1alpha1.HealthCheck, error) {
