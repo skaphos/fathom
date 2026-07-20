@@ -128,6 +128,15 @@ func (s *Sweeper) sweep(ctx context.Context) {
 		if !terminalPhase(pod.Status.Phase) {
 			continue
 		}
+		if !probeShaped(pod) {
+			// Labels alone are forgeable; see probeShaped. Log it, because a
+			// correctly-labelled pod that fails the shape check is either an
+			// attempt to borrow our delete permission or a drift between
+			// Pod() and this check — both worth seeing.
+			s.Log.Info("skipping labelled pod that does not match the probe pod shape",
+				"namespace", pod.Namespace, "name", pod.Name)
+			continue
+		}
 		if time.Since(orphanSince(pod)) < minAge {
 			continue
 		}
@@ -154,6 +163,31 @@ func probePodSelector() labels.Selector {
 		panic(err)
 	}
 	return selector.Add(*probeLabelExists)
+}
+
+// probeShaped reports whether pod structurally matches what Pod() builds.
+//
+// This is defence-in-depth against a confused-deputy: the operator holds
+// cluster-wide pod delete, so an actor who can patch labels on a pod — but
+// who cannot delete it themselves — could otherwise stamp the probe labels
+// onto a victim pod (a completed Job pod, say) and have us delete it for
+// them. Every field checked here is immutable after create, so labels cannot
+// retrofit an existing pod into this shape; a pod that genuinely has it was
+// created in it, and its creator could delete it without our help.
+//
+// Keep in sync with Pod(). A mismatch fails closed: we skip the pod, leaving
+// at worst an unreaped orphan rather than deleting something we shouldn't.
+func probeShaped(pod *corev1.Pod) bool {
+	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		return false
+	}
+	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken {
+		return false
+	}
+	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != probeContainerName {
+		return false
+	}
+	return true
 }
 
 func terminalPhase(phase corev1.PodPhase) bool {

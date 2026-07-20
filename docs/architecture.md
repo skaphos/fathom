@@ -370,7 +370,13 @@ matches real workloads rather than the operator (see
   measured from container termination rather than pod creation: a probe with a
   long `spec.timeout` is already older than the grace period the moment it
   turns terminal, and sweeping on creation age could delete it out from under a
-  launcher still polling for its result. It lists through the live API reader, never the
+  launcher still polling for its result. Labels alone are not sufficient: because
+  the operator holds cluster-wide pod `delete`, a pod must also match the
+  immutable structural shape `Pod()` produces (`restartPolicy: Never`,
+  `automountServiceAccountToken: false`, a single container named `probe`)
+  before it is reaped. That prevents an actor who can patch labels — but not
+  delete — from stamping the probe labels onto a victim pod and borrowing the
+  operator's permission. It lists through the live API reader, never the
   manager cache, so no cluster-wide Pod informer is opened.
 - **Probe binary (`cmd/probe/main.go`):** a tiny static binary that runs the
   requested mode, writes a JSON `{outcome, summary, details}` to

@@ -32,6 +32,9 @@ const (
 	labelManagedBy    = "fathom.skaphos.io/managed-by"
 	labelProbeName    = "fathom.skaphos.io/probe"
 	managedByValue    = "fathom"
+	// probeContainerName is the sole container in a probe pod. Sweeper's
+	// shape check depends on it, so the two must not drift apart.
+	probeContainerName = "probe"
 )
 
 type Mode string
@@ -115,7 +118,7 @@ func Pod(req Request) (*corev1.Pod, error) {
 			Tolerations:                   append([]corev1.Toleration(nil), req.Tolerations...),
 			SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot, RunAsUser: &runAsUser, SeccompProfile: &seccompProfile},
 			Containers: []corev1.Container{{
-				Name:                     "probe",
+				Name:                     probeContainerName,
 				Image:                    req.Image,
 				ImagePullPolicy:          req.ImagePullPolicy,
 				Command:                  []string{defaultBinaryPath},

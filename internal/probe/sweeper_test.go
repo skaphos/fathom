@@ -23,8 +23,10 @@ import (
 
 // sweepPod builds a pod for sweeper table tests. age is subtracted from now
 // to produce the CreationTimestamp.
+// Pods are probe-shaped by default so these tests exercise the label, phase,
+// and age rules; the shape check itself is covered separately.
 func sweepPod(name string, podLabels map[string]string, phase corev1.PodPhase, age time.Duration) *corev1.Pod {
-	return &corev1.Pod{
+	return probeShape(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              name,
 			Namespace:         "default",
@@ -32,11 +34,65 @@ func sweepPod(name string, podLabels map[string]string, phase corev1.PodPhase, a
 			CreationTimestamp: metav1.NewTime(time.Now().Add(-age)),
 		},
 		Status: corev1.PodStatus{Phase: phase},
-	}
+	})
 }
 
 func probeLabels(probeName string) map[string]string {
 	return map[string]string{labelManagedBy: managedByValue, labelProbeName: probeName}
+}
+
+// probeShape gives a pod the structural fingerprint Pod() produces, so that
+// sweeper tests exercise the age/phase/label rules rather than tripping the
+// shape check.
+func probeShape(pod *corev1.Pod) *corev1.Pod {
+	automount := false
+	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
+	pod.Spec.AutomountServiceAccountToken = &automount
+	pod.Spec.Containers = []corev1.Container{{Name: probeContainerName}}
+	return pod
+}
+
+// A pod that merely wears the probe labels must not be deleted. The operator
+// holds cluster-wide pod delete, so honouring labels alone would let anyone
+// with label-patch access borrow that permission against a pod they cannot
+// delete themselves.
+func TestSweeper_LabelledPodNotMatchingProbeShapeIsSpared(t *testing.T) {
+	automount := true
+	victims := map[string]func(*corev1.Pod){
+		"wrong restart policy": func(p *corev1.Pod) {
+			p.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
+		},
+		"service account token mounted": func(p *corev1.Pod) {
+			p.Spec.AutomountServiceAccountToken = &automount
+		},
+		"automount unset": func(p *corev1.Pod) {
+			p.Spec.AutomountServiceAccountToken = nil
+		},
+		"extra container": func(p *corev1.Pod) {
+			p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: "sidecar"})
+		},
+		"container not named probe": func(p *corev1.Pod) {
+			p.Spec.Containers = []corev1.Container{{Name: "app"}}
+		},
+	}
+	for name, mutate := range victims {
+		t.Run(name, func(t *testing.T) {
+			// Labelled, terminal, and long past the grace period: reapable on
+			// every axis except shape.
+			pod := probeShape(sweepPod("victim", probeLabels("victim"), corev1.PodSucceeded, time.Hour))
+			mutate(pod)
+
+			c := newFakeClient(t, pod)
+			s := &Sweeper{Reader: c, Client: c}
+			s.sweep(context.Background())
+
+			var observed corev1.Pod
+			err := c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: "victim"}, &observed)
+			if err != nil {
+				t.Fatalf("pod not matching probe shape was deleted: %v", err)
+			}
+		})
+	}
 }
 
 // terminatedAt stamps a container termination time on a pod, modelling a
