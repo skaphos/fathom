@@ -46,7 +46,8 @@ creates the `vX.Y.Z` tag.
 
 Tag creation triggers `.github/workflows/release.yml`, which:
 
-1. Builds and pushes the operator image (`fathom-operator:vX.Y.Z`) to GHCR.
+1. Builds and pushes the operator image (`fathom-operator:vX.Y.Z`) to GHCR as a
+   multi-arch manifest (`linux/amd64`, `linux/arm64`) via `docker buildx`.
 2. Builds and pushes the probe image (`fathom-probe:vX.Y.Z`) to GHCR as a
    multi-arch manifest (`linux/amd64`, `linux/arm64`) via `docker buildx`.
 3. Builds and pushes the node-agent image (`fathom-node-agent:vX.Y.Z`) to GHCR
@@ -67,6 +68,10 @@ Tag creation triggers `.github/workflows/release.yml`, which:
 
 - Confirm all five images exist under `ghcr.io/skaphos` (operator, probe,
   node-agent, bundle, catalog).
+- Confirm `ghcr.io/skaphos/fathom-operator:vX.Y.Z` advertises both `linux/amd64`
+  and `linux/arm64` (`docker buildx imagetools inspect …`). All three runtime
+  images must carry both platforms — the operator Deployment, the probe Pods,
+  and the node-agent DaemonSet all have to schedule on arm64 nodes.
 - Confirm `ghcr.io/skaphos/fathom-probe:vX.Y.Z` advertises both `linux/amd64`
   and `linux/arm64` (`docker buildx imagetools inspect …`).
 - Confirm `ghcr.io/skaphos/fathom-node-agent:vX.Y.Z` advertises both
@@ -269,8 +274,8 @@ default image tag are corrected per release but are not yet part of the gate.
 
 ## Notes
 
-- The release flow is aligned to `Taskfile.yml` targets (`docker-build`,
-  `docker-push`, `probe-docker-buildx-push`, `node-agent-docker-buildx-push`,
+- The release flow is aligned to `Taskfile.yml` targets (`docker-buildx-push`,
+  `probe-docker-buildx-push`, `node-agent-docker-buildx-push`,
   `build-installer`, `bundle`, `bundle-build`, `bundle-push`, `catalog-build`,
   `catalog-push`).
 - No Homebrew cask publishing — Fathom is delivered as container/bundle images.
