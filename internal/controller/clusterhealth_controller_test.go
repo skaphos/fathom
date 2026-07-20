@@ -588,7 +588,7 @@ var _ = Describe("ClusterHealth Controller", func() {
 func requestNames(reqs []reconcile.Request) []string {
 	names := make([]string, 0, len(reqs))
 	for _, r := range reqs {
-		names = append(names, r.Name)
+		names = append(names, r.NamespacedName.Name)
 	}
 	return names
 }
