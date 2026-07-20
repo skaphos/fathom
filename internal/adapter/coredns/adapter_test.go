@@ -109,11 +109,18 @@ func TestRun_SystemHealthAndDNSResolutionPass(t *testing.T) {
 	}
 }
 
-func TestRun_DNSResolutionFailureIncludesError(t *testing.T) {
+func TestRun_DNSResolutionFailureSurfacesAsFail(t *testing.T) {
+	// An unresolvable name (NXDOMAIN/SERVFAIL/timeout) is the condition a
+	// dns_resolution check exists to detect: the probe binary reports it as
+	// Outcome=Fail, and the adapter must pass that through as adapter.OutcomeFail
+	// — not Error. Error outranks Fail on the severity ladder, so classifying a
+	// real DNS outage as Error would mask genuine Fails in the ClusterHealth
+	// rollup. Regression guard for #158; launch-failure Error stays covered by
+	// TestRun_DNSLauncherErrorSurfacesAsError.
 	launcher := &fakeLauncher{
 		byTarget: map[string]probe.Result{
-			"svc-a": {Outcome: probe.OutcomeError, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
-			"svc-b": {Outcome: probe.OutcomeError, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
+			"svc-a": {Outcome: probe.OutcomeFail, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
+			"svc-b": {Outcome: probe.OutcomeFail, Summary: "DNS resolution failed", Details: map[string]string{"error": "no such host"}},
 		},
 	}
 	a := adapterWithLauncher(launcher)
@@ -126,8 +133,8 @@ func TestRun_DNSResolutionFailureIncludesError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	assertHasOutcome(t, result.Checks, "DNSName", "svc-a", adapter.OutcomeError, "failed")
-	assertHasOutcome(t, result.Checks, "DNSName", "svc-b", adapter.OutcomeError, "failed")
+	assertHasOutcome(t, result.Checks, "DNSName", "svc-a", adapter.OutcomeFail, "failed")
+	assertHasOutcome(t, result.Checks, "DNSName", "svc-b", adapter.OutcomeFail, "failed")
 	assertHasDetail(t, result.Checks, "DNSName", "svc-a", "error", "no such host")
 }
 

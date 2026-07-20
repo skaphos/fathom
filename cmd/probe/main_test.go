@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"io"
 	"net"
@@ -70,9 +71,18 @@ func TestRunDNSFailsForInvalidName(t *testing.T) {
 	defer cancel()
 	// RFC 6761 reserves the `.invalid` TLD for guaranteed-not-resolvable
 	// names, which makes this deterministic without relying on a specific
-	// resolver behavior.
-	if err := runDNS(ctx, "does-not-exist.invalid"); err == nil {
-		t.Fatal("expected error for .invalid name, got nil")
+	// resolver behavior. An unresolvable name is the exact condition the check
+	// exists to catch: it must surface as Outcome=Fail (not Error) and return
+	// nil, mirroring runTCPConnect on a refused dial. Error outranks Fail on the
+	// severity ladder, so a DNS outage reported as Error would mask real Fails
+	// in the ClusterHealth rollup. Regression guard for #158.
+	got := captureResult(t, func() {
+		if err := runDNS(ctx, "does-not-exist.invalid"); err != nil {
+			t.Fatalf("expected nil error for unresolvable name, got %v", err)
+		}
+	})
+	if got.Outcome != "Fail" {
+		t.Fatalf("Outcome = %q, want Fail", got.Outcome)
 	}
 }
 
@@ -177,6 +187,32 @@ func TestRunDispatchesToDNS(t *testing.T) {
 	if err := run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+// captureResult redirects os.Stdout for the duration of fn, then decodes the
+// single JSON probe result that writeResult emits. It lets tests assert on the
+// Outcome field without exporting a seam from the probe binary.
+func captureResult(t *testing.T, fn func()) result {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured stdout: %v", err)
+	}
+	var got result
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode probe result %q: %v", data, err)
+	}
+	return got
 }
 
 // claimAndReleasePort binds to a kernel-assigned port on 127.0.0.1, closes
