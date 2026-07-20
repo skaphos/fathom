@@ -142,6 +142,10 @@ and adapters cannot yet launch probes.
 - `cmd/probe/main.go` — probe binary (dns, tcp-connect, tcp-listen modes)
 - `internal/probe/pod.go` — `Pod(Request)` hardened manifest builder,
   `ParseResult`
+- `internal/probe/sweeper.go` — leader-elected sweep reaping probe pods
+  orphaned by an operator crash between pod create and the launcher's
+  deferred delete (#163); "leaks must be prevented even on cancellation"
+  below covers the crash path via this sweep, not kubelet GC
 - `Dockerfile.probe` — distroless probe image
 - ADR-0001 — adapter contract (probe is launched on behalf of an adapter)
 - Commits: `62e559f` (probe pod foundation)

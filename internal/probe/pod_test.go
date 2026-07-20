@@ -67,6 +67,35 @@ func TestPodSupportsCrossNodeAntiAffinity(t *testing.T) {
 	}
 }
 
+// The reserved labels are how Sweeper tells a reapable orphan from a pod it
+// must not touch, so a caller-supplied label must never displace them.
+func TestPodReservedLabelsSurviveCallerOverride(t *testing.T) {
+	pod, err := Pod(Request{
+		Name:      "dns-probe",
+		Namespace: "default",
+		Image:     "probe:latest",
+		Mode:      ModeDNS,
+		Target:    "kubernetes.default",
+		Labels: map[string]string{
+			labelManagedBy: "someone-else",
+			labelProbeName: "hijacked",
+			"team":         "platform",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	if got := pod.Labels[labelManagedBy]; got != managedByValue {
+		t.Fatalf("%s: got %q, want %q", labelManagedBy, got, managedByValue)
+	}
+	if got := pod.Labels[labelProbeName]; got != "dns-probe" {
+		t.Fatalf("%s: got %q, want dns-probe", labelProbeName, got)
+	}
+	if got := pod.Labels["team"]; got != "platform" {
+		t.Fatalf("non-reserved caller label was dropped: got %q, want platform", got)
+	}
+}
+
 func TestPodRejectsInvalidRequests(t *testing.T) {
 	for _, tt := range []struct {
 		name string

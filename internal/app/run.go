@@ -46,6 +46,7 @@ import (
 	"github.com/skaphos/fathom/internal/controller"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
+	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/internal/tracing"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -365,6 +366,18 @@ func Run(
 		if err := mgr.Add(w); err != nil {
 			return fmt.Errorf("add cert watcher to manager: %w", err)
 		}
+	}
+
+	// Reap probe pods orphaned by a previous operator crash (#163). The
+	// sweeper needs the live API reader: the manager cache has no Pod
+	// informer, and listing pods through the cached client would open an
+	// unfiltered cluster-wide watch (see scopedCacheOptions).
+	if err := mgr.Add(&probe.Sweeper{
+		Reader: mgr.GetAPIReader(),
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("probe-sweeper"),
+	}); err != nil {
+		return fmt.Errorf("add probe sweeper to manager: %w", err)
 	}
 
 	var cacheSynced atomic.Bool

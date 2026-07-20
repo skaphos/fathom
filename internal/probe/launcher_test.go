@@ -23,15 +23,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func newFakeClient(t *testing.T) client.Client {
+func newFakeClient(t *testing.T, objs ...client.Object) client.Client {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("add to scheme: %v", err)
-	}
 	return fake.NewClientBuilder().
-		WithScheme(scheme).
+		WithScheme(newScheme(t)).
 		WithStatusSubresource(&corev1.Pod{}).
+		WithObjects(objs...).
 		Build()
 }
 

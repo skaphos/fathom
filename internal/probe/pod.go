@@ -31,6 +31,10 @@ const (
 	defaultTimeout    = 10 * time.Second
 	labelManagedBy    = "fathom.skaphos.io/managed-by"
 	labelProbeName    = "fathom.skaphos.io/probe"
+	managedByValue    = "fathom"
+	// probeContainerName is the sole container in a probe pod. Sweeper's
+	// shape check depends on it, so the two must not drift apart.
+	probeContainerName = "probe"
 )
 
 type Mode string
@@ -82,10 +86,17 @@ func Pod(req Request) (*corev1.Pod, error) {
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
-	labels := map[string]string{labelManagedBy: "fathom", labelProbeName: req.Name}
+	// Caller labels are applied first so the reserved probe-identifying labels
+	// always win. Both are load-bearing for Sweeper: managed-by+probe is how
+	// it recognises an orphan to reap, and how it recognises everything else
+	// as off-limits. A caller that overrode managed-by would leak its pods
+	// silently — they would never match a sweep.
+	labels := make(map[string]string, len(req.Labels)+2)
 	for key, value := range req.Labels {
 		labels[key] = value
 	}
+	labels[labelManagedBy] = managedByValue
+	labels[labelProbeName] = req.Name
 	runAsNonRoot := true
 	allowPrivilegeEscalation := false
 	readOnlyRootFilesystem := true
@@ -107,7 +118,7 @@ func Pod(req Request) (*corev1.Pod, error) {
 			Tolerations:                   append([]corev1.Toleration(nil), req.Tolerations...),
 			SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot, RunAsUser: &runAsUser, SeccompProfile: &seccompProfile},
 			Containers: []corev1.Container{{
-				Name:                     "probe",
+				Name:                     probeContainerName,
 				Image:                    req.Image,
 				ImagePullPolicy:          req.ImagePullPolicy,
 				Command:                  []string{defaultBinaryPath},
