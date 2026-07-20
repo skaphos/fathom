@@ -26,7 +26,7 @@ var MetricsServerDefinition = AddonDefinition{
 	// image tag). Detection-only: SupportedVersions is left empty (the exact
 	// supported range is maintainer-owned), so metrics-server never Warns on a
 	// version — gating is opt-in (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "kube-system", Name: "metrics-server"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health")},
 	RBAC: []adapter.PolicyRule{
 		// Verbs mirror the engine's actual reads through the direct (uncached)
 		// impersonating client: the Deployment and the APIService are fetched by

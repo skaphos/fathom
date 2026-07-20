@@ -45,19 +45,24 @@ const versionFamily = adapter.Family("addon_version")
 //	undetectable / unparseable       -> (detected, [Warn VersionUnknown])
 //
 // It never returns an error: detection is best-effort and must not fail a Run.
-func (e *Engine) detectAndGateVersion(ctx context.Context, c client.Client) (string, []adapter.CheckResult) {
-	vs := e.def.VersionSource
-	if vs == nil {
+func (e *Engine) detectAndGateVersion(ctx context.Context, c client.Client, policy map[adapter.Family]adapter.FamilyPolicy) (string, []adapter.CheckResult) {
+	if e.def.VersionSource == nil {
+		return "", nil
+	}
+	addr, ok := e.resolveVersionAddress(policy)
+	if !ok {
+		// NewEngine rejects an unresolvable reference, so a constructed Engine
+		// never lands here. Treat it as "no version source" rather than panicking.
 		return "", nil
 	}
 	started := time.Now()
-	detected := detectAddonVersion(ctx, c, vs)
+	detected := detectAddonVersion(ctx, c, addr)
 
 	if e.def.SupportedVersions == "" {
 		return detected, nil
 	}
 
-	ref := adapter.TargetRef{APIVersion: "apps/v1", Kind: string(vs.Kind), Namespace: vs.Namespace, Name: vs.Name}
+	ref := adapter.TargetRef{APIVersion: "apps/v1", Kind: string(addr.Kind), Namespace: addr.Namespace, Name: addr.Name}
 	gate := func(outcome adapter.Outcome, summary, reason string) []adapter.CheckResult {
 		details := adapter.MarkVersionGate(map[string]string{"component": e.def.AddonType}, reason, detected, e.def.SupportedVersions)
 		return []adapter.CheckResult{result(versionFamily, ref, outcome, summary, details, started)}
@@ -94,17 +99,56 @@ func (e *Engine) detectAndGateVersion(ctx context.Context, c client.Client) (str
 	return detected, nil
 }
 
+// versionAddress is the effective, policy-resolved address of the workload that
+// reports the addon version.
+type versionAddress struct {
+	Kind      WorkloadKind
+	Namespace string
+	Name      string
+	Container string
+}
+
+// resolveVersionAddress computes the version-source workload's effective address
+// by reusing the referenced WorkloadCheck and applying that family's policy
+// overrides — the very surface the workload check itself resolves through
+// (firstNamespace for policy.namespaces, its NameThresholdKey for the name). A
+// renamed or relocated addon therefore keeps reporting its version instead of
+// silently detecting nothing (#172).
+//
+// The referenced family's policy is used even when that family is disabled:
+// version detection is orthogonal to whether the family's checks run, and an
+// operator who renamed a workload expects detection to follow the rename either
+// way. A family absent from a non-nil policy map yields a zero FamilyPolicy, so
+// both helpers fall back to the check's declared defaults.
+func (e *Engine) resolveVersionAddress(policy map[adapter.Family]adapter.FamilyPolicy) (versionAddress, bool) {
+	fam, wc, ok := e.def.versionWorkload()
+	if !ok {
+		return versionAddress{}, false
+	}
+	fp, _ := resolveFamily(policy, fam.Name, fam.DefaultEnabled)
+	name := wc.DefaultName
+	if wc.NameThresholdKey != "" {
+		name = stringThreshold(fp, wc.NameThresholdKey, wc.DefaultName)
+	}
+	return versionAddress{
+		Kind:      wc.Kind,
+		Namespace: firstNamespace(fp, wc.DefaultNamespace),
+		Name:      name,
+		Container: e.def.VersionSource.Container,
+	}, true
+}
+
 // detectAddonVersion reads the version-source workload and returns the addon
 // version from its app.kubernetes.io/version label — the pod template's labels
 // first (they propagate to the live pods), then the workload's own metadata —
 // falling back to the selected container's image tag. It returns "" when the
 // workload is absent or carries no usable version. Any read error yields ""
 // (best-effort).
-func detectAddonVersion(ctx context.Context, c client.Client, vs *VersionSource) string {
-	key := types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}
+func detectAddonVersion(ctx context.Context, c client.Client, addr versionAddress) string {
+	key := types.NamespacedName{Namespace: addr.Namespace, Name: addr.Name}
 	var meta, podMeta map[string]string
 	var containers []corev1.Container
-	switch vs.Kind {
+	switch addr.Kind {
 	case KindDeployment:
 		var w appsv1.Deployment
 		if err := c.Get(ctx, key, &w); err != nil {
@@ -132,7 +176,7 @@ func detectAddonVersion(ctx context.Context, c client.Client, vs *VersionSource)
 	if v := meta[versionLabel]; v != "" {
 		return v
 	}
-	return imageTag(pickImage(containers, vs.Container))
+	return imageTag(pickImage(containers, addr.Container))
 }
 
 // pickImage returns the image reference of the named container, or the first

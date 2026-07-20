@@ -26,7 +26,7 @@ var CiliumDefinition = AddonDefinition{
 	// app.kubernetes.io/version label, else the quay.io/cilium/cilium image tag).
 	// Detection-only: SupportedVersions is left empty so Cilium never Warns on a
 	// version — gating is opt-in once a maintainer confirms the range (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDaemonSet, Namespace: "kube-system", Name: "cilium"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("agent_health")},
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"get", "list", "watch"},
 			Justification: "Read the cilium-operator Deployment and the cilium agent DaemonSet to score readiness. list+watch because Cilium is Optional and may be absent, and the workload names are policy-overridable; read-only."},

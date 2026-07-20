@@ -32,7 +32,7 @@ var ExternalDNSDefinition = AddonDefinition{
 	// is left empty (external-dns is pre-1.0 and the exact range is
 	// maintainer-owned), so external-dns never Warns on a version — gating is
 	// opt-in (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-dns", Name: "external-dns"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health")},
 	RBAC: []adapter.PolicyRule{
 		// Verbs mirror the engine's actual reads through the direct (uncached)
 		// impersonating client: workloads and CRDs are fetched by name (get),

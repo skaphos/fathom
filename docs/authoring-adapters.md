@@ -58,7 +58,7 @@ declarative.AddonDefinition{
     AddonType:         "external-dns",         // identity + spec.addonType match key
     AdapterVersion:    "0.1.0",                // this adapter's own SemVer
     Optional:          false,                  // absent add-on -> Fail (default) vs Skipped
-    VersionSource:     &declarative.VersionSource{ /* … */ }, // optional release-version detection
+    VersionSource:     &declarative.VersionSource{ /* … */ }, // optional release-version detection (references a WorkloadCheck)
     SupportedVersions: "",                     // optional semver RANGE to gate the detected version
     Families:          []declarative.FamilyDefinition{ /* … */ },
     RBAC:              []adapter.PolicyRule{ /* least-privilege reads — see below */ },
@@ -70,7 +70,7 @@ declarative.AddonDefinition{
 | `AddonType` | The adapter's `Name()`, its single capability, and the `AddonCheck.spec.addonType` match key. Required. |
 | `AdapterVersion` | The adapter's own SemVer, surfaced as `Version()`. Bump it when you change what the adapter checks. |
 | `Optional` | Makes every component default to the `Optional` posture (a not-installed target → `Skipped`, not `Fail`). Set it for add-ons that may legitimately be absent on a cluster (Cilium on a non-Cilium cluster). A component's own `Absence` always overrides this. |
-| `VersionSource` | Names the workload whose version reports the installed add-on release. `nil` disables detection. |
+| `VersionSource` | References the `WorkloadCheck` whose version reports the installed add-on release, via `FromFamily` (+ `FromComponent` when that family has more than one workload). Detection reuses that check's resolved address, so it follows the same `policy.namespaces` and name-threshold overrides. `nil` disables detection. |
 | `SupportedVersions` | A Masterminds/Helm semver **range** (`">=1.14 <2.0"`) the detected release version is gated against. Empty = detect-and-surface only, never `Warn`. This is the add-on *release* version — **not** the per-CRD served-API versions below. |
 | `Families` | The check families, evaluated in slice order. `Families[0]` is the "primary" family (where the all-disabled sentinel is emitted). |
 | `RBAC` | The least-privilege grants the engine's reads need. This is the **enforced blast radius**, not documentation — see [Declare your RBAC](#declare-your-rbac). |
@@ -313,7 +313,29 @@ the addon-wide `Optional`, else `Required` (SKA-526).
 Set `VersionSource` to detect the installed **release** version (from the
 workload's `app.kubernetes.io/version` label, falling back to the container
 image tag); it surfaces as `Result.DetectedVersion` →
-`AddonCheck.status.detectedVersion`. Add a `SupportedVersions` range to gate it:
+`AddonCheck.status.detectedVersion`.
+
+`VersionSource` carries no addressing of its own — it *references* a
+`WorkloadCheck` you already declared:
+
+```go
+// Single-workload family: the reference is unambiguous.
+VersionSource: &declarative.VersionSource{FromFamily: adapter.Family("system_health")},
+
+// Multi-workload family: name which component reports the version.
+VersionSource: &declarative.VersionSource{
+    FromFamily:    adapter.Family("system_health"),
+    FromComponent: "keda-operator",
+},
+```
+
+Detection then resolves through that check's policy surface — `policy.namespaces`
+and its `NameThresholdKey` — so a renamed or relocated add-on (a revisioned
+istiod, a Helm-fullname rename) keeps reporting its version. `NewEngine` rejects
+a reference to an unknown family, a family with no workloads, or an ambiguous
+multi-workload family with no `FromComponent`.
+
+Add a `SupportedVersions` range to gate it:
 
 | `SupportedVersions` | Detected version | Result |
 | --- | --- | --- |
@@ -508,7 +530,7 @@ Copy this into your PR description and tick it off:
 - [ ] `Capabilities()` lists the real `addonType` and families
 - [ ] Every check sets `Family`, `TargetRef`, and a `Summary` on non-Pass results
 - [ ] Absence handled (`Required`/`Optional` posture; `MarkAbsent`)
-- [ ] Version detection/gating set if applicable (`VersionSource` (+ `SupportedVersions`))
+- [ ] Version detection/gating set if applicable (`VersionSource` referencing a `WorkloadCheck` (+ `SupportedVersions`))
 - [ ] RBAC declared with a `Justification` on every grant; writes marked `WRITE EXCEPTION`
 - [ ] `task gen:addon-rbac` run; `config/rbac/addons/`, Helm data, and `docs/reference/rbac.md` committed
 - [ ] Unit tests added; coverage gate green (`task test` + `scripts/check-coverage.sh`)

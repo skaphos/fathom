@@ -32,7 +32,7 @@ var KedaDefinition = AddonDefinition{
 	// app.kubernetes.io/version label, else the ghcr.io/kedacore/keda image tag).
 	// Detection-only: SupportedVersions is left empty so KEDA never Warns on a
 	// version — gating is opt-in once a maintainer confirms the range (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "keda", Name: "keda-operator"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health"), FromComponent: "keda-operator"},
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
 			Justification: "Get the three KEDA Deployments (operator, metrics-apiserver, admission-webhooks) by name to score readiness. get only — each is a single named Get (a policy-overridable name still resolves to one Get) and the impersonating client is cache-free, so no list/watch; read-only."},

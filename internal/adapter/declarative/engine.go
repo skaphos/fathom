@@ -50,14 +50,6 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 	if err := validSupportedVersions(def.SupportedVersions); err != nil {
 		return nil, fmt.Errorf("declarative: adapter %q has %w", def.AddonType, err)
 	}
-	if vs := def.VersionSource; vs != nil {
-		if !validWorkloadKind(vs.Kind) {
-			return nil, fmt.Errorf("declarative: adapter %q VersionSource has unknown kind %q", def.AddonType, vs.Kind)
-		}
-		if vs.Namespace == "" || vs.Name == "" {
-			return nil, fmt.Errorf("declarative: adapter %q VersionSource needs a Namespace and Name", def.AddonType)
-		}
-	}
 	seen := make(map[adapter.Family]struct{}, len(def.Families))
 	for _, f := range def.Families {
 		if f.Name == "" {
@@ -147,7 +139,42 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 			}
 		}
 	}
+	// Validated after the family loop so the reference resolves against families
+	// already known to have unique names and valid workload kinds.
+	if err := validVersionSource(def); err != nil {
+		return nil, err
+	}
 	return &Engine{def: def}, nil
+}
+
+// validVersionSource rejects a VersionSource whose family/component reference
+// does not resolve to exactly one WorkloadCheck. Catching it at construction
+// keeps a bad definition a build/startup failure rather than an addon that
+// silently reports no version (#172).
+func validVersionSource(def AddonDefinition) error {
+	vs := def.VersionSource
+	if vs == nil {
+		return nil
+	}
+	if vs.FromFamily == "" {
+		return fmt.Errorf("declarative: adapter %q VersionSource needs a FromFamily", def.AddonType)
+	}
+	fam, found := def.family(vs.FromFamily)
+	if !found {
+		return fmt.Errorf("declarative: adapter %q VersionSource references unknown family %q", def.AddonType, vs.FromFamily)
+	}
+	if len(fam.Workloads) == 0 {
+		return fmt.Errorf("declarative: adapter %q VersionSource family %q declares no workloads", def.AddonType, vs.FromFamily)
+	}
+	if vs.FromComponent == "" && len(fam.Workloads) > 1 {
+		return fmt.Errorf("declarative: adapter %q VersionSource family %q declares %d workloads, so FromComponent must select one",
+			def.AddonType, vs.FromFamily, len(fam.Workloads))
+	}
+	if _, _, ok := def.versionWorkload(); !ok {
+		return fmt.Errorf("declarative: adapter %q VersionSource component %q is not a workload of family %q",
+			def.AddonType, vs.FromComponent, vs.FromFamily)
+	}
+	return nil
 }
 
 // MustEngine wraps NewEngine and panics on validation error. It is intended for
@@ -228,8 +255,10 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 
 	// Detect the installed addon version once per run and gate it against the
 	// definition's supported range; the Warn gate (if any) leads the checks
-	// (SKA-527).
-	detectedVersion, versionGate := e.detectAndGateVersion(ctx, req.Client)
+	// (SKA-527). req.Policy is threaded in so the version-source address resolves
+	// through the referenced family's overrides, exactly as its workload check
+	// does (#172).
+	detectedVersion, versionGate := e.detectAndGateVersion(ctx, req.Client, req.Policy)
 	checks := append([]adapter.CheckResult{}, versionGate...)
 	for _, fr := range runs {
 		if !fr.enabled {
