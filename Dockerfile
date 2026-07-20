@@ -3,8 +3,8 @@
 # Base image pinned by digest for reproducible, tamper-evident builds (SKA-295).
 # Refresh with `go -C tools tool task images:refresh`.
 # Pin the builder to the *build* platform and cross-compile to TARGETARCH.
-# Multi-arch builds would otherwise run this stage under QEMU emulation, which
-# is slow and requires binfmt handlers the release runner does not install.
+# This avoids running the build stage under QEMU emulation (slow) and reduces
+# reliance on binfmt/QEMU being installed in the build environment.
 # CGO is disabled below, so cross-compilation is a pure GOARCH switch.
 FROM --platform=$BUILDPLATFORM golang:1.26.5@sha256:ae5a2316d12f3e78fd99177dad452e6ad4f240af2d71d57b480c3477f250fec6 AS builder
 ARG TARGETOS
