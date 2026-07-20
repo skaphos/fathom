@@ -575,9 +575,9 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the operator last rolled up a HealthReport from<br />the node-agent results. |  | Optional: \{\} <br /> |
-| `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes from the<br />most recent roll-up. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
-| `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent roll-up. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results (the latest poll). It is refreshed on the interval cadence even<br />when the aggregate result is unchanged, so downstream liveness stays fresh,<br />and does not imply a new HealthReport was written on every refresh. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes as of the<br />most recent evaluation. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 | `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
 | `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
 

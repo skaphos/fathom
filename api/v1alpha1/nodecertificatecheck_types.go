@@ -132,18 +132,22 @@ type NodeCertificateCheckStatus struct {
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
-	// LastRunTime records when the operator last rolled up a HealthReport from
-	// the node-agent results.
+	// LastRunTime records when the operator last evaluated the node-agent
+	// results (the latest poll). It is refreshed on the interval cadence even
+	// when the aggregate result is unchanged, so downstream liveness stays fresh,
+	// and does not imply a new HealthReport was written on every refresh.
 	// +optional
 	LastRunTime *metav1.Time `json:"lastRunTime,omitempty"`
 
-	// LastResult is the aggregate result across all reporting nodes from the
-	// most recent roll-up.
+	// LastResult is the aggregate result across all reporting nodes as of the
+	// most recent evaluation.
 	// +kubebuilder:validation:Enum=Pass;Warn;Fail;Error;Skipped;Unknown
 	// +optional
 	LastResult string `json:"lastResult,omitempty"`
 
-	// LastReportName names the HealthReport created for the most recent roll-up.
+	// LastReportName names the HealthReport capturing the current aggregate
+	// result. A new HealthReport is written only when that result transitions, so
+	// this name is stable across polls that observe the same result.
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	LastReportName string `json:"lastReportName,omitempty"`

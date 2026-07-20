@@ -341,6 +341,99 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(metav1.IsControlledBy(cm, updated)).To(BeTrue())
 	})
 
+	It("refreshes liveness without a new HealthReport when the aggregate is unchanged across an interval", func() {
+		// Regression for #157: a healthy cluster re-scanning every interval used to
+		// mint a fresh identical HealthReport each time — the deterministic name
+		// folds in LastReportName, so the name changed every roll-up — pruning a
+		// real Fail incident out of the bounded history after historyLimit
+		// intervals. The roll-up is now transition-only: an unchanged aggregate
+		// refreshes LastRunTime for liveness but writes no new report.
+		name := types.NamespacedName{Name: "nc-unchanged", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		firstRollup := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, firstRollup)).To(Succeed())
+		Expect(firstRollup.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		firstReportName := firstRollup.Status.LastReportName
+		Expect(firstReportName).NotTo(BeEmpty())
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(1))
+
+		// Simulate the interval elapsing since the last roll-up without changing the
+		// reported result, then reconcile again (as the periodic requeue would).
+		backdated := metav1.NewTime(time.Now().Add(-2 * nodeCertInterval(check)))
+		firstRollup.Status.LastRunTime = &backdated
+		Expect(k8sClient.Status().Update(ctx, firstRollup)).To(Succeed())
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		afterInterval := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, afterInterval)).To(Succeed())
+		// No new report: an identical Pass must not churn history.
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(1))
+		Expect(afterInterval.Status.LastReportName).To(Equal(firstReportName))
+		Expect(afterInterval.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		// Liveness was refreshed: LastRunTime advanced past the back-dated value.
+		Expect(afterInterval.Status.LastRunTime.Time).To(BeTemporally(">", backdated.Time))
+	})
+
+	It("writes a new HealthReport when the aggregate result transitions", func() {
+		// The complement of the transition-only contract: a genuine change in the
+		// aggregate result is persisted immediately (never throttled by the
+		// interval), and prior history is retained so the incident is recorded.
+		name := types.NamespacedName{Name: "nc-transition", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		})
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		passRollup := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, passRollup)).To(Succeed())
+		Expect(passRollup.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		passReportName := passRollup.Status.LastReportName
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(1))
+
+		// The cert now expires inside the critical window: aggregate goes Pass -> Fail.
+		writeNodeReport(ctx, check, "node-a", []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomeFail, DaysRemaining: 2, NotAfter: time.Now().Add(2 * 24 * time.Hour)},
+		})
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		failRollup := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, failRollup)).To(Succeed())
+		// The transition writes a second report; both are retained (history limit 10).
+		Expect(nodeCertHealthReportCount(ctx, name)).To(Equal(2))
+		Expect(failRollup.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(failRollup.Status.LastReportName).NotTo(Equal(passReportName))
+	})
+
 	It("does not roll up until every desired node has a fresh report", func() {
 		name := types.NamespacedName{Name: "nc-partial", Namespace: "default"}
 		check := &fathomv1alpha1.NodeCertificateCheck{

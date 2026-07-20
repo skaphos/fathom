@@ -165,7 +165,6 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	before := check.Status.DeepCopy()
-	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeCertConditionAccepted,
@@ -223,11 +222,8 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	if nodeCertReportsComplete(ds, len(reports)) {
 		aggregate := aggregateNodeReports(reports)
-		genChanged := previousObservedGeneration != check.Generation
-		if r.rollupDue(&check, interval, string(aggregate), genChanged) {
-			if err := r.rollup(ctx, log, &check, reports, aggregate); err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := r.rollup(ctx, log, &check, reports, aggregate, interval); err != nil {
+			return ctrl.Result{}, err
 		}
 	} else {
 		clearNodeCertRollupStatus(&check)
@@ -697,10 +693,30 @@ func (r *NodeCertificateCheckReconciler) adoptReportConfigMap(ctx context.Contex
 	}
 }
 
-// rollup creates a HealthReport from the node reports, prunes history, and
-// mirrors the aggregate into Status.
-func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1alpha1.HealthReportResult) error {
-	observedAt := metav1.NewTime(time.Now())
+// rollup reconciles the aggregate scan result into HealthReport history under a
+// transition-only contract that mirrors AddonCheck (ADR-0002): a new
+// HealthReport is persisted only when the aggregate result changes from the last
+// persisted one (or on the first roll-up). When the result is unchanged,
+// LastRunTime is refreshed on the interval cadence — keeping the check's
+// liveness fresh, since it feeds HealthCheck.Status.SourceObservedAt — without
+// minting an identical report every interval. Writing an identical report each
+// interval churned the deterministic name (it folds in LastReportName) and,
+// with a bounded history, pruned a real Fail incident out of existence after
+// historyLimit intervals (#157). Per-node daysRemaining drift is intentionally
+// not a transition: unchanged-aggregate reports differ only in details.
+func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1alpha1.HealthReportResult, interval time.Duration) error {
+	now := time.Now()
+	switch decideNodeCertRollup(&check.Status, string(aggregate), interval, now) {
+	case rollupNoop:
+		return nil
+	case rollupRefreshLiveness:
+		refreshed := metav1.NewTime(now)
+		check.Status.LastRunTime = &refreshed
+		return nil
+	}
+
+	// rollupPersist: the aggregate transitioned (or this is the first roll-up).
+	observedAt := metav1.NewTime(now)
 	report := healthReportForNodeCert(check, reports, aggregate, observedAt)
 	useDeterministicHealthReportName(report, check.Name,
 		"NodeCertificateCheck",
@@ -729,14 +745,35 @@ func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Lo
 	return nil
 }
 
-func (r *NodeCertificateCheckReconciler) rollupDue(check *fathomv1alpha1.NodeCertificateCheck, interval time.Duration, aggregate string, genChanged bool) bool {
-	if check.Status.LastRunTime == nil || genChanged {
-		return true
+// nodeCertRollupDecision is what a completed scan cycle does with its aggregate.
+type nodeCertRollupDecision int
+
+const (
+	// rollupPersist writes a new HealthReport: the aggregate result transitioned
+	// from the last persisted one, or this is the first roll-up.
+	rollupPersist nodeCertRollupDecision = iota
+	// rollupRefreshLiveness advances LastRunTime only: the aggregate is unchanged
+	// but the interval has elapsed, so liveness is renewed without a new report.
+	rollupRefreshLiveness
+	// rollupNoop leaves status untouched: the aggregate is unchanged and the
+	// interval has not yet elapsed.
+	rollupNoop
+)
+
+// decideNodeCertRollup implements the transition-only contract documented on
+// rollup. It is pure so the branching is unit-tested without envtest. The
+// liveness refresh is throttled to the interval because the controller watches
+// node-report ConfigMaps with a ResourceVersionChangedPredicate and every
+// node-agent rewrites its ConfigMap each scan, so an unthrottled refresh would
+// rewrite Status on each of the ~N-per-interval watch events instead of once.
+func decideNodeCertRollup(status *fathomv1alpha1.NodeCertificateCheckStatus, aggregate string, interval time.Duration, now time.Time) nodeCertRollupDecision {
+	if status.LastReportName == "" || status.LastRunTime == nil || status.LastResult != aggregate {
+		return rollupPersist
 	}
-	if check.Status.LastResult != aggregate {
-		return true
+	if now.Sub(status.LastRunTime.Time) >= interval {
+		return rollupRefreshLiveness
 	}
-	return time.Since(check.Status.LastRunTime.Time) >= interval
+	return rollupNoop
 }
 
 func nodeCertReportMaxAge(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
