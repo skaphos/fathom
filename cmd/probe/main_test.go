@@ -199,10 +199,19 @@ func captureResult(t *testing.T, fn func()) result {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+	// Restore stdout and close both pipe ends via defer so an fn() that calls
+	// t.Fatal (runtime.Goexit) can't leak the fd or leave os.Stdout dangling for
+	// the rest of the package's tests. Deferred funcs still run under Goexit.
+	defer func() {
+		os.Stdout = oldStdout
+		_ = w.Close()
+		_ = r.Close()
+	}()
 	os.Stdout = w
 	fn()
+	// Close the writer before reading so io.ReadAll observes EOF; the deferred
+	// close is then a harmless no-op.
 	_ = w.Close()
-	os.Stdout = oldStdout
 
 	data, err := io.ReadAll(r)
 	if err != nil {
