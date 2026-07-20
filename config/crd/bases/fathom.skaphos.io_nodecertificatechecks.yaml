@@ -286,14 +286,16 @@ spec:
                 format: int32
                 type: integer
               lastReportName:
-                description: LastReportName names the HealthReport created for the
-                  most recent roll-up.
+                description: |-
+                  LastReportName names the HealthReport capturing the current aggregate
+                  result. A new HealthReport is written only when that result transitions, so
+                  this name is stable across polls that observe the same result.
                 maxLength: 253
                 type: string
               lastResult:
                 description: |-
-                  LastResult is the aggregate result across all reporting nodes from the
-                  most recent roll-up.
+                  LastResult is the aggregate result across all reporting nodes as of the
+                  most recent evaluation.
                 enum:
                 - Pass
                 - Warn
@@ -304,8 +306,10 @@ spec:
                 type: string
               lastRunTime:
                 description: |-
-                  LastRunTime records when the operator last rolled up a HealthReport from
-                  the node-agent results.
+                  LastRunTime records when the operator last evaluated the node-agent
+                  results (the latest poll). It is refreshed on the interval cadence even
+                  when the aggregate result is unchanged, so downstream liveness stays fresh,
+                  and does not imply a new HealthReport was written on every refresh.
                 format: date-time
                 type: string
               observedGeneration:
