@@ -24,7 +24,7 @@ func TestActive(t *testing.T) {
 	}{
 		{"running no deletion", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning}}, true},
 		{"pending", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending}}, true},
-		{"running not ready still active", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning}}, true},
+		{"running not ready still active", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}}}}, true},
 		{"terminating", &corev1.Pod{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}, false},
 		{"failed (evicted)", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed}}, false},
 		{"succeeded (completed)", &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodSucceeded}}, false},

@@ -265,7 +265,7 @@ func (Adapter) checkPods(ctx context.Context, c client.Client, deployment *appsv
 		}
 	}
 	if len(live) == 0 {
-		return []adapter.CheckResult{check(target, adapter.OutcomeSkipped, "CoreDNS deployment has only terminating or completed pods", nil, started)}
+		return []adapter.CheckResult{check(target, adapter.OutcomeSkipped, "CoreDNS deployment has only terminating, failed, or completed pods", nil, started)}
 	}
 
 	checks := make([]adapter.CheckResult, 0, len(live))

@@ -184,10 +184,10 @@ func checkPods(ec EvalContext, namespace string, selector *metav1.LabelSelector,
 		}
 	}
 	if len(live) == 0 {
-		// Every matching pod is terminating or completed (mid-rollout churn or
-		// lingering Evicted pods). Defer to the authoritative workload check —
-		// Skipped is informational and never drags the roll-up down.
-		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeSkipped, fmt.Sprintf("%s has only terminating or completed pods", component), map[string]string{"component": component}, started)}
+		// Every matching pod is terminating, failed, or completed (mid-rollout
+		// churn or lingering Evicted pods). Defer to the authoritative workload
+		// check — Skipped is informational and never drags the roll-up down.
+		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeSkipped, fmt.Sprintf("%s has only terminating, failed, or completed pods", component), map[string]string{"component": component}, started)}
 	}
 
 	checks := make([]adapter.CheckResult, 0, len(live))
