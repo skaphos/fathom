@@ -19,9 +19,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -248,50 +250,117 @@ func selectorFromSpec(sel *metav1.LabelSelector) (labels.Selector, error) {
 	return metav1.LabelSelectorAsSelector(sel)
 }
 
+// healthCheckEventHandler enqueues the ClusterHealths affected by a HealthCheck
+// event. Update is the interesting verb: it maps ObjectOld *and* ObjectNew so a
+// HealthCheck edited out of a selector re-enqueues the ClusterHealth that must
+// now drop it (#148).
+//
+// All four callbacks are required. handler.Funcs treats an unset callback as a
+// silent no-op, so deleting one here does not fail to compile — it stops the
+// controller reacting to that verb entirely. Dropping DeleteFunc, for example,
+// would strand deleted children in status.children forever: a strictly worse
+// bug than the one this fixes.
+func (r *ClusterHealthReconciler) healthCheckEventHandler() handler.EventHandler {
+	enqueue := func(ctx context.Context, q workqueue.TypedRateLimitingInterface[reconcile.Request], objs ...client.Object) {
+		for _, req := range r.clusterHealthsForHealthChecks(ctx, objs...) {
+			q.Add(req)
+		}
+	}
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(ctx, q, e.Object)
+		},
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(ctx, q, e.ObjectOld, e.ObjectNew)
+		},
+		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(ctx, q, e.Object)
+		},
+		GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(ctx, q, e.Object)
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager. It owns
 // ClusterHealth and watches HealthCheck so a member's Status change
-// re-enqueues every ClusterHealth whose selector matches it.
+// re-enqueues every ClusterHealth whose selector matches it — and so a label
+// edit that moves a HealthCheck *out* of a selector re-enqueues the
+// ClusterHealth that must drop it (#148).
+//
+// ResourceVersionChangedPredicate filters inside the source, before handler
+// dispatch, and passes the event through unmodified, so ObjectOld survives. A
+// label-only predicate would be wrong here: status-only changes are the primary
+// reason this watch exists.
 func (r *ClusterHealthReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.ClusterHealth{}).
 		Named("clusterhealth").
 		Watches(
 			&fathomv1alpha1.HealthCheck{},
-			handler.EnqueueRequestsFromMapFunc(r.clusterHealthsForHealthCheck),
+			r.healthCheckEventHandler(),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Complete(r)
 }
 
-// clusterHealthsForHealthCheck returns the names of every ClusterHealth whose
-// scope covers hc: the selector matches hc's labels and the namespace-scope
-// filter (allowlist / denylist / open) includes hc's namespace. ClusterHealth
-// is cluster-scoped, so the requests carry no namespace.
-func (r *ClusterHealthReconciler) clusterHealthsForHealthCheck(ctx context.Context, obj client.Object) []reconcile.Request {
-	hc, ok := obj.(*fathomv1alpha1.HealthCheck)
-	if !ok {
+// clusterHealthsForHealthChecks returns one request per ClusterHealth whose
+// scope covers at least one of objs. ClusterHealth is cluster-scoped, so the
+// requests carry no namespace.
+//
+// The variadic shape exists for update events (#148): a HealthCheck whose
+// labels are edited out of a ClusterHealth's selector must still re-enqueue
+// that ClusterHealth, or status.children keeps the now-unselected entry — and
+// its worst-case contribution to the rollup verdict — until some unrelated
+// event happens to trigger a reconcile. Evaluating old and new against a
+// single List makes the result their union, deduped by construction.
+func (r *ClusterHealthReconciler) clusterHealthsForHealthChecks(ctx context.Context, objs ...client.Object) []reconcile.Request {
+	hcs := make([]*fathomv1alpha1.HealthCheck, 0, len(objs))
+	for _, obj := range objs {
+		// A typed-nil (*HealthCheck)(nil) in a non-nil client.Object satisfies
+		// the assertion with ok==true, so the nil check is load-bearing.
+		if hc, ok := obj.(*fathomv1alpha1.HealthCheck); ok && hc != nil {
+			hcs = append(hcs, hc)
+		}
+	}
+	if len(hcs) == 0 {
 		return nil
 	}
+
 	var list fathomv1alpha1.ClusterHealthList
 	if err := r.List(ctx, &list); err != nil {
+		// Dropping the event here leaves a stale rollup published until some
+		// unrelated event reconciles it, so make the loss visible.
+		logf.FromContext(ctx).Error(err, "listing ClusterHealths to map a HealthCheck event; skipping enqueue")
 		return nil
 	}
-	hcLabels := labels.Set(hc.Labels)
+
 	var out []reconcile.Request
-	for _, ch := range list.Items {
-		if !clusterHealthCoversNamespace(&ch, hc.Namespace) {
-			continue
+	for i := range list.Items {
+		ch := &list.Items[i]
+		for _, hc := range hcs {
+			if clusterHealthSelectsHealthCheck(ch, hc) {
+				out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
+				break // union: one request per ClusterHealth, however many sides matched
+			}
 		}
-		sel, err := selectorFromSpec(ch.Spec.Selector)
-		if err != nil {
-			continue
-		}
-		if !sel.Matches(hcLabels) {
-			continue
-		}
-		out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
 	}
 	return out
+}
+
+// clusterHealthSelectsHealthCheck reports whether ch's aggregation scope covers
+// hc: the namespace-scope filter admits hc's namespace and ch's selector
+// matches hc's labels. An unparseable selector matches nothing here; Reconcile
+// is what surfaces that to the user as Ready=False/InvalidSelector.
+func clusterHealthSelectsHealthCheck(ch *fathomv1alpha1.ClusterHealth, hc *fathomv1alpha1.HealthCheck) bool {
+	if !clusterHealthCoversNamespace(ch, hc.Namespace) {
+		return false
+	}
+	sel, err := selectorFromSpec(ch.Spec.Selector)
+	if err != nil {
+		return false
+	}
+	return sel.Matches(labels.Set(hc.Labels))
 }
 
 // clusterHealthCoversNamespace reports whether ch aggregates HealthChecks in
