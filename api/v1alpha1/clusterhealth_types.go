@@ -106,7 +106,12 @@ type ClusterHealthStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// Result is the worst-case roll-up across the selected HealthChecks.
-	// Empty when no HealthChecks match the selector.
+	// Unknown (with Ready=False, Reason=NoMatches) when no HealthChecks match
+	// the selector; a selected child that has no verdict yet degrades the
+	// roll-up to Unknown rather than being dropped, so a failure can never
+	// silently vanish. Trust this value only when the Ready condition is True:
+	// the InvalidSelector and ListFailed error paths leave it empty with
+	// Ready=False.
 	// +optional
 	Result HealthReportResult `json:"result,omitempty"`
 

@@ -257,7 +257,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled. |  | Optional: \{\} <br /> |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize the controller's view of the aggregate. |  | Optional: \{\} <br /> |
-| `result` _[HealthReportResult](#healthreportresult)_ | Result is the worst-case roll-up across the selected HealthChecks.<br />Empty when no HealthChecks match the selector. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `result` _[HealthReportResult](#healthreportresult)_ | Result is the worst-case roll-up across the selected HealthChecks.<br />Unknown (with Ready=False, Reason=NoMatches) when no HealthChecks match<br />the selector; a selected child that has no verdict yet degrades the<br />roll-up to Unknown rather than being dropped, so a failure can never<br />silently vanish. Trust this value only when the Ready condition is True:<br />the InvalidSelector and ListFailed error paths leave it empty with<br />Ready=False. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `matchedCount` _integer_ | MatchedCount is the number of HealthChecks selected for this aggregate. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `children` _[ClusterHealthChildSummary](#clusterhealthchildsummary) array_ | Children summarizes each selected HealthCheck's contribution. |  | Optional: \{\} <br /> |
 | `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt is when the aggregator last refreshed this status. |  | Optional: \{\} <br /> |

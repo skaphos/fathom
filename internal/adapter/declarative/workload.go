@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/skaphos/fathom/internal/adapter/podutil"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -153,9 +154,14 @@ func (w WorkloadCheck) readStatefulSet(ec EvalContext, ns, name string) (bool, a
 }
 
 // checkPods is the kind-independent pod sub-check: invalid selector -> Error;
-// List error -> Error; zero matching pods -> Fail; per pod not-ready -> Fail,
-// restart count over threshold -> Warn, else Pass. The selector is the
-// workload's own Spec.Selector; policy.LabelSelector is intentionally ignored.
+// List error -> Error; zero matching pods -> Fail; only terminating/completed
+// pods -> Skipped; per live pod not-ready -> Warn, restart count over threshold
+// -> Warn, else Pass. Terminating (rolling-update) and Failed/Evicted pods are
+// filtered before grading so they cannot force a false Fail (#160); a live
+// not-ready pod is Warn, not Fail, because the workload-availability check is
+// the authoritative outage signal and already Fails on unmet capacity. The
+// selector is the workload's own Spec.Selector; policy.LabelSelector is
+// intentionally ignored.
 func checkPods(ec EvalContext, namespace string, selector *metav1.LabelSelector, component string, restartWarnCount int32) []adapter.CheckResult {
 	started := time.Now()
 	target := adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Namespace: namespace, Name: component}
@@ -171,11 +177,23 @@ func checkPods(ec EvalContext, namespace string, selector *metav1.LabelSelector,
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeFail, fmt.Sprintf("%s has no matching pods", component), map[string]string{"component": component}, started)}
 	}
 
-	checks := make([]adapter.CheckResult, 0, len(pods.Items))
+	live := make([]*corev1.Pod, 0, len(pods.Items))
 	for i := range pods.Items {
-		pod := &pods.Items[i]
+		if podutil.Active(&pods.Items[i]) {
+			live = append(live, &pods.Items[i])
+		}
+	}
+	if len(live) == 0 {
+		// Every matching pod is terminating or completed (mid-rollout churn or
+		// lingering Evicted pods). Defer to the authoritative workload check —
+		// Skipped is informational and never drags the roll-up down.
+		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeSkipped, fmt.Sprintf("%s has only terminating or completed pods", component), map[string]string{"component": component}, started)}
+	}
+
+	checks := make([]adapter.CheckResult, 0, len(live))
+	for _, pod := range live {
 		if !podReady(pod) {
-			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeFail, fmt.Sprintf("%s pod is not ready", component), map[string]string{"component": component, "phase": string(pod.Status.Phase)}, started))
+			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeWarn, fmt.Sprintf("%s pod is not ready", component), map[string]string{"component": component, "phase": string(pod.Status.Phase)}, started))
 			continue
 		}
 		if restarts := maxRestartCount(pod); restarts > restartWarnCount {

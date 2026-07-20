@@ -143,26 +143,17 @@ func nodeOutcomeToResult(o nodecert.Outcome) fathomv1alpha1.HealthReportResult {
 }
 
 // aggregateNodeReports returns the worst-case HealthReportResult across every
-// certificate of every reporting node. No certificates at all (every node
-// scanned nothing) yields Skipped.
+// certificate of every reporting node via the shared WorstResult fold. Skipped
+// is informational there (a Skipped cert alongside Pass certs folds to Pass),
+// and no certificates at all (every node scanned nothing) yields Skipped.
 func aggregateNodeReports(reports []nodecert.NodeReport) fathomv1alpha1.HealthReportResult {
-	worst := fathomv1alpha1.HealthReportResultPass
-	worstRank := worst.Severity()
-	any := false
+	var results []fathomv1alpha1.HealthReportResult
 	for _, rep := range reports {
 		for _, c := range rep.Certs {
-			any = true
-			res := nodeOutcomeToResult(c.Outcome)
-			if rank := res.Severity(); rank > worstRank {
-				worst = res
-				worstRank = rank
-			}
+			results = append(results, nodeOutcomeToResult(c.Outcome))
 		}
 	}
-	if !any {
-		return fathomv1alpha1.HealthReportResultSkipped
-	}
-	return worst
+	return fathomv1alpha1.WorstResult(results, false)
 }
 
 // healthReportForNodeCert builds the rolled-up HealthReport: one check per

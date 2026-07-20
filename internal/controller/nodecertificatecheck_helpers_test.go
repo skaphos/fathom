@@ -16,6 +16,41 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
+// TestAggregateNodeReports pins the shared worst-of fold for the node-cert
+// roll-up: Skipped certs are informational and no certs at all yields Skipped
+// (#160 consistency).
+func TestAggregateNodeReports(t *testing.T) {
+	report := func(node string, outcomes ...nodecert.Outcome) nodecert.NodeReport {
+		certs := make([]nodecert.CertResult, 0, len(outcomes))
+		for _, o := range outcomes {
+			certs = append(certs, nodecert.CertResult{Outcome: o})
+		}
+		return nodecert.NodeReport{Node: node, Certs: certs}
+	}
+
+	tests := []struct {
+		name    string
+		reports []nodecert.NodeReport
+		want    fathomv1alpha1.HealthReportResult
+	}{
+		{"no reports", nil, fathomv1alpha1.HealthReportResultSkipped},
+		{"node with no certs", []nodecert.NodeReport{report("a")}, fathomv1alpha1.HealthReportResultSkipped},
+		{"single pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass)}, fathomv1alpha1.HealthReportResultPass},
+		{"pass plus skipped folds to pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeSkipped)}, fathomv1alpha1.HealthReportResultPass},
+		{"all skipped", []nodecert.NodeReport{report("a", nodecert.OutcomeSkipped)}, fathomv1alpha1.HealthReportResultSkipped},
+		{"pass warn fail", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeWarn), report("b", nodecert.OutcomeFail)}, fathomv1alpha1.HealthReportResultFail},
+		{"error wins across nodes", []nodecert.NodeReport{report("a", nodecert.OutcomeFail), report("b", nodecert.OutcomeError)}, fathomv1alpha1.HealthReportResultError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := aggregateNodeReports(tt.reports); got != tt.want {
+				t.Errorf("aggregateNodeReports = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestResolveTolerations pins the #155 hardening: control-plane tolerations are
 // only ever applied when the check explicitly opts in, never as a silent default.
 func TestResolveTolerations(t *testing.T) {

@@ -32,6 +32,11 @@ const (
 // Unknown sits above Warn and below Fail rather than short-circuiting the
 // aggregate: a known Fail is more actionable than an Unknown, so when both
 // appear in the same set the aggregate reports Fail.
+//
+// The ladder is consulted only through WorstResult, which treats Skipped as
+// informational (never a fold winner) despite its rank here — so Skipped's
+// position above Pass never drags a healthy rollup down. Keep this ordering
+// stable; the rollups depend on WorstResult, not on reordering the ladder.
 func (r HealthReportResult) Severity() int {
 	switch r {
 	case HealthReportResultPass:
