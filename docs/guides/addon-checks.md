@@ -345,10 +345,10 @@ revisioned or relocated control plane is reachable entirely through policy —
 `namespaces` redirects the workload and the expected backing service, and
 `deploymentName` / `injectorWebhookName` / `validatorWebhookName` override
 the renamed objects (`istiod-<rev>`, `istio-sidecar-injector-<rev>`,
-`istio-validator-<rev>-<ns>`). One caveat: version detection stays pinned to
-`istio-system/istiod` (an engine-wide limitation shared with every
-declarative adapter), so a renamed control plane reports no detected
-version — display-only, never a wrong verdict. Not covered (yet):
+`istio-validator-<rev>-<ns>`). Version detection follows the same overrides:
+it resolves through the `system_health` workload check rather than a fixed
+address, so a revisioned or relocated control plane still reports its
+detected version. Not covered (yet):
 `mesh_status` — proxy-sync / config-distribution anomalies are observable
 only through istiod's XDS and metrics endpoints, not the Kubernetes API,
 and `PeerAuthentication` carries no status conditions to score.

@@ -27,7 +27,7 @@ var ExternalSecretsDefinition = AddonDefinition{
 	// SupportedVersions is left empty (ESO is pre-1.0 and the exact range is
 	// maintainer-owned), so ESO never Warns on a version — gating is opt-in
 	// (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "external-secrets", Name: "external-secrets"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health"), FromComponent: "external-secrets"},
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get", "list", "watch"},
 			Justification: "Read the three ESO Deployments (controller, webhook, cert-controller) to score readiness. list+watch because the names/namespace are policy-overridable; read-only."},

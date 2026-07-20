@@ -99,10 +99,11 @@ type AddonDefinition struct {
 	// over this default (SKA-526).
 	Optional bool
 
-	// VersionSource, when set, names the workload whose app.kubernetes.io/version
-	// label (or, failing that, container image tag) reports the installed addon
-	// release version. The engine detects it once per Run and surfaces it as
-	// Result.DetectedVersion. Nil disables detection (SKA-527).
+	// VersionSource, when set, references the WorkloadCheck whose
+	// app.kubernetes.io/version label (or, failing that, container image tag)
+	// reports the installed addon release version. The engine detects it once per
+	// Run — resolving the address through that check's policy overrides — and
+	// surfaces it as Result.DetectedVersion. Nil disables detection (SKA-527).
 	VersionSource *VersionSource
 
 	// SupportedVersions is the addon release-version semver RANGE (Masterminds /
@@ -127,20 +128,67 @@ type AddonDefinition struct {
 
 // VersionSource identifies the workload whose app.kubernetes.io/version label
 // (primary) or container image tag (fallback) reports the installed addon
-// release version, for engine version detection (SKA-527). It carries only the
-// addressing fields — it is not a health check.
+// release version, for engine version detection (SKA-527).
+//
+// It does not carry addressing of its own: it *references* an existing
+// WorkloadCheck and reuses that check's resolved Kind/Namespace/Name. Detection
+// therefore follows the same policy overrides (policy.namespaces, the check's
+// NameThresholdKey) as the workload it names, so a renamed or relocated addon —
+// a revisioned istiod, a Helm-fullname rename, a repackaged install — keeps
+// reporting its version instead of silently detecting nothing. Duplicating the
+// addressing here is what let the two drift apart (#172).
 type VersionSource struct {
-	// Kind is the controller kind read (Deployment/DaemonSet/StatefulSet).
-	Kind WorkloadKind
-	// Namespace is the workload's namespace.
-	Namespace string
-	// Name is the workload's name.
-	Name string
+	// FromFamily names the family whose WorkloadCheck supplies the addressing.
+	// It must name a family the definition declares, and that family must
+	// declare at least one workload.
+	FromFamily adapter.Family
+	// FromComponent selects the workload by its WorkloadCheck.Component when
+	// FromFamily declares more than one. Empty uses the family's only workload;
+	// NewEngine rejects an empty selector against a multi-workload family rather
+	// than silently detecting from the wrong component.
+	FromComponent string
 	// Container selects which container's image supplies the fallback tag by
 	// name; "" uses the first container. The primary source is the version
 	// label, so this only matters for a multi-container workload whose first
 	// container is not the addon itself.
 	Container string
+}
+
+// versionWorkload returns the family and WorkloadCheck the VersionSource
+// references. ok is false when there is no VersionSource or the reference does
+// not resolve; NewEngine rejects an unresolvable reference, so a constructed
+// Engine always resolves.
+func (d AddonDefinition) versionWorkload() (FamilyDefinition, WorkloadCheck, bool) {
+	vs := d.VersionSource
+	if vs == nil {
+		return FamilyDefinition{}, WorkloadCheck{}, false
+	}
+	fam, found := d.family(vs.FromFamily)
+	if !found || len(fam.Workloads) == 0 {
+		return FamilyDefinition{}, WorkloadCheck{}, false
+	}
+	if vs.FromComponent == "" {
+		if len(fam.Workloads) != 1 {
+			return FamilyDefinition{}, WorkloadCheck{}, false
+		}
+		return fam, fam.Workloads[0], true
+	}
+	for _, w := range fam.Workloads {
+		if w.Component == vs.FromComponent {
+			return fam, w, true
+		}
+	}
+	return FamilyDefinition{}, WorkloadCheck{}, false
+}
+
+// family returns the named family definition.
+func (d AddonDefinition) family(name adapter.Family) (FamilyDefinition, bool) {
+	for _, f := range d.Families {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return FamilyDefinition{}, false
 }
 
 // defaultPosture is the Posture a component inherits when it declares none:

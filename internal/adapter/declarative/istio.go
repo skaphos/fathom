@@ -37,10 +37,10 @@ import "github.com/skaphos/fathom/pkg/adapter"
 // istio-sidecar-injector-<rev>, istio-validator-<rev>-<ns>). Point one
 // AddonCheck per revision at the renamed objects via the deploymentName,
 // injectorWebhookName, and validatorWebhookName thresholds; the expected
-// backing-service namespace follows the family's policy namespace. One known
-// gap: VersionSource is not threshold-aware (an engine-wide limitation shared
-// with every declarative adapter), so a renamed istiod loses version
-// detection — detection-only, never a wrong verdict. The base chart's
+// backing-service namespace follows the family's policy namespace. Version
+// detection follows the rename too: VersionSource references the system_health
+// workload check, so it resolves through the same deploymentName threshold and
+// policy namespace (#172). The base chart's
 // istiod-default-validator is deliberately not checked: it exists only as a
 // default-revision alias for the same istiod service the chart-owned
 // validator already covers, so checking both would double-report one signal.
@@ -59,7 +59,7 @@ var IstioDefinition = AddonDefinition{
 	// app.kubernetes.io/version label, else the istio/pilot image tag).
 	// Detection-only: SupportedVersions is left empty so istio never Warns on
 	// a version — gating is opt-in (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "istio-system", Name: "istiod"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health")},
 	RBAC: []adapter.PolicyRule{
 		// Verbs mirror the engine's actual reads through the direct (uncached)
 		// impersonating client: the istiod Deployment, the ztunnel/istio-cni

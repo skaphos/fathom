@@ -30,7 +30,7 @@ var EnvoyGatewayDefinition = AddonDefinition{
 	// (its app.kubernetes.io/version label, else the envoyproxy/gateway image
 	// tag). Detection-only: SupportedVersions is left empty so Envoy Gateway
 	// never Warns on a version — gating is opt-in (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "envoy-gateway-system", Name: "envoy-gateway"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health")},
 	RBAC: []adapter.PolicyRule{
 		// Verbs mirror the engine's actual reads through the direct (uncached)
 		// impersonating client: the Deployment and each CRD are fetched by name

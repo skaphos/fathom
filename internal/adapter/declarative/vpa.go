@@ -36,7 +36,7 @@ var VpaDefinition = AddonDefinition{
 	// app.kubernetes.io/version label, else the registry.k8s.io/autoscaling/vpa-recommender
 	// image tag). Detection-only: SupportedVersions is left empty so VPA never
 	// Warns on a version — gating is opt-in (SKA-527).
-	VersionSource: &VersionSource{Kind: KindDeployment, Namespace: "kube-system", Name: "vpa-recommender"},
+	VersionSource: &VersionSource{FromFamily: adapter.Family("system_health"), FromComponent: "vpa-recommender"},
 	RBAC: []adapter.PolicyRule{
 		{APIGroups: []string{"apps"}, Resources: []string{"deployments"}, Verbs: []string{"get"},
 			Justification: "Get the three VPA Deployments (recommender, updater, admission-controller) by name to score readiness. get only — each is a single named Get and the impersonating client is cache-free, so no list/watch; read-only."},
