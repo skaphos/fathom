@@ -16,6 +16,7 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -433,7 +434,7 @@ var _ = Describe("ClusterHealth Controller", func() {
 			Namespaces: []string{"some-other-namespace"},
 		})
 
-		got := newReconciler().clusterHealthsForHealthCheck(ctx, hc)
+		got := newReconciler().clusterHealthsForHealthChecks(ctx, hc)
 		names := []string{}
 		for _, r := range got {
 			names = append(names, r.Name)
@@ -453,7 +454,7 @@ var _ = Describe("ClusterHealth Controller", func() {
 			ExcludedNamespaces: []string{"ch-scope-a"},
 		})
 
-		got := newReconciler().clusterHealthsForHealthCheck(ctx, hc)
+		got := newReconciler().clusterHealthsForHealthChecks(ctx, hc)
 		names := []string{}
 		for _, r := range got {
 			names = append(names, r.Name)
@@ -471,7 +472,7 @@ var _ = Describe("ClusterHealth Controller", func() {
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "iota"}},
 		})
 
-		got := newReconciler().clusterHealthsForHealthCheck(ctx, hc)
+		got := newReconciler().clusterHealthsForHealthChecks(ctx, hc)
 		names := []string{}
 		for _, r := range got {
 			names = append(names, r.Name)
@@ -479,4 +480,115 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(names).To(ContainElement("ch-watch-match"))
 		Expect(names).NotTo(ContainElement("ch-watch-nomatch"))
 	})
+
+	// Regression for #148: a HealthCheck whose labels are edited out of a
+	// ClusterHealth's selector must still re-enqueue that ClusterHealth, or
+	// status.children keeps the now-unselected entry — and its worst-case
+	// contribution to the rollup — until an unrelated event triggers a reconcile.
+	It("enqueues a ClusterHealth the changed HealthCheck no longer matches", func() {
+		hc := createHealthCheckWithStatus("hc-label-edit", map[string]string{"team": "kappa"},
+			fathomv1alpha1.HealthReportResultFail, "failing")
+		createClusterHealth("ch-label-edit", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "kappa"}},
+		})
+
+		old := hc.DeepCopy()
+		hc.Labels = map[string]string{"team": "lambda"}
+		Expect(k8sClient.Update(ctx, hc)).To(Succeed())
+
+		// The new object alone no longer matches — that is precisely the bug.
+		Expect(requestNames(newReconciler().clusterHealthsForHealthChecks(ctx, hc))).
+			NotTo(ContainElement("ch-label-edit"))
+
+		names := requestNames(newReconciler().clusterHealthsForHealthChecks(ctx, old, hc))
+		Expect(names).To(ContainElement("ch-label-edit"),
+			"unselecting a HealthCheck must re-enqueue the ClusterHealth that has to drop it")
+	})
+
+	It("drops a relabelled-out HealthCheck from status.children on the next reconcile", func() {
+		hc := createHealthCheckWithStatus("hc-converge", map[string]string{"team": "kappa-conv"},
+			fathomv1alpha1.HealthReportResultFail, "failing")
+		createClusterHealth("ch-converge", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "kappa-conv"}},
+		})
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "ch-converge"}}
+		_, err := newReconciler().Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, req.NamespacedName, &got)).To(Succeed())
+		Expect(got.Status.Children).To(HaveLen(1))
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
+
+		hc.Labels = map[string]string{"team": "lambda-conv"}
+		Expect(k8sClient.Update(ctx, hc)).To(Succeed())
+
+		_, err = newReconciler().Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, req.NamespacedName, &got)).To(Succeed())
+		Expect(got.Status.Children).To(BeEmpty(), "the unselected child must leave the rollup")
+		Expect(got.Status.MatchedCount).To(BeNumerically("==", 0))
+		Expect(got.Status.Result).To(BeEmpty())
+	})
+
+	It("enqueues a ClusterHealth at most once when both sides match", func() {
+		hc := createHealthCheckWithStatus("hc-both", map[string]string{"tier": "core", "rev": "1"},
+			fathomv1alpha1.HealthReportResultPass, "")
+		createClusterHealth("ch-both", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "core"}},
+		})
+
+		old := hc.DeepCopy()
+		hc.Labels = map[string]string{"tier": "core", "rev": "2"}
+
+		names := requestNames(newReconciler().clusterHealthsForHealthChecks(ctx, old, hc))
+		Expect(names).To(ContainElement("ch-both"))
+		Expect(names).To(HaveLen(len(sets.NewString(names...).List())),
+			"each ClusterHealth is enqueued at most once across the old/new union")
+	})
+
+	It("honours namespace scope on both sides of the union", func() {
+		ensureNamespace("ch-scope-a")
+		hc := createHealthCheckIn("ch-scope-a", "hc-union-scope", map[string]string{"unionns": "t"},
+			fathomv1alpha1.HealthReportResultPass, "")
+		createClusterHealth("ch-union-excluded", fathomv1alpha1.ClusterHealthSpec{
+			Selector:           &metav1.LabelSelector{MatchLabels: map[string]string{"unionns": "t"}},
+			ExcludedNamespaces: []string{"ch-scope-a"},
+		})
+
+		old := hc.DeepCopy()
+		hc.Labels = map[string]string{"unionns": "moved-out"}
+
+		// The union must not become a backdoor around namespace scoping.
+		Expect(requestNames(newReconciler().clusterHealthsForHealthChecks(ctx, old, hc))).
+			NotTo(ContainElement("ch-union-excluded"))
+	})
+
+	It("degrades rather than panicking on nil and wrong-typed objects", func() {
+		hc := createHealthCheckWithStatus("hc-degrade", map[string]string{"team": "mu"},
+			fathomv1alpha1.HealthReportResultPass, "")
+		createClusterHealth("ch-degrade", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "mu"}},
+		})
+		r := newReconciler()
+
+		Expect(r.clusterHealthsForHealthChecks(ctx, nil)).To(BeEmpty())
+		Expect(r.clusterHealthsForHealthChecks(ctx, (*fathomv1alpha1.HealthCheck)(nil))).To(BeEmpty())
+		Expect(r.clusterHealthsForHealthChecks(ctx, &corev1.ConfigMap{})).To(BeEmpty())
+		Expect(requestNames(r.clusterHealthsForHealthChecks(ctx, hc, nil))).
+			To(ContainElement("ch-degrade"), "a nil side must not discard the usable one")
+	})
 })
+
+// requestNames flattens mapper output to the ClusterHealth names it enqueues.
+// The envtest apiserver is shared across the suite, so assertions on these
+// names must be ContainElement-style, never HaveLen.
+func requestNames(reqs []reconcile.Request) []string {
+	names := make([]string, 0, len(reqs))
+	for _, r := range reqs {
+		names = append(names, r.NamespacedName.Name)
+	}
+	return names
+}
