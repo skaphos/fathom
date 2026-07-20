@@ -39,8 +39,10 @@ const (
 // The Sweeper needs to list candidate probe pods cluster-wide (probes run in
 // the checked workload's namespace, or wherever the probeNamespace threshold
 // points) and delete the orphans. The label scoping below cannot be expressed
-// in RBAC, so the grant is all pods; the operator never reads pod contents
-// through this path, it only lists metadata and deletes.
+// in RBAC, so the grant is list+delete on all pods cluster-wide. Note that
+// `list` returns full Pod objects — spec and status, not just metadata — so
+// this grant does expose pod contents cluster-wide; the sweeper itself reads
+// only labels, phase, and timestamps, and never logs pod contents.
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list;delete
 
 // Sweeper reaps orphaned probe pods. Launcher.Run deletes its pod via an
@@ -126,7 +128,7 @@ func (s *Sweeper) sweep(ctx context.Context) {
 		if !terminalPhase(pod.Status.Phase) {
 			continue
 		}
-		if time.Since(pod.CreationTimestamp.Time) < minAge {
+		if time.Since(orphanSince(pod)) < minAge {
 			continue
 		}
 		if err := s.Client.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
@@ -156,4 +158,38 @@ func probePodSelector() labels.Selector {
 
 func terminalPhase(phase corev1.PodPhase) bool {
 	return phase == corev1.PodSucceeded || phase == corev1.PodFailed
+}
+
+// orphanSince returns the instant from which a terminal pod's orphan age is
+// measured: the latest container termination time, falling back to the
+// creation timestamp when no container reports one.
+//
+// Creation time alone is wrong. A probe's timeout is unbounded
+// (AddonCheck.spec.timeout has no maximum), so a pod configured with, say, a
+// 10m timeout is already older than MinAge at the instant it first turns
+// terminal. Sweeping on creation age could then delete it inside the ~500ms
+// window before its live launcher's next poll observes the termination
+// message, surfacing a spurious "probe pod disappeared" error. Measuring
+// from termination keeps the grace period doing what it is for: bounding how
+// long we wait for a launcher that is still polling.
+func orphanSince(pod *corev1.Pod) time.Time {
+	latest := time.Time{}
+	for _, statuses := range [][]corev1.ContainerStatus{
+		pod.Status.ContainerStatuses,
+		pod.Status.InitContainerStatuses,
+	} {
+		for i := range statuses {
+			terminated := statuses[i].State.Terminated
+			if terminated == nil || terminated.FinishedAt.IsZero() {
+				continue
+			}
+			if terminated.FinishedAt.After(latest) {
+				latest = terminated.FinishedAt.Time
+			}
+		}
+	}
+	if latest.IsZero() {
+		return pod.CreationTimestamp.Time
+	}
+	return latest
 }

@@ -39,6 +39,59 @@ func probeLabels(probeName string) map[string]string {
 	return map[string]string{labelManagedBy: managedByValue, labelProbeName: probeName}
 }
 
+// terminatedAt stamps a container termination time on a pod, modelling a
+// probe that ran to completion rather than one whose status we never saw.
+func terminatedAt(pod *corev1.Pod, since time.Duration) *corev1.Pod {
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "probe",
+		State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{
+				FinishedAt: metav1.NewTime(time.Now().Add(-since)),
+			},
+		},
+	}}
+	return pod
+}
+
+// A long-timeout probe is older than MinAge at the moment it turns terminal,
+// so sweeping on creation age would delete it out from under the launcher
+// that is still polling for its termination message. Age must be measured
+// from termination, not creation.
+func TestSweeper_LongRunningProbeIsNotReapedOnCreationAge(t *testing.T) {
+	// Created 10m ago (a 10m spec.timeout), but only just terminated.
+	pod := terminatedAt(
+		sweepPod("long-probe", probeLabels("long-probe"), corev1.PodSucceeded, 10*time.Minute),
+		time.Second,
+	)
+	c := newFakeClient(t, pod)
+	s := &Sweeper{Reader: c, Client: c}
+	s.sweep(context.Background())
+
+	var observed corev1.Pod
+	err := c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: pod.Name}, &observed)
+	if err != nil {
+		t.Fatalf("pod terminated 1s ago was reaped despite an in-flight launcher: %v", err)
+	}
+}
+
+// Once the termination itself is older than MinAge, no launcher can still be
+// waiting on it, so the pod is a genuine orphan.
+func TestSweeper_ReapsPodTerminatedLongerThanMinAge(t *testing.T) {
+	pod := terminatedAt(
+		sweepPod("stale-probe", probeLabels("stale-probe"), corev1.PodSucceeded, 10*time.Minute),
+		30*time.Minute,
+	)
+	c := newFakeClient(t, pod)
+	s := &Sweeper{Reader: c, Client: c}
+	s.sweep(context.Background())
+
+	var observed corev1.Pod
+	err := c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: pod.Name}, &observed)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected long-terminated orphan to be reaped, got err=%v", err)
+	}
+}
+
 func TestSweeper_Sweep(t *testing.T) {
 	old := time.Hour
 	fresh := time.Second

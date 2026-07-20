@@ -365,8 +365,12 @@ matches real workloads rather than the operator (see
   create and cleanup — and the kubelet never garbage-collects terminated pods.
   `Sweeper` runs on the elected leader (once at startup, then hourly) and
   deletes probe pods — identified by the `fathom.skaphos.io/managed-by=fathom`
-  and `fathom.skaphos.io/probe` labels — that are in a terminal phase and older
-  than a 5-minute grace period. It lists through the live API reader, never the
+  and `fathom.skaphos.io/probe` labels — that are in a terminal phase and whose
+  containers finished more than a 5-minute grace period ago. The grace is
+  measured from container termination rather than pod creation: a probe with a
+  long `spec.timeout` is already older than the grace period the moment it
+  turns terminal, and sweeping on creation age could delete it out from under a
+  launcher still polling for its result. It lists through the live API reader, never the
   manager cache, so no cluster-wide Pod informer is opened.
 - **Probe binary (`cmd/probe/main.go`):** a tiny static binary that runs the
   requested mode, writes a JSON `{outcome, summary, details}` to
