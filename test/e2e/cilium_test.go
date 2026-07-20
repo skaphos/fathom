@@ -36,7 +36,7 @@ var ciliumCRDChecks = []string{
 	"ciliumnodes.cilium.io",
 }
 
-var _ = Describe("cilium AddonCheck", Ordered, func() {
+var _ = Describe("cilium AddonCheck", Ordered, Label(utils.CoreLabel, "cilium"), func() {
 	BeforeAll(func() {
 		By("clearing any prior cilium AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", ciliumSamplePath,

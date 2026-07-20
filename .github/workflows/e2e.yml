@@ -9,7 +9,7 @@ on:
     branches: [main]
 
 # Cancel superseded runs on the same ref. e2e is the most expensive workflow
-# (kind cluster + two image builds + the addon stack), so cancelling in-flight
+# (kind clusters + image builds + the addon stack), so cancelling in-flight
 # runs on a force-push or rapid PR pushes reclaims runner minutes. main is
 # included; if two pushes land back-to-back only the newest is validated, which
 # is acceptable for a post-merge signal.
@@ -17,8 +17,8 @@ concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
 
-# Minimum privilege: the job only reads repository contents (checkout) and
-# uploads artifacts within the same run. No API needs write scopes.
+# Minimum privilege: the jobs only read repository contents (checkout) and
+# upload artifacts within the same run. No API needs write scopes.
 permissions:
   contents: read
 
@@ -27,12 +27,61 @@ env:
   # backs; bump deliberately. Verified against the upstream checksums file.
   HELMFILE_VERSION: "1.7.1"
 
+# The e2e stack is tiered (skaphos/fathom#178): instead of one kind cluster
+# installing every addon, the suite is sharded — an always-on `core` shard
+# (Cilium CNI + cert-manager + external-secrets + CoreDNS + the
+# operator-infrastructure specs) plus one shard per opt-in addon, each layering
+# just its own charts on the core tier. `plan` path-filters the diff so an
+# adapter-scoped PR only pays for its own shard (+ core), while shared-surface
+# changes and pushes to main run the full matrix. Shards run in parallel, so
+# adding an adapter adds a job instead of growing one job's wall-clock.
 jobs:
-  e2e:
-    name: kind e2e
+  plan:
+    name: plan shards
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the planner can diff against the PR base branch.
+          fetch-depth: 0
+
+      - name: Plan e2e shards for this diff
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="origin/${BASE_REF}"
+          fi
+          shards="$(scripts/e2e-shards.sh "$base")"
+          echo "planned shards: $shards"
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+
+  shard:
+    name: e2e (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: plan
+    if: needs.plan.outputs.shards != '[]'
+    strategy:
+      # One flaky shard should not cancel the signal from the others.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    env:
+      # The shard name doubles as the suite's addon selection: it scopes the
+      # helmfile sync (core tier + this shard's charts) and the Ginkgo label
+      # filter (this shard's specs). See test/e2e/fixtures/README.md.
+      E2E_ADDONS: ${{ matrix.shard }}
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -81,7 +130,7 @@ jobs:
           # CNI exists; helmfile's wait:true on the Cilium release gates readiness.
           wait: "0s"
 
-      - name: Install addon stack (Cilium CNI + cert-manager + external-secrets)
+      - name: Install addon stack (core tier + this shard's addon)
         run: go -C tools tool task e2e:cluster:addons
 
       - name: Build, load, and deploy Fathom
@@ -92,8 +141,9 @@ jobs:
       - name: Run e2e suite
         # The cluster, addons, and operator are already in place, so invoke the
         # Ginkgo suite directly rather than `task test-e2e` (which would create
-        # and tear down its own cluster). BeforeSuite re-syncs the addon stack
-        # idempotently.
+        # and tear down its own cluster). BeforeSuite re-syncs this shard's
+        # slice of the addon stack idempotently; E2E_ADDONS also scopes the
+        # specs via the Ginkgo label filter.
         run: go test ./test/e2e/ -v -ginkgo.v
 
       - name: Collect diagnostics
@@ -112,7 +162,9 @@ jobs:
           kubectl describe "$crds" -A                            > "$out/fathom-crs-describe.txt" 2>&1
 
           # Controller + addon pod logs (current and, where present, previous).
-          for ns in fathom-system cert-manager external-secrets kube-system; do
+          # Opt-in addon namespaces are listed unconditionally: on shards where
+          # they don't exist the pod loop simply finds nothing.
+          for ns in fathom-system cert-manager external-secrets kube-system external-dns envoy-gateway-system istio-system; do
             mkdir -p "$out/logs/$ns"
             for pod in $(kubectl get pods -n "$ns" -o name 2>/dev/null); do
               name=$(basename "$pod")
@@ -126,7 +178,40 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: e2e-diagnostics-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: e2e-diagnostics
           if-no-files-found: warn
           retention-days: 7
+
+  e2e:
+    # Stable aggregate check. Its name intentionally matches the pre-sharding
+    # job ("kind e2e") so branch-protection required checks keep working; it
+    # passes when every planned shard passed, or when the planner decided the
+    # diff needs no e2e at all (docs-only changes).
+    name: kind e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: [plan, shard]
+    if: always()
+    steps:
+      - name: Check shard results
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SHARD_RESULT: ${{ needs.shard.result }}
+          SHARDS: ${{ needs.plan.outputs.shards }}
+        run: |
+          set -euo pipefail
+          echo "plan: $PLAN_RESULT, shards: $SHARDS, result: $SHARD_RESULT"
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "shard planning failed"
+            exit 1
+          fi
+          if [ "$SHARD_RESULT" = "success" ]; then
+            exit 0
+          fi
+          if [ "$SHARD_RESULT" = "skipped" ] && [ "$SHARDS" = "[]" ]; then
+            echo "no e2e-relevant changes; nothing to run"
+            exit 0
+          fi
+          exit 1

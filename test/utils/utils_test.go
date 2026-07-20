@@ -12,7 +12,150 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 )
+
+func TestParseAddonSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		spec          string
+		wantSelectors []string
+		wantFilter    string
+		wantErr       bool
+	}{
+		{name: "empty means full stack", spec: "", wantSelectors: nil, wantFilter: ""},
+		{name: "all means full stack", spec: " all ", wantSelectors: nil, wantFilter: ""},
+		{
+			name:          "core tier only",
+			spec:          "core",
+			wantSelectors: []string{"tier=core"},
+			wantFilter:    "core",
+		},
+		{
+			name:          "single opt-in addon installs core too",
+			spec:          "istio",
+			wantSelectors: []string{"tier=core", "addon=istio"},
+			wantFilter:    "istio",
+		},
+		{
+			name: "core-tier addon needs no extra selector",
+			spec: "cert-manager",
+			// cert-manager's chart is in tier=core, so no addon= selector —
+			// but only its own specs run.
+			wantSelectors: []string{"tier=core"},
+			wantFilter:    "cert-manager",
+		},
+		{
+			name:          "coredns ships with kind",
+			spec:          "coredns",
+			wantSelectors: []string{"tier=core"},
+			wantFilter:    "coredns",
+		},
+		{
+			name:          "list mixes tiers and dedupes",
+			spec:          "core, istio, external-dns, istio,",
+			wantSelectors: []string{"tier=core", "addon=istio", "addon=external-dns"},
+			wantFilter:    "core || istio || external-dns",
+		},
+		{name: "unknown addon", spec: "isto", wantErr: true},
+		{name: "unknown addon in list", spec: "core,nope", wantErr: true},
+		{name: "only separators", spec: " , ,", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sel, err := ParseAddonSelection(tc.spec)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ParseAddonSelection(%q): expected error, got nil", tc.spec)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseAddonSelection(%q): unexpected error: %v", tc.spec, err)
+			}
+			if got := sel.HelmfileSelectors(); !reflect.DeepEqual(got, tc.wantSelectors) {
+				t.Errorf("HelmfileSelectors() = %#v, want %#v", got, tc.wantSelectors)
+			}
+			if got := sel.LabelFilter(); got != tc.wantFilter {
+				t.Errorf("LabelFilter() = %q, want %q", got, tc.wantFilter)
+			}
+		})
+	}
+}
+
+// TestHelmfileLabelsMatchAddonTiers is the drift guard between the tier/addon
+// lists compiled into the suite (CoreAddons/OptInAddons) and the release
+// labels in test/e2e/fixtures/helmfile.yaml (skaphos/fathom#178). It fails
+// when a release is added without an `addon` label, when a core-tier chart is
+// not labeled `tier: core`, or when an opt-in addon is known to only one side
+// — so E2E_ADDONS can never silently select nothing.
+func TestHelmfileLabelsMatchAddonTiers(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile(filepath.Join("..", "e2e", "fixtures", "helmfile.yaml"))
+	if err != nil {
+		t.Fatalf("read helmfile: %v", err)
+	}
+	var doc struct {
+		Releases []struct {
+			Name   string            `json:"name"`
+			Labels map[string]string `json:"labels"`
+		} `json:"releases"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse helmfile: %v", err)
+	}
+	if len(doc.Releases) == 0 {
+		t.Fatal("no releases parsed from helmfile.yaml")
+	}
+
+	coreCharted := map[string]bool{} // core-tier addons with a helmfile release
+	optIn := map[string]bool{}
+	for _, r := range doc.Releases {
+		addon := r.Labels["addon"]
+		if addon == "" {
+			t.Errorf("release %q has no addon label", r.Name)
+			continue
+		}
+		if r.Labels["tier"] == "core" {
+			coreCharted[addon] = true
+		} else {
+			optIn[addon] = true
+		}
+	}
+
+	for addon := range coreCharted {
+		if optIn[addon] {
+			t.Errorf("addon %q has releases both with and without tier=core", addon)
+		}
+	}
+
+	// CoreDNS is core-tier but has no release: kind preinstalls it.
+	wantCore := map[string]bool{"coredns": true}
+	for a := range coreCharted {
+		wantCore[a] = true
+	}
+	gotCore := map[string]bool{}
+	for _, a := range CoreAddons() {
+		gotCore[a] = true
+	}
+	if !reflect.DeepEqual(gotCore, wantCore) {
+		t.Errorf("CoreAddons() = %v, helmfile tier=core (+coredns) = %v", gotCore, wantCore)
+	}
+
+	gotOptIn := map[string]bool{}
+	for _, a := range OptInAddons() {
+		gotOptIn[a] = true
+	}
+	if !reflect.DeepEqual(gotOptIn, optIn) {
+		t.Errorf("OptInAddons() = %v, helmfile non-core addon labels = %v", gotOptIn, optIn)
+	}
+}
 
 func TestGetNonEmptyLines(t *testing.T) {
 	t.Parallel()
@@ -171,7 +314,7 @@ func TestInstallersFailWithoutToolchain(t *testing.T) {
 	if got := IsPrometheusCRDsInstalled(); got {
 		t.Errorf("IsPrometheusCRDsInstalled: expected false with empty PATH, got true")
 	}
-	if _, err := SyncAddons(); err == nil {
+	if _, err := SyncAddons("tier=core", "addon=istio"); err == nil {
 		t.Errorf("SyncAddons: expected error with empty PATH, got nil")
 	}
 

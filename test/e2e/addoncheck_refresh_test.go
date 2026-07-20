@@ -24,7 +24,7 @@ import (
 //
 // Serial so the transient scale-to-zero cannot race another spec's assertions;
 // Ordered so setup/teardown bracket the single behavioural It.
-var _ = Describe("AddonCheck periodic refresh-on-change", Ordered, Serial, func() {
+var _ = Describe("AddonCheck periodic refresh-on-change", Ordered, Serial, Label(utils.CoreLabel), func() {
 	const (
 		checkName    = "addoncheck-refresh-e2e"
 		checkNS      = "default"

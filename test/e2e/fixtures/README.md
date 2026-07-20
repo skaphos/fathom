@@ -14,7 +14,78 @@ the Go e2e suite under `test/e2e/` will eventually drive automatically.
 | File | Purpose |
 | ---- | ------- |
 | `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned by digest to `v1.36.1` (matches `ENVTEST_K8S_VERSION` 1.36 in `Taskfile.yml`; kind only publishes specific patch tags per release, so use a real one). |
-| `helmfile.yaml` | Installs Cilium (the cluster CNI) + cert-manager + external-dns + metrics-server + Envoy Gateway + istio (sidecar mode: base + istiod) + external-secrets via their official charts. CoreDNS is preinstalled by kind and is not managed here. |
+| `helmfile.yaml` | The tiered addon stack (see below): Cilium (the cluster CNI) + cert-manager + external-secrets always; external-dns, metrics-server, Envoy Gateway, and istio (sidecar mode: base + istiod) as per-addon opt-ins — all via their official charts. CoreDNS is preinstalled by kind and is not managed here. |
+
+## Tiered Stack & Scoped Runs
+
+The stack is tiered so per-adapter e2e stays fast as the adapter count grows
+([skaphos/fathom#178]): a single monolithic cluster installing every addon
+would make every adapter PR pay the full-stack cost.
+
+[skaphos/fathom#178]: https://github.com/skaphos/fathom/issues/178
+
+- **Core tier** (helmfile label `tier: core`, Ginkgo label `core`): Cilium,
+  cert-manager, external-secrets — plus CoreDNS, which kind preinstalls. This
+  tier is installed on *every* sync (Cilium is the CNI; nothing schedules
+  without it) and its specs include the operator-infrastructure suites
+  (Manager, RBAC impersonation, NodeCertificateCheck, refresh-on-change).
+- **Opt-in addons** (helmfile label `addon: <name>`, no `tier: core`):
+  external-dns, metrics-server, envoy-gateway, istio. Each installs only when
+  selected, layered on the core tier.
+
+The `E2E_ADDONS` variable (environment variable or Task var) selects a slice
+of the stack. It scopes **both** what helmfile installs and which specs the
+Ginkgo suite runs (addon names double as spec labels):
+
+| `E2E_ADDONS` | Installs | Runs |
+| ------------ | -------- | ---- |
+| unset / `all` | everything | every spec |
+| `core` | core tier only | core-labeled specs (operator infra + core-tier addons) |
+| `istio` | core tier + istio charts | istio specs only |
+| `cert-manager` | core tier (cert-manager is in it) | cert-manager specs only |
+| `core,istio,external-dns` | core tier + istio + external-dns | the union of their specs |
+
+Examples:
+
+```sh
+# Full historical behaviour (default).
+go -C tools tool task test-e2e
+
+# An adapter PR validating just its own addon.
+go -C tools tool task test-e2e E2E_ADDONS=istio
+
+# Same thing against an already-running cluster.
+E2E_ADDONS=istio go test ./test/e2e/ -v -ginkgo.v
+```
+
+Unknown addon names are a hard error in the Go suite — a typo fails loudly
+instead of filtering the run down to zero specs and reporting success. An
+explicit `-ginkgo.label-filter` flag overrides the spec filter derived from
+`E2E_ADDONS` (but not the install set).
+
+In CI, `.github/workflows/e2e.yml` shards the suite across parallel kind
+clusters: a `plan` job path-filters the PR diff via `scripts/e2e-shards.sh`,
+so an adapter-scoped PR runs only its own shard plus `core`, docs-only PRs
+run nothing, and shared-surface changes (or pushes to `main`) run the full
+matrix. The branch-protection check is the aggregate `kind e2e` job.
+
+### Adding an addon to the stack
+
+For the full adapter workflow see `docs/authoring-adapters.md`; the e2e-stack
+steps are:
+
+1. Add the chart release(s) to `helmfile.yaml` with an `addon: <name>` label
+   (every release of a multi-chart addon shares the label). Only genuinely
+   foundational addons get `tier: core` — the core tier is meant to stay
+   small.
+2. Label the addon's Ginkgo spec `Label("<name>")` (core-tier addons:
+   `Label(utils.CoreLabel, "<name>")`).
+3. For an opt-in addon, add `<name>` to `optInAddons` in
+   `test/utils/utils.go` and to `OPT_IN_SHARDS` in `scripts/e2e-shards.sh`,
+   plus the addon's path patterns to `shard_for_file` there. Drift guards
+   (`test/utils/utils_test.go`, `scripts/e2e_shards_gate_test.go`) fail if
+   the lists disagree with the helmfile labels or each other.
+4. Run the scoped suite locally: `task test-e2e E2E_ADDONS=<name>`.
 
 The AddonCheck samples used by this stack live in `config/samples/`:
 
@@ -44,7 +115,7 @@ The Taskfile wraps the whole flow. From repo root:
 # 1. Create the kind cluster.
 go -C tools tool task e2e:cluster:up
 
-# 2. Install cert-manager + external-secrets via helmfile.
+# 2. Install the addon stack via helmfile (E2E_ADDONS=... for a slice of it).
 go -C tools tool task e2e:cluster:addons
 
 # 3. Build the operator image, load it into kind, and deploy Fathom.

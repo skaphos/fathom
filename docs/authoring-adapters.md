@@ -512,9 +512,13 @@ Repo expectations for the PR:
   infers the version bump.
 - **Run e2e.** Adapter code (`internal/adapter/*/adapter.go`, `pkg/adapter/*`,
   the declarative engine) is on the CLAUDE.md "requires e2e" list — envtest can
-  miss reconcile-time bugs. Add the add-on to the e2e stack and run
-  `go -C tools tool task test-e2e`, or note in the PR why it couldn't run
-  locally (CI runs `kind e2e`).
+  miss reconcile-time bugs. Add the add-on to the tiered e2e stack (helmfile
+  release with an `addon: <name>` label, a `Label("<name>")` Ginkgo spec, and
+  the opt-in/shard lists — see `test/e2e/fixtures/README.md`) and run its
+  scoped slice with `go -C tools tool task test-e2e E2E_ADDONS=<name>`, or
+  note in the PR why it couldn't run locally. CI shards the `kind e2e`
+  workflow per addon, so your adapter's PR pays only for the core tier plus
+  its own addon.
 - **Unit coverage** for new logic; the per-package gate
   (`scripts/check-coverage.sh`) must stay green.
 
@@ -534,7 +538,7 @@ Copy this into your PR description and tick it off:
 - [ ] RBAC declared with a `Justification` on every grant; writes marked `WRITE EXCEPTION`
 - [ ] `task gen:addon-rbac` run; `config/rbac/addons/`, Helm data, and `docs/reference/rbac.md` committed
 - [ ] Unit tests added; coverage gate green (`task test` + `scripts/check-coverage.sh`)
-- [ ] Add-on added to the e2e stack; `task test-e2e` run (or a note why not)
+- [ ] Add-on added to the tiered e2e stack (helmfile `addon:` label, spec `Label`, opt-in/shard lists); `task test-e2e E2E_ADDONS=<name>` run (or a note why not)
 - [ ] `task lint`, `task staticcheck`, `task verify-generated` clean
 - [ ] Docs: new `addonType` + families added to `docs/guides/addon-checks.md`
 - [ ] Conventional-commit title (`feat(adapter): …`); DCO sign-off on every commit
