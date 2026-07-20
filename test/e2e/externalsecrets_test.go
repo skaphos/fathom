@@ -42,7 +42,7 @@ var externalSecretsSystemHealthCRDs = []string{
 	"clusterexternalsecrets.external-secrets.io",
 }
 
-var _ = Describe("external-secrets AddonCheck", Ordered, func() {
+var _ = Describe("external-secrets AddonCheck", Ordered, Label(utils.CoreLabel, "external-secrets"), func() {
 	BeforeAll(func() {
 		By("clearing any prior external-secrets AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", externalSecretsSamplePath,

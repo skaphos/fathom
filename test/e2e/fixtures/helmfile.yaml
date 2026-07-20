@@ -12,10 +12,26 @@
 # so helmfile's DAG brings networking up before any pod-networked addon —
 # and before the operator is deployed by the e2e:cluster:fathom task.
 #
-# Apply with:
+# The stack is tiered (skaphos/fathom#178) via release labels:
+#
+#   - `tier: core` marks the small always-on core stack (Cilium, cert-manager,
+#     external-secrets; CoreDNS is core too but ships with kind). Every scoped
+#     sync installs it — Cilium is the CNI, nothing schedules without it.
+#   - `addon: <name>` names the addon each release belongs to (multi-release
+#     addons such as istio share one label). Releases without `tier: core` are
+#     opt-in: installed only when their addon is selected.
+#
+# Every release MUST carry an `addon` label, and the label sets must match the
+# CoreAddons/OptInAddons lists in test/utils — a drift guard in
+# test/utils/utils_test.go enforces this.
+#
+# Apply the full stack with:
 #   helmfile -f test/e2e/fixtures/helmfile.yaml sync
+# or a slice of it with selectors (what E2E_ADDONS expands to):
+#   helmfile -f test/e2e/fixtures/helmfile.yaml --selector tier=core \
+#     --selector addon=istio sync
 # or via the Taskfile:
-#   go -C tools tool task e2e:cluster:addons
+#   go -C tools tool task e2e:cluster:addons [E2E_ADDONS=core,istio,...]
 repositories:
   - name: cilium
     url: https://helm.cilium.io
@@ -37,6 +53,9 @@ repositories:
 releases:
   - name: cilium
     namespace: kube-system
+    labels:
+      tier: core
+      addon: cilium
     chart: cilium/cilium
     # Validated against kindest/node v1.36.1 (k8s 1.36) by the e2e suite. Bump
     # together with the node image in kind-cluster.yaml when k8s moves.
@@ -59,6 +78,9 @@ releases:
 
   - name: cert-manager
     namespace: cert-manager
+    labels:
+      tier: core
+      addon: cert-manager
     chart: jetstack/cert-manager
     version: v1.20.2
     needs:
@@ -88,6 +110,8 @@ releases:
 
   - name: external-dns
     namespace: external-dns
+    labels:
+      addon: external-dns
     chart: external-dns/external-dns
     version: 1.21.1
     needs:
@@ -111,6 +135,8 @@ releases:
 
   - name: metrics-server
     namespace: kube-system
+    labels:
+      addon: metrics-server
     chart: metrics-server/metrics-server
     version: 3.13.1
     needs:
@@ -133,6 +159,8 @@ releases:
 
   - name: envoy-gateway
     namespace: envoy-gateway-system
+    labels:
+      addon: envoy-gateway
     chart: envoyproxy/gateway-helm
     version: 1.8.2
     needs:
@@ -158,6 +186,8 @@ releases:
   # which is exactly what the system_health webhook checks assert.
   - name: istio-base
     namespace: istio-system
+    labels:
+      addon: istio
     chart: istio/base
     version: 1.30.2
     needs:
@@ -168,6 +198,8 @@ releases:
 
   - name: istiod
     namespace: istio-system
+    labels:
+      addon: istio
     chart: istio/istiod
     version: 1.30.2
     needs:
@@ -186,6 +218,9 @@ releases:
 
   - name: external-secrets
     namespace: external-secrets
+    labels:
+      tier: core
+      addon: external-secrets
     # ESO 2.x serves only external-secrets.io/v1 by default; v1beta1 is gated
     # behind `crds.unsafeServeV1Beta1` and scheduled for removal in the chart.
     # Fathom's adapter prefers v1 (with a v1beta1 fallback for older clusters)

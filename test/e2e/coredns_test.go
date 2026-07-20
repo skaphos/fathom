@@ -29,7 +29,7 @@ const (
 	dnsResolutionTarget = "kubernetes.default.svc.cluster.local"
 )
 
-var _ = Describe("CoreDNS AddonCheck", Ordered, func() {
+var _ = Describe("CoreDNS AddonCheck", Ordered, Label(utils.CoreLabel, "coredns"), func() {
 	// The Taskfile's e2e:cluster:fathom step builds and loads the probe image
 	// under the canonical tag the operator's DefaultProbeImage references,
 	// so probe Pods resolve to the kind-loaded image via IfNotPresent and

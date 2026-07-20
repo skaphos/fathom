@@ -43,7 +43,7 @@ var certManagerSystemHealthPasses = []struct {
 	{"ValidatingWebhookConfiguration", "cert-manager-webhook", ""},
 }
 
-var _ = Describe("cert-manager AddonCheck", Ordered, func() {
+var _ = Describe("cert-manager AddonCheck", Ordered, Label(utils.CoreLabel, "cert-manager"), func() {
 	// Delete-then-apply ensures every run starts from a fresh CR, which
 	// triggers an immediate on-create reconcile and clears stale
 	// HealthReports from previous iterations on a reused cluster.

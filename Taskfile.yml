@@ -21,6 +21,11 @@ vars:
   IMAGE_TAG_BASE: '{{.IMAGE_TAG_BASE | default "skaphos.io/fathom"}}'
   BUNDLE_IMG: '{{.BUNDLE_IMG | default (printf "%s-bundle:v%s" .IMAGE_TAG_BASE .VERSION)}}'
   CATALOG_IMG: '{{.CATALOG_IMG | default (printf "%s-catalog:v%s" .IMAGE_TAG_BASE .VERSION)}}'
+  # E2E_ADDONS selects a slice of the tiered e2e addon stack (skaphos/fathom#178):
+  # empty or "all" = full stack; "core" = the always-on core tier only; or a
+  # comma-separated addon list (e.g. "istio,external-dns") = core tier + those
+  # addons, running only their specs. See test/e2e/fixtures/README.md.
+  E2E_ADDONS: '{{.E2E_ADDONS | default ""}}'
   E2E_KIND_CLUSTER: '{{.E2E_KIND_CLUSTER | default "fathom-e2e"}}'
   E2E_KIND_CONFIG: '{{.E2E_KIND_CONFIG | default "test/e2e/fixtures/kind-cluster.yaml"}}'
   E2E_HELMFILE: '{{.E2E_HELMFILE | default "test/e2e/fixtures/helmfile.yaml"}}'
@@ -190,7 +195,7 @@ tasks:
         KUBEBUILDER_ASSETS="$ASSETS" go test $(go list ./... | grep -v /e2e) -coverprofile=coverage.out
 
   test-e2e:
-    desc: Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm + helmfile required)
+    desc: Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm + helmfile required); E2E_ADDONS scopes the stack and specs
     cmds:
       - task: manifests
       - task: generate
@@ -200,7 +205,11 @@ tasks:
       - defer: {task: e2e:cluster:down}
       - task: e2e:cluster:addons
       - task: e2e:cluster:fathom
-      - go test ./test/e2e/ -v -ginkgo.v
+      # E2E_ADDONS scopes both the addon sync above and the specs the suite
+      # runs (a Task var override must reach the test process env too).
+      - |
+        addons='{{.E2E_ADDONS}}'
+        E2E_ADDONS="${addons:-${E2E_ADDONS:-}}" go test ./test/e2e/ -v -ginkgo.v
 
   # --- Build ---
 
@@ -417,14 +426,29 @@ tasks:
         fi
 
   e2e:cluster:addons:
-    desc: Install Cilium (CNI) + cert-manager + external-secrets via helmfile ({{.E2E_HELMFILE}})
+    desc: Install the e2e addon stack via helmfile ({{.E2E_HELMFILE}}); E2E_ADDONS narrows it to core + named addons
     cmds:
       - |
         set -euo pipefail
         command -v helmfile >/dev/null 2>&1 || { echo "helmfile not found in PATH (https://github.com/helmfile/helmfile)" >&2; exit 1; }
         command -v helm >/dev/null 2>&1 || { echo "helm not found in PATH" >&2; exit 1; }
         kubectl config use-context kind-{{.E2E_KIND_CLUSTER}}
-        helmfile -f {{.E2E_HELMFILE}} sync
+        # Scoped install: the core tier always syncs (Cilium is the CNI), plus
+        # one addon=<name> selector per requested addon. Selectors that match
+        # no release (core-tier addon names, coredns) are harmless: helmfile
+        # unions selectors and tier=core keeps the union non-empty. The Go
+        # suite validates addon names; this stays dumb on purpose.
+        addons='{{.E2E_ADDONS}}'
+        addons="${addons:-${E2E_ADDONS:-}}"
+        set --
+        if [ -n "$addons" ] && [ "$addons" != "all" ]; then
+          set -- --selector tier=core
+          for a in $(printf '%s' "$addons" | tr ',' ' '); do
+            [ "$a" = "core" ] && continue
+            set -- "$@" --selector "addon=$a"
+          done
+        fi
+        helmfile -f {{.E2E_HELMFILE}} sync "$@"
 
   e2e:cluster:fathom:
     desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom

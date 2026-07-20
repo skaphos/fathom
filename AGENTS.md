@@ -42,7 +42,7 @@ All workflows are wrapped in tasks; never invoke `controller-gen` / `kustomize`
 - `go -C tools tool task lint`: regenerates manifests + runs `golangci-lint run ./...`.
 - `go -C tools tool task vet`: `go vet ./...`.
 - `go -C tools tool task test`: unit tests with envtest, writes `coverage.out`. Excludes `./test/e2e`.
-- `go -C tools tool task test-e2e`: spins up a Kind cluster (or reuses one), runs `./test/e2e`, tears it down. Requires `kind` and `docker` on `PATH`.
+- `go -C tools tool task test-e2e`: spins up a Kind cluster (or reuses one), runs `./test/e2e`, tears it down. Requires `kind` and `docker` on `PATH`. The addon stack is tiered: `E2E_ADDONS=<addon>` installs just the core tier plus that addon and runs only its specs (see `test/e2e/fixtures/README.md`).
 - `go -C tools tool task staticcheck`: honnef.co/go/tools `staticcheck ./...`.
 - `go -C tools tool task vuln`: `govulncheck ./...`.
 - `go -C tools tool task ci`: full local CI (lint, test, staticcheck, vuln, build).
@@ -97,6 +97,13 @@ Fathom uses **cobra + viper** for runtime configuration. Precedence
 ### Run e2e after major changes
 
 Run `go -C tools tool task test-e2e` against a kind cluster after any change that touches operator runtime behavior. envtest auto-registers schemes and CRDs that real clusters do not — bugs that only surface at reconcile time (SKA-422 apiextensions scheme registration; SKA-423 ESO v1beta1 hardcoding) are caught only by e2e.
+
+For a change scoped to a single addon's adapter, the scoped run
+`task test-e2e E2E_ADDONS=<addon>` (core tier + that addon) is sufficient;
+shared-surface changes (`internal/app`, `pkg/adapter`, the declarative engine,
+controllers, CRD types) still warrant the full stack. CI mirrors this: the
+`kind e2e` workflow path-filters the diff and shards addons across parallel
+kind clusters (`scripts/e2e-shards.sh`; see `test/e2e/fixtures/README.md`).
 
 Changes that **require** an e2e run before the PR is considered ready:
 

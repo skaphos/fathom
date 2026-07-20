@@ -29,7 +29,7 @@ const (
 	externalDNSEndpointCRD = "dnsendpoints.externaldns.k8s.io"
 )
 
-var _ = Describe("external-dns AddonCheck", Ordered, func() {
+var _ = Describe("external-dns AddonCheck", Ordered, Label("external-dns"), func() {
 	BeforeAll(func() {
 		By("clearing any prior external-dns AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", externalDNSSamplePath,

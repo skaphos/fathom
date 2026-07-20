@@ -29,7 +29,7 @@ const (
 // the agent must read the node's real kubeadm certificates over a read-only
 // hostPath mount and publish a report ConfigMap, and the operator must roll those
 // up into a HealthReport with status parity — none of which envtest can prove.
-var _ = Describe("NodeCertificateCheck", Ordered, func() {
+var _ = Describe("NodeCertificateCheck", Ordered, Label(utils.CoreLabel), func() {
 	BeforeAll(func() {
 		By("clearing any prior NodeCertificateCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", nodeCertSamplePath, "--ignore-not-found=true", "--wait=true")

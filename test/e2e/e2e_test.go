@@ -31,7 +31,7 @@ const metricsServiceName = "fathom-controller-manager-metrics-service"
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
 const metricsRoleBindingName = "fathom-metrics-binding"
 
-var _ = Describe("Manager", Ordered, func() {
+var _ = Describe("Manager", Ordered, Label(utils.CoreLabel), func() {
 	var controllerPodName string
 
 	// The Taskfile target `test-e2e` has already installed CRDs and

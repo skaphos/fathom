@@ -33,7 +33,7 @@ var envoyGatewayCRDs = []string{
 	"envoyproxies.gateway.envoyproxy.io",
 }
 
-var _ = Describe("envoy-gateway AddonCheck", Ordered, func() {
+var _ = Describe("envoy-gateway AddonCheck", Ordered, Label("envoy-gateway"), func() {
 	BeforeAll(func() {
 		By("clearing any prior envoy-gateway AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", envoyGatewaySamplePath,

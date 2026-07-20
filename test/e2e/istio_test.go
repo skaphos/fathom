@@ -34,7 +34,7 @@ var istioCRDs = []string{
 	"authorizationpolicies.security.istio.io",
 }
 
-var _ = Describe("istio AddonCheck", Ordered, func() {
+var _ = Describe("istio AddonCheck", Ordered, Label("istio"), func() {
 	BeforeAll(func() {
 		By("clearing any prior istio AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", istioSamplePath,

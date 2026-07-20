@@ -23,7 +23,7 @@ import (
 // restrict access — something envtest's superuser client cannot show. The per-
 // addon adapter specs (coredns/certmanager/cilium/externalsecrets) separately
 // prove the adapters still function end-to-end while impersonating.
-var _ = Describe("Adapter RBAC impersonation posture", func() {
+var _ = Describe("Adapter RBAC impersonation posture", Label(utils.CoreLabel), func() {
 	const (
 		operatorNS = "fathom-system"
 		operatorSA = "system:serviceaccount:fathom-system:fathom-controller-manager"

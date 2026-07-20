@@ -27,7 +27,7 @@ const (
 	metricsServerAPIService = "v1beta1.metrics.k8s.io"
 )
 
-var _ = Describe("metrics-server AddonCheck", Ordered, func() {
+var _ = Describe("metrics-server AddonCheck", Ordered, Label("metrics-server"), func() {
 	BeforeAll(func() {
 		By("clearing any prior metrics-server AddonCheck state")
 		cmd := exec.Command("kubectl", "delete", "-f", metricsServerSamplePath,
