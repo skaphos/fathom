@@ -83,10 +83,17 @@ func Pod(req Request) (*corev1.Pod, error) {
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
-	labels := map[string]string{labelManagedBy: managedByValue, labelProbeName: req.Name}
+	// Caller labels are applied first so the reserved probe-identifying labels
+	// always win. Both are load-bearing for Sweeper: managed-by+probe is how
+	// it recognises an orphan to reap, and how it recognises everything else
+	// as off-limits. A caller that overrode managed-by would leak its pods
+	// silently — they would never match a sweep.
+	labels := make(map[string]string, len(req.Labels)+2)
 	for key, value := range req.Labels {
 		labels[key] = value
 	}
+	labels[labelManagedBy] = managedByValue
+	labels[labelProbeName] = req.Name
 	runAsNonRoot := true
 	allowPrivilegeEscalation := false
 	readOnlyRootFilesystem := true
