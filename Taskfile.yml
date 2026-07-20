@@ -12,6 +12,7 @@ vars:
   CRD_REF_DOCS: go -C tools tool github.com/elastic/crd-ref-docs
   ENVTEST_K8S_VERSION: "1.36"
   IMG: '{{.IMG | default "controller:latest"}}'
+  PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64"}}'
   PROBE_IMG: '{{.PROBE_IMG | default "fathom-probe:latest"}}'
   PROBE_PLATFORMS: '{{.PROBE_PLATFORMS | default "linux/amd64,linux/arm64"}}'
   NODE_AGENT_IMG: '{{.NODE_AGENT_IMG | default "fathom-node-agent:latest"}}'
@@ -224,9 +225,14 @@ tasks:
       - go run ./cmd/main.go --leader-elect=false
 
   docker-build:
-    desc: Build container image (IMG={{.IMG}})
+    desc: Build container image for the host arch (IMG={{.IMG}})
     cmds:
       - docker build -t {{.IMG}} .
+
+  docker-buildx-push:
+    desc: Multi-arch build + push operator image (IMG={{.IMG}}, PLATFORMS={{.PLATFORMS}})
+    cmds:
+      - docker buildx build --push --platform {{.PLATFORMS}} -t {{.IMG}} .
 
   probe-build:
     desc: Build probe binary

@@ -118,16 +118,16 @@ jobs:
             echo "chart_name=${REGISTRY}/${IMAGE_NAMESPACE}/charts/${IMAGE_NAME}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push operator image
+      - name: Build and push operator image (multi-arch)
         id: operator
         env:
           IMG: ${{ steps.vars.outputs.img }}
         run: |
           set -euo pipefail
-          go -C tools tool task docker-build IMG="${IMG}"
-          go -C tools tool task docker-push IMG="${IMG}"
+          go -C tools tool task docker-buildx-push IMG="${IMG}"
           # Resolve the immutable digest the registry assigned so downstream
           # signing/attestation pin name@sha256:... rather than a mutable tag.
+          # For a multi-arch build this is the manifest-list (index) digest.
           DIGEST=$(docker buildx imagetools inspect "${IMG}" --format '{{.Manifest.Digest}}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
