@@ -66,6 +66,19 @@ func runDNS(ctx context.Context, target string) error {
 	details := map[string]string{"target": target, "latencyMillis": strconv.FormatInt(latency.Milliseconds(), 10)}
 	if err != nil {
 		details["error"] = err.Error()
+		// A DNS-level failure (NXDOMAIN, SERVFAIL, no answer, or a resolver
+		// timeout) is precisely the condition a dns_resolution check exists to
+		// detect, so it is a Fail — the same as a refused TCP dial in
+		// runTCPConnect — not a probe-infrastructure Error. Error outranks Fail
+		// on the severity ladder (Pass<Skipped<Warn<Unknown<Fail<Error), so
+		// misclassifying a real DNS outage as Error would mask genuine Fails
+		// elsewhere in the ClusterHealth rollup. Reserve Error for faults that
+		// are not the resolver's answer (anything that is not a *net.DNSError).
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) {
+			writeResult(result{Outcome: "Fail", Summary: "DNS resolution failed", Details: details})
+			return nil
+		}
 		writeResult(result{Outcome: "Error", Summary: "DNS resolution failed", Details: details})
 		return err
 	}
