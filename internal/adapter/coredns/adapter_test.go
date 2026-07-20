@@ -383,7 +383,9 @@ func TestRun_MissingServiceFails(t *testing.T) {
 	assertHasDetail(t, result.Checks, "Service", "kube-dns", adapter.DetailAbsent, "true")
 }
 
-func TestRun_UnreadyPodFails(t *testing.T) {
+func TestRun_UnreadyPodWarns(t *testing.T) {
+	// A live not-ready pod is Warn, not Fail: checkDeployment is the
+	// authoritative outage signal and the deployment here is available (#160).
 	objects := healthyObjects()
 	pod := objects[1].(*corev1.Pod)
 	pod.Status.Conditions[0].Status = corev1.ConditionFalse
@@ -396,9 +398,56 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	assertHasOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomeFail, "not ready")
-	// A present-but-unhealthy target is a Fail that is NOT absent (SKA-526).
+	assertHasOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomeWarn, "not ready")
+	assertNoOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomeFail)
+	// A present-but-unhealthy target is not absent (SKA-526).
 	assertHasDetail(t, result.Checks, "Pod", "coredns", adapter.DetailAbsent, "")
+}
+
+func TestRun_TerminatingAndEvictedPodsNotGraded(t *testing.T) {
+	dnsLabels := map[string]string{"k8s-app": "kube-dns"}
+	objects := append(healthyObjects(),
+		terminatingPodNamed("coredns-old", dnsLabels),
+		evictedPodNamed("coredns-evicted", dnsLabels),
+	)
+	a := adapterWithLauncher(passingDNSLauncher())
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilySystemHealth: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomePass, "ready")
+	// Filtered pods must produce no verdict at all — not merely no Fail.
+	for _, filtered := range []string{"coredns-old", "coredns-evicted"} {
+		for _, o := range []adapter.Outcome{adapter.OutcomeFail, adapter.OutcomeWarn, adapter.OutcomePass} {
+			assertNoOutcome(t, result.Checks, "Pod", filtered, o)
+		}
+	}
+}
+
+func TestRun_AllPodsTerminatingButUnavailableStillFails(t *testing.T) {
+	// Safety invariant: filtering all pods can never mask a real outage — the
+	// deployment check still Fails; checkPods only Skips.
+	dnsLabels := map[string]string{"k8s-app": "kube-dns"}
+	objects := []clientObject{
+		unavailableDeployment(),
+		terminatingPodNamed("coredns-old", dnsLabels),
+		dnsService(), dnsEndpointSlice(),
+	}
+	a := adapterWithLauncher(passingDNSLauncher())
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Policy: map[adapter.Family]adapter.FamilyPolicy{FamilySystemHealth: {Enabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Deployment", "coredns", adapter.OutcomeFail, "not fully available")
+	assertHasOutcome(t, result.Checks, "Pod", "coredns", adapter.OutcomeSkipped, "only terminating")
 }
 
 func TestRun_NoReadyEndpointSlicesFails(t *testing.T) {
@@ -467,6 +516,15 @@ func assertHasDetail(t *testing.T, checks []adapter.CheckResult, kind, name, key
 	t.Fatalf("missing %s/%s in %#v", kind, name, checks)
 }
 
+func assertNoOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome) {
+	t.Helper()
+	for _, check := range checks {
+		if check.TargetRef.Kind == kind && check.TargetRef.Name == name && check.Outcome == outcome {
+			t.Fatalf("unexpected %s/%s outcome %s: %#v", kind, name, outcome, check)
+		}
+	}
+}
+
 func newFakeClient(t *testing.T, objects ...clientObject) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -523,6 +581,34 @@ func readyPodNamed(name string, labels map[string]string) *corev1.Pod {
 			ContainerStatuses: []corev1.ContainerStatus{{Name: name, RestartCount: 0}},
 		},
 	}
+}
+
+// terminatingPodNamed is a not-ready pod with a DeletionTimestamp — the old
+// ReplicaSet's pod during a rolling update.
+func terminatingPodNamed(name string, labels map[string]string) *corev1.Pod {
+	p := readyPodNamed(name, labels)
+	p.Status.Conditions[0].Status = corev1.ConditionFalse
+	now := metav1.Now()
+	p.DeletionTimestamp = &now
+	p.Finalizers = []string{"kubernetes.io/test"}
+	return p
+}
+
+// evictedPodNamed is a terminal-phase pod still matching the deployment selector.
+func evictedPodNamed(name string, labels map[string]string) *corev1.Pod {
+	p := readyPodNamed(name, labels)
+	p.Status.Conditions[0].Status = corev1.ConditionFalse
+	p.Status.Phase = corev1.PodFailed
+	return p
+}
+
+// unavailableDeployment reports desired>available with no Available condition,
+// so checkDeployment Fails while still returning the deployment for pod checks.
+func unavailableDeployment() *appsv1.Deployment {
+	d := healthyDeployment()
+	d.Status.AvailableReplicas = 0
+	d.Status.Conditions = nil
+	return d
 }
 
 func dnsService() *corev1.Service {

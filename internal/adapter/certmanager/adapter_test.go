@@ -112,7 +112,9 @@ func TestRun_MissingDeploymentFails(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "Deployment", "cert-manager", adapter.OutcomeFail, "missing")
 }
 
-func TestRun_UnreadyPodFails(t *testing.T) {
+func TestRun_UnreadyPodWarns(t *testing.T) {
+	// A live not-ready pod is Warn, not Fail: checkDeployment is the
+	// authoritative outage signal and the deployment here is available (#160).
 	objects := healthyObjects(false)
 	pod := objects[1].(*corev1.Pod)
 	pod.Status.Conditions[0].Status = corev1.ConditionFalse
@@ -120,10 +122,51 @@ func TestRun_UnreadyPodFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeFail, "not ready")
-	// A present-but-unhealthy target is a Fail that is NOT absent: the marker
-	// must distinguish "not installed" from "installed but broken" (SKA-526).
+	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeWarn, "not ready")
+	assertNoOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeFail)
+	// A present-but-unhealthy target is not absent: the marker must distinguish
+	// "not installed" from "installed but degraded" (SKA-526).
 	assertHasDetail(t, result.Checks, "Pod", "cert-manager", adapter.DetailAbsent, "")
+}
+
+func TestRun_TerminatingAndEvictedPodsNotGraded(t *testing.T) {
+	// Rolling update + a lingering Evicted pod: the cert-manager deployment is
+	// available with one ready pod, plus a terminating old pod and an Evicted
+	// pod. Neither churned-out pod may force a Fail.
+	objects := healthyObjects(false)
+	objects = append(objects,
+		terminatingPodNamed("cert-manager-old", "cert-manager"),
+		evictedPodNamed("cert-manager-evicted", "cert-manager"),
+	)
+	result, err := New().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objects...), Logger: logr.Discard()})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomePass, "ready")
+	// Filtered pods must produce no verdict at all — not merely no Fail.
+	for _, filtered := range []string{"cert-manager-old", "cert-manager-evicted"} {
+		for _, o := range []adapter.Outcome{adapter.OutcomeFail, adapter.OutcomeWarn, adapter.OutcomePass} {
+			assertNoOutcome(t, result.Checks, "Pod", filtered, o)
+		}
+	}
+}
+
+func TestRun_AllPodsTerminatingButUnavailableStillFails(t *testing.T) {
+	// Safety invariant: when every pod is filtered out AND the deployment is
+	// unavailable, checkDeployment still Fails; checkPods only Skips.
+	objects := []clientObject{
+		unavailableDeployment("cert-manager"),
+		terminatingPodNamed("cert-manager-old", "cert-manager"),
+	}
+	for _, cv := range crds {
+		objects = append(objects, establishedCRD(cv.name))
+	}
+	result, err := New().Run(context.Background(), adapter.Request{Client: newFakeClient(t, objects...), Logger: logr.Discard()})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "Deployment", "cert-manager", adapter.OutcomeFail, "not fully available")
+	assertHasOutcome(t, result.Checks, "Pod", "cert-manager", adapter.OutcomeSkipped, "only terminating")
 }
 
 func TestRun_RestartAnomalyWarns(t *testing.T) {
@@ -419,6 +462,15 @@ func assertHasOutcome(t *testing.T, checks []adapter.CheckResult, kind, name str
 	t.Fatalf("missing %s/%s outcome %s containing %q in %#v", kind, name, outcome, summaryContains, checks)
 }
 
+func assertNoOutcome(t *testing.T, checks []adapter.CheckResult, kind, name string, outcome adapter.Outcome) {
+	t.Helper()
+	for _, check := range checks {
+		if check.TargetRef.Kind == kind && check.TargetRef.Name == name && check.Outcome == outcome {
+			t.Fatalf("unexpected %s/%s outcome %s: %#v", kind, name, outcome, check)
+		}
+	}
+}
+
 // assertFamily asserts that every CheckResult matching (kind, name) is
 // tagged with the expected adapter family. Multiple matches are allowed
 // (e.g., Pod-level checks under a Deployment) and each must agree.
@@ -573,6 +625,34 @@ func readyPodNamed(name, component string) *corev1.Pod {
 			ContainerStatuses: []corev1.ContainerStatus{{Name: component, RestartCount: 0}},
 		},
 	}
+}
+
+// terminatingPodNamed is a not-ready pod with a DeletionTimestamp — the old
+// ReplicaSet's pod during a rolling update.
+func terminatingPodNamed(name, component string) *corev1.Pod {
+	p := readyPodNamed(name, component)
+	p.Status.Conditions[0].Status = corev1.ConditionFalse
+	now := metav1.Now()
+	p.DeletionTimestamp = &now
+	p.Finalizers = []string{"kubernetes.io/test"}
+	return p
+}
+
+// evictedPodNamed is a terminal-phase pod still matching the deployment selector.
+func evictedPodNamed(name, component string) *corev1.Pod {
+	p := readyPodNamed(name, component)
+	p.Status.Conditions[0].Status = corev1.ConditionFalse
+	p.Status.Phase = corev1.PodFailed
+	return p
+}
+
+// unavailableDeployment reports desired>available with no Available condition,
+// so checkDeployment Fails while still returning the deployment for pod checks.
+func unavailableDeployment(name string) *appsv1.Deployment {
+	d := healthyDeployment(name)
+	d.Status.AvailableReplicas = 0
+	d.Status.Conditions = nil
+	return d
 }
 
 func validatingWebhookConfiguration() *admissionv1.ValidatingWebhookConfiguration {

@@ -221,12 +221,15 @@ func (o Outcome) Valid() bool {
 }
 
 // FamilyOutcome returns the worst Outcome among the checks belonging to family,
-// ranking Fail/Error above Warn above Pass. Families are independent: only that
-// family's checks are considered, so a failure in one family does not taint
-// another family's verdict. Checks for other families are ignored; a family
-// with no checks yields OutcomePass. This is the canonical per-family roll-up
-// adapters use for the fathom_adapter_run_duration_seconds{outcome} label and
-// for per-family tracing span attributes.
+// ranking Fail/Error above Warn above Pass. OutcomeSkipped (and any outcome not
+// listed) is collapsed to Pass — it never raises the family verdict; several
+// callers depend on this, and checkPods now emits Skipped routinely for
+// all-terminating pod sets, so preserve the collapse. Families are independent:
+// only that family's checks are considered, so a failure in one family does not
+// taint another family's verdict. Checks for other families are ignored; a
+// family with no checks yields OutcomePass. This is the canonical per-family
+// roll-up adapters use for the fathom_adapter_run_duration_seconds{outcome}
+// label and for per-family tracing span attributes.
 func FamilyOutcome(checks []CheckResult, family Family) Outcome {
 	worst := OutcomePass
 	for _, c := range checks {

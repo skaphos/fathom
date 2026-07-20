@@ -42,6 +42,34 @@ func notReadyPod(name, component, namespace string) *corev1.Pod {
 	return p
 }
 
+// terminatingPod is a not-ready pod with a DeletionTimestamp — the old
+// ReplicaSet's pod on its way out during a rolling update.
+func terminatingPod(name, component, namespace string) *corev1.Pod {
+	p := notReadyPod(name, component, namespace)
+	now := metav1.Now()
+	p.DeletionTimestamp = &now
+	// Fake client rejects an object with a deletionTimestamp but no finalizer.
+	p.Finalizers = []string{"kubernetes.io/test"}
+	return p
+}
+
+// failedPod is a terminal-phase pod (e.g. an Evicted pod never garbage
+// collected) still matching the workload selector.
+func failedPod(name, component, namespace string) *corev1.Pod {
+	p := notReadyPod(name, component, namespace)
+	p.Status.Phase = corev1.PodFailed
+	return p
+}
+
+// unavailableDeployment reports desired>available with no Available condition,
+// so readDeployment Fails and still gates the pod sub-check on.
+func unavailableDeployment(name, namespace string) *appsv1.Deployment {
+	d := deploymentInNamespace(name, namespace)
+	d.Status.AvailableReplicas = 0
+	d.Status.Conditions = nil
+	return d
+}
+
 func runEngine(t *testing.T, eng *Engine, policy map[adapter.Family]adapter.FamilyPolicy, objs ...clientObject) []adapter.CheckResult {
 	t.Helper()
 	res, err := eng.Run(context.Background(), adapter.Request{
@@ -197,12 +225,80 @@ func TestWorkload_PodRestartWarn_InvalidThresholdFallsBack(t *testing.T) {
 	assertHasOutcome(t, checks, "Pod", "app-x", adapter.OutcomePass, "ready")
 }
 
-func TestWorkload_PodNotReadyFails(t *testing.T) {
+func TestWorkload_PodNotReadyWarns(t *testing.T) {
+	// A live not-ready pod is Warn, not Fail: the workload-availability check is
+	// the authoritative outage signal (#160). Here the Deployment is available,
+	// so the not-ready pod is churn-grade, not an outage.
 	checks := runEngine(t, deployEngine(), nil,
 		deploymentInNamespace("app", "prod"),
 		notReadyPod("app-y", "app", "prod"),
 	)
-	assertHasOutcome(t, checks, "Pod", "app-y", adapter.OutcomeFail, "not ready")
+	assertHasOutcome(t, checks, "Pod", "app-y", adapter.OutcomeWarn, "not ready")
+	assertNoOutcome(t, checks, "Pod", "app-y", adapter.OutcomeFail)
+}
+
+func TestWorkload_TerminatingPodDuringRolloutNotGraded(t *testing.T) {
+	// Rolling update: the Deployment is available, one new pod is ready, and the
+	// old pod is terminating (DeletionTimestamp set) and not-ready. The
+	// terminating pod is filtered out, so it produces no verdict at all — no
+	// spurious Fail or Warn. Only the live ready pod is graded.
+	checks := runEngine(t, deployEngine(), nil,
+		deploymentInNamespace("app", "prod"),
+		podInNamespace("app-new", "app", "prod"),
+		terminatingPod("app-old", "app", "prod"),
+	)
+	assertHasOutcome(t, checks, "Pod", "app-new", adapter.OutcomePass, "ready")
+	assertNoOutcome(t, checks, "Pod", "app-old", adapter.OutcomeFail)
+	assertNoOutcome(t, checks, "Pod", "app-old", adapter.OutcomeWarn)
+}
+
+func TestWorkload_EvictedPodNotGraded(t *testing.T) {
+	// A lingering Evicted/Failed pod (never GC'd) alongside a healthy live pod
+	// must not force a Fail while the Deployment is available.
+	checks := runEngine(t, deployEngine(), nil,
+		deploymentInNamespace("app", "prod"),
+		podInNamespace("app-live", "app", "prod"),
+		failedPod("app-evicted", "app", "prod"),
+	)
+	assertHasOutcome(t, checks, "Pod", "app-live", adapter.OutcomePass, "ready")
+	assertNoOutcome(t, checks, "Pod", "app-evicted", adapter.OutcomeFail)
+}
+
+func TestWorkload_OnlyTerminatingPodsSkips(t *testing.T) {
+	// Every matching pod is terminating: checkPods defers to the workload check
+	// with a Skipped, rather than a false Fail. The Deployment here is still
+	// available, so the overall verdict is not an outage.
+	checks := runEngine(t, deployEngine(), nil,
+		deploymentInNamespace("app", "prod"),
+		terminatingPod("app-old", "app", "prod"),
+	)
+	assertHasOutcome(t, checks, "Pod", "app", adapter.OutcomeSkipped, "only terminating")
+	assertNoOutcome(t, checks, "Pod", "app", adapter.OutcomeFail)
+}
+
+func TestWorkload_AllPodsTerminatingButUnavailableStillFails(t *testing.T) {
+	// Safety invariant: when every pod is filtered out (all terminating) AND the
+	// workload is genuinely unavailable, the workload-availability check still
+	// Fails — the filter can never mask a real outage. checkPods only Skips.
+	checks := runEngine(t, deployEngine(), nil,
+		unavailableDeployment("app", "prod"),
+		terminatingPod("app-old", "app", "prod"),
+	)
+	assertHasOutcome(t, checks, "Deployment", "app", adapter.OutcomeFail, "not fully available")
+	assertHasOutcome(t, checks, "Pod", "app", adapter.OutcomeSkipped, "only terminating")
+}
+
+func TestWorkload_CrashingLivePodWarns(t *testing.T) {
+	// A running-but-not-ready pod (e.g. CrashLoopBackOff) is live — not
+	// filtered — and must still surface as Warn. If it is the sole replica the
+	// Deployment is also unavailable, so the family still Fails via the workload
+	// check; this pins that the filter does not swallow a genuinely broken pod.
+	checks := runEngine(t, deployEngine(), nil,
+		unavailableDeployment("app", "prod"),
+		notReadyPod("app-crash", "app", "prod"),
+	)
+	assertHasOutcome(t, checks, "Pod", "app-crash", adapter.OutcomeWarn, "not ready")
+	assertHasOutcome(t, checks, "Deployment", "app", adapter.OutcomeFail, "not fully available")
 }
 
 func TestWorkload_NoMatchingPodsFails(t *testing.T) {

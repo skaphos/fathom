@@ -188,12 +188,32 @@ func namespaceScope(namespace string) string {
 }
 
 // aggregate populates ch.Status from the selected HealthChecks. It computes
-// the worst-case Result over those with a non-empty Status.Result, builds a
-// deterministic Children summary (sorted by namespace, then name), and sets
-// ObservedAt to the latest input freshness across children (not wall-clock —
-// that would defeat no-op idempotency, and a "when did inputs last move"
-// timestamp is what dashboards actually want).
+// the worst-case Result via fathomv1alpha1.WorstResult, builds a deterministic
+// Children summary (sorted by namespace, then name), and sets ObservedAt to
+// the latest input freshness across children (not wall-clock — that would
+// defeat no-op idempotency, and a "when did inputs last move" timestamp is
+// what dashboards actually want).
 func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) {
+	ch.Status.MatchedCount = int32(len(hcs))
+
+	// A selector matching nothing is not a healthy verdict. Report Unknown with
+	// Ready=False/NoMatches — consistent with the InvalidSelector/ListFailed
+	// error paths — so a dashboard or deploy-gate keyed on the roll-up sees "no
+	// signal" instead of a green empty result (#161).
+	if len(hcs) == 0 {
+		ch.Status.Result = fathomv1alpha1.HealthReportResultUnknown
+		ch.Status.Children = nil
+		ch.Status.ObservedAt = nil
+		apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
+			Type:               clusterHealthConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: ch.Generation,
+			Reason:             "NoMatches",
+			Message:            "No HealthChecks match the selector.",
+		})
+		return
+	}
+
 	sort.Slice(hcs, func(i, j int) bool {
 		if hcs[i].Namespace != hcs[j].Namespace {
 			return hcs[i].Namespace < hcs[j].Namespace
@@ -201,14 +221,13 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		return hcs[i].Name < hcs[j].Name
 	})
 
-	ch.Status.MatchedCount = int32(len(hcs))
 	ch.Status.Children = make([]fathomv1alpha1.ClusterHealthChildSummary, 0, len(hcs))
-
-	var worst fathomv1alpha1.HealthReportResult
-	worstRank := 0
+	results := make([]fathomv1alpha1.HealthReportResult, 0, len(hcs))
 	var latest *metav1.Time
 	for i := range hcs {
 		hc := &hcs[i]
+		// The child summary keeps the raw child verdict, including empty; only
+		// the roll-up coerces empty -> Unknown.
 		ch.Status.Children = append(ch.Status.Children, fathomv1alpha1.ClusterHealthChildSummary{
 			Namespace:  hc.Namespace,
 			Name:       hc.Name,
@@ -216,15 +235,17 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			Summary:    hc.Status.Summary,
 			ObservedAt: hc.Status.SourceObservedAt,
 		})
-		if rank := hc.Status.Result.Severity(); rank > 0 && rank > worstRank {
-			worst = hc.Status.Result
-			worstRank = rank
-		}
+		results = append(results, hc.Status.Result)
 		if hc.Status.SourceObservedAt != nil && (latest == nil || hc.Status.SourceObservedAt.After(latest.Time)) {
 			latest = hc.Status.SourceObservedAt
 		}
 	}
-	ch.Status.Result = worst
+
+	// coerceEmptyToUnknown: a selected child with no verdict yet — never
+	// reconciled, or its mirrored result cleared when the source was deleted —
+	// degrades the roll-up to Unknown instead of vanishing. A live Fail sibling
+	// still wins, because Fail outranks Unknown (#161).
+	ch.Status.Result = fathomv1alpha1.WorstResult(results, true)
 	ch.Status.ObservedAt = latest
 
 	apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{

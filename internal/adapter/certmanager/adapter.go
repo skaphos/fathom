@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/skaphos/fathom/internal/adapter/crdutil"
+	"github.com/skaphos/fathom/internal/adapter/podutil"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -340,21 +341,35 @@ func (Adapter) checkPods(ctx context.Context, c client.Client, deployment *appsv
 		return []adapter.CheckResult{check(FamilySystemHealth, target, adapter.OutcomeFail, "cert-manager deployment has no matching pods", map[string]string{"component": deployment.Name}, started)}
 	}
 
-	checks := make([]adapter.CheckResult, 0, len(pods.Items))
-	for _, pod := range pods.Items {
-		if !podReady(&pod) {
-			checks = append(checks, check(FamilySystemHealth, podTarget(&pod), adapter.OutcomeFail, "cert-manager pod is not ready", map[string]string{"component": deployment.Name, "phase": string(pod.Status.Phase)}, started))
+	// Filter terminating (rolling-update) and Failed/Evicted pods before
+	// grading: they still match the selector but are not serving candidates and
+	// must not force a false Fail (#160). A live not-ready pod is Warn, not
+	// Fail — checkDeployment already Fails on unmet capacity.
+	live := make([]*corev1.Pod, 0, len(pods.Items))
+	for i := range pods.Items {
+		if podutil.Active(&pods.Items[i]) {
+			live = append(live, &pods.Items[i])
+		}
+	}
+	if len(live) == 0 {
+		return []adapter.CheckResult{check(FamilySystemHealth, target, adapter.OutcomeSkipped, "cert-manager deployment has only terminating, failed, or completed pods", map[string]string{"component": deployment.Name}, started)}
+	}
+
+	checks := make([]adapter.CheckResult, 0, len(live))
+	for _, pod := range live {
+		if !podReady(pod) {
+			checks = append(checks, check(FamilySystemHealth, podTarget(pod), adapter.OutcomeWarn, "cert-manager pod is not ready", map[string]string{"component": deployment.Name, "phase": string(pod.Status.Phase)}, started))
 			continue
 		}
-		if restarts := maxRestartCount(&pod); restarts > restartWarnCount {
-			checks = append(checks, check(FamilySystemHealth, podTarget(&pod), adapter.OutcomeWarn, "cert-manager pod restart count exceeds warning threshold", map[string]string{
+		if restarts := maxRestartCount(pod); restarts > restartWarnCount {
+			checks = append(checks, check(FamilySystemHealth, podTarget(pod), adapter.OutcomeWarn, "cert-manager pod restart count exceeds warning threshold", map[string]string{
 				"component":        deployment.Name,
 				"restartCount":     strconv.FormatInt(int64(restarts), 10),
 				"restartWarnCount": strconv.FormatInt(int64(restartWarnCount), 10),
 			}, started))
 			continue
 		}
-		checks = append(checks, check(FamilySystemHealth, podTarget(&pod), adapter.OutcomePass, "cert-manager pod is ready", map[string]string{"component": deployment.Name}, started))
+		checks = append(checks, check(FamilySystemHealth, podTarget(pod), adapter.OutcomePass, "cert-manager pod is ready", map[string]string{"component": deployment.Name}, started))
 	}
 	return checks
 }

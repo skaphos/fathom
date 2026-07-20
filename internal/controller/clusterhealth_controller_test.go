@@ -166,8 +166,10 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultError))
 	})
 
-	It("counts pending HealthChecks but excludes them from the worst-case Result", func() {
-		// Pending: HealthCheck created but Status.Result never set.
+	It("degrades the roll-up to Unknown when a matched child has no verdict yet", func() {
+		// Pending: HealthCheck created but Status.Result never set. A verdictless
+		// child coerces to Unknown in the roll-up so a lost/absent verdict can
+		// never masquerade as green (#161); it still counts toward MatchedCount.
 		pending := &fathomv1alpha1.HealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "hc-pending", Namespace: "default", Labels: map[string]string{"team": "delta"}},
 			Spec: fathomv1alpha1.HealthCheckSpec{
@@ -191,11 +193,50 @@ var _ = Describe("ClusterHealth Controller", func() {
 		var got fathomv1alpha1.ClusterHealth
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-pending"}, &got)).To(Succeed())
 		Expect(got.Status.MatchedCount).To(Equal(int32(2)), "pending HealthCheck contributes to MatchedCount")
-		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass), "pending HealthCheck does not influence the worst-case roll-up")
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultUnknown), "a verdictless child degrades the roll-up to Unknown")
 		Expect(got.Status.Children).To(HaveLen(2))
 	})
 
-	It("returns an empty Result when no HealthChecks match", func() {
+	It("keeps a real Fail winning over a verdictless (coerced-Unknown) sibling", func() {
+		// #161 core: a failing child must not vanish when a sibling loses its
+		// verdict. Fail outranks the coerced Unknown, so the roll-up stays Fail.
+		pending := &fathomv1alpha1.HealthCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: "hc-cleared", Namespace: "default", Labels: map[string]string{"team": "fold-fail-survives"}},
+			Spec:       fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "cleared-target"}},
+		}
+		Expect(k8sClient.Create(ctx, pending)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pending))).To(Succeed()) })
+		createHealthCheckWithStatus("hc-fold-fail", map[string]string{"team": "fold-fail-survives"}, fathomv1alpha1.HealthReportResultFail, "down")
+		createClusterHealth("ch-fold-fail", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "fold-fail-survives"}},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "ch-fold-fail"}})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-fold-fail"}, &got)).To(Succeed())
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultFail), "a real Fail must not vanish behind a coerced Unknown")
+	})
+
+	It("rolls up to Skipped when every matched child is Skipped", func() {
+		createHealthCheckWithStatus("hc-skip-1", map[string]string{"team": "fold-all-skipped"}, fathomv1alpha1.HealthReportResultSkipped, "n/a")
+		createHealthCheckWithStatus("hc-skip-2", map[string]string{"team": "fold-all-skipped"}, fathomv1alpha1.HealthReportResultSkipped, "n/a")
+		createClusterHealth("ch-all-skipped", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "fold-all-skipped"}},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "ch-all-skipped"}})
+		Expect(err).NotTo(HaveOccurred())
+
+		var got fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-all-skipped"}, &got)).To(Succeed())
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultSkipped))
+		ready := apiMeta.FindStatusCondition(got.Status.Conditions, clusterHealthConditionReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue), "an all-Skipped roll-up is still a successful aggregation")
+	})
+
+	It("reports Unknown with Ready=False/NoMatches when no HealthChecks match", func() {
 		createClusterHealth("ch-no-match", fathomv1alpha1.ClusterHealthSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "epsilon-no-such-team"}},
 		})
@@ -208,11 +249,12 @@ var _ = Describe("ClusterHealth Controller", func() {
 		var got fathomv1alpha1.ClusterHealth
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-no-match"}, &got)).To(Succeed())
 		Expect(got.Status.MatchedCount).To(BeNumerically("==", 0))
-		Expect(got.Status.Result).To(BeEmpty())
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultUnknown), "an empty match set is no signal, not green")
 		Expect(got.Status.Children).To(BeEmpty())
 		ready := apiMeta.FindStatusCondition(got.Status.Conditions, clusterHealthConditionReady)
 		Expect(ready).NotTo(BeNil())
-		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("NoMatches"))
 	})
 
 	It("clears aggregate fields when a previously valid selector becomes invalid", func() {
@@ -305,6 +347,26 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name}, ch)).To(Succeed())
 		Expect(ch.ResourceVersion).To(Equal(rvAfterFirst), "second reconcile against unchanged inputs must not write status")
+	})
+
+	It("does not rewrite status on a repeated no-match reconcile", func() {
+		// The new NoMatches branch (Result=Unknown, Ready=False) must be as
+		// idempotent as the populated path: a second reconcile writes nothing.
+		ch := createClusterHealth("ch-nomatch-idem", fathomv1alpha1.ClusterHealthSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "no-such-team-idem"}},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name}, ch)).To(Succeed())
+		Expect(ch.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultUnknown))
+		rvAfterFirst := ch.ResourceVersion
+		time.Sleep(50 * time.Millisecond)
+
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ch.Name}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: ch.Name}, ch)).To(Succeed())
+		Expect(ch.ResourceVersion).To(Equal(rvAfterFirst), "a repeated no-match reconcile must not write status")
 	})
 
 	It("aggregates HealthChecks across namespaces", func() {
@@ -530,7 +592,13 @@ var _ = Describe("ClusterHealth Controller", func() {
 		Expect(k8sClient.Get(ctx, req.NamespacedName, &got)).To(Succeed())
 		Expect(got.Status.Children).To(BeEmpty(), "the unselected child must leave the rollup")
 		Expect(got.Status.MatchedCount).To(BeNumerically("==", 0))
-		Expect(got.Status.Result).To(BeEmpty())
+		// The failing child leaves, and with nothing left to match the roll-up
+		// reports Unknown (no signal) rather than vanishing to a green empty
+		// result (#161).
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultUnknown))
+		ready := apiMeta.FindStatusCondition(got.Status.Conditions, clusterHealthConditionReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("NoMatches"))
 	})
 
 	It("enqueues a ClusterHealth at most once when both sides match", func() {

@@ -52,6 +52,11 @@ func TestFamilyOutcome(t *testing.T) {
 		{"warn outranks pass", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomeWarn)}, adapter.OutcomeWarn},
 		{"fail outranks warn", []adapter.CheckResult{check(fam, adapter.OutcomeWarn), check(fam, adapter.OutcomeFail)}, adapter.OutcomeFail},
 		{"error counts as worst", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomeError)}, adapter.OutcomeError},
+		// Skipped is collapsed to Pass and never raises the verdict — checkPods
+		// now emits it routinely for all-terminating pod sets. Callers depend on
+		// this collapse.
+		{"skipped collapses to pass", []adapter.CheckResult{check(fam, adapter.OutcomePass), check(fam, adapter.OutcomeSkipped)}, adapter.OutcomePass},
+		{"skipped does not outrank warn", []adapter.CheckResult{check(fam, adapter.OutcomeWarn), check(fam, adapter.OutcomeSkipped)}, adapter.OutcomeWarn},
 		{
 			// A failure in another family must not taint this family's verdict.
 			name:   "other family failure ignored",

@@ -741,23 +741,18 @@ func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.
 }
 
 // aggregateHealthReportResult returns the worst-case Result across an
-// adapter's per-check outcomes via the shared HealthReportResult.Severity
-// ranking. An empty checks slice means the adapter ran but produced no
-// outcomes — surfaced as Skipped so the report carries some signal.
+// adapter's per-check outcomes via the shared WorstResult fold. Skipped is
+// informational there: a healthy adapter whose only non-Pass outcome is a
+// NoMatchingObjects Skipped folds to Pass, not Skipped, so the addon's verdict
+// no longer flaps as the first managed CR appears or disappears (#160). An
+// empty checks slice (the adapter ran but produced no outcomes) folds to
+// Skipped so the report still carries a signal.
 func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1alpha1.HealthReportResult {
-	if len(checks) == 0 {
-		return fathomv1alpha1.HealthReportResultSkipped
-	}
-	worst := fathomv1alpha1.HealthReportResultPass
-	worstRank := worst.Severity()
+	results := make([]fathomv1alpha1.HealthReportResult, 0, len(checks))
 	for _, check := range checks {
-		r := healthReportResult(check.Outcome)
-		if rank := r.Severity(); rank > worstRank {
-			worst = r
-			worstRank = rank
-		}
+		results = append(results, healthReportResult(check.Outcome))
 	}
-	return worst
+	return fathomv1alpha1.WorstResult(results, false)
 }
 
 func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResult {
