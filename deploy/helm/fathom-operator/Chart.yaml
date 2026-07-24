@@ -16,8 +16,8 @@ kubeVersion: ">=1.27.0-0"
 # --version/--app-version); keeping them correct here fixes a from-checkout
 # `helm install`, which previously rendered an unpublished image tag. Do not
 # hand-edit.
-version: 0.4.1  # x-release-please-version
-appVersion: "0.4.1"  # x-release-please-version
+version: 0.5.0  # x-release-please-version
+appVersion: "0.5.0"  # x-release-please-version
 home: https://github.com/skaphos/fathom
 sources:
   - https://github.com/skaphos/fathom

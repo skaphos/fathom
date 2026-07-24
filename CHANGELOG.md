@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.5.0](https://github.com/skaphos/fathom/compare/v0.4.1...v0.5.0) (2026-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **nodecert:** NodeCertificateCheck no longer schedules the node-agent on control-plane nodes by default. Set spec.includeControlPlaneNodes: true to scan kubeadm control-plane (apiserver/etcd/front-proxy) certificates.
+
+### Features
+
+* **adapter:** implement Argo CD adapter checks ([#237](https://github.com/skaphos/fathom/issues/237)) ([bc4ef2b](https://github.com/skaphos/fathom/commit/bc4ef2b7766f538636faefec2d52f530f21730f1))
+* **adapter:** implement Azure Workload Identity webhook adapter checks ([#236](https://github.com/skaphos/fathom/issues/236)) ([983aae7](https://github.com/skaphos/fathom/commit/983aae7b94bf1442de4132b49b4c146cafb0f0a4))
+* **adapter:** implement kube-state-metrics adapter checks ([#239](https://github.com/skaphos/fathom/issues/239)) ([cf79dbf](https://github.com/skaphos/fathom/commit/cf79dbf2f5d04ba6fd2626fd4e5c59c13e96413b))
+* **adapter:** implement node-local-dns adapter checks ([#238](https://github.com/skaphos/fathom/issues/238)) ([529be7c](https://github.com/skaphos/fathom/commit/529be7ccd819bcaaf13594a136468377c4a1f7dd))
+* **api:** ClusterHealth namespace allowlist/denylist precedence ([#213](https://github.com/skaphos/fathom/issues/213)) ([bf228a4](https://github.com/skaphos/fathom/commit/bf228a4e9bb86fffd5519623787d4acec7b6f5ed))
+* **engine:** quorum/ratio rollup thresholds for managed-resource families ([#241](https://github.com/skaphos/fathom/issues/241)) ([3e33e65](https://github.com/skaphos/fathom/commit/3e33e6505197959848e7b477548e6373fe077bf7))
+* **observability:** check result/staleness metrics, Kubernetes Events, shipped alert rules ([#154](https://github.com/skaphos/fathom/issues/154)) ([#240](https://github.com/skaphos/fathom/issues/240)) ([199bd8a](https://github.com/skaphos/fathom/commit/199bd8a007e361d0c7a2f26efafc6a7d39cc5241))
+* pre-1.0 CRD validation hardening ([#152](https://github.com/skaphos/fathom/issues/152)) ([#244](https://github.com/skaphos/fathom/issues/244)) ([266461e](https://github.com/skaphos/fathom/commit/266461e9b37423b930387c2cbd43d80a01052049))
+* **security:** justify and trim the operator ClusterRole, isolate the node-agent with a NetworkPolicy ([#153](https://github.com/skaphos/fathom/issues/153)) ([#245](https://github.com/skaphos/fathom/issues/245)) ([ec849ab](https://github.com/skaphos/fathom/commit/ec849ab386be093912f04fd8f26687bc6fef9b4e))
+
+
+### Bug Fixes
+
+* **controller:** fail closed when FATHOM_NAMESPACE is empty in-cluster ([#216](https://github.com/skaphos/fathom/issues/216)) ([2e98338](https://github.com/skaphos/fathom/commit/2e9833817bd24ab257310b2330861a47dbae9e94))
+* **controller:** map old and new HealthCheck on update so ClusterHealth drops unselected children ([#221](https://github.com/skaphos/fathom/issues/221)) ([f6c3965](https://github.com/skaphos/fathom/commit/f6c39655d2de1e82bf80d55bf39f8bb8c3f46a6b))
+* **controller:** preserve mirrored result on transient target lookup errors ([#248](https://github.com/skaphos/fathom/issues/248)) ([5b5fdbc](https://github.com/skaphos/fathom/commit/5b5fdbcb303dbc6bc9f124058b5b89dc7516d8a5)), closes [#224](https://github.com/skaphos/fathom/issues/224)
+* **controller:** truncate mirrored HealthCheck summary to the schema bound ([#252](https://github.com/skaphos/fathom/issues/252)) ([b7db975](https://github.com/skaphos/fathom/commit/b7db975dff0f5226dcc28b5e6d944b65ba9499ce))
+* **engine:** make NodeCertificateCheck roll-up transition-only ([#157](https://github.com/skaphos/fathom/issues/157)) ([#226](https://github.com/skaphos/fathom/issues/226)) ([b0cf69d](https://github.com/skaphos/fathom/commit/b0cf69dbace6fd0828b1d094b9d5e654d9bf29ea))
+* **engine:** make verdict folds treat empty and Skipped safely ([#161](https://github.com/skaphos/fathom/issues/161), [#160](https://github.com/skaphos/fathom/issues/160)) ([#223](https://github.com/skaphos/fathom/issues/223)) ([8c4455b](https://github.com/skaphos/fathom/commit/8c4455bdcf1b9a4176c1b2d1c648e210dce638d8))
+* **engine:** resolve VersionSource through the workload's policy overrides ([#172](https://github.com/skaphos/fathom/issues/172)) ([#228](https://github.com/skaphos/fathom/issues/228)) ([479cf6b](https://github.com/skaphos/fathom/commit/479cf6b08787de15a384b8e054a42d2e9eeece1a))
+* **engine:** surface an error when a declarative run is truncated between families ([#253](https://github.com/skaphos/fathom/issues/253)) ([34bec4a](https://github.com/skaphos/fathom/commit/34bec4a52c2854bcd475c34a250108bc102dd4e3))
+* **nodecert:** authenticate node reports, allowlist scan paths, gate control-plane scheduling ([#155](https://github.com/skaphos/fathom/issues/155)) ([#218](https://github.com/skaphos/fathom/issues/218)) ([38b7079](https://github.com/skaphos/fathom/commit/38b70798e9365ab45ea23383c9b6c5107addd4da))
+* **operator:** scope manager cache to Fathom-managed objects to prevent OOM ([#219](https://github.com/skaphos/fathom/issues/219)) ([3895d04](https://github.com/skaphos/fathom/commit/3895d04cfbef9aa898625bd5be993004807359a6))
+* **probe:** reap orphaned probe pods with a leader-elected sweep ([#220](https://github.com/skaphos/fathom/issues/220)) ([15c3fec](https://github.com/skaphos/fathom/commit/15c3fec528ca1a380720e20313fffda02ab22049))
+* **probe:** report DNS resolution failure as Fail, not Error ([#158](https://github.com/skaphos/fathom/issues/158)) ([#225](https://github.com/skaphos/fathom/issues/225)) ([6f7fb52](https://github.com/skaphos/fathom/commit/6f7fb52568639854aff286e83375e4245c5b00f8))
+* **rbac:** grant events.k8s.io so check events are actually recorded ([#243](https://github.com/skaphos/fathom/issues/243)) ([76af77f](https://github.com/skaphos/fathom/commit/76af77f70c1f45942cc3920f23cd96ef472fa2f2)), closes [#154](https://github.com/skaphos/fathom/issues/154)
+* **rbac:** trim operator ClusterRole to read-only on the primary CRDs ([#217](https://github.com/skaphos/fathom/issues/217), RBAC-1) ([#254](https://github.com/skaphos/fathom/issues/254)) ([a5d926d](https://github.com/skaphos/fathom/commit/a5d926d25cb489d28c993204c2d4ff12c7abca27))
+* **release:** publish the operator image as a multi-arch manifest ([#227](https://github.com/skaphos/fathom/issues/227)) ([5d5e4d9](https://github.com/skaphos/fathom/commit/5d5e4d98d158f6e43f4c7deb0e77f3c064bc86ba))
+
 ## [0.4.1](https://github.com/skaphos/fathom/compare/v0.4.0...v0.4.1) (2026-07-18)
 
 

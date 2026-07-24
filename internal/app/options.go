@@ -118,7 +118,7 @@ type Options struct {
 // release-please (the x-release-please-version annotation; see
 // release-please-config.json) and enforced by
 // scripts/check-version-lockstep.sh — do not hand-edit it.
-const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.4.1" // x-release-please-version
+const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.5.0" // x-release-please-version
 
 // DefaultNodeAgentImage is the published node-agent image this build of Fathom
 // ships with. The NodeCertificateCheck controller uses it for its managed
@@ -126,7 +126,7 @@ const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.4.1" // x-release-ple
 // automatically in lockstep with the operator release by release-please (the
 // x-release-please-version annotation; see release-please-config.json) and
 // enforced by scripts/check-version-lockstep.sh — do not hand-edit it.
-const DefaultNodeAgentImage = "ghcr.io/skaphos/fathom-node-agent:v0.4.1" // x-release-please-version
+const DefaultNodeAgentImage = "ghcr.io/skaphos/fathom-node-agent:v0.5.0" // x-release-please-version
 
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
