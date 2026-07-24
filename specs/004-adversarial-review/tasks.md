@@ -98,7 +98,7 @@ Review deliverables live under `specs/004-adversarial-review/review/`. Fixes lan
 
 **Purpose**: End-to-end validation, publication, and closing #217 last on the milestone (FR-010).
 
-- [ ] T022 Run the full validation in `specs/004-adversarial-review/quickstart.md` steps 1–5 (milestone precondition, deliverable contract conformance, disposition completeness, fix quality gates including final `go -C tools tool task ci` + `crd-compat`, refutation record) and fix any failures
+- [X] T022 Run the full validation in `specs/004-adversarial-review/quickstart.md` steps 1–5 (milestone precondition, deliverable contract conformance, disposition completeness, fix quality gates including final `go -C tools tool task ci` + `crd-compat`, refutation record) and fix any failures
 - [ ] T023 Merge the review-deliverables PR (branch `feature/004-adversarial-review`, PR #251) so `specs/004-adversarial-review/review/` is reachable from `main`
 - [ ] T024 Post the closing comment on issue #217 per contract §5 (links to merged deliverables, disposition table for all critical/high findings, perspective completion summary, CI-green statement), then close #217 and verify via `gh issue list --milestone v0.5.0 --state open` (empty) that it closed last (quickstart step 6)
 
