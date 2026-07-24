@@ -24,6 +24,7 @@ rules:
   - addon-keda
   - addon-kured
   - addon-metrics-server
+  - addon-node-local-dns
   - addon-vpa
   resources:
   - serviceaccounts

@@ -113,6 +113,44 @@ func TestPodRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+// TestPodPinsResolverWhenDNSNameserversSet covers the node-local DNS path
+// (SKA-511): a non-empty DNSNameservers must yield dnsPolicy None with exactly
+// the requested nameservers, and an empty one must leave the pod's DNS policy
+// untouched (cluster default).
+func TestPodPinsResolverWhenDNSNameserversSet(t *testing.T) {
+	pinned, err := Pod(Request{
+		Name:           "probe-nldns",
+		Namespace:      "default",
+		Image:          "ghcr.io/skaphos/fathom-probe:test",
+		Mode:           ModeDNS,
+		Target:         "kubernetes.default.svc.cluster.local",
+		DNSNameservers: []string{"169.254.20.10"},
+	})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	if pinned.Spec.DNSPolicy != corev1.DNSNone {
+		t.Fatalf("DNSPolicy: got %q, want %q", pinned.Spec.DNSPolicy, corev1.DNSNone)
+	}
+	if pinned.Spec.DNSConfig == nil || len(pinned.Spec.DNSConfig.Nameservers) != 1 || pinned.Spec.DNSConfig.Nameservers[0] != "169.254.20.10" {
+		t.Fatalf("DNSConfig: got %#v, want nameservers [169.254.20.10]", pinned.Spec.DNSConfig)
+	}
+
+	unpinned, err := Pod(Request{
+		Name:      "probe-dns",
+		Namespace: "default",
+		Image:     "ghcr.io/skaphos/fathom-probe:test",
+		Mode:      ModeDNS,
+		Target:    "kubernetes.default.svc.cluster.local",
+	})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	if unpinned.Spec.DNSPolicy != "" || unpinned.Spec.DNSConfig != nil {
+		t.Fatalf("unpinned pod must keep default DNS policy: got policy %q, config %#v", unpinned.Spec.DNSPolicy, unpinned.Spec.DNSConfig)
+	}
+}
+
 func TestParseResult(t *testing.T) {
 	result, err := ParseResult(`{"outcome":"Pass","summary":"ok","details":{"latencyMillis":"1"}}`)
 	if err != nil {

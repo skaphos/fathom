@@ -1,0 +1,35 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: node-local-dns-sample
+spec:
+  addonType: node-local-dns
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        # The DaemonSet name follows the install; the upstream manifest and the
+        # community Helm chart both default to "node-local-dns".
+        daemonSetName: "node-local-dns"
+        restartWarnCount: "3"
+    dns_resolution:
+      enabled: true
+      thresholds:
+        # Targets must be fully qualified: the probe pod runs with
+        # dnsPolicy None pinned to the node-local cache, so no cluster
+        # search domains apply.
+        targets: "kubernetes.default.svc.cluster.local"
+        # The link-local address the node-local cache listens on. 169.254.20.10
+        # is the upstream NodeLocal DNSCache convention; override it if your
+        # install binds a different address.
+        listenAddress: "169.254.20.10"
+        # The probe image defaults to the operator-level --probe-image (which
+        # tracks the operator release); set probeImage here only to pin a
+        # different reference, e.g. a private-registry mirror.

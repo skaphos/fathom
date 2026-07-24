@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd"
+OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns"
 
 emit_all() {
   printf '["core"'
@@ -66,6 +66,10 @@ shard_for_file() {
     test/e2e/argocd_test.go) echo argocd ;;
     config/samples/*_addoncheck_argocd.yaml) echo argocd ;;
     config/rbac/addons/addon-argocd.yaml) echo argocd ;;
+    internal/adapter/nodelocaldns/*) echo node-local-dns ;;
+    test/e2e/nodelocaldns_test.go) echo node-local-dns ;;
+    config/samples/*_node_local_dns.yaml) echo node-local-dns ;;
+    config/rbac/addons/addon-node-local-dns.yaml) echo node-local-dns ;;
 
     # --- Core-tier addons: their specs run in the core shard.
     internal/adapter/certmanager/*) echo core ;;

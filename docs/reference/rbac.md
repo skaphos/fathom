@@ -15,8 +15,8 @@ those declarations. **Every** grant carries a defensive **justification** — wh
 is needed and why a narrower grant would not suffice — and the CI guard fails any
 grant (read or write) that is not justified. Verbs are read-only
 (`get`/`list`/`watch`) unless the justification, prefixed
-`WRITE EXCEPTION`, defends a write; the only writes are the CoreDNS probe
-Pod and the cert-manager admission dry-run.
+`WRITE EXCEPTION`, defends a write; the only writes are the CoreDNS and
+NodeLocal DNSCache probe Pods and the cert-manager admission dry-run.
 
 ## argocd
 
@@ -150,6 +150,17 @@ ServiceAccount: `fathom-addon-metrics-server` (namespace `fathom-system`)
 | apps | deployments | get | Get the metrics-server Deployment by name to score readiness. The name/namespace are policy-overridable (Helm release fullname) but always resolve to a single named Get; read-only. |
 | core | pods | list | List the metrics-server Pods by label selector for restart counts and readiness behind the Deployment. list (not get) because Pod names are dynamic; read-only. |
 | apiregistration.k8s.io | apiservices | get | Get the v1beta1.metrics.k8s.io APIService by name to score aggregation availability. get only — the check fetches exactly one named APIService, so list/watch would be broader than the read the evaluator performs. |
+
+## node-local-dns
+
+ServiceAccount: `fathom-addon-node-local-dns` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | daemonsets | get | Get the node-local-dns DaemonSet by name to score rollout readiness and to obtain its pod selector. get only — the name is known (policy-overridable threshold) and the impersonating client is cache-free, so no list/watch; read-only. |
+| core | pods | get, list | List the cache pods behind the DaemonSet (readiness, restart counts, per-node placement) and get the short-lived DNS probe pod while polling for its terminal state. list is required because pod names are dynamic; read-only. |
+| core | nodes | list | List Nodes for per-node gap detection: naming the schedulable nodes that lack a ready cache pod, not just a count mismatch. list only — node names are not known in advance; only node metadata and spec.unschedulable are read. |
+| core | pods | create, delete | WRITE EXCEPTION: launch and immediately tear down a single-shot DNS probe Pod per check, its resolver pinned to the node-local cache's listen address, to measure resolution through the cache from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; no in-process read can observe the node-local DNS data path. The Pod is deleted as soon as it completes — no update, no long-lived workload. |
 
 ## vpa
 

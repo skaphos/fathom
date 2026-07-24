@@ -15,6 +15,7 @@ resources:
 - addon-keda.yaml
 - addon-kured.yaml
 - addon-metrics-server.yaml
+- addon-node-local-dns.yaml
 - addon-vpa.yaml
 - operator-impersonate.yaml
 configurations:
