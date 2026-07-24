@@ -9,6 +9,7 @@ package controller
 import (
 	"context"
 	"time"
+	"unicode/utf8"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -227,13 +228,37 @@ func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
 
 // summarizeFromConditions extracts a human-readable one-liner from the source
 // check's conditions. Prefers the Ready condition's message when present.
+//
+// The result is truncated to healthCheckSummaryMaxLen. A source condition
+// Message admits up to 32768 chars (the metav1.Condition bound), while
+// HealthCheckStatus.Summary carries a kubebuilder MaxLength of 1024. Mirroring
+// an over-long message verbatim makes the API server reject the whole status
+// update, wedging the mirror on that value forever (the retry replays the same
+// payload) and freezing the child's contribution to the ClusterHealth roll-up
+// at a stale verdict. Truncating at the mirror boundary keeps the summary a
+// valid, admissible value.
 func summarizeFromConditions(conds []metav1.Condition) string {
 	for _, c := range conds {
 		if c.Type == healthCheckConditionReady {
-			return c.Message
+			return truncateSummary(c.Message)
 		}
 	}
 	return ""
+}
+
+// healthCheckSummaryMaxLen mirrors the +kubebuilder:validation:MaxLength on
+// HealthCheckStatus.Summary. OpenAPI maxLength counts Unicode code points, so
+// truncation is rune-based to stay within the schema bound for multi-byte text.
+const healthCheckSummaryMaxLen = 1024
+
+func truncateSummary(s string) string {
+	if utf8.RuneCountInString(s) <= healthCheckSummaryMaxLen {
+		return s
+	}
+	// Reserve one rune for the ellipsis marker so the total stays within bound.
+	const ellipsis = "…"
+	runes := []rune(s)
+	return string(runes[:healthCheckSummaryMaxLen-1]) + ellipsis
 }
 
 // SetupWithManager sets up the controller with the Manager. It owns
