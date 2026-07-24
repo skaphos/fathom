@@ -12,6 +12,7 @@ rules:
 - apiGroups:
   - ""
   resourceNames:
+  - addon-argocd
   - addon-cert-manager
   - addon-cilium
   - addon-coredns

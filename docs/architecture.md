@@ -324,6 +324,7 @@ and a set of families:
 | `vpa` | `internal/adapter/declarative` (`vpa.go`) | `system_health`, `crd_health`, `recommendation_health` |
 | `descheduler` | `internal/adapter/declarative` (`descheduler.go`) | `system_health`, `policy_validity`, `last_run` |
 | `kured` | `internal/adapter/declarative` (`kured.go`) | `system_health`, `reboot_state` |
+| `argocd` | `internal/adapter/declarative` (`argocd.go`) | `system_health`, `sync_health` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`

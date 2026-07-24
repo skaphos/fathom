@@ -49,6 +49,8 @@ repositories:
     oci: true
   - name: istio
     url: https://istio-release.storage.googleapis.com/charts
+  - name: argo
+    url: https://argoproj.github.io/argo-helm
 
 releases:
   - name: cilium
@@ -244,3 +246,52 @@ releases:
           requests:
             cpu: 10m
             memory: 32Mi
+
+  # Argo CD installs with the chart's default nameOverride ("argocd"), so the
+  # four workloads Fathom's argocd system_health family checks land under
+  # their official-manifest names: the argocd-application-controller
+  # StatefulSet plus the argocd-repo-server / argocd-server / argocd-redis
+  # Deployments. The optional dex, applicationset, and notifications
+  # controllers are disabled — the adapter does not check them and the
+  # single-node kind cluster stays small. No Application objects are
+  # declared, so the sync_health family exercises its empty-cluster Skipped
+  # contract (a real Application would need an external Git repo the CI
+  # cluster should not depend on).
+  - name: argocd
+    namespace: argocd
+    labels:
+      addon: argocd
+    chart: argo/argo-cd
+    version: 10.2.1
+    needs:
+      - kube-system/cilium
+    createNamespace: true
+    wait: true
+    timeout: 600
+    values:
+      - dex:
+          enabled: false
+        notifications:
+          enabled: false
+        applicationSet:
+          enabled: false
+        controller:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+        repoServer:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+        server:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+        redis:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi

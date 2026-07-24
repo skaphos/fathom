@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio"
+OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd"
 
 emit_all() {
   printf '["core"'
@@ -61,6 +61,11 @@ shard_for_file() {
     test/e2e/istio_test.go) echo istio ;;
     config/samples/*_addoncheck_istio.yaml) echo istio ;;
     config/rbac/addons/addon-istio.yaml) echo istio ;;
+
+    internal/adapter/declarative/argocd*) echo argocd ;;
+    test/e2e/argocd_test.go) echo argocd ;;
+    config/samples/*_addoncheck_argocd.yaml) echo argocd ;;
+    config/rbac/addons/addon-argocd.yaml) echo argocd ;;
 
     # --- Core-tier addons: their specs run in the core shard.
     internal/adapter/certmanager/*) echo core ;;

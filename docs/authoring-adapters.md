@@ -79,8 +79,8 @@ declarative.AddonDefinition{
 
 A `FamilyDefinition` is one policy-keyed family (`spec.policy.<name>`). It holds
 typed slices of checks, evaluated in a **fixed within-family order: Workloads →
-CRDs → ManagedResources → APIServices → Webhooks → CronJobs → ConfigMaps →
-Annotations**.
+CRDs → ManagedResources → Fields → APIServices → Webhooks → CronJobs →
+ConfigMaps → Annotations**.
 
 ```go
 declarative.FamilyDefinition{
@@ -89,6 +89,7 @@ declarative.FamilyDefinition{
     Workloads:      []declarative.WorkloadCheck{ /* … */ },
     CRDs:           []declarative.CRDCheck{ /* … */ },
     ManagedResources: []declarative.ConditionCheck{ /* … */ },
+    Fields:         []declarative.FieldCheck{ /* … */ },
     APIServices:    []declarative.ConditionCheck{ /* … */ },
     Webhooks:       []declarative.WebhookCheck{ /* … */ },
     CronJobs:       []declarative.CronJobCheck{ /* … */ },
@@ -198,6 +199,38 @@ declarative.ConditionCheck{
 resolves its namespace like a `WorkloadCheck` singleton (first policy
 namespace, else `DefaultNamespace`). Use this same type for `APIServices`
 (as above — see the metrics-server definition).
+
+#### `FieldCheck` — a scalar status field's value
+
+Lists CRs across namespaces and scores a nested scalar status field against an
+expected value, with a per-value outcome map. Reach for this when a kind
+reports state **outside** `status.conditions` — the Argo CD `Application`,
+whose `status.sync.status` / `status.health.status` have no conditions
+equivalent:
+
+```go
+declarative.FieldCheck{
+    APIVersion:    "argoproj.io/v1alpha1",
+    Kind:          "Application",
+    ListKind:      "ApplicationList",
+    ListName:      "applications-health", // stable name on list-level results
+    FieldPath:     []string{"status", "health", "status"},
+    ExpectedValue: "Healthy",             // -> Pass
+    ValueOutcomes: map[string]adapter.Outcome{
+        "Degraded":    adapter.OutcomeFail,
+        "Progressing": adapter.OutcomeWarn,
+    },
+    // AbsentOutcome (field missing/empty) and OtherOutcome (an unmapped
+    // value, e.g. from a newer addon release) both default to OutcomeWarn —
+    // surfaced, never silently passed or failed.
+}
+```
+
+List mode only: an empty result set is `Skipped`
+(`skipReason=NoMatchingObjects`), and an uninstalled resource API is scored by
+`Absence` with the absent marker. Two `FieldCheck`s over the same kind (sync
+vs health) stay distinguishable via `ListName` and the `Details["field"]`
+entry.
 
 #### `WebhookCheck` — admission webhook wiring
 

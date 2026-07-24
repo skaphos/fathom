@@ -203,8 +203,8 @@ func (d AddonDefinition) defaultPosture() Posture {
 // FamilyDefinition is one policy-keyed check family. Each typed component slice
 // contributes zero or more CheckResults, all tagged with Name. The engine
 // evaluates components in a fixed within-family order: Workloads, then CRDs,
-// then ManagedResources, then APIServices, then Webhooks, then CronJobs, then
-// ConfigMaps, then Annotations.
+// then ManagedResources, then Fields, then APIServices, then Webhooks, then
+// CronJobs, then ConfigMaps, then Annotations.
 type FamilyDefinition struct {
 	// Name is the adapter-defined family identifier and the Request.Policy key.
 	Name adapter.Family
@@ -217,6 +217,10 @@ type FamilyDefinition struct {
 	CRDs []CRDCheck
 	// ManagedResources score a status.conditions predicate over listed CRs.
 	ManagedResources []ConditionCheck
+	// Fields score a scalar status field over listed CRs, for kinds that report
+	// state through nested status fields instead of status.conditions (Argo CD
+	// Applications and their status.sync.status / status.health.status).
+	Fields []FieldCheck
 
 	// APIServices map onto the ConditionCheck evaluator, typically in named
 	// mode against apiregistration.k8s.io APIService Available=True (see the
@@ -245,8 +249,9 @@ type FamilyDefinition struct {
 // evaluators returns the family's components in the fixed within-family order.
 func (f FamilyDefinition) evaluators() []Evaluator {
 	evals := make([]Evaluator, 0,
-		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.APIServices)+
-			len(f.Webhooks)+len(f.CronJobs)+len(f.ConfigMaps)+len(f.Annotations))
+		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.Fields)+
+			len(f.APIServices)+len(f.Webhooks)+len(f.CronJobs)+len(f.ConfigMaps)+
+			len(f.Annotations))
 	for _, w := range f.Workloads {
 		evals = append(evals, w)
 	}
@@ -255,6 +260,9 @@ func (f FamilyDefinition) evaluators() []Evaluator {
 	}
 	for _, m := range f.ManagedResources {
 		evals = append(evals, m)
+	}
+	for _, fc := range f.Fields {
+		evals = append(evals, fc)
 	}
 	for _, a := range f.APIServices {
 		evals = append(evals, a)
@@ -374,6 +382,54 @@ type ConditionCheck struct {
 	// defaults to OutcomeFail. An empty result set across all namespaces is
 	// always OutcomeSkipped.
 	Mismatch adapter.Outcome
+}
+
+// FieldCheck scores a scalar field of listed custom resources against an
+// expected value, for kinds that report state through nested status fields
+// rather than status.conditions — the Argo CD Application, whose
+// status.sync.status and status.health.status carry no conditions equivalent.
+//
+// List mode only: the check lists the kind across the resolved namespaces
+// (all namespaces when the policy names none) and scores every match. An
+// empty result set is Skipped — quiet by design, like ConditionCheck's list
+// mode — and an uninstalled resource API is scored by Absence with the
+// absent marker.
+type FieldCheck struct {
+	// APIVersion is the group/version of the listed objects (e.g.
+	// "argoproj.io/v1alpha1").
+	APIVersion string
+	// Kind is the object kind (e.g. "Application").
+	Kind string
+	// ListKind is the list kind (e.g. "ApplicationList").
+	ListKind string
+	// ListName is the stable placeholder Name used on list-level CheckResults
+	// (invalid-selector, list-failure, and no-matching-objects), so two
+	// FieldChecks over the same kind (e.g. Application sync vs health) stay
+	// distinguishable in a HealthReport. Defaults to Kind.
+	ListName string
+	// ClusterScoped lists without a namespace when true.
+	ClusterScoped bool
+	// Absence scores a list whose resource API is not installed at all
+	// (Required -> Fail, Optional -> Skipped), tagged with the
+	// adapter.DetailAbsent marker.
+	Absence Posture
+	// FieldPath is the path of the scored scalar field from the object root
+	// (e.g. {"status", "sync", "status"}).
+	FieldPath []string
+	// ExpectedValue is the healthy value; an object reporting it scores Pass.
+	ExpectedValue string
+	// ValueOutcomes maps specific observed values to their outcome (e.g.
+	// Degraded -> Fail, OutOfSync -> Warn). Values that are neither
+	// ExpectedValue nor a key here score OtherOutcome.
+	ValueOutcomes map[string]adapter.Outcome
+	// AbsentOutcome scores an object whose field is missing, empty, or not a
+	// string (e.g. a resource its controller has not reconciled yet); defaults
+	// to OutcomeWarn.
+	AbsentOutcome adapter.Outcome
+	// OtherOutcome scores an observed value that is neither ExpectedValue nor
+	// a ValueOutcomes key (e.g. a state introduced by a newer addon release);
+	// defaults to OutcomeWarn — surfaced, never silently passed or failed.
+	OtherOutcome adapter.Outcome
 }
 
 // WebhookCheck verifies one named admission webhook configuration (a

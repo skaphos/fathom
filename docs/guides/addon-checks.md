@@ -21,7 +21,7 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured>
+  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd>
   interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
@@ -87,6 +87,7 @@ runs.
 | [`vpa`](#vpa) | `system_health`, `crd_health`, `recommendation_health` | VPA recommender/updater/admission workloads, CRDs, and whether VPAs are producing recommendations |
 | [`descheduler`](#descheduler) | `system_health`, `policy_validity`, `last_run` | descheduler Deployment or CronJob, DeschedulerPolicy well-formedness, and last-run recency |
 | [`kured`](#kured) | `system_health`, `reboot_state` | kured DaemonSet, and whether the reboot lock is wedged or a node has waited too long for a reboot |
+| [`argocd`](#argocd) | `system_health`, `sync_health` | Argo CD control-plane workloads and CRDs, and every Application's sync/health state |
 
 ### cert-manager
 
@@ -484,6 +485,37 @@ reboot detection requires kured's `--annotate-nodes`; without it the node scan
 is `Skipped` — the honest signal that the data is not published, not a false
 all-clear. kured is **Optional**: absent targets are `Skipped` with the
 `absent` detail.
+
+### argocd
+
+```yaml
+spec:
+  addonType: argocd
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - argocd
+      thresholds:
+        restartWarnCount: "3"
+    sync_health:
+      enabled: true
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `argocd-application-controller` StatefulSet plus the `argocd-repo-server`, `argocd-server`, and `argocd-redis` Deployments and their pods, and the `Application`, `ApplicationSet`, and `AppProject` CRDs are Established and serve `v1alpha1`. | `applicationControllerName`, `repoServerName`, `serverName`, `redisName`, `restartWarnCount` |
+| `sync_health` | Every `Application` (all namespaces unless `policy.namespaces` narrows the scan) reports `status.sync.status: Synced` and `status.health.status: Healthy`. `Degraded` and `Missing` are `Fail`s; `OutOfSync`, `Progressing`, `Suspended`, and `Unknown` are surfaced as `Warn`s. | — |
+
+The adapter is **strictly read-only**: it lists Applications through the
+Kubernetes API and never annotates, syncs, or refreshes anything, so it can
+never trigger reconciliation work. A cluster with Argo CD installed but no
+Applications yields a quiet `Skipped` `sync_health`. Names assume a default
+install in the `argocd` namespace; a renamed install is reachable through
+`policy.namespaces` and the per-component name thresholds. Not covered: the
+HA variant's `redis-ha` topology (point `redisName` at
+`argocd-redis-ha-haproxy` to cover its proxy Deployment) and the optional
+dex/applicationset/notifications controllers.
 
 ## Probe image
 
