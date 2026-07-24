@@ -17,6 +17,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -84,6 +86,15 @@ const (
 	nodeAgentSpecHashAnnotation = "fathom.skaphos.io/spec-hash"
 	nodeAgentSpecHashLength     = 32
 
+	// metricsNamespaceLabelKey/Value gate ingress to the node-agent metrics port
+	// in the managed NetworkPolicy. The same namespace-label contract already
+	// guards the operator's own metrics endpoint
+	// (config/network-policy/allow-metrics-traffic.yaml): label the scraping
+	// namespace `metrics: enabled` or, on a CNI that enforces NetworkPolicy, the
+	// scrape is dropped.
+	metricsNamespaceLabelKey   = "metrics"
+	metricsNamespaceLabelValue = "enabled"
+
 	// nodeCertReportFamily is the HealthReportCheck family for on-disk
 	// certificate observations.
 	nodeCertReportFamily = "node_certificate"
@@ -125,20 +136,27 @@ type NodeCertificateCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
-// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
+// All managed-resource writes below go through CreateOrUpdate (Update, never
+// Patch), and only the DaemonSet is ever deleted directly (reconcilePaused);
+// the ServiceAccount, RoleBinding, and NetworkPolicy are owner-referenced and
+// removed by garbage collection, so those grants carry no patch/delete (#153).
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;delete
 // The node-agent ServiceAccount needs create/get/update on its own report
 // ConfigMap; the operator grants that via the runtime fathom-node-agent-role
 // ClusterRole. RBAC escalation prevention requires the operator to already hold
 // every verb it confers, so the manager must also hold create (not just
 // get;list;watch;update) on configmaps.
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
+// The per-check node-agent NetworkPolicy (#153) is owner-referenced, so
+// deletion rides garbage collection — no delete verb.
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 // The controller ensures a cluster-scoped ValidatingAdmissionPolicy + binding
 // that authenticate per-node report ConfigMaps (#155). Creating a VAP confers no
 // privilege of its own, so this grant does not trip the RBAC escalation check.
-// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionpolicies;validatingadmissionpolicybindings,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionpolicies;validatingadmissionpolicybindings,verbs=get;list;watch;create;update
 
 // Reconcile ensures the node-agent DaemonSet and its RBAC exist (or are removed
 // while paused), rolls up the per-node report ConfigMaps into a HealthReport,
@@ -216,6 +234,13 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	saName, err := r.ensureAgentRBAC(ctx, &check)
 	if err != nil {
 		r.setReady(&check, metav1.ConditionFalse, "RBACProvisioningFailed", err.Error())
+		return ctrl.Result{}, err
+	}
+
+	// Converge the NetworkPolicy before the DaemonSet so agent pods never start
+	// in a window where their metrics port is open cluster-wide (#153).
+	if err := r.ensureAgentNetworkPolicy(ctx, &check); err != nil {
+		r.setReady(&check, metav1.ConditionFalse, "NetworkPolicyProvisioningFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -451,6 +476,59 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 		return "", err
 	}
 	return name, nil
+}
+
+// ensureAgentNetworkPolicy converges the per-check NetworkPolicy that isolates
+// the node-agent pods (#153). Ingress: only the metrics port, and only from
+// namespaces labeled metrics=enabled — the same label contract that guards the
+// operator's own metrics endpoint — so the unauthenticated plaintext
+// cert-inventory gauges are not scrapeable from every pod on every node.
+// Egress: only the API server ports; the agent talks to nothing else (it
+// reaches the API server via KUBERNETES_SERVICE_HOST, an IP, so it needs no
+// DNS egress either). Owner-referenced, so it is garbage-collected with the
+// check; like the agent RBAC it is deliberately left in place while paused.
+// Enforcement requires a NetworkPolicy-capable CNI — on clusters without one
+// this object is inert, which is also why creating it is safe unconditionally.
+func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
+	tcp := corev1.ProtocolTCP
+	metricsPort := intstr.FromInt32(metricsContainerPort)
+	// The API server is reached through the kubernetes Service ClusterIP
+	// (usually port 443) which most CNIs police post-DNAT against the endpoint
+	// port (usually 6443), so both must be allowed. Clusters serving the API on
+	// a nonstandard port need an additional operator-authored allowance; see
+	// docs/reference/network-policies.md.
+	apiServerPort := intstr.FromInt32(443)
+	apiServerEndpointPort := intstr.FromInt32(6443)
+
+	np := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
+		np.Labels = mergeLabels(np.Labels, agentLabels(check))
+		np.Spec = networkingv1.NetworkPolicySpec{
+			// Same selector as the DaemonSet: only agent pods are isolated,
+			// never anything else running in the check's namespace.
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{
+				nodecert.LabelSourceName: check.Name,
+				nodeAgentComponentLabel:  nodeAgentComponentValue,
+			}},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				From: []networkingv1.NetworkPolicyPeer{{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+						metricsNamespaceLabelKey: metricsNamespaceLabelValue,
+					}},
+				}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &metricsPort}},
+			}},
+			Egress: []networkingv1.NetworkPolicyEgressRule{{
+				Ports: []networkingv1.NetworkPolicyPort{
+					{Protocol: &tcp, Port: &apiServerPort},
+					{Protocol: &tcp, Port: &apiServerEndpointPort},
+				},
+			}},
+		}
+		return controllerutil.SetControllerReference(check, np, r.Scheme)
+	})
+	return err
 }
 
 // ensureDaemonSet converges the node-agent DaemonSet to the desired spec and
@@ -896,6 +974,7 @@ func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.RoleBinding{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(checkForReportConfigMap),

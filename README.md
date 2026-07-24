@@ -107,6 +107,11 @@ Full documentation lives in [`docs/`](docs/README.md).
   var, and config-file key.
 - [RBAC reference](docs/reference/rbac.md) — generated least-privilege adapter
   permission matrix.
+- [Operator RBAC](docs/reference/operator-rbac.md) — per-rule justification of
+  the operator's own ClusterRole and the namespace-scoping analysis.
+- [Network policies](docs/reference/network-policies.md) — operator, node-agent,
+  and probe-pod NetworkPolicy posture, and the `metrics: enabled` label
+  contract.
 - [Code map](docs/code-map.md) — internal package tour for contributors.
 - [Architecture Decision Records](docs/adr/) — ADR-0001 … ADR-0004.
 

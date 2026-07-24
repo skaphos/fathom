@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
@@ -160,6 +161,51 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		updated := &fathomv1alpha1.NodeCertificateCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionAccepted).Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("isolates the node-agent with a NetworkPolicy: metrics-only ingress, API-server-only egress (#153)", func() {
+		name := types.NamespacedName{Name: "nc-netpol", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		np := &networkingv1.NetworkPolicy{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-netpol-node-agent", Namespace: "default"}, np)).To(Succeed())
+
+		// Selects exactly the agent pods (the DaemonSet's selector), so nothing
+		// else in the namespace is isolated by this policy.
+		ds := &appsv1.DaemonSet{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-netpol-node-agent", Namespace: "default"}, ds)).To(Succeed())
+		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(ds.Spec.Selector.MatchLabels))
+
+		Expect(np.Spec.PolicyTypes).To(ConsistOf(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+
+		// Ingress: only the metrics port, only from namespaces labeled
+		// metrics=enabled — the operator metrics endpoint's label contract.
+		Expect(np.Spec.Ingress).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].From).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(Equal(map[string]string{"metrics": "enabled"}))
+		Expect(np.Spec.Ingress[0].Ports).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(metricsContainerPort))
+
+		// Egress: API server ports only (ClusterIP 443 + post-DNAT endpoint 6443).
+		Expect(np.Spec.Egress).To(HaveLen(1))
+		ports := []int{}
+		for _, p := range np.Spec.Egress[0].Ports {
+			ports = append(ports, p.Port.IntValue())
+		}
+		Expect(ports).To(ConsistOf(443, 6443))
+
+		// Owner-referenced so it is garbage-collected with the check.
+		Expect(np.OwnerReferences).To(HaveLen(1))
+		Expect(np.OwnerReferences[0].Name).To(Equal(name.Name))
+		Expect(np.Labels).To(HaveKeyWithValue(nodecert.LabelManagedBy, nodecert.ManagedByValue))
 	})
 
 	It("is idempotent: a second reconcile does not churn the DaemonSet", func() {

@@ -222,15 +222,18 @@ adapter level is forced to `Error`.
 
 `internal/controller/nodecertificatecheck_controller.go`
 
-- **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`
-  and `RoleBinding`, and the `fathom-node-agent-role` `ClusterRole` (created at
+- **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
+  `RoleBinding`, and `NetworkPolicy` (metrics-only ingress, API-server-only
+  egress — see [Network policies](reference/network-policies.md)), and the
+  `fathom-node-agent-role` `ClusterRole` (created at
   runtime so its name survives kustomize/OLM name prefixing); creates
   `HealthReport` objects and writes `NodeCertificateCheck.status`. All owned
   objects live in the check's namespace and are owner-referenced for cascading
   garbage collection.
 - **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
-  `ServiceAccount` / `RoleBinding` (`Owns`), and per-node report `ConfigMap`s by
-  label (`Watches`), so a fresh node report triggers a roll-up.
+  `ServiceAccount` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
+  report `ConfigMap`s by label (`Watches`), so a fresh node report triggers a
+  roll-up.
 - **Execution model:** unlike the in-process adapters, on-disk certificate
   scanning must run **on each node**. The reconciler provisions a hardened,
   read-only node-agent `DaemonSet` (`cmd/node-agent`, its own dedicated image —

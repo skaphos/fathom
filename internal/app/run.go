@@ -18,6 +18,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -179,9 +180,10 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 //     NodeCertificateCheck controller); the node-agent stamps managed-by=fathom.
 //     Adapters read arbitrary addon ConfigMaps through the uncached impersonating
 //     client, so they are unaffected by the cache filter.
-//   - DaemonSet / RoleBinding: only the node-agent DaemonSet and RoleBinding are
-//     cached (Owns + CreateOrUpdate); both carry managed-by=fathom via agentLabels.
-//     Addon DaemonSets/RBAC are read via the uncached impersonating client.
+//   - DaemonSet / RoleBinding / NetworkPolicy: only the node-agent DaemonSet,
+//     RoleBinding, and NetworkPolicy are cached (Owns + CreateOrUpdate); all
+//     carry managed-by=fathom via agentLabels. Addon DaemonSets/RBAC are read
+//     via the uncached impersonating client.
 //
 // ServiceAccount is deliberately NOT filtered here: AddonCheck reconciliation
 // does a *cached* List of per-addon ServiceAccounts labeled
@@ -197,9 +199,10 @@ func scopedCacheOptions() cache.Options {
 	}
 	return cache.Options{
 		ByObject: map[client.Object]cache.ByObject{
-			&corev1.ConfigMap{}:   managedByFathom,
-			&appsv1.DaemonSet{}:   managedByFathom,
-			&rbacv1.RoleBinding{}: managedByFathom,
+			&corev1.ConfigMap{}:           managedByFathom,
+			&appsv1.DaemonSet{}:           managedByFathom,
+			&rbacv1.RoleBinding{}:         managedByFathom,
+			&networkingv1.NetworkPolicy{}: managedByFathom,
 		},
 	}
 }
