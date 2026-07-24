@@ -51,6 +51,9 @@ repositories:
     url: https://istio-release.storage.googleapis.com/charts
   - name: argo
     url: https://argoproj.github.io/argo-helm
+  # Community chart for NodeLocal DNSCache (upstream ships raw manifests only).
+  - name: deliveryhero
+    url: https://charts.deliveryhero.io
 
 releases:
   - name: cilium
@@ -217,6 +220,38 @@ releases:
             requests:
               cpu: 10m
               memory: 128Mi
+
+  # NodeLocal DNSCache: a hostNetwork DaemonSet that binds the link-local
+  # 169.254.20.10 on a per-node dummy interface and serves the cluster zone by
+  # forwarding to kube-dns. Fathom's node-local-dns adapter asserts the
+  # DaemonSet is ready on every schedulable node (system_health) and resolves a
+  # cluster name through the cache itself (dns_resolution) by pinning a probe
+  # pod's resolver to the listen address. kubelet's --cluster-dns is NOT
+  # repointed at the cache in this fixture — the probe addresses the cache
+  # directly, so the rest of the stack keeps its default DNS path.
+  - name: node-local-dns
+    namespace: kube-system
+    labels:
+      addon: node-local-dns
+    chart: deliveryhero/node-local-dns
+    version: 2.1.0
+    needs:
+      - kube-system/cilium
+    wait: true
+    timeout: 600
+    values:
+      - config:
+          dnsDomain: "cluster.local"
+          # kind's kube-dns Service IP (default serviceSubnet 10.96.0.0/16).
+          dnsServer: "10.96.0.10"
+          # The upstream NodeLocal DNSCache listen address; must match the
+          # adapter's default listenAddress threshold (the chart's own default
+          # is a non-standard 169.254.20.25).
+          localDns: "169.254.20.10"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
 
   - name: external-secrets
     namespace: external-secrets

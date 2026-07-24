@@ -35,8 +35,10 @@ is served by exactly one registered adapter. The reconciler just looks the
 adapter up by `addonType`, and the registry rejects two adapters that claim the
 same type — a declarative `Engine` and a Go adapter can't both answer for one
 add-on. Whether that single adapter is a declarative `Engine` or a Go type is
-your call. Of the twelve built-ins, **CoreDNS** (DNS-resolution probe pod) and
-**cert-manager** (admission dry-run `create`) are Go; **External Secrets**,
+your call. Of the thirteen built-ins, **CoreDNS** (DNS-resolution probe pod),
+**NodeLocal DNSCache** (`node-local-dns`; per-node coverage + a probe pod
+pinned to the cache's resolver), and **cert-manager** (admission dry-run
+`create`) are Go; **External Secrets**,
 **Cilium**, **external-dns**, **metrics-server**, **Envoy Gateway**, **Istio**,
 **KEDA**, **VPA**, **descheduler**, and **kured** are declarative. Default to
 Path A and only reach for Go when a check genuinely can't be a
@@ -466,11 +468,12 @@ Contract rules that matter while writing `Run`:
   `PreferredServedVersion`) and, for probe pods, `internal/probe`
   (`probe.Launcher`, [ADR-0003](adr/0003-probe-pod-model.md)).
 
-The two Go built-ins are the reference implementations:
+The Go built-ins are the reference implementations:
 [cert-manager](../internal/adapter/certmanager/adapter.go) (admission dry-run
-`create`) and [CoreDNS](../internal/adapter/coredns/adapter.go) (DNS-resolution
-probe pod). Register a Go adapter the same way — its `New()` in
-`BuiltInAdapters()`.
+`create`), [CoreDNS](../internal/adapter/coredns/adapter.go) (DNS-resolution
+probe pod), and [NodeLocal DNSCache](../internal/adapter/nodelocaldns/adapter.go)
+(per-node coverage + a resolver-pinned probe pod). Register a Go adapter the
+same way — its `New()` in `BuiltInAdapters()`.
 
 ---
 

@@ -358,6 +358,34 @@ addons:
     - apiservices
     verbs:
     - get
+- name: node-local-dns
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - daemonsets
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - nodes
+    verbs:
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - create
+    - delete
 - name: vpa
   rules:
   - apiGroups:

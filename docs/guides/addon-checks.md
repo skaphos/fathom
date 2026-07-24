@@ -21,7 +21,7 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd>
+  addonType: <cert-manager | coredns | node-local-dns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd>
   interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
@@ -77,6 +77,7 @@ runs.
 | --- | --- | --- |
 | [`cert-manager`](#cert-manager) | `system_health`, `issuer_health`, `certificate_health` | cert-manager workloads, issuers, and certificate expiry/issuance |
 | [`coredns`](#coredns) | `system_health`, `dns_resolution` | CoreDNS workloads + real DNS resolution from a workload's vantage point |
+| [`node-local-dns`](#nodelocal-dnscache-node-local-dns) | `system_health`, `dns_resolution` | The NodeLocal DNSCache DaemonSet on every schedulable node (per-node gap detection) + resolution through the node-local cache itself |
 | [`external-secrets`](#external-secrets) | `system_health`, `secret_sync` | External Secrets Operator workloads + ExternalSecret sync state |
 | [`cilium`](#cilium) | `control_plane_health`, `agent_health`, `crd_health` | Cilium operator, per-node agent, and CRDs |
 | [`external-dns`](#external-dns) | `system_health`, `crd_health` | external-dns controller workloads + the opt-in DNSEndpoint CRD |
@@ -152,6 +153,38 @@ spec:
 `dns_resolution` is the one add-on family that runs out-of-process. See
 [Probe image](#probe-image) for how the image is resolved, and
 [the probe-pod model](../architecture.md#probe-pod-model) for the why.
+
+### NodeLocal DNSCache (node-local-dns)
+
+```yaml
+spec:
+  addonType: node-local-dns
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        daemonSetName: "node-local-dns"
+        restartWarnCount: "3"
+    dns_resolution:
+      enabled: true
+      thresholds:
+        targets: "kubernetes.default.svc.cluster.local"
+        listenAddress: "169.254.20.10"
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The node-local-dns DaemonSet and its pods, plus **per-node gap detection**: every schedulable (uncordoned) node must host a ready cache pod, and the check names the nodes that lack one (`missingNodes`, bounded to 10 names) instead of reporting a bare count mismatch. | `daemonSetName`, `restartWarnCount` |
+| `dns_resolution` | Launches a short-lived **probe pod** per target in the AddonCheck's namespace with its resolver pinned to the cache's listen address (`dnsPolicy: None`), so the query is answered by the node-local cache — not by whatever the cluster's default resolver path happens to be. | `targets` (comma-separated **fully qualified** names — no cluster search domains apply under the pinned resolver), `listenAddress` (defaults to the upstream convention `169.254.20.10`), `probeImage`, `probeNamespace` |
+
+This closes the blind spot cluster-level CoreDNS checks cannot see: once
+kubelet points pod `resolv.conf` at the node-local cache, a node whose cache
+pod is down loses DNS for every workload on that node even while CoreDNS
+itself is fully healthy. For the same reason a missing DaemonSet scores
+`Fail` (with the absent marker), not `Skipped`. See
+[Probe image](#probe-image) for how the probe image is resolved.
 
 ### External Secrets
 
@@ -593,7 +626,7 @@ are in the `Accepted` condition message. The full status contract is in
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
-| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `external-secrets`, `cilium`, `external-dns`, `metrics-server`, `envoy-gateway`, `istio`. |
+| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `node-local-dns`, `external-secrets`, `cilium`, `external-dns`, `metrics-server`, `envoy-gateway`, `istio`, `keda`, `vpa`, `descheduler`, `kured`. |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
 | `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
 | `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |

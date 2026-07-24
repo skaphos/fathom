@@ -59,6 +59,14 @@ type Request struct {
 	TopologyKey     string
 	ServiceAccount  string
 	ImagePullPolicy corev1.PullPolicy
+
+	// DNSNameservers, when non-empty, pins the pod's resolver: the pod runs
+	// with dnsPolicy None and exactly these nameservers (no cluster search
+	// domains), so DNS-mode probes query the given resolvers directly instead
+	// of the cluster's default resolution path. Callers must therefore pass
+	// fully qualified targets. Used by node-local DNS checks to assert the
+	// per-node cache rather than whatever kubelet configured (SKA-511).
+	DNSNameservers []string
 }
 
 type Result struct {
@@ -144,6 +152,10 @@ func Pod(req Request) (*corev1.Pod, error) {
 	}
 	if req.ServiceAccount != "" {
 		pod.Spec.ServiceAccountName = req.ServiceAccount
+	}
+	if len(req.DNSNameservers) > 0 {
+		pod.Spec.DNSPolicy = corev1.DNSNone
+		pod.Spec.DNSConfig = &corev1.PodDNSConfig{Nameservers: append([]string(nil), req.DNSNameservers...)}
 	}
 	if len(req.AvoidPodLabels) > 0 {
 		pod.Spec.Affinity = antiAffinity(req.AvoidPodLabels, req.TopologyKey)

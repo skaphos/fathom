@@ -273,7 +273,7 @@ hatch (and several of *those* fold back to declarative once the `expiry-threshol
 | KEDA | SKA-508 | Declarative | Deployments + APIService + ScaledObject `Ready` |
 | VPA | SKA-509 | Declarative | Deployments (+ webhook presence) + VPA condition |
 | descheduler | SKA-510 | Declarative* | *needs a CronJob/last-Job-success evaluator for the periodic mode |
-| node-local-dns | SKA-511 | Declarative | DaemonSet ready |
+| node-local-dns | SKA-511 | Go (shipped) | DaemonSet ready on every schedulable node + probe-pod resolution through the cache (probe pods and per-node gap detection are not expressible declaratively) |
 | kured | SKA-512 | Declarative | DaemonSet + `node-annotation` (reboot lock) |
 | Argo CD | SKA-513 | Declarative | many Deployments + StatefulSet + Application `health`/`sync` (see §6 noise note) |
 | Trident | SKA-514 | Declarative | Deployment + DaemonSet + CSIDriver + backend `condition-status` |

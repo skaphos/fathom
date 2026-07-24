@@ -86,6 +86,8 @@ check "internal/app/options.go DefaultNodeAgentImage" \
   "$node_agent_ref" "$(first_quoted 'DefaultNodeAgentImage[[:space:]]*=' internal/app/options.go)"
 check "internal/adapter/coredns/adapter.go fallbackProbeImage" \
   "$probe_ref" "$(first_quoted 'fallbackProbeImage[[:space:]]*=' internal/adapter/coredns/adapter.go)"
+check "internal/adapter/nodelocaldns/adapter.go fallbackProbeImage" \
+  "$probe_ref" "$(first_quoted 'fallbackProbeImage[[:space:]]*=' internal/adapter/nodelocaldns/adapter.go)"
 
 # Helm chart: renders operator/probe/node-agent tags from v<appVersion>.
 check "deploy/helm/fathom-operator Chart.yaml appVersion" \
