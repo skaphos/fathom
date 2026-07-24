@@ -17,7 +17,34 @@ go-git/v5) and `cb845dd` (SECURITY.md).
 
 ## Working records
 
-- Candidate files: `candidates-<perspective>.md` (deleted after consolidation into `findings.md`; unified candidate list preserved below)
+- Candidate files: `candidates-<perspective>.md` — the five raw perspective
+  passes, retained in full as the working record (they hold each candidate's
+  detailed failure scenario, evidence quotes, and the finder's own refutation
+  notes; `findings.md` is the ranked, dispositioned distillation).
 - Refuted candidates: [refuted.md](refuted.md)
 - Confirmed findings: [findings.md](findings.md)
 - Coverage statement: [coverage.md](coverage.md)
+
+## Consolidation / duplicate merge (T010)
+
+The 34 candidates were checked for cross-perspective duplicates. **No exact
+duplicates** were found — several candidates are *complementary* views of the
+same node-agent surface but describe distinct defects and are kept separate:
+
+- SEC-1 (VAP match-condition scope) vs RBAC-2 (node-agent role ConfigMap
+  breadth) — one is admission-policy coverage, the other is RBAC; different
+  fixes.
+- SEC-2 (unauthenticated `/metrics`) vs RBAC-3 (NetworkPolicy egress breadth) —
+  both about node-agent network exposure but distinct controls.
+- COR-3 / COR-4 / COR-7 interact (NodeCert rollup freshness/completeness) but
+  are separate code paths and separately fixable.
+
+No IDs were merged; the originating-perspective IDs are preserved.
+
+## Adversarial refutation (T011)
+
+The 5 high-severity candidates (COR-1, API-1, API-2, RBAC-4, RBAC-5) were
+independently re-verified against the code at the anchor (not the finder
+summaries) — see the load-bearing reads in the review log. All 34 candidates
+survived; two had severity adjusted (API-2 high→medium, RBAC-5 high→accepted).
+Details in [refuted.md](refuted.md).
