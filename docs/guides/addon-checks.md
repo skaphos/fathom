@@ -579,7 +579,7 @@ spec:
 | --- | --- | --- |
 | `system_health` | The `azure-wi-webhook-controller-manager` Deployment and its pods. | `deploymentName`, `restartWarnCount` |
 | `webhook_wiring` | The `azure-wi-webhook-mutating-webhook-configuration` `MutatingWebhookConfiguration` exists, every entry carries a populated `caBundle` and points at the `azure-wi-webhook-webhook-service` Service in the family's namespace, and that service has at least one ready endpoint. | `webhookName` |
-| `projection_sanity` | Pods labeled `azure.workload.identity/use: "true"` (the webhook's own opt-in `objectSelector`) actually carry the injection the webhook performs at admission: the `azure-identity-token` projected serviceAccountToken volume and the `AZURE_FEDERATED_TOKEN_FILE` env var in every container. Scans the family's namespaces (all namespaces when none are listed) and folds into one bounded result; a cluster with no opted-in pods is `Skipped`. | — |
+| `projection_sanity` | Pods labeled `azure.workload.identity/use: "true"` (the webhook's own opt-in `objectSelector`) actually carry the injection the webhook performs at admission: the `azure-identity-token` projected serviceAccountToken volume and the `AZURE_FEDERATED_TOKEN_FILE` env var in every non-init container (init containers are not inspected). Scans the family's namespaces (all namespaces when none are listed) and folds into one bounded result; a cluster with no opted-in pods is `Skipped`. | — |
 
 The projection check is what catches the silent-failure mode the adapter
 exists for: the webhook's `objectSelector` only matches labeled pods, so if

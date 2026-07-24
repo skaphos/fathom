@@ -22,7 +22,8 @@ import "github.com/skaphos/fathom/pkg/adapter"
 //   - projection_sanity verifies pods opted in via the
 //     azure.workload.identity/use=true label actually carry the injection the
 //     webhook performs: the azure-identity-token projected serviceAccountToken
-//     volume and the AZURE_FEDERATED_TOKEN_FILE env var in every container.
+//     volume and the AZURE_FEDERATED_TOKEN_FILE env var in every non-init
+//     container (init containers are not inspected).
 //     This is the silent-failure mode the adapter exists for (#185): the
 //     webhook's objectSelector only matches labeled pods, so if the
 //     configuration is deleted — or admission stops mutating — labeled pods

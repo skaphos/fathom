@@ -29,7 +29,7 @@ const maxNamedPods = 5
 // policy scans all namespaces — opted-in workloads live anywhere) and verifies
 // each live pod actually received the injection: the named projected
 // serviceAccountToken volume and, when EnvVar is set, that env var in every
-// container.
+// non-init container (init containers are not inspected).
 //
 //   - No labeled pods anywhere -> Skipped (NoMatchingObjects): a cluster where
 //     nothing has opted in is quiet by design.

@@ -636,8 +636,9 @@ type PodProjectionCheck struct {
 	// VolumeName is the projected serviceAccountToken volume the webhook
 	// injects (e.g. azure-identity-token).
 	VolumeName string
-	// EnvVar, when set, must be declared by every container of an opted-in pod
-	// (e.g. AZURE_FEDERATED_TOKEN_FILE). Empty skips the env assertion.
+	// EnvVar, when set, must be declared by every non-init container of an
+	// opted-in pod (e.g. AZURE_FEDERATED_TOKEN_FILE); init containers are not
+	// inspected. Empty skips the env assertion.
 	EnvVar string
 	// MissingOutcome scores a live opted-in pod missing the injection; defaults
 	// to OutcomeFail.

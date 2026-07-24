@@ -346,7 +346,8 @@ declarative.AnnotationStalenessCheck{
 Verifies that pods opted in to a mutating admission webhook (by label — the
 webhook's own `objectSelector`) actually carry the projection the webhook
 injects at admission: a named projected `serviceAccountToken` volume and,
-optionally, an env var in every container. This catches the silent-failure
+optionally, an env var in every non-init container (init containers are not
+inspected). This catches the silent-failure
 mode where the webhook configuration is deleted or admission stops mutating:
 labeled pods are then created *without* their injection and nothing else in
 the cluster ever flags them. The scan lists pods across the family's
