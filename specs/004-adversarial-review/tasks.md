@@ -32,7 +32,7 @@ Review deliverables live under `specs/004-adversarial-review/review/`. Fixes lan
 
 **Purpose**: Tool-assisted evidence that seeds every perspective (research R5). BLOCKS the perspective passes because their candidate lists must incorporate tool output.
 
-- [ ] T003 [P] Run `go -C tools tool task ci` at the anchor commit; record pass/fail and any warnings as evidence seeds in `specs/004-adversarial-review/review/README.md`
+- [X] T003 [P] Run `go -C tools tool task ci` at the anchor commit; record pass/fail and any warnings as evidence seeds in `specs/004-adversarial-review/review/README.md`
 - [X] T004 [P] Run `go -C tools tool task crd-compat` at the anchor commit; record the result and any allowlist entries consulted in `specs/004-adversarial-review/review/README.md`
 
 **Checkpoint**: Anchor recorded, deliverables scaffolded, baseline gates recorded — perspective passes can start in parallel.

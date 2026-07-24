@@ -12,7 +12,7 @@ go-git/v5) and `cb845dd` (SECURITY.md).
 
 | Gate | Command | Result |
 |------|---------|--------|
-| Full CI | `go -C tools tool task ci` | _pending — recorded below when complete_ |
+| Full CI | `go -C tools tool task ci` | **GREEN** (second run) — lint, envtest unit suites (per-package coverage 75–100%), staticcheck, govulncheck, build all pass at the anchor. First run failed on stale golangci-lint cache entries referencing deleted sibling worktrees (environment artifact, not a code issue); cache cleaned and re-run. |
 | CRD compatibility | `go -C tools tool task crd-compat` | **OK** — baseline v0.4.1; 11 findings across `addonchecks` (9) and `nodecertificatechecks` (2), all SANCTIONED by `.crd-compat-allowlist.yaml` entries tied to #152 validation hardening; `clusterhealths`/`healthchecks`/`healthreports` fully compatible |
 
 ## Working records
