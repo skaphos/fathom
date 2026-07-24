@@ -133,8 +133,13 @@ type AddonCheckReconciler struct {
 // All four check reconcilers record Kubernetes Events (result transitions and
 // operational failures, skaphos/fathom#154) through the manager's shared
 // EventRecorder; the grant lives once, here, because the markers aggregate
-// into the single manager role.
+// into the single manager role. The manager's GetEventRecorder writes through
+// the events.k8s.io/v1 API (k8s.io/client-go/tools/events), so the grant must
+// cover that group — the core-group grant alone leaves every event rejected
+// with "events.events.k8s.io is forbidden". Core stays granted for the legacy
+// recorder paths (e.g. leader election's cluster-scope fallback).
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile resolves the AddonCheck's adapter and, when the check is due (first
 // sight, a spec change, an elapsed interval, or a new run-now trigger), runs the
