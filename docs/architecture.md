@@ -317,6 +317,7 @@ and a set of families:
 | --- | --- | --- |
 | `cert-manager` | `internal/adapter/certmanager` | `system_health`, `issuer_health`, `certificate_health` |
 | `coredns` | `internal/adapter/coredns` | `system_health`, `dns_resolution` |
+| `node-local-dns` | `internal/adapter/nodelocaldns` | `system_health`, `dns_resolution` |
 | `kube-state-metrics` | `internal/adapter/kubestatemetrics` | `system_health`, `metrics_endpoint` |
 | `external-secrets` | `internal/adapter/declarative` (`externalsecrets.go`) | `system_health`, `secret_sync` |
 | `cilium` | `internal/adapter/declarative` (`cilium.go`) | `control_plane_health`, `agent_health`, `crd_health` |
@@ -346,8 +347,8 @@ but is unhealthy still reports `Fail`.
 
 ## Probe-Pod Model
 
-Active in-cluster network checks (today: CoreDNS `dns_resolution` and
-kube-state-metrics `metrics_endpoint`) do not run
+Active in-cluster network checks (today: the CoreDNS and node-local-dns
+`dns_resolution` families and kube-state-metrics' `metrics_endpoint`) do not run
 inside the operator pod. Instead an adapter launches a single-shot, hardened
 **probe pod** per check, in the workload's namespace, so the resolver topology
 matches real workloads rather than the operator (see

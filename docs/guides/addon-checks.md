@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 
 An `AddonCheck` validates one platform add-on. It picks a built-in **adapter**
 with `spec.addonType` and enables one or more **check families** under
-`spec.policy`. This guide is the working reference for the eight built-in
+`spec.policy`. This guide is the working reference for the sixteen built-in
 adapters, their families, and the threshold knobs you'll actually set.
 
 New to the model? Start with [Concepts](concepts.md) and
@@ -206,8 +206,8 @@ spec:
 | `system_health` | CoreDNS Deployment and pods, the `kube-dns` Service and its EndpointSlices, and (optionally) a node-count autoscaler Deployment. | `deploymentName`, `serviceName`, `autoscalerName` (empty disables the autoscaler check), `restartWarnCount` |
 | `dns_resolution` | Launches a short-lived **probe pod** per target *in the AddonCheck's namespace* and records each target's outcome plus resolver latency — so DNS is resolved with workload topology, not the operator's. | `targets` (comma-separated names), `probeImage` (per-check override) |
 
-`dns_resolution` runs out-of-process (as does kube-state-metrics'
-`metrics_endpoint`). See
+`dns_resolution` runs out-of-process (as do node-local-dns's
+`dns_resolution` and kube-state-metrics' `metrics_endpoint`). See
 [Probe image](#probe-image) for how the image is resolved, and
 [the probe-pod model](../architecture.md#probe-pod-model) for the why.
 

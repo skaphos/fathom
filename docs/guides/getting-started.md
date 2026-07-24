@@ -23,8 +23,8 @@ this guide top-to-bottom and pick up the model as you go.
 - [Helm](https://helm.sh/) v3.8+ (the operator ships as an OCI chart, which
   requires OCI support — standard in v3.8 and later).
 - At least one add-on Fathom can check. This guide uses
-  [cert-manager](https://cert-manager.io/); the same shape applies to CoreDNS,
-  External Secrets Operator, and Cilium (see [Add-on checks](addon-checks.md)).
+  [cert-manager](https://cert-manager.io/); the same shape applies to the
+  other fifteen built-in adapters (see [Add-on checks](addon-checks.md)).
 - Permission to install CRDs and a cluster-scoped operator (typically
   cluster-admin for the install step).
 
@@ -223,9 +223,8 @@ AddonCheck ──runs──▶ status + HealthReport (history)
 
 - **[Concepts](concepts.md)** — the full mental model: the resource kinds,
   what drives work vs. aggregates, and result severity.
-- **[Add-on checks](addon-checks.md)** — every built-in adapter
-  (cert-manager, CoreDNS, External Secrets, Cilium), their families, and the
-  threshold knobs.
+- **[Add-on checks](addon-checks.md)** — all sixteen built-in adapters,
+  their families, and the threshold knobs.
 - **[Node certificate checks](node-certificate-checks.md)** — *(newer kind;
   see its Availability note)* scan on-disk X.509 certificates on every node and
   alert before they expire.

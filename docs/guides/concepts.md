@@ -49,7 +49,7 @@ rest are projection and history layers.
 
 | Kind | What you use it for | Drives work? |
 | --- | --- | --- |
-| **`AddonCheck`** | Declare a check against one add-on (cert-manager, CoreDNS, External Secrets, Cilium). Selects an adapter via `spec.addonType`. | Yes — via its adapter |
+| **`AddonCheck`** | Declare a check against one add-on (cert-manager, CoreDNS, Cilium, Argo CD, and twelve more). Selects an adapter via `spec.addonType`. | Yes — via its adapter |
 | **`NodeCertificateCheck`** *(newer kind — see note below)* | Declare an on-disk certificate-expiry scan across your nodes. | Yes — via the node-agent DaemonSet |
 | **`HealthCheck`** | Wrap one check and mirror its status into a uniform shape so it can be aggregated. | No |
 | **`ClusterHealth`** | Aggregate many `HealthCheck`s into one worst-case verdict. | No |
@@ -144,9 +144,11 @@ talks to the Kubernetes API to inspect Deployments, CRDs, `Certificate`s,
 operator pod, because checking from the operator's vantage point would give the
 wrong answer:
 
-- **Probe pods** — active network checks (today, CoreDNS `dns_resolution`)
-  launch a single-shot, hardened pod *in the workload's namespace*, so DNS is
-  resolved with the same topology a real workload would see.
+- **Probe pods** — active network checks (today, the CoreDNS and
+  node-local-dns `dns_resolution` families and kube-state-metrics'
+  `metrics_endpoint`) launch a single-shot, hardened pod *in the workload's
+  namespace*, so DNS is resolved — and metrics are scraped — with the same
+  topology a real workload would see.
 - **The node-agent DaemonSet** — on-disk certificate scanning must happen *on
   each node*, so `NodeCertificateCheck` provisions a hardened, read-only agent
   per node.

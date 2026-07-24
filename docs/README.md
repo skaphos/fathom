@@ -20,7 +20,7 @@ Task-oriented guides for installing and using Fathom live in
 | --- | --- |
 | [Getting started](guides/getting-started.md) | Install the operator and go from an empty cluster to one cluster-wide verdict in ~15 minutes. |
 | [Concepts](guides/concepts.md) | The platform-team mental model: the resource kinds, what drives work vs. aggregates, and result severity. |
-| [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the eight built-in adapters — families, thresholds, roll-up, troubleshooting. |
+| [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the sixteen built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Newer kind — included in recent builds; not in older ones.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
 | [Agent operations](guides/agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |
