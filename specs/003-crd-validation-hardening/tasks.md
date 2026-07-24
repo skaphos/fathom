@@ -117,7 +117,7 @@ the committed allowlist is the auditable override. Contract:
 
 **Purpose**: Documentation closure, full verification, PR readiness.
 
-- [ ] T027 [P] `README.md` user-facing validation notes: cadence floors (10s/1s), clamp behavior for pre-existing objects, policy structural limits table (complements T019's enforcement-split section)
+- [X] T027 [P] `README.md` user-facing validation notes: cadence floors (10s/1s), clamp behavior for pre-existing objects, policy structural limits table (complements T019's enforcement-split section)
 - [ ] T028 [P] Confirm coverage: `go -C tools tool task test` + `./scripts/check-coverage.sh coverage.out` — new packages/files meet the per-package minimum; ratchet only upward
 - [ ] T029 Full local CI: `go -C tools tool task ci` (lint, test, staticcheck, vuln, build) green
 - [ ] T030 Full e2e: `go -C tools tool task test-e2e` (mandatory — `api/v1alpha1/*_types.go` changed; core tier includes T012's admission smoke); record outcome in PR test plan

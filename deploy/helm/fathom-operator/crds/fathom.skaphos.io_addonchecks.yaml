@@ -61,7 +61,9 @@ spec:
               interval:
                 description: |-
                   Interval is the cadence at which the adapter re-runs and the HealthReport
-                  is refreshed. Defaults to 5m when unset.
+                  is refreshed. Defaults to 5m when unset. Must be at least 10s
+                  (MinCheckInterval); the operator clamps stored objects that predate this
+                  floor to it at runtime.
                 type: string
               paused:
                 description: Paused prevents the controller from starting new adapter
@@ -77,8 +79,13 @@ spec:
                       description: Enabled gates execution of this family.
                       type: boolean
                     labelSelector:
-                      description: LabelSelector narrows this family to resources
-                        matching the selector.
+                      description: |-
+                        LabelSelector narrows this family to resources matching the selector.
+                        Selector structure and label syntax are validated at reconcile time and
+                        reported through the Accepted condition (a CEL admission rule for the
+                        structural checks exceeds the API server's per-CRD cost budget, because
+                        the imported LabelSelector schema carries no size bounds the estimator
+                        could use).
                       properties:
                         matchExpressions:
                           description: matchExpressions is a list of label selector
@@ -126,33 +133,71 @@ spec:
                     namespaces:
                       description: |-
                         Namespaces narrows this family to resources in specific namespaces. Empty
-                        means all namespaces the adapter can read.
+                        means all namespaces the adapter can read. Each entry must be a valid
+                        namespace name (DNS-1123 label); at most 64 entries.
                       items:
+                        maxLength: 63
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
+                      maxItems: 64
                       type: array
                     thresholds:
                       additionalProperties:
+                        description: |-
+                          ThresholdValue is one adapter threshold knob value. It is an ordinary
+                          string on the wire; the MaxLength bound exists so the API server's CEL cost
+                          estimator has a real input size for the threshold shape rules below (an
+                          unbounded map value string prices those rules out of the per-CRD budget).
+                        maxLength: 64
                         type: string
                       description: |-
                         Thresholds carries adapter-specific string knobs, such as warnDays or
-                        failDays. Adapter documentation defines the supported keys.
+                        failDays. Adapter documentation defines the supported keys; unknown keys
+                        are never rejected at admission. Keys documented as numeric are
+                        shape-checked at admission: warnDays and failDays must be 1-4 digit
+                        integers, warnRatio and failRatio must be percentages between 0 and 100
+                        with at most two decimals and an optional trailing '%' (range and
+                        cross-key semantics stay with the adapter). At most 16 keys.
+                      maxProperties: 16
                       type: object
+                      x-kubernetes-validations:
+                      - message: threshold keys must be 1-63 alphanumerics with interior
+                          '-' or '_'
+                        rule: self.all(k, k.matches('^[a-zA-Z0-9]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?$'))
+                      - message: warnDays and failDays must be whole numbers of days
+                          (e.g. "30")
+                        rule: self.all(k, !(k in ['warnDays','failDays']) || self[k].matches('^[0-9]{1,4}$'))
+                      - message: warnRatio and failRatio must be percentages between
+                          0 and 100 with at most two decimals (e.g. "99.5" or "99.5%")
+                        rule: self.all(k, !(k in ['warnRatio','failRatio']) || self[k].matches('^[0-9]{1,3}([.][0-9]{1,2})?%?$'))
                   type: object
                 description: |-
                   Policy configures adapter-defined check families. A missing or empty policy
-                  leaves family selection to the adapter defaults.
+                  leaves family selection to the adapter defaults. Keys are adapter family
+                  names: 1-63 lowercase alphanumerics with interior '-' or '_' (e.g.
+                  system_health). Whether a well-formed key names a family the selected
+                  adapter actually supports is judged at reconcile time via the Accepted
+                  condition.
+                maxProperties: 32
                 type: object
+                x-kubernetes-validations:
+                - message: policy keys must be 1-63 lowercase alphanumerics with interior
+                    '-' or '_'
+                  rule: self.all(k, k.matches('^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?$'))
               timeout:
-                description: Timeout bounds a single adapter run.
+                description: |-
+                  Timeout bounds a single adapter run. Must be at least 1s
+                  (MinCheckTimeout); the operator clamps stored objects that predate this
+                  floor to it at runtime.
                 type: string
             required:
             - addonType
             type: object
             x-kubernetes-validations:
-            - message: timeout must be a positive duration
-              rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
-            - message: interval must be a positive duration
-              rule: '!has(self.interval) || duration(self.interval) > duration(''0s'')'
+            - message: timeout must be at least 1s
+              rule: '!has(self.timeout) || duration(self.timeout) >= duration(''1s'')'
+            - message: interval must be at least 10s
+              rule: '!has(self.interval) || duration(self.interval) >= duration(''10s'')'
             - message: timeout must not exceed interval
               rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
                 <= duration(self.interval)'
