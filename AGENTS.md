@@ -46,6 +46,7 @@ All workflows are wrapped in tasks; never invoke `controller-gen` / `kustomize`
 - `go -C tools tool task staticcheck`: honnef.co/go/tools `staticcheck ./...`.
 - `go -C tools tool task vuln`: `govulncheck ./...`.
 - `go -C tools tool task ci`: full local CI (lint, test, staticcheck, vuln, build).
+- `go -C tools tool task crd-compat`: diff `config/crd/bases` against the latest release tag (crdify) and fail on unsanctioned incompatible schema changes; overrides live in `.crd-compat-allowlist.yaml`.
 - `go -C tools tool task build`: `go build -o bin/manager cmd/main.go`.
 - `go -C tools tool task run`: run the manager from your host against the current kubeconfig context.
 - `go -C tools tool task install` / `uninstall`: apply or remove CRDs in the current cluster.

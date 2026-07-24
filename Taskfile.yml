@@ -100,6 +100,11 @@ tasks:
     cmds:
       - ./scripts/check-version-lockstep.sh
 
+  crd-compat:
+    desc: Fail if config/crd/bases carries an unsanctioned incompatible schema change vs the latest release tag (skaphos/fathom#152; override via .crd-compat-allowlist.yaml)
+    cmds:
+      - ./scripts/check-crd-compat.sh
+
   verify-alert-rules:
     desc: Render the opt-in prometheus components (and the default overlay with them disabled) so YAML/kustomize breakage in the shipped alert rules fails CI (skaphos/fathom#154)
     cmds:
@@ -508,6 +513,7 @@ tasks:
     cmds:
       - task: verify-version-lockstep
       - task: verify-alert-rules
+      - task: crd-compat
       - task: lint
       - task: test
       - task: staticcheck

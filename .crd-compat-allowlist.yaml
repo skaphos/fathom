@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# Sanctioned CRD schema incompatibilities vs. the current release baseline,
+# consumed by scripts/check-crd-compat.sh (the crd-compat CI gate).
+#
+# Every entry sanctions gate findings on one CRD property path and must cite a
+# reason and a tracking issue. `crd` is the CRD's metadata.name; `path` is the
+# property path exactly as crdify reports it (e.g. ^.spec.interval), or "*" to
+# sanction every finding on the CRD (discouraged — reserve for a new API
+# version). Entries that no longer match any finding are reported as STALE:
+# prune them once a release containing the sanctioned change becomes the
+# baseline. Format restriction: a flat YAML list of flat `key: value` mappings
+# — the gate's parser deliberately understands nothing fancier.
+#
+# All current entries sanction the pre-1.0 v1alpha1 validation hardening from
+# https://github.com/skaphos/fathom/issues/152 (plus one node-agent path bound
+# that landed after v0.4.1), which is exactly the alpha-churn window the API
+# versioning standard reserves for schema tightening.
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec
+  reason: interval/timeout CEL floors raised from >0s to >=10s / >=1s (sanctioned v1alpha1 churn)
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec.policy
+  reason: policy family cap (32) and family-key format rule added
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec.policy.additionalProperties.namespaces
+  reason: namespaces capped at 64 entries
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec.policy.additionalProperties.namespaces.items
+  reason: namespace entries bounded to DNS-1123 labels (maxLength 63 + pattern)
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec.policy.additionalProperties.thresholds
+  reason: thresholds capped at 16 keys with key-format and numeric shape rules
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: addonchecks.fathom.skaphos.io
+  path: ^.spec.policy.additionalProperties.thresholds.additionalProperties
+  reason: threshold values bounded to 64 chars (ThresholdValue type, CEL cost budget)
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: nodecertificatechecks.fathom.skaphos.io
+  path: ^.spec
+  reason: interval/timeout CEL floors raised from >0s to >=10s / >=1s (sanctioned v1alpha1 churn)
+  issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: nodecertificatechecks.fathom.skaphos.io
+  path: ^.spec.paths.items
+  reason: path entries bounded to 512 chars in post-v0.4.1 node-agent hardening (predates this gate)
+  issue: https://github.com/skaphos/fathom/issues/152
