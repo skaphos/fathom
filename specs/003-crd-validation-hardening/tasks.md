@@ -20,7 +20,7 @@ independent — any one can ship alone as an increment.
 
 **Purpose**: Confirm a clean baseline so schema diffs and test failures are attributable to this feature.
 
-- [ ] T001 Verify clean baseline: run `go -C tools tool task manifests` then `go -C tools tool task test` at branch tip and confirm green with no generated drift (`git status` clean under `config/crd/bases/` and `docs/reference/`)
+- [X] T001 Verify clean baseline: run `go -C tools tool task manifests` then `go -C tools tool task test` at branch tip and confirm green with no generated drift (`git status` clean under `config/crd/bases/` and `docs/reference/`)
 
 ---
 
@@ -47,17 +47,17 @@ rejection/acceptance) and §4 (clamp signal on a legacy object).
 
 ### Implementation for User Story 1
 
-- [ ] T002 [P] [US1] Add exported floor constants `MinCheckInterval = 10 * time.Second` and `MinCheckTimeout = time.Second` with intent comments in new file `api/v1alpha1/validation.go` (SPDX header per `hack/boilerplate.go.txt`)
-- [ ] T003 [US1] Replace the `> duration('0s')` XValidation rules with `>= duration('10s')` (interval) and `>= duration('1s')` (timeout) on `AddonCheckSpec` in `api/v1alpha1/addoncheck_types.go`, keeping the `timeout <= interval` rule; update the field doc comments to state the floors (depends on T002 for the documented constant names)
-- [ ] T004 [P] [US1] Same floor-rule replacement and doc-comment update on `NodeCertificateCheckSpec` in `api/v1alpha1/nodecertificatecheck_types.go`
-- [ ] T005 [US1] Regenerate: `go -C tools tool task manifests` and `go -C tools tool task docs:api-ref`; commit regenerated `config/crd/bases/*.yaml` and `docs/reference/api.md` (depends on T003, T004)
-- [ ] T006 [P] [US1] Schema↔constant drift test in `api/v1alpha1/validation_test.go` (external `v1alpha1_test` package): parse the generated `config/crd/bases/fathom.skaphos.io_addonchecks.yaml` and `..._nodecertificatechecks.yaml` and assert the CEL rule strings embed the durations from `MinCheckInterval`/`MinCheckTimeout` (depends on T005)
-- [ ] T007 [P] [US1] envtest admission matrix for AddonCheck floors in `internal/controller/addoncheck_admission_test.go`: table-driven create/update cases per the contract (1ms/9s/10s/unset interval; 500ms/999ms/1s timeout; `timeout: 5s, interval: 5m` accepted; cross-field rule still enforced; rejection messages name field + minimum) (depends on T005)
-- [ ] T008 [P] [US1] envtest admission matrix for NodeCertificateCheck floors in `internal/controller/nodecertificatecheck_admission_test.go`, same boundary structure plus proof existing rules (paths allowlist, warnDays ≥ criticalDays) still hold (depends on T005)
-- [ ] T009 [US1] Clamp in AddonCheck cadence helpers `addonCheckInterval`/`addonCheckTimeout` in `internal/controller/addoncheck_controller.go`: raise set-but-sub-floor values to `v1alpha1.MinCheckInterval`/`MinCheckTimeout`; reconciler emits Warning Event reason `CadenceClamped` and sets `Accepted=True` reason `SpecClamped` with the contract's message format (field, configured, effective); `InvalidPolicy` still outranks `SpecClamped`; unit tests for helpers + reconciler-level Event/condition assertions in `internal/controller/addoncheck_controller_test.go`
-- [ ] T010 [P] [US1] Same clamp + Event/condition in `internal/controller/nodecertificatecheck_controller.go` (`nodeCertInterval`/`nodeCertTimeout`), ensuring the clamped interval feeds the node-agent DaemonSet `--interval` argument; tests in `internal/controller/nodecertificatecheck_controller_test.go`
-- [ ] T011 [P] [US1] Samples-regression envtest spec in `internal/controller/samples_admission_test.go`: decode and create every `config/samples/fathom_v1alpha1_*.yaml`, assert all admit unchanged (FR-008; also guards US2 automatically once its rules land) (depends on T005)
-- [ ] T012 [P] [US1] e2e admission smoke spec (core tier, no addon needed) in `test/e2e/crd_validation_test.go`: apply a sub-floor AddonCheck against the kind cluster, assert API-server rejection message (depends on T005)
+- [X] T002 [P] [US1] Add exported floor constants `MinCheckInterval = 10 * time.Second` and `MinCheckTimeout = time.Second` with intent comments in new file `api/v1alpha1/validation.go` (SPDX header per `hack/boilerplate.go.txt`)
+- [X] T003 [US1] Replace the `> duration('0s')` XValidation rules with `>= duration('10s')` (interval) and `>= duration('1s')` (timeout) on `AddonCheckSpec` in `api/v1alpha1/addoncheck_types.go`, keeping the `timeout <= interval` rule; update the field doc comments to state the floors (depends on T002 for the documented constant names)
+- [X] T004 [P] [US1] Same floor-rule replacement and doc-comment update on `NodeCertificateCheckSpec` in `api/v1alpha1/nodecertificatecheck_types.go`
+- [X] T005 [US1] Regenerate: `go -C tools tool task manifests` and `go -C tools tool task docs:api-ref`; commit regenerated `config/crd/bases/*.yaml` and `docs/reference/api.md` (depends on T003, T004)
+- [X] T006 [P] [US1] Schema↔constant drift test in `api/v1alpha1/validation_test.go` (external `v1alpha1_test` package): parse the generated `config/crd/bases/fathom.skaphos.io_addonchecks.yaml` and `..._nodecertificatechecks.yaml` and assert the CEL rule strings embed the durations from `MinCheckInterval`/`MinCheckTimeout` (depends on T005)
+- [X] T007 [P] [US1] envtest admission matrix for AddonCheck floors in `internal/controller/addoncheck_admission_test.go`: table-driven create/update cases per the contract (1ms/9s/10s/unset interval; 500ms/999ms/1s timeout; `timeout: 5s, interval: 5m` accepted; cross-field rule still enforced; rejection messages name field + minimum) (depends on T005)
+- [X] T008 [P] [US1] envtest admission matrix for NodeCertificateCheck floors in `internal/controller/nodecertificatecheck_admission_test.go`, same boundary structure plus proof existing rules (paths allowlist, warnDays ≥ criticalDays) still hold (depends on T005)
+- [X] T009 [US1] Clamp in AddonCheck cadence helpers `addonCheckInterval`/`addonCheckTimeout` in `internal/controller/addoncheck_controller.go`: raise set-but-sub-floor values to `v1alpha1.MinCheckInterval`/`MinCheckTimeout`; reconciler emits Warning Event reason `CadenceClamped` and sets `Accepted=True` reason `SpecClamped` with the contract's message format (field, configured, effective); `InvalidPolicy` still outranks `SpecClamped`; unit tests for helpers + reconciler-level Event/condition assertions in `internal/controller/addoncheck_controller_test.go`
+- [X] T010 [P] [US1] Same clamp + Event/condition in `internal/controller/nodecertificatecheck_controller.go` (`nodeCertInterval`/`nodeCertTimeout`), ensuring the clamped interval feeds the node-agent DaemonSet `--interval` argument; tests in `internal/controller/nodecertificatecheck_controller_test.go`
+- [X] T011 [P] [US1] Samples-regression envtest spec in `internal/controller/samples_admission_test.go`: decode and create every `config/samples/fathom_v1alpha1_*.yaml`, assert all admit unchanged (FR-008; also guards US2 automatically once its rules land) (depends on T005)
+- [X] T012 [P] [US1] e2e admission smoke spec (core tier, no addon needed) in `test/e2e/crd_validation_test.go`: apply a sub-floor AddonCheck against the kind cluster, assert API-server rejection message (depends on T005)
 
 **Checkpoint**: US1 fully functional — floors enforced at admission, clamp observable, samples still admit.
 

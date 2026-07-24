@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -197,13 +198,21 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 			check.Status.LastRunTime, err)
 	}()
 	check.Status.ObservedGeneration = check.Generation
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+	accepted := metav1.Condition{
 		Type:               nodeCertConditionAccepted,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: check.Generation,
 		Reason:             "SpecAccepted",
 		Message:            "NodeCertificateCheck specification has been accepted for reconciliation.",
-	})
+	}
+	// A stored sub-floor cadence (pre-floor object) runs clamped, not rejected:
+	// the cadence helpers raise it to the api/v1alpha1 floors, and the Accepted
+	// condition says so (observeCheck turns the transition into a Warning event).
+	if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
+		accepted.Reason = conditionReasonSpecClamped
+		accepted.Message = strings.Join(msgs, "; ") + "."
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, accepted)
 
 	interval := nodeCertInterval(&check)
 

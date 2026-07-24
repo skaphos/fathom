@@ -61,7 +61,9 @@ spec:
               interval:
                 description: |-
                   Interval is the cadence at which the adapter re-runs and the HealthReport
-                  is refreshed. Defaults to 5m when unset.
+                  is refreshed. Defaults to 5m when unset. Must be at least 10s
+                  (MinCheckInterval); the operator clamps stored objects that predate this
+                  floor to it at runtime.
                 type: string
               paused:
                 description: Paused prevents the controller from starting new adapter
@@ -143,16 +145,19 @@ spec:
                   leaves family selection to the adapter defaults.
                 type: object
               timeout:
-                description: Timeout bounds a single adapter run.
+                description: |-
+                  Timeout bounds a single adapter run. Must be at least 1s
+                  (MinCheckTimeout); the operator clamps stored objects that predate this
+                  floor to it at runtime.
                 type: string
             required:
             - addonType
             type: object
             x-kubernetes-validations:
-            - message: timeout must be a positive duration
-              rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
-            - message: interval must be a positive duration
-              rule: '!has(self.interval) || duration(self.interval) > duration(''0s'')'
+            - message: timeout must be at least 1s
+              rule: '!has(self.timeout) || duration(self.timeout) >= duration(''1s'')'
+            - message: interval must be at least 10s
+              rule: '!has(self.interval) || duration(self.interval) >= duration(''10s'')'
             - message: timeout must not exceed interval
               rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
                 <= duration(self.interval)'

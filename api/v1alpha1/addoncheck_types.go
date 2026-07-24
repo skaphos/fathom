@@ -32,8 +32,8 @@ type AddonCheckFamilyPolicy struct {
 }
 
 // AddonCheckSpec defines the desired state of AddonCheck.
-// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) > duration('0s')",message="timeout must be a positive duration"
-// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) > duration('0s')",message="interval must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) >= duration('1s')",message="timeout must be at least 1s"
+// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) >= duration('10s')",message="interval must be at least 10s"
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
 type AddonCheckSpec struct {
 	// AddonType selects the adapter responsible for this check, such as
@@ -43,11 +43,15 @@ type AddonCheckSpec struct {
 	AddonType string `json:"addonType"`
 
 	// Interval is the cadence at which the adapter re-runs and the HealthReport
-	// is refreshed. Defaults to 5m when unset.
+	// is refreshed. Defaults to 5m when unset. Must be at least 10s
+	// (MinCheckInterval); the operator clamps stored objects that predate this
+	// floor to it at runtime.
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 
-	// Timeout bounds a single adapter run.
+	// Timeout bounds a single adapter run. Must be at least 1s
+	// (MinCheckTimeout); the operator clamps stored objects that predate this
+	// floor to it at runtime.
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 

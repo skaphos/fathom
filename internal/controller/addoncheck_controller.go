@@ -546,21 +546,24 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log
 
 func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return check.Spec.Timeout.Duration
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
 	return defaultAddonCheckTimeout
 }
 
 func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return check.Spec.Interval.Duration
+		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
 	return defaultAddonCheckInterval
 }
 
 // setAddonCheckAccepted records the Accepted condition from policy validation:
 // True/SpecAccepted when policyErrs is empty, otherwise False/InvalidPolicy
-// carrying the (deterministically ordered) list of problems.
+// carrying the (deterministically ordered) list of problems. A stored
+// sub-floor cadence (pre-floor object) downgrades a clean acceptance to
+// True/SpecClamped naming the clamped fields — an invalid policy outranks the
+// clamp notice because it stops the check entirely.
 func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string) {
 	cond := metav1.Condition{
 		Type:               addonCheckConditionAccepted,
@@ -573,6 +576,9 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 		cond.Status = metav1.ConditionFalse
 		cond.Reason = "InvalidPolicy"
 		cond.Message = "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + "."
+	} else if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
+		cond.Reason = conditionReasonSpecClamped
+		cond.Message = strings.Join(msgs, "; ") + "."
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, cond)
 }
