@@ -32,4 +32,4 @@ spec:
         # release-please-config.json and scripts/check-version-lockstep.sh) so
         # e2e kind loads (E2E_PROBE_IMG) and this sample pin match. Override for
         # private registries only when deliberately pinning elsewhere.
-        probeImage: "ghcr.io/skaphos/fathom-probe:v0.4.1" # x-release-please-version
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.5.0" # x-release-please-version
