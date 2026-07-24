@@ -216,6 +216,12 @@ func (a Adapter) checkSystemHealth(ctx context.Context, c client.Client, policy 
 	if daemonSet == nil {
 		return checks
 	}
+	if daemonSet.Status.DesiredNumberScheduled == 0 {
+		// Zero-scheduled is graded Warn above (no matching nodes). Pod and
+		// coverage checks would pile Fail results on top and flip the family
+		// to Fail, contradicting that grading — stop at the Warn.
+		return checks
+	}
 	pods, podChecks := a.checkPods(ctx, c, daemonSet, restartWarnCount)
 	checks = append(checks, podChecks...)
 	checks = append(checks, a.checkNodeCoverage(ctx, c, daemonSet, pods))

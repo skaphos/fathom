@@ -216,6 +216,29 @@ func TestRun_DaemonSetRolloutInProgressWarns(t *testing.T) {
 	assertHasOutcome(t, result.Checks, "DaemonSet", defaultDaemonSetName, adapter.OutcomeWarn, "rollout is in progress")
 }
 
+func TestRun_ZeroScheduledDaemonSetWarnsWithoutCoverageFails(t *testing.T) {
+	// Regression: zero-scheduled is graded Warn by the DaemonSet check; the
+	// pod and coverage checks must not run afterwards and pile Fail results
+	// onto the family (a schedulable node with no cache pod would otherwise
+	// register as a coverage gap).
+	objects := []clientObject{daemonSetWithStatus(0, 0), readyNode("node-a")}
+	a := adapterWithLauncher(passingDNSLauncher())
+	result, err := a.Run(context.Background(), adapter.Request{
+		Client: newFakeClient(t, objects...),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{Kind: "AddonCheck", Namespace: "default", Name: "node-local-dns"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	assertHasOutcome(t, result.Checks, "DaemonSet", defaultDaemonSetName, adapter.OutcomeWarn, "schedules zero pods")
+	for _, c := range result.Checks {
+		if c.Family == FamilySystemHealth && c.Outcome == adapter.OutcomeFail {
+			t.Fatalf("system_health emitted Fail %q for %s/%s; zero-scheduled must stop at the Warn", c.Summary, c.TargetRef.Kind, c.TargetRef.Name)
+		}
+	}
+}
+
 func TestRun_SystemHealthSupportsRenamedDaemonSet(t *testing.T) {
 	daemonSet := daemonSetWithStatus(1, 1)
 	daemonSet.Name = "node-local-dns-renamed"
