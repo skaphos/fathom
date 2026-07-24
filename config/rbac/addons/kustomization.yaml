@@ -14,6 +14,7 @@ resources:
 - addon-external-secrets.yaml
 - addon-istio.yaml
 - addon-keda.yaml
+- addon-kube-state-metrics.yaml
 - addon-kured.yaml
 - addon-metrics-server.yaml
 - addon-node-local-dns.yaml

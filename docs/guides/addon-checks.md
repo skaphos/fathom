@@ -21,7 +21,7 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | node-local-dns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd | azure-workload-identity>
+  addonType: <cert-manager | coredns | node-local-dns | external-secrets | cilium | external-dns | metrics-server | kube-state-metrics | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd | azure-workload-identity>
   interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
@@ -82,6 +82,7 @@ runs.
 | [`cilium`](#cilium) | `control_plane_health`, `agent_health`, `crd_health` | Cilium operator, per-node agent, and CRDs |
 | [`external-dns`](#external-dns) | `system_health`, `crd_health` | external-dns controller workloads + the opt-in DNSEndpoint CRD |
 | [`metrics-server`](#metrics-server) | `system_health`, `api_availability` | metrics-server workloads + the aggregated resource-metrics APIService |
+| [`kube-state-metrics`](#kube-state-metrics) | `system_health`, `metrics_endpoint` | the KSM exporter workload (every shard, if sharded) + a real scrape of its `/metrics` and self-telemetry endpoints |
 | [`envoy-gateway`](#envoy-gateway) | `system_health`, `crd_health`, `gateway_status` | Envoy Gateway controller, Gateway API CRDs, and Gateway conditions |
 | [`istio`](#istio) | `system_health`, `ztunnel_health`, `istio_cni_health`, `crd_health` | istiod + its admission webhooks, the ambient data plane, and core mesh CRDs |
 | [`keda`](#keda) | `system_health`, `crd_health`, `scaling_health` | KEDA operator/metrics-apiserver/webhook workloads, CRDs, and ScaledObject Ready/Paused state |
@@ -151,7 +152,8 @@ spec:
 | `system_health` | CoreDNS Deployment and pods, the `kube-dns` Service and its EndpointSlices, and (optionally) a node-count autoscaler Deployment. | `deploymentName`, `serviceName`, `autoscalerName` (empty disables the autoscaler check), `restartWarnCount` |
 | `dns_resolution` | Launches a short-lived **probe pod** per target *in the AddonCheck's namespace* and records each target's outcome plus resolver latency — so DNS is resolved with workload topology, not the operator's. | `targets` (comma-separated names), `probeImage` (per-check override) |
 
-`dns_resolution` is the one add-on family that runs out-of-process. See
+`dns_resolution` runs out-of-process (as does kube-state-metrics'
+`metrics_endpoint`). See
 [Probe image](#probe-image) for how the image is resolved, and
 [the probe-pod model](../architecture.md#probe-pod-model) for the why.
 
@@ -302,6 +304,42 @@ unreachable metrics-server keeps its pods `Ready` while the APIService goes
 `Unavailable` — taking `kubectl top` and HPA scaling with it. Both the
 Deployment and the APIService are required; a missing APIService object is a
 `Fail` with the `absent` detail.
+
+### kube-state-metrics
+
+```yaml
+spec:
+  addonType: kube-state-metrics
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        workloadName: "kube-state-metrics"
+        restartWarnCount: "3"
+    metrics_endpoint:
+      enabled: true
+      thresholds:
+        serviceName: "kube-state-metrics"
+        metricsPort: "8080"
+        telemetryPort: "8081"      # "0" disables the self-telemetry check
+        expectedFamilies: "kube_node_info,kube_pod_info"
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The kube-state-metrics workload and its pods. Standard installs run a Deployment; the Helm chart's autosharding mode runs a same-named StatefulSet, which the adapter falls back to — and **every shard** must be ready (a not-ready shard silently drops its slice of every `kube_*` series). | `workloadName` (follows the Helm release fullname), `restartWarnCount` |
+| `metrics_endpoint` | Launches a short-lived **probe pod** per endpoint *in the AddonCheck's namespace* to scrape the Service: the main `/metrics` port must return `200` with the `expectedFamilies` metric families present, and the self-telemetry port must serve KSM's own metrics (`telemetryFamilies`, default `kube_state_metrics_build_info`). | `serviceName`, `metricsPort`, `telemetryPort` (`"0"` disables), `expectedFamilies`, `telemetryFamilies` (comma-separated), `probeImage`, `probeNamespace` |
+
+`metrics_endpoint` is the check that matters: a KSM whose pods are `Ready` but
+whose endpoint serves an empty or partial body silently breaks every alert
+built on `kube_*` series. The workload and Service are required (`Fail` with
+the `absent` detail when missing). The self-telemetry scrape is `Skipped` —
+not failed — when the Service does not expose the telemetry port (the Helm
+chart only exposes it with `selfMonitor.enabled`); on sharded installs,
+consider relaxing `expectedFamilies`, since the Service round-robins to a
+single shard that serves only its object slice.
 
 ### Envoy Gateway
 
@@ -665,7 +703,7 @@ are in the `Accepted` condition message. The full status contract is in
 
 | Condition reason | Meaning | Fix |
 | --- | --- | --- |
-| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are `cert-manager`, `coredns`, `node-local-dns`, `external-secrets`, `cilium`, `external-dns`, `metrics-server`, `envoy-gateway`, `istio`, `keda`, `vpa`, `descheduler`, `kured`. |
+| `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are the `addonType`s in the [adapter catalog](#adapter-catalog). |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
 | `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
 | `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |

@@ -344,6 +344,35 @@ addons:
     - validatingwebhookconfigurations
     verbs:
     - get
+- name: kube-state-metrics
+  rules:
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    - statefulsets
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    verbs:
+    - create
+    - delete
 - name: kured
   rules:
   - apiGroups:

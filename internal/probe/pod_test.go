@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package probe
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -148,6 +149,41 @@ func TestPodPinsResolverWhenDNSNameserversSet(t *testing.T) {
 	}
 	if unpinned.Spec.DNSPolicy != "" || unpinned.Spec.DNSConfig != nil {
 		t.Fatalf("unpinned pod must keep default DNS policy: got policy %q, config %#v", unpinned.Spec.DNSPolicy, unpinned.Spec.DNSConfig)
+	}
+}
+
+// TestPodBuildsHTTPGetArgs pins the http-get arg contract the adapter relies
+// on: the URL rides -target and the expected metric families are joined into
+// a single -expect value (omitted entirely when none are declared).
+func TestPodBuildsHTTPGetArgs(t *testing.T) {
+	pod, err := Pod(Request{
+		Name:      "scrape",
+		Namespace: "ns",
+		Image:     "image",
+		Mode:      ModeHTTPGet,
+		Target:    "http://svc.ns.svc:8080/metrics",
+		Expect:    []string{"kube_node_info", "kube_pod_info"},
+	})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	args := strings.Join(pod.Spec.Containers[0].Args, " ")
+	for _, want := range []string{
+		"-mode http-get",
+		"-target http://svc.ns.svc:8080/metrics",
+		"-expect kube_node_info,kube_pod_info",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing %q", args, want)
+		}
+	}
+
+	noExpect, err := Pod(Request{Name: "scrape", Namespace: "ns", Image: "image", Mode: ModeHTTPGet, Target: "http://svc.ns.svc:8080/metrics"})
+	if err != nil {
+		t.Fatalf("Pod (no expect): %v", err)
+	}
+	if strings.Contains(strings.Join(noExpect.Spec.Containers[0].Args, " "), "-expect") {
+		t.Error("-expect must be omitted when no families are declared")
 	}
 }
 

@@ -11,8 +11,11 @@ import (
 	"flag"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -186,6 +189,175 @@ func TestRunDispatchesToDNS(t *testing.T) {
 	withFlagReset(t, []string{"probe", "-mode=dns", "-target=localhost", "-timeout=2s"})
 	if err := run(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunHTTPGetRequiresTarget(t *testing.T) {
+	if err := runHTTPGet(context.Background(), "", ""); err == nil {
+		t.Fatal("expected error for empty target, got nil")
+	}
+}
+
+func TestRunHTTPGetRejectsInvalidURL(t *testing.T) {
+	// One result per probe run: runHTTPGet must emit the Error result itself
+	// and return nil, or main() would write a second result over the
+	// termination log and drop the Details map.
+	got := captureResult(t, func() {
+		if err := runHTTPGet(context.Background(), "not a url", ""); err != nil {
+			t.Errorf("runHTTPGet must return nil after emitting a result, got %v", err)
+		}
+	})
+	if got.Outcome != "Error" {
+		t.Fatalf("outcome: got %q, want Error", got.Outcome)
+	}
+}
+
+func TestRunHTTPGetPassesWithExpectedFamilies(t *testing.T) {
+	body := "# HELP kube_node_info Information about a cluster node.\n" +
+		"# TYPE kube_node_info gauge\n" +
+		"kube_node_info{node=\"a\"} 1\n" +
+		"kube_pod_info{pod=\"p\",namespace=\"default\"} 1\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	got := captureResult(t, func() {
+		if err := runHTTPGet(context.Background(), srv.URL, "kube_node_info,kube_pod_info"); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if got.Outcome != "Pass" {
+		t.Fatalf("outcome: got %q (summary %q), want Pass", got.Outcome, got.Summary)
+	}
+	if got.Details["statusCode"] != "200" {
+		t.Errorf("statusCode detail: got %q", got.Details["statusCode"])
+	}
+	if got.Details["sampleLines"] != "2" {
+		t.Errorf("sampleLines detail: got %q, want 2", got.Details["sampleLines"])
+	}
+}
+
+func TestRunHTTPGetFailsOnMissingFamily(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "kube_node_info{node=\"a\"} 1\n")
+	}))
+	defer srv.Close()
+
+	got := captureResult(t, func() {
+		if err := runHTTPGet(context.Background(), srv.URL, "kube_node_info,kube_pod_info"); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if got.Outcome != "Fail" {
+		t.Fatalf("outcome: got %q, want Fail", got.Outcome)
+	}
+	if got.Details["missingFamilies"] != "kube_pod_info" {
+		t.Errorf("missingFamilies detail: got %q, want kube_pod_info", got.Details["missingFamilies"])
+	}
+}
+
+func TestRunHTTPGetFailsOnNon200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	got := captureResult(t, func() {
+		if err := runHTTPGet(context.Background(), srv.URL, ""); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if got.Outcome != "Fail" {
+		t.Fatalf("outcome: got %q, want Fail", got.Outcome)
+	}
+	if got.Details["statusCode"] != "500" {
+		t.Errorf("statusCode detail: got %q, want 500", got.Details["statusCode"])
+	}
+}
+
+func TestRunHTTPGetFailsOnUnreachableEndpoint(t *testing.T) {
+	// A refused dial is the outage the check reports on: Fail, not Error —
+	// mirroring runDNS/runTCPConnect so a scrape outage cannot mask genuine
+	// Fails elsewhere in the rollup (cf. #158 for DNS).
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got := captureResult(t, func() {
+		if err := runHTTPGet(ctx, url, ""); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if got.Outcome != "Fail" {
+		t.Fatalf("outcome: got %q, want Fail", got.Outcome)
+	}
+}
+
+func TestRunHTTPGetFailsOnEmptyBody(t *testing.T) {
+	// 200 with no samples means "scrapeable but blind" — exactly the silent
+	// failure mode a metrics_endpoint check exists to catch.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+
+	got := captureResult(t, func() {
+		if err := runHTTPGet(context.Background(), srv.URL, ""); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+	if got.Outcome != "Fail" {
+		t.Fatalf("outcome: got %q, want Fail", got.Outcome)
+	}
+	if !strings.Contains(got.Summary, "no metric samples") {
+		t.Errorf("summary: got %q", got.Summary)
+	}
+}
+
+func TestScanMetricFamilies(t *testing.T) {
+	t.Parallel()
+
+	body := "# HELP a_metric help\n# TYPE a_metric counter\na_metric 1\nb_metric{l=\"v\"} 2\n\n# odd comment\n"
+	tests := []struct {
+		name        string
+		expected    []string
+		wantMissing string
+		wantSamples int
+	}{
+		{"no expectations", nil, "", 2},
+		{"all present", []string{"a_metric", "b_metric"}, "", 2},
+		{"header-only match", []string{"a_metric"}, "", 2},
+		{"one missing", []string{"a_metric", "c_metric"}, "c_metric", 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			missing, samples, truncated, err := scanMetricFamilies(strings.NewReader(body), tc.expected)
+			if err != nil {
+				t.Fatalf("scanMetricFamilies: %v", err)
+			}
+			if truncated {
+				t.Fatal("unexpected truncation")
+			}
+			if got := join(missing); got != tc.wantMissing {
+				t.Errorf("missing: got %q, want %q", got, tc.wantMissing)
+			}
+			if samples != tc.wantSamples {
+				t.Errorf("samples: got %d, want %d", samples, tc.wantSamples)
+			}
+		})
+	}
+}
+
+func TestSplitComma(t *testing.T) {
+	t.Parallel()
+
+	if got := splitComma(""); got != nil {
+		t.Errorf("splitComma(\"\") = %v, want nil", got)
+	}
+	if got := join(splitComma(" a, b ,,c ")); got != "a,b,c" {
+		t.Errorf("splitComma trim: got %q, want a,b,c", got)
 	}
 }
 

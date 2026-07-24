@@ -1,0 +1,39 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: kube-state-metrics-sample
+spec:
+  addonType: kube-state-metrics
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        # The workload follows the Helm release fullname. Standard installs run
+        # a Deployment; autosharded installs run a same-named StatefulSet — the
+        # adapter checks the Deployment first and falls back to the StatefulSet.
+        workloadName: "kube-state-metrics"
+        restartWarnCount: "3"
+    metrics_endpoint:
+      enabled: true
+      thresholds:
+        serviceName: "kube-state-metrics"
+        metricsPort: "8080"
+        # KSM's self-telemetry port. Skipped automatically when the Service
+        # does not expose it (the Helm chart only does with selfMonitor
+        # enabled); set to "0" to silence the skip.
+        telemetryPort: "8081"
+        # Metric families the main /metrics scrape must serve. Sharded installs
+        # may want to relax this: each shard serves only its object slice.
+        expectedFamilies: "kube_node_info,kube_pod_info"
+        # The scrape runs as a short-lived probe Pod in the AddonCheck's
+        # namespace (or probeNamespace threshold). The probe image defaults to
+        # the operator-level --probe-image; override per check only when
+        # deliberately pinning elsewhere:
+        # probeImage: "ghcr.io/example/fathom-probe:v0.0.0"

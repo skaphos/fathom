@@ -43,6 +43,8 @@ repositories:
     url: https://kubernetes-sigs.github.io/external-dns/
   - name: metrics-server
     url: https://kubernetes-sigs.github.io/metrics-server/
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
   # Envoy Gateway publishes gateway-helm only to Docker Hub's OCI registry.
   - name: envoyproxy
     url: registry-1.docker.io/envoyproxy
@@ -159,6 +161,28 @@ releases:
       # family asserts Available=True against.
       - args:
           - --kubelet-insecure-tls
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+
+  - name: kube-state-metrics
+    namespace: kube-system
+    labels:
+      addon: kube-state-metrics
+    chart: prometheus-community/kube-state-metrics
+    version: 7.8.1
+    needs:
+      - kube-system/cilium
+    wait: true
+    timeout: 600
+    values:
+      # selfMonitor exposes KSM's self-telemetry port (8081) on the Service —
+      # the endpoint Fathom's metrics_endpoint family scrapes for
+      # kube_state_metrics_build_info alongside the main 8080 /metrics port.
+      # Without it the telemetry check exercises only its Skipped contract.
+      - selfMonitor:
+          enabled: true
         resources:
           requests:
             cpu: 10m

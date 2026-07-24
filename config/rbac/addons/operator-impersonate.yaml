@@ -23,6 +23,7 @@ rules:
   - addon-external-secrets
   - addon-istio
   - addon-keda
+  - addon-kube-state-metrics
   - addon-kured
   - addon-metrics-server
   - addon-node-local-dns

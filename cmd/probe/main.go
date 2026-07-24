@@ -7,14 +7,19 @@ SPDX-License-Identifier: MIT
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -34,11 +39,12 @@ func main() {
 }
 
 func run() error {
-	mode := flag.String("mode", "", "probe mode: dns, tcp-connect, tcp-listen")
-	target := flag.String("target", "", "DNS name or TCP host")
+	mode := flag.String("mode", "", "probe mode: dns, tcp-connect, tcp-listen, http-get")
+	target := flag.String("target", "", "DNS name, TCP host, or http-get URL")
 	port := flag.Int("port", 0, "TCP port")
 	timeout := flag.Duration("timeout", 10*time.Second, "probe timeout")
 	listenAddress := flag.String("listen-address", "0.0.0.0", "address for tcp-listen")
+	expect := flag.String("expect", "", "comma-separated Prometheus metric family names http-get requires in the body")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
@@ -51,6 +57,8 @@ func run() error {
 		return runTCPConnect(ctx, *target, *port)
 	case "tcp-listen":
 		return runTCPListen(ctx, *listenAddress, *port)
+	case "http-get":
+		return runHTTPGet(ctx, *target, *expect)
 	default:
 		return fmt.Errorf("unsupported probe mode %q", *mode)
 	}
@@ -142,6 +150,139 @@ func runTCPListen(ctx context.Context, listenAddress string, port int) error {
 		}
 		_ = conn.Close()
 	}
+}
+
+// maxHTTPBodyBytes bounds how much of an http-get response body is scanned.
+// Metric bodies are streamed line-by-line (never buffered whole), so this cap
+// only guards against an endless or absurdly large response wedging the probe
+// until its deadline. 64MiB comfortably covers kube-state-metrics on large
+// clusters.
+const maxHTTPBodyBytes = 64 << 20
+
+// runHTTPGet fetches target and scans the response as a Prometheus
+// text-exposition document. A network failure, a non-200 status, a body with
+// no metric samples, or a missing expected metric family is precisely the
+// condition a metrics_endpoint check exists to detect, so all of those are
+// Fail — mirroring runDNS/runTCPConnect. Error is reserved for
+// probe-infrastructure faults (an unparseable target URL, a body read error).
+func runHTTPGet(ctx context.Context, target, expect string) error {
+	if target == "" {
+		return errors.New("http-get probe target is required")
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		// One result per probe run: main() writes its own Error result when we
+		// return an error, so emit-and-return-nil keeps the termination-log
+		// contract (a single JSON document with Details intact).
+		writeResult(result{Outcome: "Error", Summary: "http-get target is not a valid URL", Details: map[string]string{"target": target}})
+		return nil
+	}
+
+	started := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		writeResult(result{Outcome: "Error", Summary: "failed to build HTTP request", Details: map[string]string{"target": target, "error": err.Error()}})
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	latency := time.Since(started)
+	details := map[string]string{"target": target, "latencyMillis": strconv.FormatInt(latency.Milliseconds(), 10)}
+	if err != nil {
+		// An unreachable endpoint (refused dial, resolver failure, timeout) is
+		// the outage the check reports on — Fail, not Error, so a real scrape
+		// outage cannot mask genuine Fails elsewhere in the rollup.
+		details["error"] = err.Error()
+		writeResult(result{Outcome: "Fail", Summary: "HTTP request failed", Details: details})
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	details["statusCode"] = strconv.Itoa(resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		writeResult(result{Outcome: "Fail", Summary: "HTTP status is not 200 OK", Details: details})
+		return nil
+	}
+
+	missing, samples, truncated, scanErr := scanMetricFamilies(resp.Body, splitComma(expect))
+	details["sampleLines"] = strconv.Itoa(samples)
+	if truncated {
+		details["truncated"] = "true"
+	}
+	if scanErr != nil {
+		details["error"] = scanErr.Error()
+		writeResult(result{Outcome: "Error", Summary: "failed to read HTTP response body", Details: details})
+		return nil
+	}
+	if len(missing) > 0 {
+		details["missingFamilies"] = join(missing)
+		writeResult(result{Outcome: "Fail", Summary: "expected metric families are missing", Details: details})
+		return nil
+	}
+	if samples == 0 {
+		writeResult(result{Outcome: "Fail", Summary: "metrics endpoint returned no metric samples", Details: details})
+		return nil
+	}
+	writeResult(result{Outcome: "Pass", Summary: "metrics scrape succeeded", Details: details})
+	return nil
+}
+
+// scanMetricFamilies streams a Prometheus text-exposition body line by line,
+// counting sample lines and checking off the expected metric family names as
+// they appear (in `# TYPE`/`# HELP` headers or as the metric name of a sample
+// line). It returns the expected names never seen, in input order. Memory is
+// bounded by the expected list — the full family set is never accumulated.
+func scanMetricFamilies(r io.Reader, expected []string) (missing []string, samples int, truncated bool, err error) {
+	pending := make(map[string]bool, len(expected))
+	for _, name := range expected {
+		pending[name] = true
+	}
+	lr := &io.LimitedReader{R: r, N: maxHTTPBodyBytes + 1}
+	scanner := bufio.NewScanner(lr)
+	scanner.Buffer(make([]byte, 64*1024), 1<<20)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			// "# TYPE <name> <type>" / "# HELP <name> <text>".
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && (fields[1] == "TYPE" || fields[1] == "HELP") {
+				delete(pending, fields[2])
+			}
+			continue
+		}
+		samples++
+		name := line
+		if i := strings.IndexAny(name, "{ "); i >= 0 {
+			name = name[:i]
+		}
+		delete(pending, name)
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		return nil, samples, lr.N <= 0, scanErr
+	}
+	for _, name := range expected {
+		if pending[name] {
+			missing = append(missing, name)
+		}
+	}
+	return missing, samples, lr.N <= 0, nil
+}
+
+// splitComma splits a comma-separated list, trimming whitespace and dropping
+// empty elements. An empty input yields nil.
+func splitComma(list string) []string {
+	if list == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(list, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func writeResult(r result) {
