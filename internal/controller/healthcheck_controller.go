@@ -57,7 +57,7 @@ type HealthCheckReconciler struct {
 	Recorder events.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
