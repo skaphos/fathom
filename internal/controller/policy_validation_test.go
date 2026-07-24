@@ -165,6 +165,70 @@ func TestValidateAddonCheckPolicy_DeterministicOrder(t *testing.T) {
 	}
 }
 
+// TestValidateAddonCheckPolicy_RatioThresholds covers the reserved
+// engine-level ratio keys (#159): valid on every family regardless of what
+// the adapter advertises, with values validated centrally.
+func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
+	advertising := fakeAdvertisingAdapter{
+		fakePolicyAdapter: fakePolicyAdapter{families: []adapter.Family{"system_health"}},
+		keys:              map[adapter.Family][]string{"system_health": {"restartWarnCount"}},
+	}
+	plain := fakePolicyAdapter{families: []adapter.Family{"system_health"}}
+
+	tests := []struct {
+		name         string
+		policy       map[string]fathomv1alpha1.AddonCheckFamilyPolicy
+		adapter      adapter.Adapter
+		wantCount    int
+		wantContains []string
+	}{
+		{
+			"reserved keys accepted on an advertising adapter that does not list them",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"warnRatio": "1", "failRatio": "5%"}}},
+			advertising, 0, nil,
+		},
+		{
+			"reserved keys accepted on a non-advertising adapter",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"failRatio": "2.5"}}},
+			plain, 0, nil,
+		},
+		{
+			"reserved keys coexist with advertised adapter keys",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCount": "3", "failRatio": "5"}}},
+			advertising, 0, nil,
+		},
+		{
+			"non-numeric ratio value rejected, naming family and key",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"failRatio": "banana"}}},
+			plain, 1, []string{`family "system_health" has an invalid ratio threshold: failRatio:`, `"banana"`},
+		},
+		{
+			"out-of-range ratio value rejected",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"warnRatio": "150"}}},
+			plain, 1, []string{`family "system_health" has an invalid ratio threshold: warnRatio:`, `"150"`},
+		},
+		{
+			"ratio values validated even with a nil adapter",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]string{"failRatio": "-1"}}},
+			nil, 1, []string{`family "anything" has an invalid ratio threshold: failRatio:`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateAddonCheckPolicy(checkWithPolicy(tc.policy), tc.adapter)
+			if len(got) != tc.wantCount {
+				t.Fatalf("problems: got %d %v, want %d", len(got), got, tc.wantCount)
+			}
+			joined := strings.Join(got, "\n")
+			for _, sub := range tc.wantContains {
+				if !strings.Contains(joined, sub) {
+					t.Errorf("problems %v missing %q", got, sub)
+				}
+			}
+		})
+	}
+}
+
 func TestSetAddonCheckAccepted(t *testing.T) {
 	check := &fathomv1alpha1.AddonCheck{}
 	check.Generation = 3

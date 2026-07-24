@@ -576,6 +576,13 @@ understands, and the host will reject unknown
 `spec.policy.<family>.thresholds` keys on the `Accepted` condition instead of
 silently ignoring them. Families you leave out of the map are not validated.
 
+Two threshold keys are **reserved for the engine** and never yours to consume
+or advertise: `warnRatio` and `failRatio` (the per-family ratio rollup,
+#159). The host validates their values itself, exempts them from
+`ThresholdAdvertiser` key checks on every family, and applies them during
+report aggregation — your adapter just emits per-resource `CheckResult`s and
+stays entirely unaware of them.
+
 Repo expectations for the PR:
 
 - **Conventional Commits** (`feat:` for a new adapter) so `release-please`

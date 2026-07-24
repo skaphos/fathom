@@ -625,6 +625,9 @@ func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter 
 				problems = append(problems, fmt.Sprintf("family %q has an invalid labelSelector: %v", family, err))
 			}
 		}
+		if _, err := adapter.ParseRatioThresholds(check.Spec.Policy[family].Thresholds); err != nil {
+			problems = append(problems, fmt.Sprintf("family %q has an invalid ratio threshold: %v", family, err))
+		}
 		problems = append(problems, unknownThresholdKeys(family, check.Spec.Policy[family].Thresholds, advertised)...)
 	}
 	return problems
@@ -649,6 +652,12 @@ func unknownThresholdKeys(family string, thresholds map[string]string, advertise
 	}
 	var problems []string
 	for _, key := range slices.Sorted(maps.Keys(thresholds)) {
+		// The reserved ratio keys are engine-level (#159): the controller's
+		// rollup aggregation consumes them, so they are valid on every family
+		// regardless of what the adapter advertises.
+		if key == adapter.ThresholdKeyWarnRatio || key == adapter.ThresholdKeyFailRatio {
+			continue
+		}
 		if _, ok := known[key]; !ok {
 			problems = append(problems, fmt.Sprintf("family %q has an unknown threshold key %q", family, key))
 		}
@@ -697,7 +706,13 @@ func addonCheckTargetRef(check *fathomv1alpha1.AddonCheck) adapter.TargetRef {
 }
 
 func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter, result adapter.Result, observedAt metav1.Time, runErr error) *fathomv1alpha1.HealthReport {
-	aggregate := aggregateHealthReportResult(result.Checks)
+	sourceRef := fathomv1alpha1.HealthReportTargetRef{
+		APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Kind:       "AddonCheck",
+		Namespace:  check.Namespace,
+		Name:       check.Name,
+	}
+	aggregate, rollups := aggregateWithRatioRollups(result.Checks, ratioThresholdsByFamily(check))
 	if runErr != nil {
 		aggregate = fathomv1alpha1.HealthReportResultError
 	}
@@ -712,19 +727,14 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
-			SourceRef: fathomv1alpha1.HealthReportTargetRef{
-				APIVersion: fathomv1alpha1.GroupVersion.String(),
-				Kind:       "AddonCheck",
-				Namespace:  check.Namespace,
-				Name:       check.Name,
-			},
+			SourceRef:       sourceRef,
 			AddonType:       check.Spec.AddonType,
 			AdapterName:     selectedAdapter.Name(),
 			AdapterVersion:  selectedAdapter.Version(),
 			DetectedVersion: result.DetectedVersion,
 			ContractVersion: selectedAdapter.ContractVersion(),
 			Result:          aggregate,
-			Checks:          healthReportChecks(result.Checks, observedAt),
+			Checks:          append(healthReportChecks(result.Checks, observedAt), ratioRollupReportChecks(rollups, sourceRef, observedAt)...),
 			ObservedAt:      observedAt,
 			Duration:        &duration,
 		},
@@ -786,6 +796,140 @@ func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1alpha1.He
 		results = append(results, healthReportResult(check.Outcome))
 	}
 	return fathomv1alpha1.WorstResult(results, false)
+}
+
+// familyRatioRollup pairs a ratio-evaluated family with its thresholds and
+// computed rollup, for the synthetic report entry and the aggregate fold.
+type familyRatioRollup struct {
+	family     adapter.Family
+	thresholds adapter.RatioThresholds
+	rollup     adapter.RatioRollup
+}
+
+// ratioThresholdsByFamily extracts the families whose policy configures the
+// reserved ratio keys (#159). Values that fail to parse are skipped here —
+// they were already rejected loudly via the Accepted condition before the
+// run, so this is only a defensive guard against racing spec updates.
+func ratioThresholdsByFamily(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.RatioThresholds {
+	var out map[adapter.Family]adapter.RatioThresholds
+	for family, familyPolicy := range check.Spec.Policy {
+		rt, err := adapter.ParseRatioThresholds(familyPolicy.Thresholds)
+		if err != nil || !rt.Configured() {
+			continue
+		}
+		if out == nil {
+			out = make(map[adapter.Family]adapter.RatioThresholds)
+		}
+		out[adapter.Family(family)] = rt
+	}
+	return out
+}
+
+// aggregateWithRatioRollups is the family-aware sibling of
+// aggregateHealthReportResult (#159): families with configured ratio
+// thresholds contribute a single ratio verdict to the worst-of fold instead
+// of their raw per-check outcomes; every other check participates exactly as
+// before. A ratio family whose run produced no evaluable population (only
+// Skipped, and no Error) falls back to its raw outcomes so Skipped stays
+// informational and an all-Skipped report still folds to Skipped, exactly as
+// without thresholds. Rollups are returned in first-appearance order, which
+// follows the adapter's deterministic emit order.
+func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.Family]adapter.RatioThresholds) (fathomv1alpha1.HealthReportResult, []familyRatioRollup) {
+	if len(ratios) == 0 {
+		return aggregateHealthReportResult(checks), nil
+	}
+	results := make([]fathomv1alpha1.HealthReportResult, 0, len(checks))
+	computed := make(map[adapter.Family]adapter.RatioRollup, len(ratios))
+	folded := make(map[adapter.Family]bool, len(ratios))
+	var rollups []familyRatioRollup
+	for _, check := range checks {
+		rt, ok := ratios[check.Family]
+		if !ok {
+			results = append(results, healthReportResult(check.Outcome))
+			continue
+		}
+		rollup, seen := computed[check.Family]
+		if !seen {
+			rollup = adapter.FamilyRatioVerdict(checks, check.Family, rt)
+			computed[check.Family] = rollup
+		}
+		if rollup.Population == 0 && rollup.Verdict != adapter.OutcomeError {
+			results = append(results, healthReportResult(check.Outcome))
+			continue
+		}
+		if !folded[check.Family] {
+			folded[check.Family] = true
+			rollups = append(rollups, familyRatioRollup{family: check.Family, thresholds: rt, rollup: rollup})
+			results = append(results, healthReportResult(rollup.Verdict))
+		}
+	}
+	return fathomv1alpha1.WorstResult(results, false), rollups
+}
+
+// Well-known Details keys of the synthetic ratio-rollup report entry. The
+// "rollup" discriminator lets consumers filter rollup entries from
+// per-resource ones; the counts and echoed thresholds make every ratio
+// verdict explainable from the persisted report alone (FR-010).
+const (
+	detailRollup           = "rollup"
+	detailRollupRatio      = "ratio"
+	detailRollupPopulation = "population"
+	detailRollupUnhealthy  = "unhealthy"
+	detailRollupDegraded   = "degraded"
+)
+
+// ratioRollupReportChecks renders one synthetic HealthReportCheck per
+// ratio-evaluated family, targeting the driving AddonCheck. Per-resource
+// entries are never modified; these ride alongside them.
+func ratioRollupReportChecks(rollups []familyRatioRollup, sourceRef fathomv1alpha1.HealthReportTargetRef, observedAt metav1.Time) []fathomv1alpha1.HealthReportCheck {
+	if len(rollups) == 0 {
+		return nil
+	}
+	out := make([]fathomv1alpha1.HealthReportCheck, 0, len(rollups))
+	for _, fr := range rollups {
+		details := map[string]string{
+			detailRollup:           detailRollupRatio,
+			detailRollupPopulation: strconv.Itoa(fr.rollup.Population),
+			detailRollupUnhealthy:  strconv.Itoa(fr.rollup.Unhealthy),
+			detailRollupDegraded:   strconv.Itoa(fr.rollup.Degraded),
+		}
+		if fr.thresholds.Warn != nil {
+			details[adapter.ThresholdKeyWarnRatio] = fr.thresholds.Warn.String()
+		}
+		if fr.thresholds.Fail != nil {
+			details[adapter.ThresholdKeyFailRatio] = fr.thresholds.Fail.String()
+		}
+		out = append(out, fathomv1alpha1.HealthReportCheck{
+			Family:     string(fr.family),
+			Result:     healthReportResult(fr.rollup.Verdict),
+			TargetRef:  sourceRef,
+			Summary:    ratioRollupSummary(fr),
+			Details:    details,
+			ObservedAt: observedAt,
+		})
+	}
+	return out
+}
+
+// ratioRollupSummary is the human-readable provenance line for a rollup
+// entry, e.g.
+//
+//	ratio rollup: 1 unhealthy, 3 degraded of 200 evaluated, failRatio 5, warnRatio 1 -> Pass
+func ratioRollupSummary(fr familyRatioRollup) string {
+	if fr.rollup.Verdict == adapter.OutcomeError {
+		return fmt.Sprintf("ratio rollup: adapter errors in family %q; ratio not evaluated -> Error", fr.family)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "ratio rollup: %d unhealthy, %d degraded of %d evaluated",
+		fr.rollup.Unhealthy, fr.rollup.Degraded, fr.rollup.Population)
+	if fr.thresholds.Fail != nil {
+		fmt.Fprintf(&b, ", failRatio %s", fr.thresholds.Fail)
+	}
+	if fr.thresholds.Warn != nil {
+		fmt.Fprintf(&b, ", warnRatio %s", fr.thresholds.Warn)
+	}
+	fmt.Fprintf(&b, " -> %s", fr.rollup.Verdict)
+	return b.String()
 }
 
 func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResult {

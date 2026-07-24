@@ -41,10 +41,64 @@ Key rules that apply to every adapter:
 - **Thresholds are strings.** Even numeric knobs (`restartWarnCount: "3"`,
   `warnDays: "30"`) are quoted strings — that is the threshold map's type.
 - **The overall result is worst-case** across the enabled families, using the
-  severity ordering `Pass < Skipped < Warn < Unknown < Fail < Error`.
+  severity ordering `Pass < Skipped < Warn < Unknown < Fail < Error`. Families
+  with [ratio thresholds](#ratio-rollups-tolerating-isolated-failures)
+  contribute their ratio verdict to that fold instead of their single worst
+  check.
 - **Set the name thresholds for renamed installs.** Distributions like RKE2 or
   k3s rename the standard workloads; the thresholds let you point the check at
   the real object names.
+
+## Ratio rollups: tolerating isolated failures
+
+By default one failing resource fails its whole family — worst-of. On a fleet
+of hundreds of certificates, external secrets, or Argo CD applications, one
+permanently-broken resource then pins the addon verdict at `Fail`. Two
+**reserved threshold keys**, valid on any family of any adapter, switch that
+family to a ratio rollup:
+
+```yaml
+spec:
+  addonType: cert-manager
+  policy:
+    certificates:
+      thresholds:
+        warnRatio: "1"   # Warn when degraded (Warn+Fail) fraction is above 1%
+        failRatio: "5"   # Fail when unhealthy (Fail) fraction is above 5%
+```
+
+Semantics, evaluated per family per run:
+
+- Values are percentages in `[0, 100]` — `"5"`, `"5%"`, and `"2.5"` are all
+  valid — compared **strictly** ("above"): a fraction exactly at the
+  threshold does not escalate, so `"0"` reproduces worst-of exactly.
+- `failRatio` compares the **unhealthy** (Fail) fraction; `warnRatio`
+  compares the **degraded** (Warn + Fail) fraction. A fleet of warnings can
+  reach `Warn` but never `Fail` through ratios.
+- Either key alone works; the omitted level keeps worst-of for its outcomes.
+- `Skipped` checks are excluded from the population. Any `Error` in the
+  family short-circuits to an `Error` verdict — the operator being unable to
+  observe resources is never averaged away.
+- Only the family and overall rollups change: every per-resource check entry
+  still appears in the `HealthReport` unchanged, so the broken resource stays
+  findable.
+
+Each ratio-evaluated family adds one synthetic entry to the report explaining
+its verdict (`details.rollup: "ratio"`, with `population`, `unhealthy`,
+`degraded` counts and the configured thresholds):
+
+```yaml
+- family: certificates
+  result: Pass
+  summary: 'ratio rollup: 1 unhealthy, 3 degraded of 200 evaluated, failRatio 5, warnRatio 1 -> Pass'
+  details: { rollup: "ratio", population: "200", unhealthy: "1", degraded: "3", failRatio: "5", warnRatio: "1" }
+```
+
+Without these keys nothing changes — no defaults ship, and existing checks
+keep exact worst-of behavior. An unparsable or out-of-range value is rejected
+on the `Accepted` condition (`InvalidPolicy`), never silently ignored. Ratio
+rollups are aimed at large fleets; on a family of two resources, one failure
+is 50% and will exceed any practical threshold.
 
 ## Run cadence
 
