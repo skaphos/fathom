@@ -38,6 +38,10 @@ var _ = Describe("shipped sample manifests", func() {
 
 			var obj unstructured.Unstructured
 			Expect(k8syaml.Unmarshal(raw, &obj)).To(Succeed(), name)
+			// Namespaced samples need a namespace to admit; on cluster-scoped
+			// kinds (ClusterHealth) this is harmless — the API server's
+			// BeforeCreate clears metadata.namespace for cluster-scoped
+			// resources before validation.
 			obj.SetNamespace("default")
 			// Server-side dry run: full admission (schema + CEL) with no
 			// persisted object, so samples cannot collide across specs.

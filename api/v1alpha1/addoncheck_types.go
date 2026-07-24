@@ -45,14 +45,15 @@ type AddonCheckFamilyPolicy struct {
 	// failDays. Adapter documentation defines the supported keys; unknown keys
 	// are never rejected at admission. Keys documented as numeric are
 	// shape-checked at admission: warnDays and failDays must be 1-4 digit
-	// integers, warnRatio and failRatio must be percentages between 0 and 100
-	// with at most two decimals and an optional trailing '%' (range and
-	// cross-key semantics stay with the adapter). At most 16 keys.
+	// integers, warnRatio and failRatio must be percentage-shaped — at most
+	// three integer digits, up to two decimals, optional trailing '%'. The
+	// 0-100 range and cross-key semantics stay with the adapter and surface
+	// via the Accepted condition. At most 16 keys.
 	// +optional
 	// +kubebuilder:validation:MaxProperties=16
 	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[a-zA-Z0-9]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?$'))",message="threshold keys must be 1-63 alphanumerics with interior '-' or '_'"
 	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['warnDays','failDays']) || self[k].matches('^[0-9]{1,4}$'))",message="warnDays and failDays must be whole numbers of days (e.g. \"30\")"
-	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['warnRatio','failRatio']) || self[k].matches('^[0-9]{1,3}([.][0-9]{1,2})?%?$'))",message="warnRatio and failRatio must be percentages between 0 and 100 with at most two decimals (e.g. \"99.5\" or \"99.5%\")"
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['warnRatio','failRatio']) || self[k].matches('^[0-9]{1,3}([.][0-9]{1,2})?%?$'))",message="warnRatio and failRatio must be percentage values with at most two decimals (e.g. \"99.5\" or \"99.5%\")"
 	Thresholds map[string]ThresholdValue `json:"thresholds,omitempty"`
 }
 

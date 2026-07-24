@@ -39,7 +39,8 @@ cd "$root"
 new_dir="${CRD_COMPAT_NEW_DIR:-config/crd/bases}"
 allowlist="${CRD_COMPAT_ALLOWLIST:-.crd-compat-allowlist.yaml}"
 crdify_config="${CRD_COMPAT_CONFIG:-.crdify.yaml}"
-crdify_cmd="${CRDIFY:-go -C "$root/tools" tool crdify}"
+default_crdify="go -C $root/tools tool crdify"
+crdify_cmd="${CRDIFY:-$default_crdify}"
 
 # `go -C tools tool crdify` runs with tools/ as its working directory, so every
 # path handed to crdify must be absolute.

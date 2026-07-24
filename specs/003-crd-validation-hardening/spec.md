@@ -1,6 +1,6 @@
 # Feature Specification: Pre-1.0 CRD Validation Hardening
 
-**Feature Branch**: `003-crd-validation-hardening`
+**Feature Branch**: `feature/152-crd-validation-hardening`
 
 **Created**: 2026-07-23
 

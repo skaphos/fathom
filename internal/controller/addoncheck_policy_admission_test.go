@@ -116,8 +116,8 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 			Entry("accepts a percentage warnRatio", map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "99.5"}, ""),
 			Entry("accepts a percent-suffixed failRatio", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "80%"}, ""),
 			Entry("accepts a small-percentage ratio", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "1.5"}, ""),
-			Entry("rejects failRatio: banana", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "banana"}, "warnRatio and failRatio must be percentages"),
-			Entry("rejects a four-digit ratio", map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "1000"}, "warnRatio and failRatio must be percentages"),
+			Entry("rejects failRatio: banana", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "banana"}, "warnRatio and failRatio must be percentage values"),
+			Entry("rejects a four-digit ratio", map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "1000"}, "warnRatio and failRatio must be percentage values"),
 			Entry("accepts unknown keys with any value (adapter-judged)", map[string]fathomv1alpha1.ThresholdValue{"customKnob": "anything goes here"}, ""),
 			Entry("accepts camelCase keys (live convention)", map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}, ""),
 		)

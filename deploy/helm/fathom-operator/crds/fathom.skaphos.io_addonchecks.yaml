@@ -155,9 +155,10 @@ spec:
                         failDays. Adapter documentation defines the supported keys; unknown keys
                         are never rejected at admission. Keys documented as numeric are
                         shape-checked at admission: warnDays and failDays must be 1-4 digit
-                        integers, warnRatio and failRatio must be percentages between 0 and 100
-                        with at most two decimals and an optional trailing '%' (range and
-                        cross-key semantics stay with the adapter). At most 16 keys.
+                        integers, warnRatio and failRatio must be percentage-shaped — at most
+                        three integer digits, up to two decimals, optional trailing '%'. The
+                        0-100 range and cross-key semantics stay with the adapter and surface
+                        via the Accepted condition. At most 16 keys.
                       maxProperties: 16
                       type: object
                       x-kubernetes-validations:
@@ -167,8 +168,8 @@ spec:
                       - message: warnDays and failDays must be whole numbers of days
                           (e.g. "30")
                         rule: self.all(k, !(k in ['warnDays','failDays']) || self[k].matches('^[0-9]{1,4}$'))
-                      - message: warnRatio and failRatio must be percentages between
-                          0 and 100 with at most two decimals (e.g. "99.5" or "99.5%")
+                      - message: warnRatio and failRatio must be percentage values
+                          with at most two decimals (e.g. "99.5" or "99.5%")
                         rule: self.all(k, !(k in ['warnRatio','failRatio']) || self[k].matches('^[0-9]{1,3}([.][0-9]{1,2})?%?$'))
                   type: object
                 description: |-

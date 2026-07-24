@@ -160,9 +160,10 @@ they can be expressed.
   1–63 lowercase alphanumerics with interior `-`/`_`; at most 64 `namespaces`
   entries, each a valid namespace name; at most 16 `thresholds` keys (values
   up to 64 characters), with `warnDays`/`failDays` requiring whole numbers and
-  `warnRatio`/`failRatio` requiring percentages between 0 and 100 (e.g.
-  `"99.5"` or `"99.5%"`). Threshold keys the schema does not know are **not**
-  rejected at admission — they belong to the adapter.
+  `warnRatio`/`failRatio` requiring percentage-shaped values — at most three
+  integer digits, up to two decimals, optional trailing `%` (e.g. `"99.5"` or
+  `"99.5%"`). Threshold keys the schema does not know are **not** rejected at
+  admission — they belong to the adapter.
 
 **At reconcile time** (the check's `Accepted` condition turns `False` with
 reason `InvalidPolicy` before anything runs):
@@ -172,7 +173,8 @@ reason `InvalidPolicy` before anything runs):
 - Label selector structure and label syntax (`policy.<family>.labelSelector`)
   — a CEL admission rule for this exceeds the API server's validation cost
   budget, so it is enforced here instead.
-- Threshold semantics: ratio ranges and cross-key rules.
+- Threshold semantics: the 0–100 range of `warnRatio`/`failRatio` and
+  cross-key rules.
 
 ## Node certificate checks
 

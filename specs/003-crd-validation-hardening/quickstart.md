@@ -1,4 +1,4 @@
-# Quickstart: Validating CRD Validation Hardening
+# Quickstart Validation: Pre-1.0 CRD Validation Hardening
 
 Runnable scenarios proving the three slices work end-to-end. Contracts:
 [crd-validation.md](contracts/crd-validation.md),
@@ -87,10 +87,11 @@ tightenings as `SANCTIONED` with reasons and the issue link (seeded
 allowlist). Negative check — temporarily delete a field from a CRD YAML under
 `config/crd/bases/`, rerun: exits 1 naming the CRD and property path; revert.
 
-Fixture matrix (no cluster, no tags needed):
+Fixture matrix (no cluster, no tags needed — implemented as Go gate tests,
+matching the repo's `scripts/*_gate_test.go` convention):
 
 ```sh
-./scripts/check-crd-compat_test.sh   # pass/fail matrix per the gate contract
+go test ./scripts/ -run TestCRDCompat -v   # pass/fail matrix per the gate contract
 ```
 
 ## 6. Full e2e (required before PR is ready — CRD types changed)
