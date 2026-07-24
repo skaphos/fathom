@@ -62,7 +62,7 @@ func (in *AddonCheckFamilyPolicy) DeepCopyInto(out *AddonCheckFamilyPolicy) {
 	}
 	if in.Thresholds != nil {
 		in, out := &in.Thresholds, &out.Thresholds
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]ThresholdValue, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}

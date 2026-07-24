@@ -56,9 +56,9 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled gates execution of this family. | true | Optional: \{\} <br /> |
-| `namespaces` _string array_ | Namespaces narrows this family to resources in specific namespaces. Empty<br />means all namespaces the adapter can read. |  | Optional: \{\} <br /> |
-| `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | LabelSelector narrows this family to resources matching the selector. |  | Optional: \{\} <br /> |
-| `thresholds` _object (keys:string, values:string)_ | Thresholds carries adapter-specific string knobs, such as warnDays or<br />failDays. Adapter documentation defines the supported keys. |  | Optional: \{\} <br /> |
+| `namespaces` _string array_ | Namespaces narrows this family to resources in specific namespaces. Empty<br />means all namespaces the adapter can read. Each entry must be a valid<br />namespace name (DNS-1123 label); at most 64 entries. |  | MaxItems: 64 <br />items:MaxLength: 63 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | LabelSelector narrows this family to resources matching the selector.<br />Selector structure and label syntax are validated at reconcile time and<br />reported through the Accepted condition (a CEL admission rule for the<br />structural checks exceeds the API server's per-CRD cost budget, because<br />the imported LabelSelector schema carries no size bounds the estimator<br />could use). |  | Optional: \{\} <br /> |
+| `thresholds` _object (keys:string, values:[ThresholdValue](#thresholdvalue))_ | Thresholds carries adapter-specific string knobs, such as warnDays or<br />failDays. Adapter documentation defines the supported keys; unknown keys<br />are never rejected at admission. Keys documented as numeric are<br />shape-checked at admission: warnDays and failDays must be 1-4 digit<br />integers, warnRatio and failRatio must be percentages between 0 and 100<br />with at most two decimals and an optional trailing '%' (range and<br />cross-key semantics stay with the adapter). At most 16 keys. |  | MaxProperties: 16 <br />Optional: \{\} <br /> |
 
 
 #### AddonCheckList
@@ -96,7 +96,7 @@ _Appears in:_
 | `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which the adapter re-runs and the HealthReport<br />is refreshed. Defaults to 5m when unset. Must be at least 10s<br />(MinCheckInterval); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
 | `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single adapter run. Must be at least 1s<br />(MinCheckTimeout); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
 | `paused` _boolean_ | Paused prevents the controller from starting new adapter runs. |  | Optional: \{\} <br /> |
-| `policy` _object (keys:string, values:[AddonCheckFamilyPolicy](#addoncheckfamilypolicy))_ | Policy configures adapter-defined check families. A missing or empty policy<br />leaves family selection to the adapter defaults. |  | Optional: \{\} <br /> |
+| `policy` _object (keys:string, values:[AddonCheckFamilyPolicy](#addoncheckfamilypolicy))_ | Policy configures adapter-defined check families. A missing or empty policy<br />leaves family selection to the adapter defaults. Keys are adapter family<br />names: 1-63 lowercase alphanumerics with interior '-' or '_' (e.g.<br />system_health). Whether a well-formed key names a family the selected<br />adapter actually supports is judged at reconcile time via the Accepted<br />condition. |  | MaxProperties: 32 <br />Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this<br />AddonCheck. After each new HealthReport is created the controller<br />deletes the oldest reports until the total count is at or below this<br />limit. The minimum of 1 keeps Status.LastReportName referenceable. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
 
 
@@ -580,5 +580,22 @@ _Appears in:_
 | `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 | `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
 | `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
+
+
+#### ThresholdValue
+
+_Underlying type:_ _string_
+
+ThresholdValue is one adapter threshold knob value. It is an ordinary
+string on the wire; the MaxLength bound exists so the API server's CEL cost
+estimator has a real input size for the threshold shape rules below (an
+unbounded map value string prices those rules out of the per-CRD budget).
+
+_Validation:_
+- MaxLength: 64
+
+_Appears in:_
+- [AddonCheckFamilyPolicy](#addoncheckfamilypolicy)
+
 
 

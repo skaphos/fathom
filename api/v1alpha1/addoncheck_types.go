@@ -9,6 +9,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ThresholdValue is one adapter threshold knob value. It is an ordinary
+// string on the wire; the MaxLength bound exists so the API server's CEL cost
+// estimator has a real input size for the threshold shape rules below (an
+// unbounded map value string prices those rules out of the per-CRD budget).
+// +kubebuilder:validation:MaxLength=64
+type ThresholdValue string
+
 // AddonCheckFamilyPolicy configures one adapter-defined family of checks.
 type AddonCheckFamilyPolicy struct {
 	// Enabled gates execution of this family.
@@ -17,18 +24,36 @@ type AddonCheckFamilyPolicy struct {
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// Namespaces narrows this family to resources in specific namespaces. Empty
-	// means all namespaces the adapter can read.
+	// means all namespaces the adapter can read. Each entry must be a valid
+	// namespace name (DNS-1123 label); at most 64 entries.
 	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespaces []string `json:"namespaces,omitempty"`
 
 	// LabelSelector narrows this family to resources matching the selector.
+	// Selector structure and label syntax are validated at reconcile time and
+	// reported through the Accepted condition (a CEL admission rule for the
+	// structural checks exceeds the API server's per-CRD cost budget, because
+	// the imported LabelSelector schema carries no size bounds the estimator
+	// could use).
 	// +optional
 	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 
 	// Thresholds carries adapter-specific string knobs, such as warnDays or
-	// failDays. Adapter documentation defines the supported keys.
+	// failDays. Adapter documentation defines the supported keys; unknown keys
+	// are never rejected at admission. Keys documented as numeric are
+	// shape-checked at admission: warnDays and failDays must be 1-4 digit
+	// integers, warnRatio and failRatio must be percentages between 0 and 100
+	// with at most two decimals and an optional trailing '%' (range and
+	// cross-key semantics stay with the adapter). At most 16 keys.
 	// +optional
-	Thresholds map[string]string `json:"thresholds,omitempty"`
+	// +kubebuilder:validation:MaxProperties=16
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[a-zA-Z0-9]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?$'))",message="threshold keys must be 1-63 alphanumerics with interior '-' or '_'"
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['warnDays','failDays']) || self[k].matches('^[0-9]{1,4}$'))",message="warnDays and failDays must be whole numbers of days (e.g. \"30\")"
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !(k in ['warnRatio','failRatio']) || self[k].matches('^[0-9]{1,3}([.][0-9]{1,2})?%?$'))",message="warnRatio and failRatio must be percentages between 0 and 100 with at most two decimals (e.g. \"99.5\" or \"99.5%\")"
+	Thresholds map[string]ThresholdValue `json:"thresholds,omitempty"`
 }
 
 // AddonCheckSpec defines the desired state of AddonCheck.
@@ -60,8 +85,14 @@ type AddonCheckSpec struct {
 	Paused bool `json:"paused,omitempty"`
 
 	// Policy configures adapter-defined check families. A missing or empty policy
-	// leaves family selection to the adapter defaults.
+	// leaves family selection to the adapter defaults. Keys are adapter family
+	// names: 1-63 lowercase alphanumerics with interior '-' or '_' (e.g.
+	// system_health). Whether a well-formed key names a family the selected
+	// adapter actually supports is judged at reconcile time via the Accepted
+	// condition.
 	// +optional
+	// +kubebuilder:validation:MaxProperties=32
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?$'))",message="policy keys must be 1-63 lowercase alphanumerics with interior '-' or '_'"
 	Policy map[string]AddonCheckFamilyPolicy `json:"policy,omitempty"`
 
 	// HistoryLimit caps the number of HealthReports retained for this

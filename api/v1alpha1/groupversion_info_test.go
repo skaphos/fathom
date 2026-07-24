@@ -86,7 +86,7 @@ func TestDeepCopyRoundTrip(t *testing.T) {
 		orig := &AddonCheck{Spec: AddonCheckSpec{
 			AddonType: "cert-manager",
 			Policy: map[string]AddonCheckFamilyPolicy{
-				"system_health": {Enabled: ptr.To(true), Thresholds: map[string]string{"warnDays": "14"}},
+				"system_health": {Enabled: ptr.To(true), Thresholds: map[string]ThresholdValue{"warnDays": "14"}},
 			},
 		}}
 		clone, ok := orig.DeepCopyObject().(*AddonCheck)

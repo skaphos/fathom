@@ -38,20 +38,25 @@ domain ([clamp-signal.md](clamp-signal.md)).
 | `namespaces: [kube-system]` | accept |
 | namespace entry of 64 chars | **reject** (max 63) |
 | `thresholds` with 17 keys | **reject** (max 16) |
-| `thresholds: {warnDays: "banana"}` | **reject** (numeric) |
+| `thresholds: {warnDays: "banana"}` | **reject** (whole number required) |
 | `thresholds: {warnDays: "30"}` | accept |
-| `thresholds: {failRatio: "1.5"}` | **reject** (ratio ∈ [0,1]) |
-| `thresholds: {warnRatio: "0.9"}` | accept |
+| `thresholds: {failRatio: "banana"}` | **reject** (percentage shape) |
+| `thresholds: {warnRatio: "1000"}` | **reject** (percentage shape) |
+| `thresholds: {warnRatio: "99.5"}`, `{failRatio: "80%"}`, `{failRatio: "1.5"}` | accept — ratios are **percentages 0–100** per `ParseRatioThresholds` (as-built correction: the draft's [0,1]-decimal assumption was wrong) |
+| threshold value over 64 chars | **reject** (`ThresholdValue` MaxLength) |
+| camelCase threshold keys (`restartWarnCount`) | accept (live convention) |
 | `thresholds: {customKnob: "anything"}` | accept at admission (adapter judges at reconcile — MUST NOT be rejected for being unknown) |
-| `matchExpressions` operator `Foo` | **reject** (operator enum) † |
-| operator `In` with no `values` | **reject** † |
-| operator `Exists` with `values: [x]` | **reject** † |
+| `matchExpressions` operator `Foo` | accept at admission; `Accepted=False/InvalidPolicy` at reconcile † |
+| operator `In` with no `values` | accept at admission; `Accepted=False/InvalidPolicy` at reconcile † |
+| operator `Exists` with `values: [x]` | accept at admission; `Accepted=False/InvalidPolicy` at reconcile † |
 | valid selector | accept |
 | well-formed family key unknown to the selected adapter | accept at admission; surfaces as `Accepted=False/InvalidPolicy` at reconcile (unchanged) |
 
-† If the API server's CEL cost budget forces dropping the selector rule (R6
-fallback), these three rows move to reconcile-time enforcement
-(`Accepted=False/InvalidPolicy`) and the API reference must say so.
+† As built, the R6 fallback WAS taken: the selector CEL rule priced at 15.1x
+the API server's per-rule cost budget (the imported `metav1.LabelSelector`
+schema is unbounded), so selector structure is enforced at reconcile time.
+A regression spec pins both halves of this split, and the README and field
+docs state it.
 
 ## Compatibility guarantee (FR-008)
 

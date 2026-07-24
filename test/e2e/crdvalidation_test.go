@@ -51,4 +51,21 @@ spec:
 		Expect(err).To(HaveOccurred())
 		Expect(out).To(ContainSubstring("timeout must be at least 1s"))
 	})
+
+	It("rejects a non-numeric warnDays threshold at admission", func() {
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  name: crd-validation-policy-e2e
+  namespace: default
+spec:
+  addonType: cert-manager
+  policy:
+    certificates:
+      thresholds:
+        warnDays: "banana"
+`)
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring("warnDays and failDays must be whole numbers"))
+	})
 })

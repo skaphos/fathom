@@ -29,24 +29,34 @@ for CI. References: [research.md](research.md) decisions R2, R4–R6, R8.
 | Entry length | `items:MaxLength` | 63 |
 | Entry format | `items:Pattern` | DNS-1123 label: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` |
 
-### `spec.policy[*].thresholds` (`map[string]string`)
+### `spec.policy[*].thresholds` (`map[string]ThresholdValue`)
+
+*(As-built corrections: threshold keys are camelCase in the wild
+(`warnDays`, `restartWarnCount`), so the key class allows uppercase; the
+ratio keys are **percentages 0–100**, not decimals in [0,1] — that matches
+`adapter.ParseRatioThresholds`, which was the authority all along; and the
+value type is a named bounded string because the API server's CEL cost
+estimator needs a `maxLength` on map values to price the shape rules.)*
 
 | Constraint | Mechanism | Value |
 |---|---|---|
 | Max keys | `MaxProperties` | 16 |
-| Key format | CEL over keys | same character class as family keys |
+| Key format | CEL over keys | `^[a-zA-Z0-9]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?$` |
+| Value length | `MaxLength=64` on the named `ThresholdValue` string type | required by the CEL cost estimator |
 | `warnDays`, `failDays` values | CEL | `^[0-9]{1,4}$` |
-| `warnRatio`, `failRatio` values | CEL | decimal in [0,1]: `^(0(\.[0-9]{1,4})?|1(\.0{1,4})?)$` |
+| `warnRatio`, `failRatio` values | CEL | percentage shape per parser grammar: `^[0-9]{1,3}([.][0-9]{1,2})?%?$` (range 0–100 stays with the parser) |
 | any other key's value | none at admission | adapter-judged at reconcile (unchanged) |
 
 ### `spec.policy[*].labelSelector` (`*metav1.LabelSelector`)
 
+*(As-built: the R6 fallback was taken — the CEL rule priced at 15.1x the
+per-rule cost budget because the imported `metav1.LabelSelector` schema
+carries no bounds. All selector validation is reconcile-time.)*
+
 | Constraint | Mechanism | Value |
 |---|---|---|
-| `matchExpressions[*].operator` | CEL | one of `In`, `NotIn`, `Exists`, `DoesNotExist` |
-| `In`/`NotIn` | CEL | `values` non-empty |
-| `Exists`/`DoesNotExist` | CEL | `values` absent/empty |
-| full label key/value grammar | reconcile-time (existing `LabelSelectorAsSelector`) | unchanged backstop; if CEL cost budget rejects the rule, this backstop is the sole enforcement (R6 fallback) |
+| selector structure (operators, values presence) | reconcile-time `LabelSelectorAsSelector` via `validateAddonCheckPolicy` → `Accepted=False/InvalidPolicy` | sole enforcement (R6 fallback taken; pinned by a regression spec asserting both halves of the split) |
+| full label key/value grammar | reconcile-time (same path) | unchanged |
 
 ## Changed: NodeCertificateCheck (`fathom.skaphos.io/v1alpha1`, cluster-scoped)
 

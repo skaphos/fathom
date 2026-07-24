@@ -142,6 +142,38 @@ per-addon ServiceAccounts, read-only ClusterRoles, and the operator's scoped
 `impersonate` Role are generated from the adapters (`task gen:addon-rbac`); the
 full permission matrix is [`docs/reference/rbac.md`](docs/reference/rbac.md).
 
+## Spec validation
+
+Check specs are validated at two layers; mistakes are rejected as early as
+they can be expressed.
+
+**At admission** (`kubectl apply` fails immediately):
+
+- `spec.interval` must be at least **10s** and `spec.timeout` at least **1s**
+  on `AddonCheck` and `NodeCertificateCheck` (and `timeout` may not exceed
+  `interval`). This stops a `1m` → `1ms` typo from hot-looping the operator.
+  Objects stored before these floors existed keep running — the operator
+  clamps their effective cadence up to the floors and says so with a Warning
+  `CadenceClamped` event and an `Accepted=True/SpecClamped` condition naming
+  the configured and effective values.
+- `AddonCheck.spec.policy` structure: at most 32 families, family keys are
+  1–63 lowercase alphanumerics with interior `-`/`_`; at most 64 `namespaces`
+  entries, each a valid namespace name; at most 16 `thresholds` keys (values
+  up to 64 characters), with `warnDays`/`failDays` requiring whole numbers and
+  `warnRatio`/`failRatio` requiring percentages between 0 and 100 (e.g.
+  `"99.5"` or `"99.5%"`). Threshold keys the schema does not know are **not**
+  rejected at admission — they belong to the adapter.
+
+**At reconcile time** (the check's `Accepted` condition turns `False` with
+reason `InvalidPolicy` before anything runs):
+
+- Family names the selected adapter does not support, and threshold keys it
+  does not advertise.
+- Label selector structure and label syntax (`policy.<family>.labelSelector`)
+  — a CEL admission rule for this exceeds the API server's validation cost
+  budget, so it is enforced here instead.
+- Threshold semantics: ratio ranges and cross-key rules.
+
 ## Node certificate checks
 
 A `NodeCertificateCheck` continuously scans **on-disk X.509 certificates on each

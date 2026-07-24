@@ -48,7 +48,7 @@ var _ = Describe("CRD schema validation", func() {
 
 		It("defaults an explicitly configured family to enabled", func() {
 			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-				"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}},
+				"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}},
 			}})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())

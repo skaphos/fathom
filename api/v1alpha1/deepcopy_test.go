@@ -58,7 +58,7 @@ func fullyPopulatedAddonCheck() *AddonCheck {
 							Values:   []string{"control-plane"},
 						}},
 					},
-					Thresholds: map[string]string{"restartWarnCount": "3"},
+					Thresholds: map[string]ThresholdValue{"restartWarnCount": "3"},
 				},
 			},
 		},
@@ -458,7 +458,7 @@ func TestDeepCopy_LeafTypesDirect(t *testing.T) {
 					LabelSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{"app": "x"},
 					},
-					Thresholds: map[string]string{"k": "v"},
+					Thresholds: map[string]ThresholdValue{"k": "v"},
 				}
 				deepCopyContract(t, "AddonCheckFamilyPolicy", orig, orig.DeepCopy())
 			},
