@@ -36,6 +36,18 @@ observation time) and would make one staleness rule mean four things.
 **Alternatives considered**: mirroring each kind's status timestamp —
 rejected for the semantic divergence above.
 
+**Implementation amendment (2026-07-23)**: the executing-kinds half stands
+(AddonCheck/NodeCertificateCheck stamp their own evaluation time, which their
+`lastRunTime` already records at the same instant), but for the *wrapper*
+kinds a pure watch-driven mirror has no cadence of its own: stamping "now" at
+mirror time and nothing else would freeze only when the operator freezes,
+missing the stale-source case. The shipped semantics are therefore "freshness
+of the evidence backing the current result": HealthCheck mirrors
+`sourceObservedAt` (its target's run time) and ClusterHealth `observedAt`
+(freshest child). A stale source now reads as a stale wrapper — strictly more
+useful for the staleness alert, uniform in meaning, and it also gives correct
+re-establishment after an operator restart. Contracts and docs state this.
+
 ## R3 — Series lifecycle: sentinel at discovery, delete on IsNotFound
 
 **Decision**: on the first reconcile of a check with no evaluated status,

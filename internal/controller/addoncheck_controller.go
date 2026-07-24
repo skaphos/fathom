@@ -21,6 +21,7 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -37,6 +38,7 @@ import (
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/internal/metrics"
+	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -117,12 +119,22 @@ type AddonCheckReconciler struct {
 	// in-cluster with an empty Namespace fails closed so adapters never run as
 	// the operator SA (SKA-162).
 	Namespace string
+
+	// Recorder emits the Kubernetes Events contract (result transitions and
+	// operational failures) on AddonCheck resources. Optional: nil disables
+	// event recording; the check gauges are unaffected.
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
+// All four check reconcilers record Kubernetes Events (result transitions and
+// operational failures, skaphos/fathom#154) through the manager's shared
+// EventRecorder; the grant lives once, here, because the markers aggregate
+// into the single manager role.
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile resolves the AddonCheck's adapter and, when the check is due (first
 // sight, a spec change, an elapsed interval, or a new run-now trigger), runs the
@@ -150,12 +162,19 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var check fathomv1alpha1.AddonCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
+			metrics.DeleteCheckSeries("AddonCheck", req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	before := check.Status.DeepCopy()
+	defer func() {
+		observeCheck(r.Recorder, &check, "AddonCheck",
+			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			before.Conditions, check.Status.Conditions,
+			check.Status.LastRunTime, err)
+	}()
 	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
 
@@ -403,6 +422,15 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 	if runErr != nil {
 		readyStatus = metav1.ConditionFalse
 		readyReason = "AdapterRunFailed"
+		// A probe pod that never got running (image, RBAC, quota) is an
+		// infrastructure fault with different remediation than the addon
+		// failing its checks; the typed error keeps the distinction a contract
+		// instead of string matching. The reason also drives the Warning event
+		// observeCheck records for this condition.
+		var launchErr *probe.LaunchError
+		if errors.As(runErr, &launchErr) {
+			readyReason = "ProbeLaunchFailed"
+		}
 		readyMessage = runErr.Error()
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{

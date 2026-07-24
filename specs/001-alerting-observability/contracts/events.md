@@ -6,6 +6,13 @@ stable contract; messages are human-readable and may be reworded.
 
 ## Reasons
 
+Operational-failure events reuse the check's Ready condition reason, emitted
+once per failure episode (when Ready newly turns False or changes reason) —
+so the table below is the guaranteed core set, and any other Ready=False
+reason a controller records (e.g. `MissingAdapter`, `TargetNotFound`,
+`DaemonSetProvisioningFailed`) surfaces the same way. The event and the
+condition can never disagree about why a check is degraded.
+
 | Reason | Type | Object kinds | Message shape |
 |---|---|---|---|
 | `ResultChanged` | Normal (new severity < Warn) / Warning (≥ Warn) | all four | `check result changed from <old> to <new>` (first evaluation: `<old>` = `Unknown`) |

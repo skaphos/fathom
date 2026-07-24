@@ -232,14 +232,26 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 			Tracer:       tracer,
 			AddonClients: impersonation.New(mgr),
 			Namespace:    opts.Namespace,
+			Recorder:     mgr.GetEventRecorder("fathom-addoncheck-controller"),
 		},
-		&controller.HealthCheckReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
-		&controller.ClusterHealthReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Tracer: tracer},
+		&controller.HealthCheckReconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Tracer:   tracer,
+			Recorder: mgr.GetEventRecorder("fathom-healthcheck-controller"),
+		},
+		&controller.ClusterHealthReconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Tracer:   tracer,
+			Recorder: mgr.GetEventRecorder("fathom-clusterhealth-controller"),
+		},
 		&controller.NodeCertificateCheckReconciler{
 			Client:         mgr.GetClient(),
 			Scheme:         mgr.GetScheme(),
 			NodeAgentImage: opts.NodeAgentImage,
 			Tracer:         tracer,
+			Recorder:       mgr.GetEventRecorder("fathom-nodecertificatecheck-controller"),
 		},
 	}, nil
 }

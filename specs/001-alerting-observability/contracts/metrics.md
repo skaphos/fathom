@@ -29,8 +29,12 @@ fathom_check_result{kind="AddonCheck",name="cert-manager",namespace="fathom-syst
 fathom_check_last_run_timestamp_seconds{kind="AddonCheck",name="cert-manager",namespace="fathom-system"} 1.784162e+09
 ```
 
-- Unix seconds of the operator's most recent completed evaluation of this
-  check (reconcile status-write time — not any per-kind status timestamp)
+- Unix seconds of the freshest completed evaluation backing the check's
+  current result. For the executing kinds (AddonCheck, NodeCertificateCheck)
+  that is their own last run; for the wrapper kinds it follows the evidence
+  chain — HealthCheck carries its mirrored target's run time, ClusterHealth
+  the freshest of its children — so a stale source reads as a stale wrapper
+  (research R2, implementation amendment)
 - `0` until the first evaluation completes ("never ran")
 - Exists iff the check resource exists; deletion removes it
 

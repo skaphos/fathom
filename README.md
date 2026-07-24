@@ -89,7 +89,10 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Node certificate checks](docs/guides/node-certificate-checks.md) — scan
   on-disk certificates on every node.
 - [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing,
-  alerts, and deployment gates.
+  alerts, and deployment gates. Every check exports a current-result gauge
+  (`fathom_check_result`) and a staleness timestamp, records Kubernetes Events
+  on result transitions and failures (`kubectl describe` shows the story), and
+  the failing/stale alert rules ship as an opt-in `PrometheusRule` component.
 
 **Reference and internals:**
 

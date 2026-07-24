@@ -424,3 +424,45 @@ func TestLauncherRun_ConcurrentRunsAreIndependent(t *testing.T) {
 		t.Errorf("concurrent-b outcome = %q, want Fail", results["concurrent-b"].Outcome)
 	}
 }
+
+// TestLauncherRun_LaunchFailuresAreTyped pins the LaunchError contract: pod
+// build and create failures are classifiable with errors.As (the AddonCheck
+// controller maps them to the ProbeLaunchFailed event reason), while
+// post-launch failures stay untyped.
+func TestLauncherRun_LaunchFailuresAreTyped(t *testing.T) {
+	c := newFakeClient(t)
+	l := &Launcher{Client: c, PollInterval: 5 * time.Millisecond}
+
+	// Build failure: missing Image.
+	_, err := l.Run(context.Background(), Request{Name: "x", Namespace: "default", Mode: ModeDNS, Target: "example.com"})
+	var launchErr *LaunchError
+	if !errors.As(err, &launchErr) {
+		t.Errorf("build failure: want LaunchError, got %T: %v", err, err)
+	}
+
+	// Create failure: name collision.
+	req := dnsRequest("probe-typed-collide")
+	preexisting, podErr := Pod(req)
+	if podErr != nil {
+		t.Fatalf("Pod: %v", podErr)
+	}
+	if err := c.Create(context.Background(), preexisting); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err = l.Run(context.Background(), req)
+	launchErr = nil
+	if !errors.As(err, &launchErr) {
+		t.Errorf("create failure: want LaunchError, got %T: %v", err, err)
+	}
+	if launchErr != nil && !apierrors.IsAlreadyExists(launchErr.Err) && !strings.Contains(launchErr.Error(), "create probe pod") {
+		t.Errorf("LaunchError should preserve the wrapped cause, got %v", launchErr)
+	}
+
+	// Post-launch failure (nil client is pre-launch config, but stays untyped:
+	// it is not a pod-launch fault).
+	_, err = (&Launcher{}).Run(context.Background(), dnsRequest("probe-untyped"))
+	launchErr = nil
+	if errors.As(err, &launchErr) {
+		t.Errorf("nil-client failure must not be a LaunchError, got %v", err)
+	}
+}

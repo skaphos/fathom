@@ -100,6 +100,12 @@ tasks:
     cmds:
       - ./scripts/check-version-lockstep.sh
 
+  verify-alert-rules:
+    desc: Render the opt-in prometheus components (and the default overlay with them disabled) so YAML/kustomize breakage in the shipped alert rules fails CI (skaphos/fathom#154)
+    cmds:
+      - '{{.KUSTOMIZE}} build config/components/build-check >/dev/null'
+      - '{{.KUSTOMIZE}} build config/default >/dev/null'
+
   # --- Helm chart (derived from config/; kustomize stays source of truth) ---
 
   helm:sync:
@@ -501,6 +507,7 @@ tasks:
     desc: Run standard CI workflow locally
     cmds:
       - task: verify-version-lockstep
+      - task: verify-alert-rules
       - task: lint
       - task: test
       - task: staticcheck
