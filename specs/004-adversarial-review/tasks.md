@@ -23,8 +23,8 @@ Review deliverables live under `specs/004-adversarial-review/review/`. Fixes lan
 
 **Purpose**: Verify the gate may start and pin the review subject.
 
-- [ ] T001 Verify the v0.5.0 milestone precondition (`gh issue list --milestone v0.5.0 --state open` shows only #217) and record the anchor commit (`git rev-parse origin/main`); note both in a new `specs/004-adversarial-review/review/README.md` alongside the review start date (research R4)
-- [ ] T002 Scaffold the three deliverable files with their contract headers per `specs/004-adversarial-review/contracts/findings-report.md`: `specs/004-adversarial-review/review/findings.md`, `specs/004-adversarial-review/review/refuted.md`, `specs/004-adversarial-review/review/coverage.md` (anchor commit + five perspectives filled in)
+- [X] T001 Verify the v0.5.0 milestone precondition (`gh issue list --milestone v0.5.0 --state open` shows only #217) and record the anchor commit (`git rev-parse origin/main`); note both in a new `specs/004-adversarial-review/review/README.md` alongside the review start date (research R4)
+- [X] T002 Scaffold the three deliverable files with their contract headers per `specs/004-adversarial-review/contracts/findings-report.md`: `specs/004-adversarial-review/review/findings.md`, `specs/004-adversarial-review/review/refuted.md`, `specs/004-adversarial-review/review/coverage.md` (anchor commit + five perspectives filled in)
 
 ---
 
@@ -33,7 +33,7 @@ Review deliverables live under `specs/004-adversarial-review/review/`. Fixes lan
 **Purpose**: Tool-assisted evidence that seeds every perspective (research R5). BLOCKS the perspective passes because their candidate lists must incorporate tool output.
 
 - [ ] T003 [P] Run `go -C tools tool task ci` at the anchor commit; record pass/fail and any warnings as evidence seeds in `specs/004-adversarial-review/review/README.md`
-- [ ] T004 [P] Run `go -C tools tool task crd-compat` at the anchor commit; record the result and any allowlist entries consulted in `specs/004-adversarial-review/review/README.md`
+- [X] T004 [P] Run `go -C tools tool task crd-compat` at the anchor commit; record the result and any allowlist entries consulted in `specs/004-adversarial-review/review/README.md`
 
 **Checkpoint**: Anchor recorded, deliverables scaffolded, baseline gates recorded — perspective passes can start in parallel.
 
