@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -235,6 +236,97 @@ func TestWebhook_AbsenceResolution(t *testing.T) {
 	assertHasDetail(t, checks, KindValidatingWebhookConfiguration, "missing", adapter.DetailAbsent, "true")
 }
 
+// endpointSlice builds one EndpointSlice backing namespace/service with the
+// given per-endpoint ready flags (nil means unset, which counts as ready).
+func endpointSlice(name, namespace, service string, ready ...*bool) *discoveryv1.EndpointSlice {
+	slice := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"kubernetes.io/service-name": service},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+	}
+	for i, r := range ready {
+		slice.Endpoints = append(slice.Endpoints, discoveryv1.Endpoint{
+			Addresses:  []string{"10.0.0." + string(rune('1'+i))},
+			Conditions: discoveryv1.EndpointConditions{Ready: r},
+		})
+	}
+	return slice
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func TestWebhook_VerifyEndpointsReadyPasses(t *testing.T) {
+	wc := WebhookCheck{
+		Kind:             KindMutatingWebhookConfiguration,
+		Name:             "injector",
+		ExpectedService:  "webhook-svc",
+		ServiceNamespace: "addon-ns",
+		VerifyEndpoints:  true,
+	}
+	cfg := mutatingConfig("injector", wiredEntry("inject.example.com", "addon-ns", "webhook-svc", []byte("ca")))
+	slice := endpointSlice("webhook-svc-abc", "addon-ns", "webhook-svc", boolPtr(true), nil)
+
+	checks := runWebhook(t, wc, cfg, slice)
+	assertHasOutcome(t, checks, KindMutatingWebhookConfiguration, "injector", adapter.OutcomePass, "wired")
+	assertHasOutcome(t, checks, "EndpointSlice", "webhook-svc", adapter.OutcomePass, "ready endpoints")
+	assertHasDetail(t, checks, "EndpointSlice", "webhook-svc", "readyEndpoints", "2")
+	assertHasDetail(t, checks, "EndpointSlice", "webhook-svc", "service", "addon-ns/webhook-svc")
+}
+
+func TestWebhook_VerifyEndpointsNoneReadyFails(t *testing.T) {
+	wc := WebhookCheck{
+		Kind:             KindMutatingWebhookConfiguration,
+		Name:             "injector",
+		ExpectedService:  "webhook-svc",
+		ServiceNamespace: "addon-ns",
+		VerifyEndpoints:  true,
+	}
+	cfg := mutatingConfig("injector", wiredEntry("inject.example.com", "addon-ns", "webhook-svc", []byte("ca")))
+	slice := endpointSlice("webhook-svc-abc", "addon-ns", "webhook-svc", boolPtr(false))
+
+	checks := runWebhook(t, wc, cfg, slice)
+	// The wiring itself is fine; the endpoint readiness is the failing signal.
+	assertHasOutcome(t, checks, KindMutatingWebhookConfiguration, "injector", adapter.OutcomePass, "wired")
+	assertHasOutcome(t, checks, "EndpointSlice", "webhook-svc", adapter.OutcomeFail, "no ready endpoints")
+}
+
+func TestWebhook_VerifyEndpointsMissingServiceFails(t *testing.T) {
+	// No EndpointSlices at all (service absent or selecting nothing) is the
+	// same verdict as none ready: admission has nowhere to go.
+	wc := WebhookCheck{
+		Kind:             KindMutatingWebhookConfiguration,
+		Name:             "injector",
+		ExpectedService:  "webhook-svc",
+		ServiceNamespace: "addon-ns",
+		VerifyEndpoints:  true,
+	}
+	cfg := mutatingConfig("injector", wiredEntry("inject.example.com", "addon-ns", "webhook-svc", []byte("ca")))
+
+	checks := runWebhook(t, wc, cfg)
+	assertHasOutcome(t, checks, "EndpointSlice", "webhook-svc", adapter.OutcomeFail, "no ready endpoints")
+	assertHasDetail(t, checks, "EndpointSlice", "webhook-svc", "endpointSlices", "0")
+}
+
+func TestWebhook_VerifyEndpointsAbsentConfigEmitsNoEndpointResult(t *testing.T) {
+	// A NotFound configuration short-circuits to the absence verdict; asserting
+	// endpoint readiness for a webhook that is not registered would be noise.
+	wc := WebhookCheck{
+		Kind:             KindMutatingWebhookConfiguration,
+		Name:             "missing",
+		ExpectedService:  "webhook-svc",
+		ServiceNamespace: "addon-ns",
+		VerifyEndpoints:  true,
+	}
+	checks := runWebhook(t, wc)
+	if len(checks) != 1 {
+		t.Fatalf("want only the absence result, got %d: %#v", len(checks), checks)
+	}
+	assertHasOutcome(t, checks, KindMutatingWebhookConfiguration, "missing", adapter.OutcomeFail, "not found")
+}
+
 func TestNewEngine_WebhookValidation(t *testing.T) {
 	base := func(wc WebhookCheck) AddonDefinition {
 		return AddonDefinition{
@@ -271,6 +363,11 @@ func TestNewEngine_WebhookValidation(t *testing.T) {
 			name:    "service namespace without name",
 			check:   WebhookCheck{Kind: KindMutatingWebhookConfiguration, Name: "x", ServiceNamespace: "ns"},
 			wantErr: "together",
+		},
+		{
+			name:    "verify endpoints without expected service",
+			check:   WebhookCheck{Kind: KindMutatingWebhookConfiguration, Name: "x", VerifyEndpoints: true},
+			wantErr: "VerifyEndpoints without ExpectedService",
 		},
 	}
 	for _, tc := range cases {

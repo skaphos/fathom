@@ -40,7 +40,8 @@ your call. Of the thirteen built-ins, **CoreDNS** (DNS-resolution probe pod),
 pinned to the cache's resolver), and **cert-manager** (admission dry-run
 `create`) are Go; **External Secrets**,
 **Cilium**, **external-dns**, **metrics-server**, **Envoy Gateway**, **Istio**,
-**KEDA**, **VPA**, **descheduler**, and **kured** are declarative. Default to
+**KEDA**, **VPA**, **descheduler**, **kured**, and **azure-workload-identity**
+are declarative. Default to
 Path A and only reach for Go when a check genuinely can't be a
 read-and-compare.
 
@@ -97,6 +98,7 @@ declarative.FamilyDefinition{
     CronJobs:       []declarative.CronJobCheck{ /* … */ },
     ConfigMaps:     []declarative.ConfigMapCheck{ /* … */ },
     Annotations:    []declarative.AnnotationStalenessCheck{ /* … */ },
+    PodProjections: []declarative.PodProjectionCheck{ /* … */ },
 }
 ```
 
@@ -262,9 +264,13 @@ A NotFound configuration is scored by the effective `Absence` posture with
 the absent marker. The expected backing-service namespace follows the
 family's resolved namespace (first policy namespace, else
 `ServiceNamespace`) — the backing service lives wherever the addon was
-installed. Backing-service *endpoint* readiness is deliberately not
-checked — the serving workload is the same one a `WorkloadCheck` in the
-family already scores (see the istio definition).
+installed. Backing-service *endpoint* readiness is not checked by default —
+the serving workload is usually the same one a `WorkloadCheck` in the family
+already scores (see the istio definition). Opt in with
+`VerifyEndpoints: true` (requires `ExpectedService`) when the webhook family
+stands apart from the workload family: it emits a second `CheckResult` that
+fails when the backing service has no ready endpoint (see the
+azure-workload-identity definition).
 
 #### `CronJobCheck` — a scheduled Job's health and recency
 
@@ -332,6 +338,34 @@ declarative.AnnotationStalenessCheck{
     MaxAgeThresholdKey: "lockMaxAge",  // policy override (a Go duration)
     DefaultMaxAge:      time.Hour,
     StaleOutcome:       adapter.OutcomeWarn,
+}
+```
+
+#### `PodProjectionCheck` — a mutating webhook's injection actually landed
+
+Verifies that pods opted in to a mutating admission webhook (by label — the
+webhook's own `objectSelector`) actually carry the projection the webhook
+injects at admission: a named projected `serviceAccountToken` volume and,
+optionally, an env var in every non-init container (init containers are not
+inspected). This catches the silent-failure
+mode where the webhook configuration is deleted or admission stops mutating:
+labeled pods are then created *without* their injection and nothing else in
+the cluster ever flags them. The scan lists pods across the family's
+namespaces (all namespaces when the policy names none), filters to live pods
+(`podutil.Active`), and folds into one bounded `CheckResult` — offending pod
+names are capped in `Details`. No opted-in pods anywhere is `Skipped`, quiet
+by design. The check's `Selector` is authoritative; `policy.labelSelector` is
+deliberately not merged in, because narrowing it could silently exempt
+uninjected pods.
+
+```go
+declarative.PodProjectionCheck{
+    Selector:   map[string]string{"azure.workload.identity/use": "true"},
+    ListName:   "workload-pods",          // stable Name on the aggregated result
+    Component:  "azure-wi-webhook",
+    VolumeName: "azure-identity-token",   // projected serviceAccountToken volume
+    EnvVar:     "AZURE_FEDERATED_TOKEN_FILE", // "" skips the env assertion
+    // MissingOutcome defaults to Fail.
 }
 ```
 

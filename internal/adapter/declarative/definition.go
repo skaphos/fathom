@@ -204,7 +204,7 @@ func (d AddonDefinition) defaultPosture() Posture {
 // contributes zero or more CheckResults, all tagged with Name. The engine
 // evaluates components in a fixed within-family order: Workloads, then CRDs,
 // then ManagedResources, then Fields, then APIServices, then Webhooks, then
-// CronJobs, then ConfigMaps, then Annotations.
+// CronJobs, then ConfigMaps, then Annotations, then PodProjections.
 type FamilyDefinition struct {
 	// Name is the adapter-defined family identifier and the Request.Policy key.
 	Name adapter.Family
@@ -244,6 +244,11 @@ type FamilyDefinition struct {
 	// been held too long (wedged) or a node that has waited on a reboot window
 	// beyond a threshold.
 	Annotations []AnnotationStalenessCheck
+	// PodProjections verify that pods opted in to a mutating admission webhook
+	// (by label) actually carry the projection the webhook injects — the
+	// azure-workload-identity projection_sanity signal that catches pods
+	// admitted while the webhook was not mutating.
+	PodProjections []PodProjectionCheck
 }
 
 // evaluators returns the family's components in the fixed within-family order.
@@ -251,7 +256,7 @@ func (f FamilyDefinition) evaluators() []Evaluator {
 	evals := make([]Evaluator, 0,
 		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.Fields)+
 			len(f.APIServices)+len(f.Webhooks)+len(f.CronJobs)+len(f.ConfigMaps)+
-			len(f.Annotations))
+			len(f.Annotations)+len(f.PodProjections))
 	for _, w := range f.Workloads {
 		evals = append(evals, w)
 	}
@@ -278,6 +283,9 @@ func (f FamilyDefinition) evaluators() []Evaluator {
 	}
 	for _, a := range f.Annotations {
 		evals = append(evals, a)
+	}
+	for _, p := range f.PodProjections {
+		evals = append(evals, p)
 	}
 	return evals
 }
@@ -462,6 +470,17 @@ type WebhookCheck struct {
 	// Absence scores a NotFound configuration (Required -> Fail, Optional ->
 	// Skipped), always tagged with the adapter.DetailAbsent marker.
 	Absence Posture
+
+	// VerifyEndpoints additionally asserts the expected backing service has at
+	// least one ready endpoint (EndpointSlices labeled with the service name),
+	// emitted as a second CheckResult. By default endpoint readiness is NOT
+	// checked — the serving workload is usually scored by a WorkloadCheck in the
+	// same family, covering it transitively. Opt in when the webhook family
+	// stands apart from the workload family (azure-workload-identity's
+	// webhook_wiring), so it stays self-contained even when the workload family
+	// is disabled by policy. Requires ExpectedService (enforced at engine
+	// construction).
+	VerifyEndpoints bool
 }
 
 // CronJobCheck evaluates one batch/v1 CronJob singleton. It scores three
@@ -590,4 +609,38 @@ type AnnotationStalenessCheck struct {
 	// StaleOutcome scores a timestamp older than the window; defaults to
 	// OutcomeWarn.
 	StaleOutcome adapter.Outcome
+}
+
+// PodProjectionCheck verifies that pods opted in to a mutating admission
+// webhook actually received its injection. It lists the Pods carrying the
+// webhook's opt-in Selector across the resolved namespaces and asserts each
+// live pod declares the projected serviceAccountToken volume (and, optionally,
+// an env var) the webhook injects at admission. This is the
+// azure-workload-identity projection_sanity signal: with the webhook absent or
+// not mutating, labeled pods are silently created WITHOUT their federated
+// identity — nothing else in the cluster ever flags them. The scan is
+// aggregated into one bounded CheckResult; an empty match set is Skipped
+// (quiet by design).
+type PodProjectionCheck struct {
+	// Selector is the fixed label set that opts a pod in to the webhook's
+	// mutation (e.g. azure.workload.identity/use=true — the webhook's own
+	// objectSelector). It is authoritative; policy.LabelSelector is not merged
+	// in, because narrowing it could silently exempt uninjected pods.
+	Selector map[string]string
+	// ListName is the stable placeholder Name on the aggregated result;
+	// defaults to "Pod".
+	ListName string
+	// Component is the label value recorded in Details["component"].
+	Component string
+
+	// VolumeName is the projected serviceAccountToken volume the webhook
+	// injects (e.g. azure-identity-token).
+	VolumeName string
+	// EnvVar, when set, must be declared by every non-init container of an
+	// opted-in pod (e.g. AZURE_FEDERATED_TOKEN_FILE); init containers are not
+	// inspected. Empty skips the env assertion.
+	EnvVar string
+	// MissingOutcome scores a live opted-in pod missing the injection; defaults
+	// to OutcomeFail.
+	MissingOutcome adapter.Outcome
 }

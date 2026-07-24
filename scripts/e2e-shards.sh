@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns"
+OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns azure-workload-identity"
 
 emit_all() {
   printf '["core"'
@@ -70,6 +70,10 @@ shard_for_file() {
     test/e2e/nodelocaldns_test.go) echo node-local-dns ;;
     config/samples/*_node_local_dns.yaml) echo node-local-dns ;;
     config/rbac/addons/addon-node-local-dns.yaml) echo node-local-dns ;;
+    internal/adapter/declarative/azureworkloadidentity*) echo azure-workload-identity ;;
+    test/e2e/azureworkloadidentity_test.go) echo azure-workload-identity ;;
+    config/samples/*_azure_workload_identity.yaml) echo azure-workload-identity ;;
+    config/rbac/addons/addon-azure-workload-identity.yaml) echo azure-workload-identity ;;
 
     # --- Core-tier addons: their specs run in the core shard.
     internal/adapter/certmanager/*) echo core ;;

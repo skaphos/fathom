@@ -13,6 +13,7 @@ rules:
   - ""
   resourceNames:
   - addon-argocd
+  - addon-azure-workload-identity
   - addon-cert-manager
   - addon-cilium
   - addon-coredns

@@ -325,6 +325,7 @@ and a set of families:
 | `descheduler` | `internal/adapter/declarative` (`descheduler.go`) | `system_health`, `policy_validity`, `last_run` |
 | `kured` | `internal/adapter/declarative` (`kured.go`) | `system_health`, `reboot_state` |
 | `argocd` | `internal/adapter/declarative` (`argocd.go`) | `system_health`, `sync_health` |
+| `azure-workload-identity` | `internal/adapter/declarative` (`azureworkloadidentity.go`) | `system_health`, `webhook_wiring`, `projection_sanity` |
 
 `internal/adapter/crdutil` is a shared helper used by the CRD-aware adapters to
 confirm an add-on's CRDs are installed and served (this is why `NewScheme`

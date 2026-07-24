@@ -54,6 +54,8 @@ repositories:
   # Community chart for NodeLocal DNSCache (upstream ships raw manifests only).
   - name: deliveryhero
     url: https://charts.deliveryhero.io
+  - name: azure-workload-identity
+    url: https://azure.github.io/azure-workload-identity/charts
 
 releases:
   - name: cilium
@@ -330,3 +332,28 @@ releases:
             requests:
               cpu: 10m
               memory: 32Mi
+
+  # The azure-workload-identity webhook needs no Azure cloud access to run:
+  # the chart only wants a tenant ID string, which is baked into the injected
+  # env/projection but never validated in-cluster. The webhook manages its own
+  # serving cert and patches the MutatingWebhookConfiguration caBundle at
+  # startup — exactly what Fathom's webhook_wiring family asserts. No pod in
+  # the stack carries the azure.workload.identity/use=true opt-in label, so
+  # the projection_sanity family exercises its empty-cluster Skipped contract.
+  - name: azure-workload-identity
+    namespace: azure-workload-identity-system
+    labels:
+      addon: azure-workload-identity
+    chart: azure-workload-identity/workload-identity-webhook
+    version: 1.6.0
+    needs:
+      - kube-system/cilium
+    createNamespace: true
+    wait: true
+    timeout: 600
+    values:
+      # Any well-formed GUID works: nothing in kind ever contacts Entra ID.
+      - azureTenantID: "00000000-0000-0000-0000-000000000000"
+        # Single-node kind cluster: one replica (chart default is 2) keeps the
+        # PDB satisfiable and the footprint small.
+        replicaCount: 1

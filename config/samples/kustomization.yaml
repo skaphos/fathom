@@ -10,6 +10,7 @@ resources:
 - fathom_v1alpha1_addoncheck_envoy_gateway.yaml
 - fathom_v1alpha1_addoncheck_istio.yaml
 - fathom_v1alpha1_addoncheck_argocd.yaml
+- fathom_v1alpha1_addoncheck_azure_workload_identity.yaml
 - fathom_v1alpha1_healthcheck.yaml
 - fathom_v1alpha1_clusterhealth.yaml
 - fathom_v1alpha1_healthreport.yaml

@@ -30,6 +30,17 @@ ServiceAccount: `fathom-addon-argocd` (namespace `fathom-system`)
 | apiextensions.k8s.io | customresourcedefinitions | get | Get the Application, ApplicationSet, and AppProject CRDs by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only. |
 | argoproj.io | applications | list | List Applications across the policy namespaces to score status.sync.status and status.health.status. list only, and scoped to Applications alone — deliberately NOT AppProjects or ApplicationSets, and no update/patch verb, so the adapter can never trigger a sync or refresh (both require writing to the Application or calling the Argo CD API); strictly read-only. |
 
+## azure-workload-identity
+
+ServiceAccount: `fathom-addon-azure-workload-identity` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments | get | Get the azure-wi-webhook-controller-manager Deployment by name to score webhook readiness and detect the installed version. The name/namespace are policy-overridable but always resolve to a single named Get; read-only. |
+| core | pods | list | List Pods by label selector twice over: the webhook's own pods behind the Deployment (readiness and restart counts), and pods opted in via azure.workload.identity/use=true to verify the federated-token projection was actually injected — the projection_sanity signal. list (not get) because pod names are dynamic; read-only. |
+| admissionregistration.k8s.io | mutatingwebhookconfigurations | get | Get the azure-wi-webhook-mutating-webhook-configuration by name to verify admission wiring (caBundle populated, backed by the webhook Service). get only — exactly one named Get; read-only. |
+| discovery.k8s.io | endpointslices | list | List the EndpointSlices labeled with the azure-wi-webhook-webhook-service name to verify the admission endpoint has ready backends. list (not get) because slice names are dynamic; read-only. |
+
 ## cert-manager
 
 ServiceAccount: `fathom-addon-cert-manager` (namespace `fathom-system`)

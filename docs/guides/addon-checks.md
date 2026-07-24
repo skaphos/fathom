@@ -21,7 +21,7 @@ metadata:
   name: <name>
   namespace: <where you keep your checks, e.g. fathom-system>
 spec:
-  addonType: <cert-manager | coredns | node-local-dns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd>
+  addonType: <cert-manager | coredns | node-local-dns | external-secrets | cilium | external-dns | metrics-server | envoy-gateway | istio | keda | vpa | descheduler | kured | argocd | azure-workload-identity>
   interval: 5m          # periodic adapter run cadence; defaults to 5m
   timeout: 30s          # per-run bound; defaults to 30s
   historyLimit: 10      # HealthReports kept per check (min 1)
@@ -89,6 +89,7 @@ runs.
 | [`descheduler`](#descheduler) | `system_health`, `policy_validity`, `last_run` | descheduler Deployment or CronJob, DeschedulerPolicy well-formedness, and last-run recency |
 | [`kured`](#kured) | `system_health`, `reboot_state` | kured DaemonSet, and whether the reboot lock is wedged or a node has waited too long for a reboot |
 | [`argocd`](#argocd) | `system_health`, `sync_health` | Argo CD control-plane workloads and CRDs, and every Application's sync/health state |
+| [`azure-workload-identity`](#azure-workload-identity) | `system_health`, `webhook_wiring`, `projection_sanity` | Azure Workload Identity webhook Deployment, its mutating-admission wiring, and whether opted-in pods actually carry the injected federated-token projection |
 
 ### cert-manager
 
@@ -549,6 +550,44 @@ install in the `argocd` namespace; a renamed install is reachable through
 HA variant's `redis-ha` topology (point `redisName` at
 `argocd-redis-ha-haproxy` to cover its proxy Deployment) and the optional
 dex/applicationset/notifications controllers.
+
+### azure-workload-identity
+
+```yaml
+spec:
+  addonType: azure-workload-identity
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - azure-workload-identity-system
+      thresholds:
+        restartWarnCount: "3"
+        # A repackaged install renames the Deployment:
+        # deploymentName: "workload-identity-webhook"
+    webhook_wiring:
+      enabled: true
+      namespaces:
+        - azure-workload-identity-system
+      # thresholds:
+      #   webhookName: "azure-wi-webhook-mutating-webhook-configuration"
+    projection_sanity:
+      enabled: true
+```
+
+| Family | Checks | Key thresholds |
+| --- | --- | --- |
+| `system_health` | The `azure-wi-webhook-controller-manager` Deployment and its pods. | `deploymentName`, `restartWarnCount` |
+| `webhook_wiring` | The `azure-wi-webhook-mutating-webhook-configuration` `MutatingWebhookConfiguration` exists, every entry carries a populated `caBundle` and points at the `azure-wi-webhook-webhook-service` Service in the family's namespace, and that service has at least one ready endpoint. | `webhookName` |
+| `projection_sanity` | Pods labeled `azure.workload.identity/use: "true"` (the webhook's own opt-in `objectSelector`) actually carry the injection the webhook performs at admission: the `azure-identity-token` projected serviceAccountToken volume and the `AZURE_FEDERATED_TOKEN_FILE` env var in every non-init container (init containers are not inspected). Scans the family's namespaces (all namespaces when none are listed) and folds into one bounded result; a cluster with no opted-in pods is `Skipped`. | — |
+
+The projection check is what catches the silent-failure mode the adapter
+exists for: the webhook's `objectSelector` only matches labeled pods, so if
+the configuration is deleted — or admission stops mutating — labeled pods are
+created *without* their federated identity and nothing else in the cluster
+ever flags them. Everything here is read-only against the Kubernetes API;
+whether the projected token actually exchanges for an Entra ID credential is
+a cloud-side concern the adapter deliberately does not claim to verify.
 
 ## Probe image
 
