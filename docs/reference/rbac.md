@@ -18,6 +18,18 @@ grant (read or write) that is not justified. Verbs are read-only
 `WRITE EXCEPTION`, defends a write; the only writes are the CoreDNS probe
 Pod and the cert-manager admission dry-run.
 
+## argocd
+
+ServiceAccount: `fathom-addon-argocd` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | statefulsets | get | Get the argocd-application-controller StatefulSet by name to score control-plane readiness and detect the installed version. The name/namespace are policy-overridable but always resolve to a single named Get; read-only. |
+| apps | deployments | get | Get the argocd-repo-server, argocd-server, and argocd-redis Deployments by name to score control-plane readiness. get only — three named Gets; read-only. |
+| core | pods | list | List the Argo CD control-plane Pods by label selector for restart counts and readiness behind their controllers. list (not get) because Pod names are dynamic; read-only. |
+| apiextensions.k8s.io | customresourcedefinitions | get | Get the Application, ApplicationSet, and AppProject CRDs by name to verify they are Established and serve a supported version. get only — each CRD is fetched individually by name, never listed; read-only. |
+| argoproj.io | applications | list | List Applications across the policy namespaces to score status.sync.status and status.health.status. list only, and scoped to Applications alone — deliberately NOT AppProjects or ApplicationSets, and no update/patch verb, so the adapter can never trigger a sync or refresh (both require writing to the Application or calling the Argo CD API); strictly read-only. |
+
 ## cert-manager
 
 ServiceAccount: `fathom-addon-cert-manager` (namespace `fathom-system`)

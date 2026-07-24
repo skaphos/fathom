@@ -84,6 +84,19 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				}
 			}
 		}
+		for _, fc := range f.Fields {
+			if fc.APIVersion == "" || fc.Kind == "" || fc.ListKind == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a FieldCheck with no APIVersion/Kind/ListKind", def.AddonType, f.Name)
+			}
+			if len(fc.FieldPath) == 0 {
+				// An empty path would score every object as field-absent — a
+				// silent definition bug.
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a %s FieldCheck with no FieldPath", def.AddonType, f.Name, fc.Kind)
+			}
+			if fc.ExpectedValue == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a %s FieldCheck with no ExpectedValue", def.AddonType, f.Name, fc.Kind)
+			}
+		}
 		for _, w := range f.Webhooks {
 			if w.Kind != KindMutatingWebhookConfiguration && w.Kind != KindValidatingWebhookConfiguration {
 				return nil, fmt.Errorf("declarative: adapter %q family %q has a WebhookCheck with unknown kind %q", def.AddonType, f.Name, w.Kind)

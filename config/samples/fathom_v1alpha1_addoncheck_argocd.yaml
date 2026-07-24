@@ -1,0 +1,18 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: argocd-sample
+spec:
+  addonType: argocd
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      thresholds:
+        restartWarnCount: "3"
+    sync_health:
+      enabled: true
