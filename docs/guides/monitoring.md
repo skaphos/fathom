@@ -79,10 +79,24 @@ controller-runtime and Go metrics are exposed alongside them):
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
+| `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
+| `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
 | `fathom_reconcile_duration_seconds` | histogram | `kind` | Reconcile latency per kind. |
 | `fathom_adapter_run_duration_seconds` | histogram | `adapter`, `family`, `outcome` | How long adapter runs take, and their outcome distribution. |
 | `fathom_adapter_registered` | gauge | `adapter` | `1` for each adapter registered at startup — confirms the operator loaded the adapters you expect. |
+
+The check gauges cover all four check kinds (`AddonCheck`, `HealthCheck`,
+`ClusterHealth`, `NodeCertificateCheck`; `ClusterHealth` is cluster-scoped, so
+its `namespace` label is empty). Series exist from the moment the operator
+first observes a check — reporting `result="Unknown"` and last-run `0` until
+the first evaluation completes — and are removed when the check is deleted.
+For the wrapper kinds the last-run timestamp follows the freshness of the
+evidence behind the verdict: a `HealthCheck` carries its mirrored target's
+last run time, and a `ClusterHealth` the freshest of its children — so a
+stale source reads as a stale wrapper, which is what you want to alert on.
+Label cardinality is bounded by design: one series set per check resource,
+and never any free-text label.
 
 ### Node-agent metric
 
@@ -163,19 +177,49 @@ Catch the operator failing to run checks at all:
           summary: "Fathom {{ $labels.kind }} reconciles are erroring"
 ```
 
-### Add-on check results — read the status, not a metric
+### Check results and staleness
 
-There is **no operator gauge for "current check result"** today. The result of
-an `AddonCheck` / `HealthCheck` / `ClusterHealth` lives in the resource
-**status**, not in a Prometheus series. `fathom_adapter_run_duration_seconds`
-carries an `outcome` label, which tells you the distribution of recent run
-outcomes — useful, but it is not the same as "is cert-manager currently `Fail`."
+`fathom_check_result` and `fathom_check_last_run_timestamp_seconds` make both
+failing checks and *silently stale* checks first-class alerts. The staleness
+rule is the one that catches what nothing else does: a wedged operator, a
+paused check, or a selector matching nothing all leave the last recorded
+result frozen — the metrics stop advancing even though status still reads
+`Pass`:
 
-To alert on check *results*, expose the CRD status to Prometheus with
-[kube-state-metrics custom resource state](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/metrics/extend/customresourcestate-metrics.md),
-mapping `status.lastResult` / `ClusterHealth.status.result` to a gauge, then
-alert on that. (A first-class result metric is a natural future addition; for
-now, status is the source of truth.)
+```yaml
+groups:
+  - name: fathom-checks
+    rules:
+      - alert: FathomCheckFailing
+        expr: fathom_check_result{result=~"Fail|Error"} == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fathom check {{ $labels.kind }}/{{ $labels.name }} reports {{ $labels.result }}"
+      - alert: FathomCheckStale
+        # 900s suits the default 5m AddonCheck interval (3× interval); tune to
+        # yours. The 0 "never ran" sentinel makes a check that never executed
+        # fire this alert too — no absent() gymnastics needed.
+        expr: time() - fathom_check_last_run_timestamp_seconds > 900
+        for: 10m
+        labels:
+          severity: warning
+```
+
+Both rules also ship ready-to-install as an opt-in kustomize component,
+`config/components/prometheus-rule` (requires the prometheus-operator CRDs;
+enable it next to the `prometheus` ServiceMonitor component in
+`config/default/kustomization.yaml`). The shipped rules are build-validated in
+CI (`task verify-alert-rules`); they are not exercised by promtool-style rule
+unit tests.
+
+Status remains the source of truth the metric is derived from — for a
+just-in-time verdict or a deploy gate, keep reading status
+([section 5](#5-deployment-gates)). Result *history* is `HealthReport`'s job,
+and each check resource also records Kubernetes Events on result transitions
+and operational failures (`kubectl describe addoncheck <name>`), so the
+recent story is visible without operator logs.
 
 ## 5. Deployment gates
 

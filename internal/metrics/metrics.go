@@ -9,6 +9,7 @@ SPDX-License-Identifier: MIT
 package metrics
 
 import (
+	"slices"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -59,6 +60,44 @@ var (
 	)
 )
 
+// Check metrics express the current verdict and freshness of every check
+// resource the operator reconciles (AddonCheck, HealthCheck, ClusterHealth,
+// NodeCertificateCheck), so operators can alert on failing or stale checks
+// without bridging CRD status into their monitoring stack (skaphos/fathom#154).
+var (
+	// CheckResult is a one-hot state set: for every existing check there is one
+	// series per result value, and exactly one of them is 1. Series exist from
+	// the moment a check is first observed (result "Unknown" until the first
+	// evaluation completes) and are removed when the check is deleted.
+	CheckResult = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_result",
+			Help: "Current result of a check by kind, name, namespace, and result (one-hot: exactly one series per check is 1).",
+		},
+		[]string{"kind", "name", "namespace", "result"},
+	)
+
+	// CheckLastRunTimestamp is the unix time of the freshest completed
+	// evaluation backing the check's current result, 0 until the first
+	// evaluation completes — so one "time() - metric > N" rule catches
+	// never-ran and stopped-running checks alike.
+	CheckLastRunTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_last_run_timestamp_seconds",
+			Help: "Unix time of the most recent completed evaluation backing a check's current result (0 = never evaluated).",
+		},
+		[]string{"kind", "name", "namespace"},
+	)
+)
+
+// checkResultValues is the canonical result vocabulary, mirroring the
+// api/v1alpha1 HealthReportResult constants. It is deliberately a literal —
+// importing the API package here would drag apimachinery into every binary
+// that serves these metrics (the node-agent imports this package) — and a
+// unit test asserts it stays in sync with the API constants, so a new result
+// state cannot silently miss the metric.
+var checkResultValues = []string{"Pass", "Warn", "Fail", "Error", "Skipped", "Unknown"}
+
 // Node-agent metrics are set by the node-agent DaemonSet (cmd/node-agent), which
 // imports this package and serves ctrlmetrics.Registry on its own metrics port.
 // In the operator process the gauge is registered but never set, so it emits no
@@ -85,8 +124,43 @@ func init() {
 		ReconcileDuration,
 		AdapterRunDuration,
 		AdapterRegistered,
+		CheckResult,
+		CheckLastRunTimestamp,
 		NodeCertificateExpiryDays,
 	)
+}
+
+// ObserveCheck mirrors a check's current status into the check gauges: the
+// full one-hot result set plus the last-run timestamp. An empty or
+// unrecognized result is coerced to "Unknown" (the sentinel for "not yet
+// evaluated"), and a zero lastRun becomes 0 ("never ran"). Idempotent —
+// reconcilers call it on every pass, whatever the exit path.
+func ObserveCheck(kind, namespace, name, result string, lastRun time.Time) {
+	if !slices.Contains(checkResultValues, result) {
+		result = "Unknown"
+	}
+	for _, value := range checkResultValues {
+		current := 0.0
+		if value == result {
+			current = 1
+		}
+		CheckResult.WithLabelValues(kind, name, namespace, value).Set(current)
+	}
+	ts := 0.0
+	if !lastRun.IsZero() {
+		ts = float64(lastRun.Unix())
+	}
+	CheckLastRunTimestamp.WithLabelValues(kind, name, namespace).Set(ts)
+}
+
+// DeleteCheckSeries removes every series ObserveCheck created for a check.
+// Called when a reconcile observes the resource is gone, so a deleted check
+// cannot keep asserting a result. An operator restart clears the registry
+// wholesale; startup reconciles repopulate only checks that still exist.
+func DeleteCheckSeries(kind, namespace, name string) {
+	labels := prometheus.Labels{"kind": kind, "name": name, "namespace": namespace}
+	CheckResult.DeletePartialMatch(labels)
+	CheckLastRunTimestamp.DeletePartialMatch(labels)
 }
 
 // RecordReconcile is a convenience helper for reconcilers to record both

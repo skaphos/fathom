@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -53,6 +54,11 @@ type ClusterHealthReconciler struct {
 	// Tracer creates the per-Reconcile span. Optional: a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
+
+	// Recorder emits the Kubernetes Events contract (result transitions and
+	// operational failures) on ClusterHealth resources. Optional: nil disables
+	// event recording; the check gauges are unaffected.
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=clusterhealths,verbs=get;list;watch;create;update;patch;delete
@@ -81,12 +87,23 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	var ch fathomv1alpha1.ClusterHealth
 	if err := r.Get(ctx, req.NamespacedName, &ch); err != nil {
 		if apierrors.IsNotFound(err) {
+			// Cluster-scoped: req.Namespace is empty, matching the series labels.
+			metrics.DeleteCheckSeries("ClusterHealth", req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	before := ch.Status.DeepCopy()
+	// ObservedAt is the latest input freshness across children (see aggregate),
+	// so the staleness gauge follows the evidence chain: stale children — or a
+	// selector matching nothing (ObservedAt nil → 0) — read as a stale roll-up.
+	defer func() {
+		observeCheck(r.Recorder, &ch, "ClusterHealth",
+			before.Result, ch.Status.Result,
+			before.Conditions, ch.Status.Conditions,
+			ch.Status.ObservedAt, err)
+	}()
 	ch.Status.ObservedGeneration = ch.Generation
 
 	apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{

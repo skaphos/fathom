@@ -67,6 +67,19 @@ type Launcher struct {
 	PollInterval time.Duration
 }
 
+// LaunchError marks a failure to get the probe pod running at all (pod build
+// or create) — an infrastructure fault (image, RBAC, quota), as opposed to
+// the probe running and reporting its own outcome. Callers classify it with
+// errors.As so remediation guidance (and the AddonCheck ProbeLaunchFailed
+// event reason) stays a typed contract instead of string matching.
+type LaunchError struct {
+	Err error
+}
+
+func (e *LaunchError) Error() string { return e.Err.Error() }
+
+func (e *LaunchError) Unwrap() error { return e.Err }
+
 // Run launches a probe pod for req, waits for it to terminate, and returns
 // the parsed Result. The pod is always deleted before Run returns, even on
 // error and even if ctx is cancelled mid-poll.
@@ -86,10 +99,10 @@ func (l *Launcher) Run(ctx context.Context, req Request) (Result, error) {
 	}
 	pod, err := Pod(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("build probe pod: %w", err)
+		return Result{}, &LaunchError{Err: fmt.Errorf("build probe pod: %w", err)}
 	}
 	if err := l.Client.Create(ctx, pod); err != nil {
-		return Result{}, fmt.Errorf("create probe pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		return Result{}, &LaunchError{Err: fmt.Errorf("create probe pod %s/%s: %w", pod.Namespace, pod.Name, err)}
 	}
 	defer l.bestEffortDelete(pod)
 

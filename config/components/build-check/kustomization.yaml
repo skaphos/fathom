@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Build fixture for the verify-alert-rules task: `kustomize build` cannot
+# render a Component directly (and refuses fixtures nested inside the
+# component being built), so this minimal sibling Kustomization exists purely
+# to let CI render the opt-in components and fail on YAML/kustomize breakage.
+# It is never deployed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+components:
+  - ../prometheus
+  - ../prometheus-rule

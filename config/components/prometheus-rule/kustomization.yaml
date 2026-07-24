@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Kustomize component that overlays the shipped Fathom alert rules
+# (PrometheusRule) onto the default render. Requires the prometheus-operator
+# CRDs in the cluster — which is why it is opt-in and the default overlay
+# never references the monitoring.coreos.com API group on its own. Enable from
+# an overlay (e.g. config/default/kustomization.yaml) via:
+#
+#   components:
+#     - ../components/prometheus-rule
+#
+# Usually enabled together with ../components/prometheus (the ServiceMonitor
+# that makes Prometheus scrape the metrics these rules evaluate).
+#
+# The rules are the canonical pair documented in docs/guides/monitoring.md:
+# FathomCheckFailing (a check currently reports Fail/Error) and
+# FathomCheckStale (a check has not been evaluated recently — wedged operator,
+# paused check, or a check that never ran). They are build-validated by the
+# verify-alert-rules task; promtool-style rule unit tests are not run.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - prometheusrule.yaml

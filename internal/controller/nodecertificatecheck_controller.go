@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -113,6 +114,11 @@ type NodeCertificateCheckReconciler struct {
 	// Tracer creates the per-Reconcile span. Optional; a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
+
+	// Recorder emits the Kubernetes Events contract (result transitions and
+	// operational failures) on NodeCertificateCheck resources. Optional: nil
+	// disables event recording; the check gauges are unaffected.
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks,verbs=get;list;watch;update;patch
@@ -159,12 +165,19 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	var check fathomv1alpha1.NodeCertificateCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
+			metrics.DeleteCheckSeries("NodeCertificateCheck", req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	before := check.Status.DeepCopy()
+	defer func() {
+		observeCheck(r.Recorder, &check, "NodeCertificateCheck",
+			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			before.Conditions, check.Status.Conditions,
+			check.Status.LastRunTime, err)
+	}()
 	check.Status.ObservedGeneration = check.Generation
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeCertConditionAccepted,

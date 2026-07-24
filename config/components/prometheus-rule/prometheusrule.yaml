@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Shipped alert rules over the fathom_check_* gauges (spec 001, FR-009a).
+# Thresholds are shipped defaults — tune `for`/900 to your check intervals.
+# The 0 "never ran" sentinel on fathom_check_last_run_timestamp_seconds makes
+# a never-evaluated check fire FathomCheckStale right after the `for` window.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: check-alert-rules
+  namespace: system
+spec:
+  groups:
+    - name: fathom-checks
+      rules:
+        - alert: FathomCheckFailing
+          expr: fathom_check_result{result=~"Fail|Error"} == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} reports {{ $labels.result }}'
+            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has reported {{ $labels.result }} for 10 minutes. Inspect it with: kubectl describe {{ $labels.kind }} {{ $labels.name }}'
+        - alert: FathomCheckStale
+          expr: time() - fathom_check_last_run_timestamp_seconds > 900
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} is stale'
+            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over 15 minutes (0 = never). The last recorded result can no longer be trusted: the operator may be wedged, the check paused, or its target selector matching nothing.'

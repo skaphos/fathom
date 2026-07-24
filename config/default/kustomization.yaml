@@ -53,8 +53,14 @@ patches:
 # the controller-manager-metrics-service over HTTPS. See
 # config/components/prometheus/kustomization.yaml for the cert-manager-backed
 # TLS variant.
+# [PROMETHEUS-RULE] The prometheus-rule component additionally ships the
+# FathomCheckFailing / FathomCheckStale alert rules over the fathom_check_*
+# gauges (requires the prometheus-operator CRDs; see
+# config/components/prometheus-rule/kustomization.yaml and
+# docs/guides/monitoring.md).
 #components:
 #  - ../components/prometheus
+#  - ../components/prometheus-rule
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml

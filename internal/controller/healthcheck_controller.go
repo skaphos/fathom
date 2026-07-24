@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,6 +50,11 @@ type HealthCheckReconciler struct {
 	// Tracer creates the per-Reconcile span. Optional: a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
+
+	// Recorder emits the Kubernetes Events contract (result transitions and
+	// operational failures) on HealthCheck resources. Optional: nil disables
+	// event recording; the check gauges are unaffected.
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks,verbs=get;list;watch;create;update;patch;delete
@@ -82,12 +88,23 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	var hc fathomv1alpha1.HealthCheck
 	if err := r.Get(ctx, req.NamespacedName, &hc); err != nil {
 		if apierrors.IsNotFound(err) {
+			metrics.DeleteCheckSeries("HealthCheck", req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	before := hc.Status.DeepCopy()
+	// SourceObservedAt carries the mirrored target's own run time, so the
+	// staleness gauge tracks the freshness of the evidence behind this wrapper:
+	// a paused or wedged target freezes it, which is exactly when the wrapper's
+	// verdict stops meaning anything.
+	defer func() {
+		observeCheck(r.Recorder, &hc, "HealthCheck",
+			before.Result, hc.Status.Result,
+			before.Conditions, hc.Status.Conditions,
+			hc.Status.SourceObservedAt, err)
+	}()
 	hc.Status.ObservedGeneration = hc.Generation
 
 	apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
