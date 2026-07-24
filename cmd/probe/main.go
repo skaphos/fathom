@@ -171,15 +171,18 @@ func runHTTPGet(ctx context.Context, target, expect string) error {
 	}
 	u, err := url.Parse(target)
 	if err != nil || u.Scheme == "" || u.Host == "" {
+		// One result per probe run: main() writes its own Error result when we
+		// return an error, so emit-and-return-nil keeps the termination-log
+		// contract (a single JSON document with Details intact).
 		writeResult(result{Outcome: "Error", Summary: "http-get target is not a valid URL", Details: map[string]string{"target": target}})
-		return fmt.Errorf("http-get target %q is not a valid URL", target)
+		return nil
 	}
 
 	started := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		writeResult(result{Outcome: "Error", Summary: "failed to build HTTP request", Details: map[string]string{"target": target, "error": err.Error()}})
-		return err
+		return nil
 	}
 	resp, err := http.DefaultClient.Do(req)
 	latency := time.Since(started)
@@ -208,7 +211,7 @@ func runHTTPGet(ctx context.Context, target, expect string) error {
 	if scanErr != nil {
 		details["error"] = scanErr.Error()
 		writeResult(result{Outcome: "Error", Summary: "failed to read HTTP response body", Details: details})
-		return scanErr
+		return nil
 	}
 	if len(missing) > 0 {
 		details["missingFamilies"] = join(missing)

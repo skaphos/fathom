@@ -199,9 +199,12 @@ func TestRunHTTPGetRequiresTarget(t *testing.T) {
 }
 
 func TestRunHTTPGetRejectsInvalidURL(t *testing.T) {
+	// One result per probe run: runHTTPGet must emit the Error result itself
+	// and return nil, or main() would write a second result over the
+	// termination log and drop the Details map.
 	got := captureResult(t, func() {
-		if err := runHTTPGet(context.Background(), "not a url", ""); err == nil {
-			t.Error("expected error for invalid URL, got nil")
+		if err := runHTTPGet(context.Background(), "not a url", ""); err != nil {
+			t.Errorf("runHTTPGet must return nil after emitting a result, got %v", err)
 		}
 	})
 	if got.Outcome != "Error" {
