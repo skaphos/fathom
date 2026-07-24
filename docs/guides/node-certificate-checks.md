@@ -255,9 +255,15 @@ The agent is built for least privilege:
   the `ValidatingAdmissionPolicy` feature (GA 1.30).
 - **Hardened and dedicated.** It runs from its own image and serves only a
   Prometheus metrics endpoint and a health check.
+- **Network-isolated.** The operator creates a NetworkPolicy with each
+  DaemonSet: metrics ingress only from namespaces labeled `metrics: enabled`,
+  egress only to the API server. See
+  [Network policies](../reference/network-policies.md) for the label contract
+  and CNI caveats.
 
 When you `delete` a `NodeCertificateCheck`, its DaemonSet, ServiceAccount,
-RoleBinding, and reports are garbage-collected via their owner references.
+RoleBinding, NetworkPolicy, and reports are garbage-collected via their owner
+references.
 
 ## Reference
 

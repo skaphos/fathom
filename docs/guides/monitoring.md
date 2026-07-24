@@ -115,6 +115,13 @@ scrape them depends on your Prometheus setup — a `PodMonitor` selecting the
 agent pods, or pod scrape annotations, rather than the operator's
 `ServiceMonitor`.
 
+The controller also creates a NetworkPolicy alongside each agent DaemonSet
+that admits metrics ingress **only from namespaces labeled
+`metrics: enabled`**. On a CNI that enforces NetworkPolicy, label your
+monitoring namespace (`kubectl label namespace <ns> metrics=enabled`) or the
+scrape will be dropped — see
+[Network policies](../reference/network-policies.md).
+
 ## 3. Tracing
 
 The operator can emit OpenTelemetry spans for each reconcile and adapter run,
