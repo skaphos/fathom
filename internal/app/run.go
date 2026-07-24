@@ -269,7 +269,7 @@ func adapterName(a adapter.Adapter) string {
 // its read-only guard (internal/adapter/rbacgen), so a newly added adapter cannot
 // ship without a generated per-addon role (SKA-58).
 func BuiltInAdapters() []adapter.Adapter {
-	return []adapter.Adapter{certmanager.New(), coredns.New(), nodelocaldns.New(), declarative.NewExternalSecretsEngine(), declarative.NewCiliumEngine(), declarative.NewExternalDNSEngine(), declarative.NewMetricsServerEngine(), declarative.NewEnvoyGatewayEngine(), declarative.NewIstioEngine(), declarative.NewKedaEngine(), declarative.NewVpaEngine(), declarative.NewDeschedulerEngine(), declarative.NewKuredEngine(), declarative.NewArgoCDEngine()}
+	return []adapter.Adapter{certmanager.New(), coredns.New(), nodelocaldns.New(), declarative.NewExternalSecretsEngine(), declarative.NewCiliumEngine(), declarative.NewExternalDNSEngine(), declarative.NewMetricsServerEngine(), declarative.NewEnvoyGatewayEngine(), declarative.NewIstioEngine(), declarative.NewKedaEngine(), declarative.NewVpaEngine(), declarative.NewDeschedulerEngine(), declarative.NewKuredEngine(), declarative.NewArgoCDEngine(), declarative.NewAzureWorkloadIdentityEngine()}
 }
 
 // managerFactory builds a manager from a rest.Config and ctrl.Options. It is a

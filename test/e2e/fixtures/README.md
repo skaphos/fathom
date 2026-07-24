@@ -14,7 +14,7 @@ the Go e2e suite under `test/e2e/` will eventually drive automatically.
 | File | Purpose |
 | ---- | ------- |
 | `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned by digest to `v1.36.1` (matches `ENVTEST_K8S_VERSION` 1.36 in `Taskfile.yml`; kind only publishes specific patch tags per release, so use a real one). |
-| `helmfile.yaml` | The tiered addon stack (see below): Cilium (the cluster CNI) + cert-manager + external-secrets always; external-dns, metrics-server, Envoy Gateway, istio (sidecar mode: base + istiod), Argo CD, and NodeLocal DNSCache as per-addon opt-ins — via their official charts, except NodeLocal DNSCache, which uses the community deliveryhero chart (upstream ships raw manifests only). CoreDNS is preinstalled by kind and is not managed here. |
+| `helmfile.yaml` | The tiered addon stack (see below): Cilium (the cluster CNI) + cert-manager + external-secrets always; external-dns, metrics-server, Envoy Gateway, istio (sidecar mode: base + istiod), Argo CD, NodeLocal DNSCache, and the azure-workload-identity webhook as per-addon opt-ins — via their official charts, except NodeLocal DNSCache, which uses the community deliveryhero chart (upstream ships raw manifests only). CoreDNS is preinstalled by kind and is not managed here. |
 
 ## Tiered Stack & Scoped Runs
 
@@ -31,7 +31,10 @@ would make every adapter PR pay the full-stack cost.
   (Manager, RBAC impersonation, NodeCertificateCheck, refresh-on-change).
 - **Opt-in addons** (helmfile label `addon: <name>`, no `tier: core`):
   external-dns, metrics-server, envoy-gateway, istio, argocd,
-  node-local-dns. Each installs only when selected, layered on the core tier.
+  node-local-dns, azure-workload-identity. Each installs only when selected,
+  layered on the core tier. The azure-workload-identity webhook needs no
+  Azure cloud access: the chart only wants a tenant ID string, so it runs
+  self-contained in kind.
 
 The `E2E_ADDONS` variable (environment variable or Task var) selects a slice
 of the stack. It scopes **both** what helmfile installs and which specs the
@@ -98,6 +101,7 @@ The AddonCheck samples used by this stack live in `config/samples/`:
 - `fathom_v1alpha1_addoncheck_istio.yaml` — exercises istio `system_health` (istiod + both webhook configurations) + `crd_health`, plus the `ztunnel_health`/`istio_cni_health` Optional-absence Skipped contract (the stack installs sidecar mode only).
 - `fathom_v1alpha1_addoncheck_argocd.yaml` — exercises argocd `system_health` (the application-controller StatefulSet, the repo-server/server/redis Deployments, and the Application/ApplicationSet/AppProject CRDs) + the `sync_health` empty-cluster Skipped contract (no Application objects are declared).
 - `fathom_v1alpha1_addoncheck_node_local_dns.yaml` — exercises node-local-dns `system_health` (DaemonSet + per-node coverage) + `dns_resolution` through the cache's `169.254.20.10` listen address (the helmfile pins the chart's `config.localDns` to the upstream convention).
+- `fathom_v1alpha1_addoncheck_azure_workload_identity.yaml` — exercises azure-workload-identity `system_health` + `webhook_wiring` (mutating configuration wired, backing service endpoints ready), plus the `projection_sanity` empty-cluster Skipped contract (no pod in the stack opts in via `azure.workload.identity/use=true`).
 
 ## Prerequisites
 

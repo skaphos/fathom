@@ -1,0 +1,31 @@
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: azure-workload-identity-sample
+spec:
+  addonType: azure-workload-identity
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - azure-workload-identity-system
+      thresholds:
+        restartWarnCount: "3"
+        # A repackaged install renames the Deployment; point the check at it:
+        # deploymentName: "workload-identity-webhook"
+    webhook_wiring:
+      enabled: true
+      namespaces:
+        - azure-workload-identity-system
+      # thresholds:
+      #   webhookName: "azure-wi-webhook-mutating-webhook-configuration"
+    projection_sanity:
+      # Scans all namespaces for pods labeled azure.workload.identity/use=true
+      # when no namespaces are listed; a cluster with no opted-in pods is
+      # Skipped, not Fail.
+      enabled: true

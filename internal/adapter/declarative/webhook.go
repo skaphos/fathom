@@ -12,8 +12,10 @@ import (
 	"time"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -55,9 +57,12 @@ func appendEntry(entries []webhookEntry, name string, cc admissionv1.WebhookClie
 //     resolved namespace (first policy namespace, else ServiceNamespace) —
 //     the backing service lives wherever the addon was installed.
 //
-// Whether the backing service's endpoints are ready is deliberately not
-// checked here: the serving workload is the same one a WorkloadCheck in the
-// family already scores, so endpoint readiness is covered transitively.
+// Whether the backing service's endpoints are ready is not checked by
+// default: the serving workload is usually the same one a WorkloadCheck in the
+// family already scores, so endpoint readiness is covered transitively. The
+// opt-in VerifyEndpoints emits a second CheckResult asserting the expected
+// backing service has at least one ready endpoint, for definitions whose
+// webhook family stands apart from the workload family.
 func (wc WebhookCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 	started := time.Now()
 	name := wc.Name
@@ -126,13 +131,55 @@ func (wc WebhookCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		details["misdirectedWebhooks"] = strings.Join(misdirected, ",")
 		problems = append(problems, fmt.Sprintf("%d of %d webhooks do not target the expected backing service", len(misdirected), len(entries)))
 	}
+	wiring := result(ec.Family, ref, adapter.OutcomePass, "webhook configuration is wired", details, started)
 	if len(problems) > 0 {
-		return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomeFail,
-			strings.Join(problems, "; "), details, started)}, nil
+		wiring = result(ec.Family, ref, adapter.OutcomeFail, strings.Join(problems, "; "), details, started)
 	}
+	checks := []adapter.CheckResult{wiring}
+	if wc.VerifyEndpoints {
+		// Independent signal: a perfectly-wired configuration whose backing
+		// service has no ready endpoints still cannot admit anything.
+		checks = append(checks, wc.endpointsResult(ec, expectedNS))
+	}
+	return checks, nil
+}
 
-	return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomePass,
-		"webhook configuration is wired", details, started)}, nil
+// endpointsResult scores whether the expected backing service has at least one
+// ready endpoint. It lists the EndpointSlices labeled with the service name
+// (slice names are dynamic, so a named Get cannot address them) and counts
+// endpoints whose Ready condition is true or unset (unset means ready, per the
+// discovery.k8s.io contract). Zero ready endpoints — including a missing
+// service, which simply has no slices — is a Fail: the API server has nowhere
+// to deliver admission requests, so with failurePolicy Fail workloads cannot
+// schedule and with Ignore mutation silently stops.
+func (wc WebhookCheck) endpointsResult(ec EvalContext, namespace string) adapter.CheckResult {
+	started := time.Now()
+	ref := adapter.TargetRef{APIVersion: "discovery.k8s.io/v1", Kind: "EndpointSlice", Namespace: namespace, Name: wc.ExpectedService}
+	var slices discoveryv1.EndpointSliceList
+	if err := ec.Client.List(ec.Ctx, &slices, client.InNamespace(namespace),
+		client.MatchingLabels{"kubernetes.io/service-name": wc.ExpectedService}); err != nil {
+		return result(ec.Family, ref, adapter.OutcomeError,
+			fmt.Sprintf("failed to list EndpointSlices for service %s/%s: %v", namespace, wc.ExpectedService, err), nil, started)
+	}
+	ready := 0
+	for _, slice := range slices.Items {
+		for _, endpoint := range slice.Endpoints {
+			if endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready {
+				ready++
+			}
+		}
+	}
+	details := map[string]string{
+		"service":        namespace + "/" + wc.ExpectedService,
+		"endpointSlices": strconv.Itoa(len(slices.Items)),
+		"readyEndpoints": strconv.Itoa(ready),
+	}
+	if ready == 0 {
+		return result(ec.Family, ref, adapter.OutcomeFail,
+			"webhook backing service has no ready endpoints", details, started)
+	}
+	return result(ec.Family, ref, adapter.OutcomePass,
+		"webhook backing service has ready endpoints", details, started)
 }
 
 // readErrorResult scores a failed Get: NotFound is a verdict decided by the

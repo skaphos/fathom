@@ -37,9 +37,10 @@ type Engine struct {
 //
 // Validation catches programmer errors at manager startup (before Register):
 // non-empty AddonType, non-empty Families, unique family names, each
-// WorkloadCheck.Kind known, each CRDCheck carrying at least one name, and each
+// WorkloadCheck.Kind known, each CRDCheck carrying at least one name, each
 // WebhookCheck naming a known configuration kind with a complete (or absent)
-// backing-service reference.
+// backing-service reference (VerifyEndpoints requires one), and each
+// PodProjectionCheck carrying a selector and a volume name.
 func NewEngine(def AddonDefinition) (*Engine, error) {
 	if def.AddonType == "" {
 		return nil, fmt.Errorf("declarative: AddonType must not be empty")
@@ -109,6 +110,11 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				// time — catch the definition bug at construction.
 				return nil, fmt.Errorf("declarative: adapter %q family %q WebhookCheck %q must set ExpectedService and ServiceNamespace together", def.AddonType, f.Name, w.Name)
 			}
+			if w.VerifyEndpoints && w.ExpectedService == "" {
+				// Endpoint readiness is defined relative to the expected backing
+				// service; without one there is nothing to list.
+				return nil, fmt.Errorf("declarative: adapter %q family %q WebhookCheck %q sets VerifyEndpoints without ExpectedService", def.AddonType, f.Name, w.Name)
+			}
 		}
 		for _, c := range f.CronJobs {
 			if c.DefaultName == "" && c.NameThresholdKey == "" {
@@ -132,6 +138,16 @@ func NewEngine(def AddonDefinition) (*Engine, error) {
 				// A check with no key would score every ConfigMap as missing its
 				// (empty) key — a silent definition bug.
 				return nil, fmt.Errorf("declarative: adapter %q family %q ConfigMapCheck %q has no Key", def.AddonType, f.Name, c.DefaultName)
+			}
+		}
+		for _, pp := range f.PodProjections {
+			if len(pp.Selector) == 0 {
+				// An empty selector would list every pod in scope and grade the
+				// whole cluster against the injection — a silent definition bug.
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a PodProjectionCheck with an empty Selector", def.AddonType, f.Name)
+			}
+			if pp.VolumeName == "" {
+				return nil, fmt.Errorf("declarative: adapter %q family %q has a PodProjectionCheck with no VolumeName", def.AddonType, f.Name)
 			}
 		}
 		for _, a := range f.Annotations {

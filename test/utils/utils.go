@@ -51,7 +51,7 @@ var coreAddons = []string{"cilium", "coredns", "cert-manager", "external-secrets
 // Growing this list is how a new non-core adapter joins the tiered stack; the
 // drift guards in utils_test.go and scripts/e2e_shards_gate_test.go enforce
 // that the helmfile labels and the CI shard planner stay in sync with it.
-var optInAddons = []string{"external-dns", "metrics-server", "envoy-gateway", "istio", "argocd", "node-local-dns"}
+var optInAddons = []string{"external-dns", "metrics-server", "envoy-gateway", "istio", "argocd", "node-local-dns", "azure-workload-identity"}
 
 // CoreAddons returns the addons in the always-on core tier.
 func CoreAddons() []string { return append([]string(nil), coreAddons...) }
