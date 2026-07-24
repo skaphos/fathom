@@ -12,7 +12,7 @@ anchor commit. **No candidate was fully refuted** — the finders were
 disciplined and every candidate describes a real code fact (see
 [refuted.md](refuted.md) for the empty-refutation record and the two severity
 adjustments made during refutation). Distribution after refutation: **0
-critical, 4 high, 14 medium, 16 low** (API-2 was downgraded high→medium; RBAC-5
+critical, 4 high, 16 medium, 14 low** (API-2 was downgraded high→medium; RBAC-5
 was reclassified from a high over-grant to an accepted, unavoidable capability).
 
 Disposition of the critical/high set (the gate's mandate — FR-005):
