@@ -59,12 +59,8 @@ rules:
   - clusterhealths
   - healthchecks
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - fathom.skaphos.io
