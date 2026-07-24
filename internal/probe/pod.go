@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +23,7 @@ const (
 	ModeDNS        Mode = "dns"
 	ModeTCPConnect Mode = "tcp-connect"
 	ModeTCPListen  Mode = "tcp-listen"
+	ModeHTTPGet    Mode = "http-get"
 
 	OutcomePass  Outcome = "Pass"
 	OutcomeFail  Outcome = "Fail"
@@ -51,6 +53,11 @@ type Request struct {
 	Target    string
 	Port      int
 	Timeout   time.Duration
+
+	// Expect lists the Prometheus metric family names an http-get probe
+	// requires in the response body (the probe binary's -expect flag).
+	// Ignored by the other modes.
+	Expect []string
 
 	Labels          map[string]string
 	NodeSelector    map[string]string
@@ -183,6 +190,15 @@ func args(req Request) ([]string, error) {
 			return nil, errors.New("tcp-listen probe port is required")
 		}
 		return []string{"-mode", string(req.Mode), "-port", strconv.Itoa(req.Port)}, nil
+	case ModeHTTPGet:
+		if req.Target == "" {
+			return nil, errors.New("http-get probe target is required")
+		}
+		out := []string{"-mode", string(req.Mode), "-target", req.Target}
+		if len(req.Expect) > 0 {
+			out = append(out, "-expect", strings.Join(req.Expect, ","))
+		}
+		return out, nil
 	default:
 		return nil, fmt.Errorf("unsupported probe mode %q", req.Mode)
 	}

@@ -303,7 +303,7 @@ func TestBuiltInAdapters_AllLookupable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAdapterRegistry: %v", err)
 	}
-	for _, name := range []string{"cert-manager", "coredns", "external-secrets", "cilium", "external-dns", "metrics-server", "envoy-gateway", "istio"} {
+	for _, name := range []string{"cert-manager", "coredns", "kube-state-metrics", "external-secrets", "cilium", "external-dns", "metrics-server", "envoy-gateway", "istio"} {
 		got, err := adapterRegistry.Lookup(name)
 		if err != nil {
 			t.Fatalf("Lookup(%s): %v", name, err)

@@ -15,8 +15,9 @@ those declarations. **Every** grant carries a defensive **justification** — wh
 is needed and why a narrower grant would not suffice — and the CI guard fails any
 grant (read or write) that is not justified. Verbs are read-only
 (`get`/`list`/`watch`) unless the justification, prefixed
-`WRITE EXCEPTION`, defends a write; the only writes are the CoreDNS and
-NodeLocal DNSCache probe Pods and the cert-manager admission dry-run.
+`WRITE EXCEPTION`, defends a write; the only writes are the ephemeral
+probe Pods (CoreDNS and NodeLocal DNSCache dns_resolution, kube-state-metrics
+metrics_endpoint) and the cert-manager admission dry-run.
 
 ## argocd
 
@@ -141,6 +142,17 @@ ServiceAccount: `fathom-addon-keda` (namespace `fathom-system`)
 | apiextensions.k8s.io | customresourcedefinitions | get | Get each KEDA CRD by name to verify it is Established and serves a supported version. get only — the check fetches each CRD by name in turn, never lists; read-only. |
 | keda.sh | scaledobjects | list | List ScaledObjects cluster-wide to score their Ready/Paused conditions. list only — the scan enumerates ScaledObjects and never Gets one by name. Scoped to the keda.sh group and to ScaledObjects only — not TriggerAuthentications, which can reference trigger credentials — and read-only. |
 | admissionregistration.k8s.io | validatingwebhookconfigurations | get | Get the keda-admission ValidatingWebhookConfiguration by name to verify it is present and its caBundle is populated. get only — the check fetches exactly one named configuration. |
+
+## kube-state-metrics
+
+ServiceAccount: `fathom-addon-kube-state-metrics` (namespace `fathom-system`)
+
+| API group | Resources | Verbs | Justification (why this, and why not less) |
+| --- | --- | --- | --- |
+| apps | deployments, statefulsets | get | Get the kube-state-metrics workload by name to score readiness: the Deployment on standard installs, falling back to the same-named StatefulSet on autosharded installs (every shard must be ready). Both reads are single named Gets, so get without list/watch is sufficient; read-only. |
+| core | pods | get, list | List the kube-state-metrics Pods by label selector for restart counts and readiness behind the workload (list, because Pod names are dynamic), and Get the short-lived scrape probe Pod while polling it to completion. Read-only. |
+| core | services | get | Get the kube-state-metrics Service by name to confirm which scrape ports (metrics, self-telemetry) are actually exposed before probing them — this is what lets a not-exposed telemetry port be Skipped instead of falsely Failed. A single named Get; read-only. |
+| core | pods | create, delete | WRITE EXCEPTION: launch and immediately tear down a single-shot HTTP scrape probe Pod per endpoint to verify /metrics is scrapeable from a workload's perspective (ADR-0003). create+delete are the minimal verbs for an ephemeral Pod; the operator pod's own network namespace cannot honestly stand in for in-cluster scrape reachability. The Pod is deleted as soon as it completes — no update, no long-lived workload. |
 
 ## kured
 

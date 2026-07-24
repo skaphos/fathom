@@ -108,13 +108,13 @@ The public, importable contract (see
 - `registry/registry.go` — `Registry` keyed by add-on type. `New`, `Register`
   (runs `EnsureCompatible`, rejects nil/empty/conflicting adapters, idempotent
   re-registration), `Lookup` (`ErrNotFound`), `Capabilities`.
-- `certmanager/`, `coredns/`, and declarative definitions for
-  `external-secrets`, `cilium`, `external-dns`, `metrics-server`,
+- `certmanager/`, `coredns/`, `kubestatemetrics/`, and declarative definitions
+  for `external-secrets`, `cilium`, `external-dns`, `metrics-server`,
   `envoy-gateway`, and `istio` — built-in adapters. Each exposes or is wrapped
   by `New()` and implements the contract; families are listed in
-  [architecture.md](architecture.md#built-in-adapters). The CoreDNS adapter is
-  the one that launches probe pods (`dns_resolution`) and owns
-  `resolveProbeImage`.
+  [architecture.md](architecture.md#built-in-adapters). The CoreDNS
+  (`dns_resolution`) and kube-state-metrics (`metrics_endpoint`) adapters are
+  the ones that launch probe pods; each owns a `resolveProbeImage`.
 - `crdutil/` — shared helper for adapters that verify an add-on's CRDs are
   installed and served.
 

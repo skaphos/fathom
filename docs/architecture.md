@@ -314,6 +314,7 @@ and a set of families:
 | --- | --- | --- |
 | `cert-manager` | `internal/adapter/certmanager` | `system_health`, `issuer_health`, `certificate_health` |
 | `coredns` | `internal/adapter/coredns` | `system_health`, `dns_resolution` |
+| `kube-state-metrics` | `internal/adapter/kubestatemetrics` | `system_health`, `metrics_endpoint` |
 | `external-secrets` | `internal/adapter/declarative` (`externalsecrets.go`) | `system_health`, `secret_sync` |
 | `cilium` | `internal/adapter/declarative` (`cilium.go`) | `control_plane_health`, `agent_health`, `crd_health` |
 | `external-dns` | `internal/adapter/declarative` (`externaldns.go`) | `system_health`, `crd_health` |
@@ -342,14 +343,17 @@ but is unhealthy still reports `Fail`.
 
 ## Probe-Pod Model
 
-Active in-cluster network checks (today: CoreDNS `dns_resolution`) do not run
+Active in-cluster network checks (today: CoreDNS `dns_resolution` and
+kube-state-metrics `metrics_endpoint`) do not run
 inside the operator pod. Instead an adapter launches a single-shot, hardened
 **probe pod** per check, in the workload's namespace, so the resolver topology
 matches real workloads rather than the operator (see
 [ADR-0003](adr/0003-probe-pod-model.md)).
 
 - **Manifest builder (`internal/probe/pod.go`):** `Pod(Request)` builds the pod.
-  The probe binary supports modes `dns`, `tcp-connect`, and `tcp-listen`. The
+  The probe binary supports modes `dns`, `tcp-connect`, `tcp-listen`, and
+  `http-get` (a bounded metrics scrape that can assert expected Prometheus
+  metric families). The
   hardening profile is fixed: `AutomountServiceAccountToken=false`,
   `RunAsNonRoot` (UID `65532`), `ReadOnlyRootFilesystem`, drop **ALL**
   capabilities, no privilege escalation, `seccompProfile=RuntimeDefault`,
@@ -385,8 +389,8 @@ matches real workloads rather than the operator (see
   `/dev/termination-log` (and stdout), and exits. It ships as the probe image
   built from `Dockerfile.probe` on `scratch`.
 
-The probe image precedence chain (resolved per check by the CoreDNS adapter's
-`resolveProbeImage`) is: per-`AddonCheck` `probeImage` threshold → operator-level
+The probe image precedence chain (resolved per check by each probe-launching
+adapter's `resolveProbeImage`) is: per-`AddonCheck` `probeImage` threshold → operator-level
 `--probe-image` (`adapter.Request.ProbeImage`) → adapter-hardcoded fallback
 (`ghcr.io/skaphos/fathom-probe:v0.4.0`). The operator default is
 `DefaultProbeImage` in `internal/app/options.go`.

@@ -417,8 +417,9 @@ those declarations. **Every** grant carries a defensive **justification** — wh
 is needed and why a narrower grant would not suffice — and the CI guard fails any
 grant (read or write) that is not justified. Verbs are read-only
 (` + "`get`/`list`/`watch`" + `) unless the justification, prefixed
-` + "`WRITE EXCEPTION`" + `, defends a write; the only writes are the CoreDNS and
-NodeLocal DNSCache probe Pods and the cert-manager admission dry-run.
+` + "`WRITE EXCEPTION`" + `, defends a write; the only writes are the ephemeral
+probe Pods (CoreDNS and NodeLocal DNSCache dns_resolution, kube-state-metrics
+metrics_endpoint) and the cert-manager admission dry-run.
 
 `)
 	for _, a := range addons {

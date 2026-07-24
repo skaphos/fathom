@@ -17,9 +17,10 @@ Fathom **validates** existing add-ons; it does not install or manage them.
 ## What it checks
 
 - **Add-on health** — built-in adapters for cert-manager, CoreDNS, External
-  Secrets Operator, Cilium, external-dns, metrics-server, Envoy Gateway, istio,
-  and more. Each adapter runs targeted check families (deployment/pod health,
-  DNS resolution, certificate expiry, secret sync, CRD readiness, …).
+  Secrets Operator, Cilium, external-dns, metrics-server, kube-state-metrics,
+  Envoy Gateway, istio, and more. Each adapter runs targeted check families
+  (deployment/pod health, DNS resolution, metrics-endpoint scrapes, certificate
+  expiry, secret sync, CRD readiness, …).
 - **Node certificates** — a hardened node-agent DaemonSet scans on-disk X.509
   certificates on every node and warns before an expiring cert can take the
   cluster down.
@@ -84,7 +85,7 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Concepts](docs/guides/concepts.md) — the mental model for using Fathom.
 - [Add-on checks](docs/guides/addon-checks.md) — configure checks for
   cert-manager, CoreDNS, External Secrets, Cilium, external-dns, metrics-server,
-  Envoy Gateway, and istio.
+  kube-state-metrics, Envoy Gateway, istio, and more.
 - [Node certificate checks](docs/guides/node-certificate-checks.md) — scan
   on-disk certificates on every node.
 - [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing,

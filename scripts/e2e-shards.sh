@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns azure-workload-identity"
+OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns azure-workload-identity kube-state-metrics"
 
 emit_all() {
   printf '["core"'
@@ -51,6 +51,11 @@ shard_for_file() {
     test/e2e/metricsserver_test.go) echo metrics-server ;;
     config/samples/*_metrics_server.yaml) echo metrics-server ;;
     config/rbac/addons/addon-metrics-server.yaml) echo metrics-server ;;
+
+    internal/adapter/kubestatemetrics/*) echo kube-state-metrics ;;
+    test/e2e/kubestatemetrics_test.go) echo kube-state-metrics ;;
+    config/samples/*_kube_state_metrics.yaml) echo kube-state-metrics ;;
+    config/rbac/addons/addon-kube-state-metrics.yaml) echo kube-state-metrics ;;
 
     internal/adapter/declarative/envoygateway*) echo envoy-gateway ;;
     test/e2e/envoygateway_test.go) echo envoy-gateway ;;
