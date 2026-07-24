@@ -294,9 +294,15 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 			continue
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			// Honor cancellation between families; already-collected checks are
-			// returned as-is, without an adapter-level error.
-			break
+			// The deadline (spec.timeout) or the reconcile context expired
+			// between families: the run is incomplete. Surface it as an
+			// adapter-level error rather than returning the partial checks with
+			// a nil error, which the controller would fold into a verdict from
+			// only the families that happened to run first -- e.g. a persisted
+			// Pass while the family that was actually failing never executed.
+			// A non-nil error makes the controller record an Error verdict for
+			// the incomplete run instead (SKA / adversarial-review COR-1).
+			return adapter.Result{Checks: checks, Duration: time.Since(started), DetectedVersion: detectedVersion}, ctxErr
 		}
 		famStart := time.Now()
 		ec := EvalContext{

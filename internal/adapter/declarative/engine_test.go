@@ -7,6 +7,7 @@ package declarative
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -452,5 +453,31 @@ func establishedCRD(name, version string, served, established bool) *apixv1.Cust
 			Type:   apixv1.Established,
 			Status: condStatus,
 		}}},
+	}
+}
+
+// TestEngine_TruncatedRunReturnsError is the regression test for the silent
+// partial-run defect (adversarial-review COR-1). When the context is cancelled
+// or its deadline (spec.timeout) expires between families, the run is
+// incomplete: the engine must surface an adapter-level error rather than
+// returning the already-collected checks with a nil error. A nil error lets the
+// controller fold a verdict from only the families that ran first (e.g. a
+// persisted Pass while the failing family never executed). Before the fix the
+// loop broke and returned (partialChecks, nil); this test asserts a non-nil
+// context error instead.
+func TestEngine_TruncatedRunReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // deadline already elapsed before the family loop starts
+
+	_, err := NewCiliumEngine().Run(ctx, adapter.Request{
+		Client: newFakeClient(t, healthyObjects()...),
+		Logger: logr.Discard(),
+		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"},
+	})
+	if err == nil {
+		t.Fatal("Run returned nil error for a context-cancelled (incomplete) run; want a non-nil error so the controller records Error, not a partial verdict")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want it to wrap context.Canceled", err)
 	}
 }
