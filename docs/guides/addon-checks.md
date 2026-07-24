@@ -505,7 +505,7 @@ spec:
 | Family | Checks | Key thresholds |
 | --- | --- | --- |
 | `system_health` | The `argocd-application-controller` StatefulSet plus the `argocd-repo-server`, `argocd-server`, and `argocd-redis` Deployments and their pods, and the `Application`, `ApplicationSet`, and `AppProject` CRDs are Established and serve `v1alpha1`. | `applicationControllerName`, `repoServerName`, `serverName`, `redisName`, `restartWarnCount` |
-| `sync_health` | Every `Application` (all namespaces unless `policy.namespaces` narrows the scan) reports `status.sync.status: Synced` and `status.health.status: Healthy`. `Degraded` and `Missing` are `Fail`s; `OutOfSync`, `Progressing`, `Suspended`, and `Unknown` are surfaced as `Warn`s. | — |
+| `sync_health` | Every `Application` (all namespaces unless `policy.sync_health.namespaces` narrows the scan) reports `status.sync.status: Synced` and `status.health.status: Healthy`. `Degraded` and `Missing` are `Fail`s; `OutOfSync`, `Progressing`, `Suspended`, and `Unknown` are surfaced as `Warn`s. | — |
 
 The adapter is **strictly read-only**: it lists Applications through the
 Kubernetes API and never annotates, syncs, or refreshes anything, so it can
