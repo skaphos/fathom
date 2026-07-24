@@ -29,6 +29,25 @@ The 1.0 bar for a health operator is that operators can alert on its verdicts
 and its liveness using their existing monitoring stack, and can debug it with
 standard Kubernetes tooling.
 
+## Clarifications
+
+### Session 2026-07-23
+
+- Q: When a check exists but has never completed an evaluation, what do the
+  metrics report? → A: Series appear at discovery with sentinel values:
+  current-result reports Unknown, last-run reports 0, so one staleness rule
+  catches never-run and stopped-running checks alike (no `absent()`-based
+  rules needed).
+- Q: How are the ready-to-use alert rules delivered? → A: Both documentation
+  examples in the monitoring guide and a shipped, opt-in installable
+  PrometheusRule manifest maintained and lint-checked in-repo. Installing it
+  is optional so the prometheus-operator CRD never becomes a hard dependency.
+- Q: Does a check's very first evaluation result produce an event? → A: Yes —
+  the first completed evaluation records a transition event from Unknown to
+  the result, so `kubectl describe` is informative from the start. After an
+  operator restart the previous result comes from resource status, so no
+  false Unknown-transition event fires.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Alert on a check's current result (Priority: P1)
@@ -170,11 +189,19 @@ appears.
 - **FR-003**: The system MUST expose a last-run metric per check reporting
   when the most recent evaluation completed, suitable for staleness rules of
   the form "now minus last run exceeds N".
+- **FR-003a**: Both series MUST exist from the moment a check resource is
+  first observed, before any evaluation completes: current-result reports the
+  unknown state and last-run reports 0 (the sentinel for "never ran"), so a
+  never-evaluated check is caught by the same staleness rule as one that
+  stopped being evaluated.
 - **FR-004**: Metric series for a check MUST be removed when the check
   resource is deleted.
 - **FR-005**: The system MUST record a Kubernetes event on a check resource
   when its result transitions (old result → new result), including both
-  values.
+  values. A check's first completed evaluation counts as a transition from
+  the unknown state, so a fresh check records an event for its initial
+  result; the previous result is always taken from the resource status, never
+  from in-memory state alone.
 - **FR-006**: The system MUST record warning events on the affected check
   resource for operational failures: adapter-run failures, probe-launch
   failures, per-check RBAC-provisioning failures, and reconcile errors.
@@ -188,6 +215,11 @@ appears.
 - **FR-009**: The monitoring documentation MUST document the new metrics and
   ship ready-to-use example alert rules for "check currently failing" and
   "check stale", replacing the current documented workaround.
+- **FR-009a**: The repository MUST also ship those rules as an opt-in
+  installable alert-rule manifest (prometheus-operator `PrometheusRule`),
+  maintained and lint-checked in-repo. Installing it is optional: deployments
+  without the prometheus-operator CRDs are unaffected, and the operator
+  itself takes no dependency on it.
 - **FR-010**: Metric label sets MUST be bounded: labels identify the check
   (kind, name, namespace) and the result state only — no free-text or
   per-run-varying label values.
@@ -244,9 +276,9 @@ appears.
   tested kube-state-metrics custom-resource-state snippet + shipped
   PrometheusRule" as a fallback; this spec targets the primary option
   (operator-exported metrics) because the 1.0 wording requires it and it
-  removes a deployment-time dependency for users. Documented example alert
-  rules ship in the monitoring guide (FR-009); packaging them as an installable
-  rule resource is out of scope here.
+  removes a deployment-time dependency for users. Alert rules ship both as
+  documented examples in the monitoring guide (FR-009) and as an opt-in
+  installable rule manifest (FR-009a).
 - The metric naming follows the issue's proposal
   (`fathom_check_result{kind,name,namespace,result}` and
   `fathom_check_last_run_timestamp_seconds`) as the user-facing contract;
