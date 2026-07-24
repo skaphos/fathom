@@ -118,10 +118,10 @@ the committed allowlist is the auditable override. Contract:
 **Purpose**: Documentation closure, full verification, PR readiness.
 
 - [X] T027 [P] `README.md` user-facing validation notes: cadence floors (10s/1s), clamp behavior for pre-existing objects, policy structural limits table (complements T019's enforcement-split section)
-- [ ] T028 [P] Confirm coverage: `go -C tools tool task test` + `./scripts/check-coverage.sh coverage.out` — new packages/files meet the per-package minimum; ratchet only upward
-- [ ] T029 Full local CI: `go -C tools tool task ci` (lint, test, staticcheck, vuln, build) green
-- [ ] T030 Full e2e: `go -C tools tool task test-e2e` (mandatory — `api/v1alpha1/*_types.go` changed; core tier includes T012's admission smoke); record outcome in PR test plan
-- [ ] T031 Walk `specs/003-crd-validation-hardening/quickstart.md` §§1–5 end-to-end; fix any drift between docs and behavior; mark PR ready for review with the exact checks run
+- [X] T028 [P] Confirm coverage: `go -C tools tool task test` + `./scripts/check-coverage.sh coverage.out` — new packages/files meet the per-package minimum; ratchet only upward
+- [X] T029 Full local CI: `go -C tools tool task ci` (lint, test, staticcheck, vuln, build) green
+- [X] T030 Full e2e: `go -C tools tool task test-e2e` (mandatory — `api/v1alpha1/*_types.go` changed; core tier includes T012's admission smoke); record outcome in PR test plan
+- [X] T031 Walk `specs/003-crd-validation-hardening/quickstart.md` §§1–5 end-to-end; fix any drift between docs and behavior; mark PR ready for review with the exact checks run
 
 ---
 
