@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/rest"
@@ -150,11 +151,11 @@ func TestBuildManagerOptions_DefaultsHaveNoCertWatchers(t *testing.T) {
 }
 
 // TestBuildManagerOptions_ScopesCacheByManagedByLabel is the regression guard
-// for SKA-581 / #164: the manager cache must restrict ConfigMap, DaemonSet, and
-// RoleBinding informers to Fathom-managed objects (managed-by=fathom) so a
-// cluster-wide ConfigMap watch cannot OOM the operator, while ServiceAccount
-// must stay unfiltered (AddonCheck lists per-addon SAs that never carry that
-// label).
+// for SKA-581 / #164: the manager cache must restrict ConfigMap, DaemonSet,
+// RoleBinding, and NetworkPolicy informers to Fathom-managed objects
+// (managed-by=fathom) so a cluster-wide watch cannot OOM the operator, while
+// ServiceAccount must stay unfiltered (AddonCheck lists per-addon SAs that
+// never carry that label).
 func TestBuildManagerOptions_ScopesCacheByManagedByLabel(t *testing.T) {
 	scheme, err := NewScheme()
 	if err != nil {
@@ -177,6 +178,8 @@ func TestBuildManagerOptions_ScopesCacheByManagedByLabel(t *testing.T) {
 			byType["DaemonSet"] = cfg
 		case *rbacv1.RoleBinding:
 			byType["RoleBinding"] = cfg
+		case *networkingv1.NetworkPolicy:
+			byType["NetworkPolicy"] = cfg
 		case *corev1.ServiceAccount:
 			byType["ServiceAccount"] = cfg
 		default:
@@ -185,7 +188,7 @@ func TestBuildManagerOptions_ScopesCacheByManagedByLabel(t *testing.T) {
 	}
 
 	managed := labels.Set{nodecert.LabelManagedBy: nodecert.ManagedByValue}
-	for _, kind := range []string{"ConfigMap", "DaemonSet", "RoleBinding"} {
+	for _, kind := range []string{"ConfigMap", "DaemonSet", "RoleBinding", "NetworkPolicy"} {
 		cfg, ok := byType[kind]
 		if !ok {
 			t.Errorf("%s: not scoped in Cache.ByObject; expected a managed-by=fathom selector", kind)

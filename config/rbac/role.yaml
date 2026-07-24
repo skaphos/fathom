@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - serviceaccounts
   verbs:
   - create
   - get
@@ -21,18 +22,6 @@ rules:
   verbs:
   - delete
   - list
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - ""
   - events.k8s.io
@@ -50,7 +39,6 @@ rules:
   - create
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
@@ -62,7 +50,6 @@ rules:
   - delete
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
@@ -120,25 +107,23 @@ rules:
   - update
   - watch
 - apiGroups:
-  - rbac.authorization.k8s.io
+  - networking.k8s.io
   resources:
-  - clusterroles
+  - networkpolicies
   verbs:
   - create
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
+  - clusterroles
   - rolebindings
   verbs:
   - create
-  - delete
   - get
   - list
-  - patch
   - update
   - watch

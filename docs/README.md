@@ -36,6 +36,8 @@ Task-oriented guides for installing and using Fathom live in
 | [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
 | [reference/status-conditions.md](reference/status-conditions.md) | Operational status and condition reference: result fields, reasons, freshness, and troubleshooting actions. |
 | [reference/rbac.md](reference/rbac.md) | Generated per-adapter RBAC matrix and least-privilege impersonation model. |
+| [reference/operator-rbac.md](reference/operator-rbac.md) | Per-rule justification of the operator's own ClusterRole, the namespace-scoping analysis, and the auxiliary/runtime-created roles. |
+| [reference/network-policies.md](reference/network-policies.md) | NetworkPolicy posture for the operator, the node-agent DaemonSet (runtime-managed policy), and probe pods; the `metrics: enabled` label contract. |
 | [reference/api-versioning.md](reference/api-versioning.md) | CRD API versioning policy — the maturity ladder (alpha/beta/GA), compatible vs. breaking schema changes, storage/served versions, and deprecation windows. Mirror of the org standard. |
 
 ## Architecture Decision Records
