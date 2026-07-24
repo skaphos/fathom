@@ -8,6 +8,14 @@
 
 **Input**: User description: "Pre-1.0 CRD validation hardening from GitHub issue skaphos/fathom#152: add interval/timeout lower-bound CEL validation (floor, e.g. >= 10s) to AddonCheck and NodeCertificateCheck; validate spec.policy (family-name map keys, namespaces DNS-1123 pattern + MaxItems, thresholds like warnDays, structurally-invalid label selectors) via CEL/VAP where feasible; add a CRD schema-compatibility CI gate diffing config/crd/bases against the previous release per docs/reference/api-versioning.md"
 
+## Clarifications
+
+### Session 2026-07-23
+
+- Q: What lower bound should apply to `spec.timeout` (interval keeps its 10s floor either way)? → A: `timeout ≥ 1s` — blocks the 1ms-typo class on both fields but keeps legitimate fail-fast timeouts (e.g. `timeout: 5s` with `interval: 5m`) valid.
+- Q: How should the operator surface that it clamped a stored check's interval/timeout to the floor? → A: Both a warning Event on the check and the check's condition machinery (accepted-with-degradation message naming the field, spec value, and effective value).
+- Q: How should a sanctioned breaking CRD change be acknowledged past the schema-compat CI gate? → A: A committed, code-reviewed allowlist file in the repository that the gate consults (keyed by CRD/field, pruned when the release baseline advances) — the override lands in git history per the constitution's Git-as-audit-trail principle.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Reject dangerously short check cadences at admission (Priority: P1)
@@ -36,15 +44,17 @@ controller with a stored object that predates the rule.
    applies an AddonCheck with `interval: 1ms`, **Then** the API server rejects
    it with a message that names the field and the minimum allowed value.
 2. **Given** a cluster with the updated CRDs installed, **When** a user
-   applies a NodeCertificateCheck with `timeout: 5s` (below the floor),
-   **Then** the API server rejects it with a message naming the field and the
-   minimum.
+   applies a NodeCertificateCheck with `timeout: 500ms` (below the 1s timeout
+   floor), **Then** the API server rejects it with a message naming the field
+   and the minimum.
 3. **Given** a valid AddonCheck with `interval: 5m` and `timeout: 1m`,
    **When** it is applied, **Then** it is accepted unchanged.
 4. **Given** a stored check object whose interval is below the floor (created
    before the rule existed or applied while the gate was absent), **When** the
    operator reconciles it, **Then** the effective cadence used at runtime is
-   never below the floor and the check continues to run rather than erroring.
+   never below the floor, the check continues to run rather than erroring, and
+   the clamp is visible as a warning Event on the check and in its status
+   conditions (naming the field, configured value, and effective value).
 
 ---
 
@@ -133,9 +143,10 @@ with a message identifying the offending CRD and change.
    CI runs, **Then** the gate fails and its output identifies the CRD, the
    field, and the nature of the incompatibility.
 4. **Given** a deliberately sanctioned breaking change (v1alpha1 churn or a
-   new API version), **When** the contributor follows a documented override
-   path, **Then** the gate can be acknowledged for that pull request in a
-   visible, auditable way rather than silently skipped.
+   new API version), **When** the contributor adds the corresponding entry to
+   the committed override allowlist in the same pull request, **Then** the
+   gate passes with the override visible in the reviewed diff — and the entry
+   is pruned once the release baseline advances past it.
 
 ---
 
@@ -150,9 +161,10 @@ with a message identifying the offending CRD and change.
   still in its alpha churn window — the CI gate (US3) must therefore be
   introduced with a baseline that accounts for this feature's own changes.
 - **Floor vs. cross-field rule interaction**: the existing rule "timeout must
-  not exceed interval" must continue to hold together with the new floors; a
-  manifest with `timeout: 10s, interval: 10s` (both at the floor) remains
-  valid.
+  not exceed interval" must continue to hold together with the new floors;
+  manifests with `timeout: 10s, interval: 10s` (both at their minimum-legal
+  intersection) and `timeout: 1s, interval: 10s` (each at its own floor)
+  remain valid.
 - **Unset optional fields**: `interval` and `timeout` are optional with safe
   defaults; the floor must only constrain values that are actually set, never
   make the fields required.
@@ -164,7 +176,9 @@ with a message identifying the offending CRD and change.
 - **First release after the gate lands**: the compatibility gate compares
   against the most recent release; the first run must handle a baseline that
   predates the gate itself (and predates this feature's sanctioned schema
-  changes) without producing a permanently red check.
+  changes) without producing a permanently red check — this feature's own
+  validation tightening enters the committed override allowlist and is pruned
+  once a release containing it becomes the baseline.
 - **New CRD kinds**: a brand-new CRD file with no counterpart in the previous
   release must pass the gate (nothing to be incompatible with).
 - **Empty or absent policy**: an AddonCheck with no `spec.policy` (or an empty
@@ -177,13 +191,16 @@ with a message identifying the offending CRD and change.
 
 - **FR-001**: The system MUST reject, at admission time, any AddonCheck or
   NodeCertificateCheck whose `spec.interval` or `spec.timeout` is set to a
-  duration below a defined minimum floor, with an error message naming the
-  field and the minimum value. The floor is 10 seconds (see Assumptions).
+  duration below its minimum floor, with an error message naming the field and
+  the minimum value. The floors are **10 seconds for `interval`** and **1
+  second for `timeout`** (see Assumptions and Clarifications).
 - **FR-002**: The operator MUST additionally clamp effective interval and
-  timeout values to the same floor at runtime, so stored objects that predate
+  timeout values to their respective floors at runtime, so stored objects that predate
   the admission rule (or bypass it) can never drive reconciliation or probe
-  scheduling faster than the floor. Clamping MUST be observable (e.g., recorded
-  on the resource's status or events), not silent.
+  scheduling faster than the floor. Clamping MUST be surfaced on the resource
+  in two ways, never silently: a warning Event on the check, and the check's
+  status conditions (the check remains accepted, with a message naming the
+  clamped field, the configured value, and the effective value used).
 - **FR-003**: The system MUST reject, at admission time, AddonCheck policy
   namespace entries that are not valid Kubernetes namespace names (DNS-1123
   label format), and MUST bound the namespace list to a documented maximum
@@ -223,10 +240,13 @@ with a message identifying the offending CRD and change.
   compatible additions (new optional fields, new kinds, loosened validation,
   documentation changes).
 - **FR-010**: The compatibility gate MUST produce output that identifies the
-  affected CRD, field path, and nature of each incompatibility, and MUST
-  provide a documented, auditable override mechanism for sanctioned breaking
-  changes (alpha-version churn or a new API version) so the gate never forces
-  either silent rule-breaking or permanent red status.
+  affected CRD, field path, and nature of each incompatibility. Its override
+  mechanism for sanctioned breaking changes (alpha-version churn or a new API
+  version) MUST be a committed, code-reviewed allowlist file in the repository
+  that the gate consults — entries identify the accepted incompatibility (CRD
+  and field) and are pruned once the release baseline advances past them — so
+  every override lands in git history and the gate never forces either silent
+  rule-breaking or permanent red status.
 - **FR-011**: The validation rules added by this feature MUST be reflected in
   user-facing documentation: field documentation for the floor and policy
   constraints, and contributor documentation for the compatibility gate and
@@ -260,9 +280,9 @@ with a message identifying the offending CRD and change.
 ### Measurable Outcomes
 
 - **SC-001**: 100% of attempts to create or update a check with a cadence or
-  timeout below the floor are rejected at apply time with a message that names
+  timeout below its floor are rejected at apply time with a message that names
   the offending field and the minimum — verified across the boundary matrix
-  (below/at/above the floor, each field, both kinds).
+  (below/at/above each field's floor, each field, both kinds).
 - **SC-002**: No configuration — regardless of how it entered the cluster —
   can make the operator reconcile a check or launch probe workloads more
   frequently than the floor allows.
@@ -284,11 +304,14 @@ with a message identifying the offending CRD and change.
 
 ## Assumptions
 
-- **Floor value**: the minimum for both `interval` and `timeout` is **10
-  seconds**, the example value proposed in the issue. Nothing in the current
-  defaults conflicts with it (defaults are minutes-scale). If a future check
-  type genuinely needs sub-10s cadence, that is a deliberate schema decision
-  for that type, not a reason to lower the global floor now.
+- **Floor values**: the minimum for `interval` is **10 seconds** (the example
+  value proposed in the issue) and for `timeout` is **1 second** (clarified
+  2026-07-23) — the hot-loop hazard is cadence-driven, while a short timeout
+  only bounds a single run, so fail-fast timeouts like `5s` stay legal.
+  Nothing in the current defaults conflicts with either floor (defaults are
+  minutes-scale). If a future check type genuinely needs sub-10s cadence, that
+  is a deliberate schema decision for that type, not a reason to lower the
+  global floor now.
 - **Both belt and suspenders**: the issue offers "CEL floor and/or a
   controller-side clamp"; this spec requires **both**, because admission
   validation cannot protect against objects stored before the rule existed,
