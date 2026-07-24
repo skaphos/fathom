@@ -99,32 +99,32 @@ func TestValidateAddonCheckPolicy_ThresholdKeys(t *testing.T) {
 	}{
 		{
 			"advertised keys accepted",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}}},
 			advertising, 0, nil,
 		},
 		{
 			"unknown key on an advertised family rejected",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCont": "3"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCont": "3"}}},
 			advertising, 1, []string{`family "system_health" has an unknown threshold key "restartWarnCont"`},
 		},
 		{
 			"unknown keys reported deterministically sorted",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"zzz": "1", "aaa": "2"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"zzz": "1", "aaa": "2"}}},
 			advertising, 2, []string{`unknown threshold key "aaa"`, `unknown threshold key "zzz"`},
 		},
 		{
 			"unadvertised family is not validated",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"cert_health": {Thresholds: map[string]string{"whatever": "x"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"cert_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
 			advertising, 0, nil,
 		},
 		{
 			"adapter without ThresholdAdvertiser skips threshold validation",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"whatever": "x"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
 			plain, 0, nil,
 		},
 		{
 			"nil adapter skips threshold validation",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]string{"whatever": "x"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
 			nil, 0, nil,
 		},
 	}
@@ -184,32 +184,32 @@ func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
 	}{
 		{
 			"reserved keys accepted on an advertising adapter that does not list them",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"warnRatio": "1", "failRatio": "5%"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "1", "failRatio": "5%"}}},
 			advertising, 0, nil,
 		},
 		{
 			"reserved keys accepted on a non-advertising adapter",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"failRatio": "2.5"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "2.5"}}},
 			plain, 0, nil,
 		},
 		{
 			"reserved keys coexist with advertised adapter keys",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"restartWarnCount": "3", "failRatio": "5"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3", "failRatio": "5"}}},
 			advertising, 0, nil,
 		},
 		{
 			"non-numeric ratio value rejected, naming family and key",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"failRatio": "banana"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "banana"}}},
 			plain, 1, []string{`family "system_health" has an invalid ratio threshold: failRatio:`, `"banana"`},
 		},
 		{
 			"out-of-range ratio value rejected",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]string{"warnRatio": "150"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "150"}}},
 			plain, 1, []string{`family "system_health" has an invalid ratio threshold: warnRatio:`, `"150"`},
 		},
 		{
 			"ratio values validated even with a nil adapter",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]string{"failRatio": "-1"}}},
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "-1"}}},
 			nil, 1, []string{`family "anything" has an invalid ratio threshold: failRatio:`},
 		},
 	}

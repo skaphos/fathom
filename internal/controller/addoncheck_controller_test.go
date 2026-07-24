@@ -401,7 +401,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Spec: fathomv1alpha1.AddonCheckSpec{
 				AddonType: "cert-manager",
 				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"system_health": {Enabled: ptr.To(true), Thresholds: map[string]string{"warnDays": "14"}},
+					"system_health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnDays": "14"}},
 				},
 			},
 		}

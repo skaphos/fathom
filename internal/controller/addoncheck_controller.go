@@ -546,21 +546,24 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log
 
 func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return check.Spec.Timeout.Duration
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
 	return defaultAddonCheckTimeout
 }
 
 func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return check.Spec.Interval.Duration
+		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
 	return defaultAddonCheckInterval
 }
 
 // setAddonCheckAccepted records the Accepted condition from policy validation:
 // True/SpecAccepted when policyErrs is empty, otherwise False/InvalidPolicy
-// carrying the (deterministically ordered) list of problems.
+// carrying the (deterministically ordered) list of problems. A stored
+// sub-floor cadence (pre-floor object) downgrades a clean acceptance to
+// True/SpecClamped naming the clamped fields — an invalid policy outranks the
+// clamp notice because it stops the check entirely.
 func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string) {
 	cond := metav1.Condition{
 		Type:               addonCheckConditionAccepted,
@@ -573,6 +576,9 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 		cond.Status = metav1.ConditionFalse
 		cond.Reason = "InvalidPolicy"
 		cond.Message = "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + "."
+	} else if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
+		cond.Reason = conditionReasonSpecClamped
+		cond.Message = strings.Join(msgs, "; ") + "."
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, cond)
 }
@@ -625,10 +631,11 @@ func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter 
 				problems = append(problems, fmt.Sprintf("family %q has an invalid labelSelector: %v", family, err))
 			}
 		}
-		if _, err := adapter.ParseRatioThresholds(check.Spec.Policy[family].Thresholds); err != nil {
+		thresholds := thresholdStringMap(check.Spec.Policy[family].Thresholds)
+		if _, err := adapter.ParseRatioThresholds(thresholds); err != nil {
 			problems = append(problems, fmt.Sprintf("family %q has an invalid ratio threshold: %v", family, err))
 		}
-		problems = append(problems, unknownThresholdKeys(family, check.Spec.Policy[family].Thresholds, advertised)...)
+		problems = append(problems, unknownThresholdKeys(family, thresholds, advertised)...)
 	}
 	return problems
 }
@@ -679,7 +686,7 @@ func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapt
 			Enabled:       enabled,
 			Namespaces:    append([]string(nil), familyPolicy.Namespaces...),
 			LabelSelector: familyPolicy.LabelSelector.DeepCopy(),
-			Thresholds:    copyStringMap(familyPolicy.Thresholds),
+			Thresholds:    thresholdStringMap(familyPolicy.Thresholds),
 		}
 	}
 	return policy
@@ -692,6 +699,20 @@ func copyStringMap(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
 		out[k] = v
+	}
+	return out
+}
+
+// thresholdStringMap converts the API's bounded ThresholdValue map to the
+// plain string map the adapter contract uses (pkg/adapter deliberately knows
+// nothing about API schema bounds).
+func thresholdStringMap(in map[string]fathomv1alpha1.ThresholdValue) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = string(v)
 	}
 	return out
 }
@@ -813,7 +834,7 @@ type familyRatioRollup struct {
 func ratioThresholdsByFamily(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.RatioThresholds {
 	var out map[adapter.Family]adapter.RatioThresholds
 	for family, familyPolicy := range check.Spec.Policy {
-		rt, err := adapter.ParseRatioThresholds(familyPolicy.Thresholds)
+		rt, err := adapter.ParseRatioThresholds(thresholdStringMap(familyPolicy.Thresholds))
 		if err != nil || !rt.Configured() {
 			continue
 		}

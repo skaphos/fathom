@@ -41,7 +41,11 @@ func ratioCheckMix(family adapter.Family, pass, warn, fail, errored, skipped int
 func ratioPolicyCheck(thresholdsByFamily map[string]map[string]string) *fathomv1alpha1.AddonCheck {
 	policy := make(map[string]fathomv1alpha1.AddonCheckFamilyPolicy, len(thresholdsByFamily))
 	for family, thresholds := range thresholdsByFamily {
-		policy[family] = fathomv1alpha1.AddonCheckFamilyPolicy{Thresholds: thresholds}
+		typed := make(map[string]fathomv1alpha1.ThresholdValue, len(thresholds))
+		for k, v := range thresholds {
+			typed[k] = fathomv1alpha1.ThresholdValue(v)
+		}
+		policy[family] = fathomv1alpha1.AddonCheckFamilyPolicy{Thresholds: typed}
 	}
 	return &fathomv1alpha1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "ratio-check", Namespace: "default"},

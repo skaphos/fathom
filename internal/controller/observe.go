@@ -26,6 +26,12 @@ const (
 	eventReasonResultChanged  = "ResultChanged"
 	eventReasonReconcileError = "ReconcileError"
 
+	// eventReasonCadenceClamped marks a check whose stored interval/timeout is
+	// below the api/v1alpha1 floors and runs clamped (issue #152). Emitted once
+	// per clamp episode, keyed off the Accepted condition transitioning to
+	// conditionReasonSpecClamped.
+	eventReasonCadenceClamped = "CadenceClamped"
+
 	// Event actions for the events.k8s.io API: what the controller was doing
 	// when the event occurred.
 	eventActionEvaluate  = "Evaluate"
@@ -34,6 +40,12 @@ const (
 	// checkConditionReady is the Ready condition type every check kind uses
 	// (the per-kind *ConditionReady constants all equal it).
 	checkConditionReady = "Ready"
+
+	// checkConditionAccepted is the Accepted condition type every check kind
+	// uses; conditionReasonSpecClamped is its accepted-with-degradation reason
+	// for a runtime-clamped cadence.
+	checkConditionAccepted     = "Accepted"
+	conditionReasonSpecClamped = "SpecClamped"
 )
 
 // observeCheck mirrors a reconciled check's final in-memory status into the
@@ -92,6 +104,18 @@ func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
 	// events for one cause.
 	if reconcileErr != nil && !emittedFailure {
 		recorder.Eventf(obj, nil, corev1.EventTypeWarning, eventReasonReconcileError, eventActionReconcile, "reconcile failed: %v", reconcileErr)
+	}
+
+	// A cadence clamp (Accepted=True/SpecClamped: stored interval/timeout below
+	// the schema floors, raised at runtime) surfaces once per episode as a
+	// Warning, using the same before/after transition logic as Ready failures —
+	// a persistently clamped check does not spam the event stream.
+	if accepted := apiMeta.FindStatusCondition(conditions, checkConditionAccepted); accepted != nil &&
+		accepted.Status == metav1.ConditionTrue && accepted.Reason == conditionReasonSpecClamped {
+		beforeAccepted := apiMeta.FindStatusCondition(previousConditions, checkConditionAccepted)
+		if beforeAccepted == nil || beforeAccepted.Reason != accepted.Reason || beforeAccepted.Message != accepted.Message {
+			recorder.Eventf(obj, nil, corev1.EventTypeWarning, eventReasonCadenceClamped, eventActionReconcile, "%s", accepted.Message)
+		}
 	}
 }
 

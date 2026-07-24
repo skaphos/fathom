@@ -87,6 +87,26 @@ jobs:
       - name: Check operator<->probe/node-agent version lockstep
         run: ./scripts/check-version-lockstep.sh
 
+  crd-compat:
+    name: CRD Schema Compatibility
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — the gate diffs config/crd/bases against the latest
+      # v* release tag, so tags (and their history) must be present.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: Check CRD schema compatibility against the latest release
+        run: go -C tools tool task crd-compat
+
   lint:
     name: Lint
     permissions:

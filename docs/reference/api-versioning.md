@@ -265,10 +265,21 @@ The CRD API version and the operator's SemVer release are **orthogonal axes.**
   merge.
 - **Round-trip conversion tests** are required once more than one version is
   served (above).
-- **Recommended:** add a CRD schema-compatibility check to CI (e.g. diffing the
-  generated `config/crd/bases/*.yaml` against the previous release, or a
-  kube-api-linter pass) so an *accidental* incompatible change under an unchanged
-  version fails a check instead of shipping.
+- **CRD schema-compatibility gate** (`crd-compat` CI job;
+  `go -C tools tool task crd-compat` locally; skaphos/fathom#152): every pull
+  request diffs the generated `config/crd/bases/*.yaml` against the most
+  recent `v*` release tag using [crdify](https://sigs.k8s.io/crdify) (pinned
+  in `tools/go.mod`, checks configured in `.crdify.yaml`), so an *accidental*
+  incompatible change under an unchanged version fails a check instead of
+  shipping. A *deliberate*, sanctioned incompatible change (alpha churn, or a
+  new API version) is acknowledged by adding a reviewed entry to
+  `.crd-compat-allowlist.yaml` in the same pull request — the override lands
+  in git history, and the gate reports the finding as `SANCTIONED` with its
+  reason and tracking issue. Once a release containing the sanctioned change
+  becomes the baseline, the entry stops matching and the gate flags it
+  `STALE`; prune it in an ordinary PR. CRD files with no counterpart at the
+  baseline (new kinds) are skipped, and a repository with no release tag yet
+  passes with a notice.
 
 ## What must never happen
 

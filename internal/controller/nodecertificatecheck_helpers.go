@@ -113,14 +113,14 @@ func joinPaths(paths []string) string {
 
 func nodeCertInterval(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return check.Spec.Interval.Duration
+		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
 	return defaultNodeCertInterval
 }
 
 func nodeCertTimeout(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return check.Spec.Timeout.Duration
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
 	return defaultNodeCertTimeout
 }

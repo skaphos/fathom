@@ -96,7 +96,8 @@ spec:
                 description: |-
                   Interval is the cadence at which each node-agent re-scans its
                   certificates and the operator refreshes the rolled-up HealthReport.
-                  Defaults to 1h when unset.
+                  Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the
+                  operator clamps stored objects that predate this floor to it at runtime.
                 type: string
               nodeSelector:
                 additionalProperties:
@@ -140,8 +141,10 @@ spec:
                   Status snapshot is preserved.
                 type: boolean
               timeout:
-                description: Timeout bounds a single node-agent scan pass. Defaults
-                  to 30s when unset.
+                description: |-
+                  Timeout bounds a single node-agent scan pass. Defaults to 30s when
+                  unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored
+                  objects that predate this floor to it at runtime.
                 type: string
               tolerations:
                 description: |-
@@ -206,10 +209,10 @@ spec:
               rule: '!has(self.paths) || self.paths.all(p, p.startsWith(''/'') &&
                 p != ''/'' && !p.contains(''..'') && [''/etc/kubernetes'',''/var/lib/kubelet'',''/etc/etcd'',''/var/lib/etcd'',''/var/lib/rancher''].exists(a,
                 p == a || p.startsWith(a + ''/'')))'
-            - message: timeout must be a positive duration
-              rule: '!has(self.timeout) || duration(self.timeout) > duration(''0s'')'
-            - message: interval must be a positive duration
-              rule: '!has(self.interval) || duration(self.interval) > duration(''0s'')'
+            - message: timeout must be at least 1s
+              rule: '!has(self.timeout) || duration(self.timeout) >= duration(''1s'')'
+            - message: interval must be at least 10s
+              rule: '!has(self.interval) || duration(self.interval) >= duration(''10s'')'
             - message: timeout must not exceed interval
               rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
                 <= duration(self.interval)'

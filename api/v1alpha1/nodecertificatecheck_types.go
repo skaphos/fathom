@@ -20,8 +20,8 @@ import (
 // aggregate into Status.
 // +kubebuilder:validation:XValidation:rule="self.warnDays >= self.criticalDays",message="warnDays must be greater than or equal to criticalDays"
 // +kubebuilder:validation:XValidation:rule="!has(self.paths) || self.paths.all(p, p.startsWith('/') && p != '/' && !p.contains('..') && ['/etc/kubernetes','/var/lib/kubelet','/etc/etcd','/var/lib/etcd','/var/lib/rancher'].exists(a, p == a || p.startsWith(a + '/')))",message="each path must be an absolute, traversal-free path under an allowed prefix (/etc/kubernetes, /var/lib/kubelet, /etc/etcd, /var/lib/etcd, /var/lib/rancher)"
-// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) > duration('0s')",message="timeout must be a positive duration"
-// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) > duration('0s')",message="interval must be a positive duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) >= duration('1s')",message="timeout must be at least 1s"
+// +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) >= duration('10s')",message="interval must be at least 10s"
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
 type NodeCertificateCheckSpec struct {
 	// Paths is the set of on-disk certificate locations each node-agent scans.
@@ -93,11 +93,14 @@ type NodeCertificateCheckSpec struct {
 
 	// Interval is the cadence at which each node-agent re-scans its
 	// certificates and the operator refreshes the rolled-up HealthReport.
-	// Defaults to 1h when unset.
+	// Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the
+	// operator clamps stored objects that predate this floor to it at runtime.
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 
-	// Timeout bounds a single node-agent scan pass. Defaults to 30s when unset.
+	// Timeout bounds a single node-agent scan pass. Defaults to 30s when
+	// unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored
+	// objects that predate this floor to it at runtime.
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 

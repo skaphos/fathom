@@ -48,7 +48,7 @@ var _ = Describe("CRD schema validation", func() {
 
 		It("defaults an explicitly configured family to enabled", func() {
 			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-				"system_health": {Thresholds: map[string]string{"restartWarnCount": "3"}},
+				"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}},
 			}})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
@@ -73,16 +73,64 @@ var _ = Describe("CRD schema validation", func() {
 			Expect(err.Error()).To(ContainSubstring("addonType is immutable"))
 		})
 
-		It("rejects a zero timeout", func() {
-			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Timeout: dur(0)}))
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("timeout must be a positive duration"))
+		// Floor boundary matrix (SKA-593 / issue #152): below → reject naming
+		// the field and minimum, at → accept. The floors live as CEL rules in
+		// the CRD schema and as MinCheckInterval/MinCheckTimeout in Go.
+		DescribeTable("interval floor",
+			func(interval time.Duration, wantErr bool) {
+				err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(interval)}))
+				if wantErr {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("interval must be at least 10s"))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+			},
+			Entry("rejects zero", time.Duration(0), true),
+			Entry("rejects 1ms (the typo class)", time.Millisecond, true),
+			Entry("rejects 9s (just below)", 9*time.Second, true),
+			Entry("accepts 10s (at the floor)", 10*time.Second, false),
+			Entry("accepts 5m (above)", 5*time.Minute, false),
+		)
+
+		DescribeTable("timeout floor",
+			func(timeout time.Duration, wantErr bool) {
+				err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+					Interval: dur(5 * time.Minute), Timeout: dur(timeout),
+				}))
+				if wantErr {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("timeout must be at least 1s"))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+			},
+			Entry("rejects zero", time.Duration(0), true),
+			Entry("rejects 500ms", 500*time.Millisecond, true),
+			Entry("rejects 999ms (just below)", 999*time.Millisecond, true),
+			Entry("accepts 1s (at the floor)", time.Second, false),
+			Entry("accepts a fail-fast 5s", 5*time.Second, false),
+		)
+
+		It("accepts both fields at their own floors together", func() {
+			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+				Interval: dur(10 * time.Second), Timeout: dur(time.Second),
+			}))).To(Succeed())
 		})
 
-		It("rejects a zero interval", func() {
-			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(0)}))
+		It("accepts timeout and interval both at the interval floor", func() {
+			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+				Interval: dur(10 * time.Second), Timeout: dur(10 * time.Second),
+			}))).To(Succeed())
+		})
+
+		It("rejects a sub-floor interval on update too", func() {
+			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(time.Minute)})
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			obj.Spec.Interval = dur(time.Millisecond)
+			err := k8sClient.Update(ctx, obj)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("interval must be a positive duration"))
+			Expect(err.Error()).To(ContainSubstring("interval must be at least 10s"))
 		})
 
 		It("rejects a timeout greater than the interval", func() {
@@ -172,17 +220,41 @@ var _ = Describe("CRD schema validation", func() {
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		})
 
-		It("rejects a zero timeout", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Timeout: dur(0)}))
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("timeout must be a positive duration"))
-		})
+		DescribeTable("interval floor",
+			func(interval time.Duration, wantErr bool) {
+				err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Interval: dur(interval)}))
+				if wantErr {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("interval must be at least 10s"))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+			},
+			Entry("rejects zero", time.Duration(0), true),
+			Entry("rejects 1ms (the typo class)", time.Millisecond, true),
+			Entry("rejects 9s (just below)", 9*time.Second, true),
+			Entry("accepts 10s (at the floor)", 10*time.Second, false),
+			Entry("accepts 1h (above)", time.Hour, false),
+		)
 
-		It("rejects a zero interval", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Interval: dur(0)}))
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("interval must be a positive duration"))
-		})
+		DescribeTable("timeout floor",
+			func(timeout time.Duration, wantErr bool) {
+				err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+					Interval: dur(time.Hour), Timeout: dur(timeout),
+				}))
+				if wantErr {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("timeout must be at least 1s"))
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
+			},
+			Entry("rejects zero", time.Duration(0), true),
+			Entry("rejects 500ms", 500*time.Millisecond, true),
+			Entry("rejects 999ms (just below)", 999*time.Millisecond, true),
+			Entry("accepts 1s (at the floor)", time.Second, false),
+			Entry("accepts a fail-fast 5s", 5*time.Second, false),
+		)
 
 		It("rejects a timeout greater than the interval", func() {
 			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{

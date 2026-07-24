@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Skaphos
+# SPDX-License-Identifier: MIT
+#
+# crdify check configuration for the CRD schema-compatibility gate
+# (scripts/check-crd-compat.sh). Description-only changes are compatible by
+# definition (docs/reference/api-versioning.md), so the description check is
+# disabled; everything crdify has no dedicated handler for (e.g. CEL rule
+# changes) stays an error so validation tightening cannot slip through
+# unclassified.
+validations:
+  - name: description
+    enforcement: None
+unhandledEnforcement: Error
