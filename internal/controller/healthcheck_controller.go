@@ -131,6 +131,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Message:            pausedMessage,
 	})
 
+	var mirrorErr error
 	if hc.Spec.Paused {
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
 			Type:               healthCheckConditionReady,
@@ -140,25 +141,28 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            "HealthCheck is paused; status mirroring is suspended.",
 		})
 	} else {
-		r.mirrorTarget(ctx, &hc)
+		mirrorErr = r.mirrorTarget(ctx, &hc)
 	}
 
-	if equality.Semantic.DeepEqual(before, &hc.Status) {
-		return ctrl.Result{}, nil
+	if !equality.Semantic.DeepEqual(before, &hc.Status) {
+		if err := r.Status().Update(ctx, &hc); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.V(1).Info("updated HealthCheck status", "result", hc.Status.Result)
 	}
-	if err := r.Status().Update(ctx, &hc); err != nil {
-		return ctrl.Result{}, err
-	}
-	log.V(1).Info("updated HealthCheck status", "result", hc.Status.Result)
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, mirrorErr
 }
 
 // mirrorTarget projects the referenced specialized check's status into hc.Status.
 // It sets the Ready condition and (on success) Result, Summary,
-// SourceObservedAt, and LastReportName. It does not return an error: any failure
-// is recorded as a Ready=False condition so the caller's Update call remains
-// idempotent. The only supported target kind in v0.1 is AddonCheck.
-func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) {
+// SourceObservedAt, and LastReportName. Terminal failures (unsupported kind,
+// target NotFound) clear the mirrored fields and are recorded only as a
+// Ready=False condition. A transient target lookup failure instead preserves
+// the last-good mirrored fields — so a blip does not ripple into the
+// ClusterHealth roll-up as Unknown — and is returned as an error so the caller
+// requeues and re-attempts the mirror. The only supported target kind in v0.1
+// is AddonCheck.
+func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) error {
 	if hc.Spec.CheckRef.Kind != healthCheckTargetKindAddonCheck {
 		clearMirroredHealthCheckStatus(hc)
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
@@ -168,7 +172,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 			Reason:             "UnsupportedKind",
 			Message:            "checkRef.kind " + hc.Spec.CheckRef.Kind + " is not supported by this build of Fathom.",
 		})
-		return
+		return nil
 	}
 
 	namespace := hc.Spec.CheckRef.Namespace
@@ -177,20 +181,26 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 	}
 	var target fathomv1alpha1.AddonCheck
 	err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hc.Spec.CheckRef.Name}, &target)
-	if err != nil {
+	if apierrors.IsNotFound(err) {
 		clearMirroredHealthCheckStatus(hc)
-		reason := "TargetLookupFailed"
-		if apierrors.IsNotFound(err) {
-			reason = "TargetNotFound"
-		}
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
 			Type:               healthCheckConditionReady,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: hc.Generation,
-			Reason:             reason,
+			Reason:             "TargetNotFound",
 			Message:            err.Error(),
 		})
-		return
+		return nil
+	}
+	if err != nil {
+		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+			Type:               healthCheckConditionReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: hc.Generation,
+			Reason:             "TargetLookupFailed",
+			Message:            err.Error(),
+		})
+		return err
 	}
 
 	hc.Status.Result = fathomv1alpha1.HealthReportResult(target.Status.LastResult)
@@ -205,6 +215,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 		Reason:             "TargetMirrored",
 		Message:            "HealthCheck mirrored the referenced check's status.",
 	})
+	return nil
 }
 
 func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {

@@ -7,11 +7,13 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,6 +24,19 @@ import (
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/metrics"
 )
+
+// transientAddonCheckGetClient fails every AddonCheck Get with a non-NotFound
+// error, simulating an API-server blip during the mirror's target lookup.
+type transientAddonCheckGetClient struct {
+	client.Client
+}
+
+func (c transientAddonCheckGetClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*fathomv1alpha1.AddonCheck); ok {
+		return apierrors.NewInternalError(errors.New("injected transient target lookup failure"))
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
 
 var _ = Describe("HealthCheck Controller", func() {
 	ctx := context.Background()
@@ -246,6 +261,52 @@ var _ = Describe("HealthCheck Controller", func() {
 		Expect(got.Status.SourceObservedAt).To(BeNil())
 		Expect(got.Status.LastReportName).To(BeEmpty())
 		Expect(got.Status.Summary).To(BeEmpty())
+	})
+
+	It("preserves the last mirrored result and requeues on a transient target lookup failure", func() {
+		runTime := metav1.NewTime(time.Now().Add(-time.Minute))
+		createAddonCheckWithStatus("ac-transient-blip", fathomv1alpha1.AddonCheckStatus{
+			LastResult:     "Pass",
+			LastRunTime:    &runTime,
+			LastReportName: "ac-transient-blip-1",
+			Conditions: []metav1.Condition{{
+				Type:               healthCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             "RunCompleted",
+				Message:            "source was healthy",
+				LastTransitionTime: metav1.Now(),
+			}},
+		})
+		createHealthCheck("hc-transient-blip", fathomv1alpha1.HealthCheckSpec{
+			CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "ac-transient-blip"},
+		})
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-transient-blip", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		failing := &HealthCheckReconciler{
+			Client: transientAddonCheckGetClient{Client: k8sClient},
+			Scheme: k8sClient.Scheme(),
+		}
+		_, err = failing.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-transient-blip", Namespace: "default"},
+		})
+		Expect(err).To(HaveOccurred(), "a transient target lookup failure must be returned so the reconcile requeues")
+		Expect(apierrors.IsNotFound(err)).To(BeFalse())
+
+		var got fathomv1alpha1.HealthCheck
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "hc-transient-blip", Namespace: "default"}, &got)).To(Succeed())
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass),
+			"a transient lookup failure must not clear the last-good mirrored result")
+		Expect(got.Status.LastReportName).To(Equal("ac-transient-blip-1"))
+		Expect(got.Status.SourceObservedAt).NotTo(BeNil())
+		Expect(got.Status.Summary).To(Equal("source was healthy"))
+		ready := apiMeta.FindStatusCondition(got.Status.Conditions, healthCheckConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("TargetLookupFailed"))
 	})
 
 	It("rejects unsupported CheckRef.Kind values", func() {
