@@ -838,9 +838,21 @@ func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.
 	if len(ratios) == 0 {
 		return aggregateHealthReportResult(checks), nil
 	}
+	// One grouping pass so each ratio family is evaluated over its own slice
+	// instead of FamilyRatioVerdict re-scanning the whole run per family.
+	grouped := make(map[adapter.Family][]adapter.CheckResult, len(ratios))
+	for _, check := range checks {
+		if _, ok := ratios[check.Family]; ok {
+			grouped[check.Family] = append(grouped[check.Family], check)
+		}
+	}
+	computed := make(map[adapter.Family]adapter.RatioRollup, len(grouped))
+	for family, familyChecks := range grouped {
+		computed[family] = adapter.FamilyRatioVerdict(familyChecks, family, ratios[family])
+	}
+
 	results := make([]fathomv1alpha1.HealthReportResult, 0, len(checks))
-	computed := make(map[adapter.Family]adapter.RatioRollup, len(ratios))
-	folded := make(map[adapter.Family]bool, len(ratios))
+	folded := make(map[adapter.Family]bool, len(computed))
 	var rollups []familyRatioRollup
 	for _, check := range checks {
 		rt, ok := ratios[check.Family]
@@ -848,11 +860,7 @@ func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.
 			results = append(results, healthReportResult(check.Outcome))
 			continue
 		}
-		rollup, seen := computed[check.Family]
-		if !seen {
-			rollup = adapter.FamilyRatioVerdict(checks, check.Family, rt)
-			computed[check.Family] = rollup
-		}
+		rollup := computed[check.Family]
 		if rollup.Population == 0 && rollup.Verdict != adapter.OutcomeError {
 			results = append(results, healthReportResult(check.Outcome))
 			continue

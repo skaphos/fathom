@@ -188,6 +188,11 @@ func TestFamilyRatioVerdict(t *testing.T) {
 		},
 		{
 			"fails under threshold with omitted warnRatio and no warns pass",
+			mix(199, 0, 1, 0, 0), map[string]string{"failRatio": "5"},
+			adapter.OutcomePass, 200, 1, 1,
+		},
+		{
+			"fails under both thresholds with no warns pass",
 			mix(199, 0, 1, 0, 0), map[string]string{"failRatio": "5", "warnRatio": "5"},
 			adapter.OutcomePass, 200, 1, 1,
 		},
