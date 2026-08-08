@@ -79,7 +79,7 @@ recorded.*
 |------------|---------|-------|
 | `ClusterHealth` contract stability | **Pass** | Untouched. `DNSCheck` is not mirrorable until #267; nothing here reads `HealthReport` history |
 | Bounded, idempotent reconciliation | **Pass** | No reconcile loop in this slice. The bound that *is* set here is the schema cap on targets × resolvers (research R6), which is what bounds the future loop |
-| Minimal RBAC | **Pass — by adding none** | See below |
+| Minimal RBAC | **Pass — by adding none here; by argument for #266** | See below. This slice adds no grant. FR-037 commits #266 to a cluster-wide `pods: create` the operator does not hold today; it is justified by the reachability roadmap rather than by this feature |
 | Configuration model | **N/A** | No new operator options; nothing added to `Options`/`bindings()` |
 
 **On RBAC — no grant is added in this slice, deliberately.** Issue #265's
@@ -91,9 +91,47 @@ independently. The grant belongs with #266, together with its justification row
 in `docs/reference/operator-rbac.md`. Regenerating RBAC here is therefore a
 no-op, and that is the correct outcome rather than an oversight.
 
+**But #266's grant is larger than it looks, and the decision was taken here.**
+Cross-artifact analysis surfaced that FR-031 (resolution from the check's own
+namespace) is not reachable under the current architecture. The operator's
+ClusterRole carries `pods: [delete, list]` — **no create**
+(`config/rbac/role.yaml:21`); probe pods are created by impersonating
+per-addon identities that live in the operator's own namespace
+(`internal/app/options.go:98`, `internal/app/run.go:236`, SKA-58). There is no
+path today to create a pod in an arbitrary tenant namespace.
+
+The resolution (FR-037) is to grant cluster-wide `pods: create`, and the
+reasoning is that this is **not a cost DNSCheck imposes**. The planned
+reachability checks — an administrator asking whether namespace A can reach
+namespace B (#181, #208) — require placing probe workloads in namespaces where
+neither endpoint is the operator's. That grant is on the roadmap regardless;
+DNSCheck is merely the first kind to need it.
+
+Consequences for #266, recorded so they are not rediscovered:
+
+- The grant needs a written justification defending why nothing narrower
+  suffices, per the repository's RBAC documentation rule.
+- Per-addon impersonation remains correct for adapter work and is not replaced
+  by this; the broader grant covers check kinds that place workloads in tenant
+  namespaces, which adapters do not.
+- Constitution "Minimal RBAC" is still satisfied, but by argument rather than
+  by abstention: the permission is the narrowest that delivers FR-031, and
+  FR-031 is what keeps a namespaced author from borrowing an egress posture
+  they do not hold.
+
 **Post-Phase-1 re-evaluation**: no verdict changed. The design added no
-webhook, no new dependency, no cluster-wide permission, and no new
-configuration surface. The one design decision that touched a shared code path
+webhook, no new dependency, and no new configuration surface.
+
+**Post-clarify re-evaluation**: one verdict was re-argued rather than changed.
+The Phase-1 pass claimed "no cluster-wide permission", which FR-037 makes
+false for #266 — the sentence above is corrected accordingly. Minimal RBAC
+still passes, but on the argument set out below rather than on abstention. No
+other verdict moved: FR-031 strengthens Principle VII (an unreachable resolver
+must not be read as proof) and Principle VIII (vantage point as modelled
+data), and FR-032–034 serve Principle VI by making per-target evidence
+queryable rather than only readable.
+
+The one design decision that touched a shared code path
 (`internal/probe.Request`) is governed by FR-030 and carries explicit
 regression coverage in [quickstart.md](quickstart.md) step 5.
 
@@ -111,7 +149,7 @@ specs/005-dnscheck-resource-contract/
 ├── checklists/
 │   └── requirements.md            # Spec quality checklist (passing)
 ├── contracts/
-│   ├── dnscheck-admission.md      # 34-row accept/reject matrix
+│   ├── dnscheck-admission.md      # 36-row accept/reject matrix
 │   └── probe-dns-cli.md           # Probe dns-mode CLI + outcome mapping
 └── tasks.md                       # Phase 2 — created by /speckit-tasks
 ```
@@ -122,7 +160,7 @@ specs/005-dnscheck-resource-contract/
 api/v1alpha1/
 ├── dnscheck_types.go              # NEW — DNSCheck, Spec, Status, DNSTarget,
 │                                  #       DNSResolver, DNSTargetResult, enums
-├── dnscheck_validation_test.go    # NEW — envtest admission matrix (34 rows)
+├── dnscheck_validation_test.go    # NEW — envtest admission matrix (36 rows)
 ├── zz_generated.deepcopy.go       # regenerated, never hand-edited
 └── deepcopy_test.go               # extended — fullyPopulatedDNSCheck
 
@@ -159,7 +197,7 @@ Ordering is driven by which failures are cheapest to discover early.
    `task install`. The CEL cost budget is rejected at install time, so this
    runs *before* the matrix is written rather than after (quickstart step 2).
    If it fails, the fix is tighter bounds, and tighter bounds change the types.
-3. **Admission matrix** — the 34 rows in `contracts/dnscheck-admission.md`.
+3. **Admission matrix** — the 36 rows in `contracts/dnscheck-admission.md`.
 4. **Probe capability** — record kinds, matching, polarity, with the two
    research-R1 traps covered by name.
 5. **Pod builder** — `DNSFrom` selector; FR-030 regression first.
@@ -198,7 +236,31 @@ that caller would have silently narrowed to IPv4 — precisely the regression
 FR-030 forbids.
 
 Propagated to `spec.md` (FR-003, Clarifications, Assumptions),
-`data-model.md`, and both contracts. No open decisions remain.
+`data-model.md`, and both contracts.
+
+**Four more resolved by `/speckit-clarify`, run out of order after this plan
+existed** — hence this section is retrofitted rather than written ahead:
+
+- **Namespace of resolution (FR-031, FR-037, SC-008)** — the check's own
+  namespace, with the RBAC consequence above.
+- **Metric surface (FR-032–034, SC-009)** — check-level gauges plus a
+  per-target gauge carrying the outcome as a label; 288 series per check at the
+  caps. Declared here, emitted by #266.
+- **Vantage-point fan-out (FR-035)** — a target naming no vantage point is
+  evaluated against every declared one. This is what the 48-pair and 288-series
+  figures in Technical Context always assumed; the specification simply had not
+  said so.
+- **Pruning (FR-036)** — per-target results and series are rebuilt from the
+  current specification, never accumulated.
+
+**And two by cross-artifact analysis:**
+
+- **FR-037** — the RBAC path for FR-031 (above).
+- **FR-038** — the implicit vantage point is named `cluster`, reserved. Without
+  it, a default-configuration check had no value to put in its per-target
+  `resolver` field or its metric label.
+
+No open decisions remain.
 
 ## Complexity Tracking
 

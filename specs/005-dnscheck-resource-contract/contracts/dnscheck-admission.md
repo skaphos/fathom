@@ -24,9 +24,15 @@ spec:
 ```
 
 Effective after defaulting: `recordType: Host`, `absent: false`,
-`interval: 1m`, `timeout: 10s`, `historyLimit: 10`, and resolution from cluster
-DNS. `Host` is satisfied by an address of either family, so this check does not
-silently mean "IPv4 only".
+`interval: 1m`, `timeout: 10s`, `historyLimit: 10`, and resolution from the
+implicit vantage point named `cluster` (FR-038). `Host` is satisfied by an
+address of either family, so this check does not silently mean "IPv4 only".
+
+**Fan-out is not an admission concern but changes what this object costs.** A
+target naming no vantage point is evaluated against *every* declared one
+(FR-035). This object declares none, so it is one pair. The fully populated
+object below declares three, and its two unoverridden targets are three pairs
+each.
 
 ## Fully populated object
 
@@ -101,7 +107,9 @@ write; the message must name the offending field (SC-002).
 | 25 | `from: Explicit`, `address: "10.0.0.10:53"` | accepted |
 | 26 | `from: Explicit`, `address: "[2001:db8::1]:53"` | accepted |
 | 27 | two resolvers named `upstream` | rejected — duplicate map key |
+| 27a | a declared resolver named `cluster` | rejected — reserved name (FR-038) |
 | 28 | target `resolver: nope` with no such entry | rejected — must name a declared resolver |
+| 28a | target `resolver: cluster` with no `resolvers` declared | accepted — the implicit vantage point is always addressable by its reserved name |
 | 29 | `spec.paused: true` | rejected — unknown field (structural schema) |
 | 30 | `spec.policy: {}` | rejected — unknown field |
 | 31 | `historyLimit: 0` | rejected — `Minimum=1` |

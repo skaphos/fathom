@@ -74,6 +74,21 @@ avoids the same upstream being spelled three different ways across a target
 list. The referential rule — "`resolver` must name a declared entry" — is a
 cross-field CEL check.
 
+**An absent `resolver` means every declared vantage point, not the default
+one** (FR-035). A target that names no vantage point is evaluated once against
+each entry in `spec.resolvers`; a target that names one is evaluated only
+against that one. This is what sizes the caps: 16 targets × 3 vantage points =
+48 pairs worst case, and 48 × 6 outcomes = the 288-series ceiling in SC-009.
+Reading `resolver: ""` as "use the cluster default" instead would make the
+declared caps wrong by 3×.
+
+**`cluster` is a reserved vantage-point name** (FR-038). When `spec.resolvers`
+is empty the check still resolves — from cluster DNS — and that implicit
+vantage point is named `cluster` so `DNSTargetResult.resolver` and the
+per-target metric label always carry a value. An operator-declared entry may
+not take that name, enforced by a CEL rule, so the label means the same thing
+on every check.
+
 **Validation rules on this entity:**
 
 1. `absent == true` ⇒ `expectedAnswers` must be empty (FR-005, contradictory
@@ -136,6 +151,13 @@ One (target, resolver) pair on the most recent evaluation.
 | `message` | `string` | `MaxLength=512`, what was asked and what came back |
 | `answers` | `[]string` | `MaxItems=16`, items `MaxLength=253` — the evidence |
 | `latencyMillis` | `int64` | recorded as evidence; **not** a pass/fail input |
+
+**Results are rebuilt, never accumulated** (FR-036). Each evaluation replaces
+the list from the current spec; a pair the spec no longer declares disappears
+rather than freezing at its last verdict, and its metric series is withdrawn
+with it. This is what keeps `MaxItems=48` a real bound — under accumulate
+semantics an operator could exceed it by editing `targets` repeatedly, and a
+removed target would keep firing an alert that no spec edit could clear.
 
 **Result identity is `(name, recordType, resolver)`**, which is what makes the
 spec's duplicate-target Edge Case deterministic: the same name declared twice
@@ -200,6 +222,27 @@ current behavior. The full CLI contract is in
 One new resource entry for `DNSCheck`, matching the existing kinds' shape.
 
 ---
+
+## Metric surface (declared here, emitted by the controller)
+
+Per FR-032–034. Named now so the label set is agreed before it is emitted; no
+code in this slice publishes it.
+
+| Metric | Labels | Notes |
+|--------|--------|-------|
+| `fathom_check_result` *(existing)* | `kind`,`name`,`namespace`,`result` | `kind="DNSCheck"`; 6 series per check |
+| `fathom_check_last_run_timestamp_seconds` *(existing)* | `kind`,`name`,`namespace` | 1 series per check |
+| `fathom_dns_target_result` **(new)** | `name`,`namespace`,`target`,`record_type`,`resolver`,`result` | ≤ 288 series per check (16 × 3 × 6) |
+
+`resolver` carries the reserved `cluster` value for the implicit vantage point
+(FR-038). Series for pairs no longer declared are deleted, not left to age out
+(FR-036) — with `result` as a label, a stale series sits at `1` on its last
+outcome forever, which is an alert nothing can clear.
+
+The label set is the expensive decision here, not the metric name: `result`
+multiplies series by six. That was chosen deliberately for consistency with
+`fathom_check_result` one level down, and SC-009 states the resulting ceiling
+so it cannot grow unnoticed.
 
 ## What this model does not include
 

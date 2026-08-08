@@ -38,6 +38,16 @@ What is *not* here: the controller that runs the check on a cadence and writes
 its results, the roll-up into the cluster-wide verdict, and end-to-end
 coverage. Those are the following slices of the same epic (see Out of Scope).
 
+A third category sits between the two. Some requirements below — where
+resolution runs from (FR-031, FR-037), the metric surface (FR-032–034), and
+pruning results for targets that leave the specification (FR-036) — describe
+behaviour only the controller can perform. They are stated here because they
+are **contract**, externally visible and worth agreeing before code exists,
+and because leaving them unstated would let them be decided by whichever
+implementation reached them first. They are declared in this slice and
+delivered in the next; each says so on its own line, and none of them is
+published as an available capability until it is real.
+
 ## Clarifications
 
 ### Session 2026-08-08
@@ -81,6 +91,26 @@ coverage. Those are the following slices of the same epic (see Out of Scope).
   Anything else leaves a removed target reporting a verdict — with per-target
   gauges in the contract, an alert on something no longer declared, which
   cannot be cleared by changing the specification.
+- Q (raised by cross-artifact analysis): FR-031 requires resolution from the
+  check's own namespace, but probe workloads are today created by impersonating
+  per-addon service accounts that live in the operator's namespace, and the
+  operator holds no cluster-wide create permission for them. Which gives? → A:
+  **the permission.** Placing probe workloads in arbitrary namespaces is
+  already required by the planned reachability checks, where an administrator
+  asks whether namespace A can reach namespace B — neither endpoint being the
+  operator's namespace. The grant is therefore not a cost this feature imposes;
+  it is one the roadmap already requires, and this feature is simply the first
+  to need it. FR-031 stands unchanged. The grant is deliberate, must be
+  accompanied by a written justification defending why nothing narrower
+  suffices, and lands with the component that creates the workloads — not with
+  this contract.
+- Q (raised by cross-artifact analysis): when no vantage point is declared at
+  all, the implicit cluster one has no name, leaving per-target results and
+  their metric labels with no value to report. → A: **the implicit vantage
+  point is named `cluster`, and that name is reserved.** An operator-declared
+  vantage point may not use it, so a result or series labelled `cluster` always
+  means the same thing whether or not the check declared its vantage points
+  explicitly.
 - Q (raised during planning): what should an unstated record kind mean, given
   that defaulting to `A` would verify IPv4 only? → A: **a sixth value, `Host`,
   meaning an address of either family, as the default.** Defaulting to `A`
@@ -375,6 +405,21 @@ verdict degrades.
   exactly equal to its author's existing reach, so the namespace's own network
   policy governs it and no separate allowlist of permitted resolver addresses
   is required.
+- **FR-037**: Satisfying FR-031 requires the operator to place probe workloads
+  in namespaces it does not own, which today it cannot: probe workloads are
+  created by impersonating per-addon identities that live in the operator's own
+  namespace. The broader permission MUST be granted deliberately and MUST carry
+  a written justification defending why nothing narrower suffices. It is not a
+  cost this feature introduces — the planned reachability checks, which ask
+  whether one namespace can reach another, require the same permission with
+  neither endpoint in the operator's namespace. This feature is the first to
+  need it, not the reason for it. The grant ships with the component that
+  creates the workloads, not with this contract.
+- **FR-038**: The implicit vantage point used when a check declares none MUST
+  be named `cluster`, and that name MUST be reserved — an operator-declared
+  vantage point MUST NOT reuse it. Without a reserved name, a per-target result
+  and its metric series would have no value to report for the default case, and
+  the same label would mean different things on different checks.
 
 **Cadence and bounds**
 
@@ -565,7 +610,13 @@ verdict degrades.
 ## Out of Scope
 
 - The controller that executes the check on a cadence, persists its results,
-  and manages its history.
+  and manages its history. This carries the delivery of every requirement
+  stated here that only the controller can perform: placing resolution in the
+  check's own namespace (FR-031) and the permission that enables it (FR-037),
+  emitting the check-level and per-target gauges (FR-032–034), naming the
+  polarity in a negative-assertion summary (FR-021), and pruning results and
+  series for targets that leave the specification (FR-036). Verification of
+  SC-008 and SC-009 travels with them.
 - Generalizing the wrapper so a `DNSCheck` can be mirrored into the
   cluster-wide aggregate.
 - End-to-end coverage and the operator-facing guide.

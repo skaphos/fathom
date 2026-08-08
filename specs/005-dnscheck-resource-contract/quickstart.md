@@ -63,7 +63,7 @@ go -C tools tool task test
 ```
 
 The envtest matrix in `api/v1alpha1/` walks every row of
-[`contracts/dnscheck-admission.md`](contracts/dnscheck-admission.md) — 34 cases,
+[`contracts/dnscheck-admission.md`](contracts/dnscheck-admission.md) — 36 cases,
 each asserting accept or reject, and for rejections that the message names the
 offending field.
 

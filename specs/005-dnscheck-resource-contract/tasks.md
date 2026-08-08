@@ -77,7 +77,9 @@ Fully testable with no execution path.
 
 - [ ] T006 [US1] Add the three cadence CEL rules to `DNSCheckSpec` in `api/v1alpha1/dnscheck_types.go` — `interval >= 10s`, `timeout >= 1s`, `timeout <= interval` — reusing the exact literals already used by `AddonCheckSpec` so the floors cannot drift from `MinCheckInterval`/`MinCheckTimeout`
 - [ ] T007 [US1] Add the per-target CEL rules to `api/v1alpha1/dnscheck_types.go`: `absent == true` forbids `expectedAnswers` (FR-005), and `recordType == PTR` requires an IP subject while other kinds require a DNS name (FR-002, research R5)
-- [ ] T008 [US1] Add the resolver CEL rules to `api/v1alpha1/dnscheck_types.go`: `address` required iff `from == Explicit`, `address` must be `IP` or `IP:port` and never a hostname (FR-009), and each target's `resolver` must name a declared entry
+- [ ] T008 [US1] Add the resolver CEL rules to `api/v1alpha1/dnscheck_types.go`: `address` required iff `from == Explicit`, `address` must be `IP` or `IP:port` and never a hostname (FR-009), and each target's `resolver` must name a declared entry or the reserved name `cluster`
+- [ ] T036 [US1] Add the reserved-name CEL rule to `api/v1alpha1/dnscheck_types.go`: an operator-declared resolver MUST NOT be named `cluster` (FR-038), so the implicit vantage point's label means the same thing on every check
+- [ ] T037 [US1] Document fan-out on the `resolver` field doc comment in `api/v1alpha1/dnscheck_types.go` — a target naming no vantage point is evaluated against *every* declared one (FR-035), and one naming `cluster` uses the implicit vantage point. This lands in `kubectl explain` and the generated reference, where the cost multiplier is discoverable before a check is applied rather than after
 
 ### Generation and the cost gate
 
@@ -87,7 +89,7 @@ Fully testable with no execution path.
 
 ### Tests
 
-- [ ] T012 [US1] Add the 34-row envtest admission matrix to `api/v1alpha1/dnscheck_validation_test.go`, one case per row of [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), asserting for each rejection that the message names the offending field
+- [ ] T012 [US1] Add the 36-row envtest admission matrix to `api/v1alpha1/dnscheck_validation_test.go`, one case per row of [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), asserting for each rejection that the message names the offending field
 - [ ] T013 [P] [US1] Add `fullyPopulatedDNSCheck` and its `TestDeepCopy_DNSCheck` / round-trip cases to `api/v1alpha1/deepcopy_test.go`, following the existing `fullyPopulatedNodeCertificateCheck` pattern
 - [ ] T014 [P] [US1] Extend `api/v1alpha1/groupversion_info_test.go` so `DNSCheck` and `DNSCheckList` are covered by the scheme-registration assertions alongside the existing kinds
 
@@ -153,6 +155,7 @@ adapter behaves exactly as before.
 T001 (PROJECT)
   │
   ├─► Phase 3 (US1): T002 → T003 → T004 → T005 → T006 → T007 → T008
+  │                    → T036 (reserved name) → T037 (fan-out docs)
   │                    → T009 (generate) → T010 (install: COST GATE)
   │                    → T011, T012, T013, T014
   │
@@ -202,9 +205,21 @@ against a smaller unfinished surface.
 
 - The `DNSCheckReconciler`, cadence-driven execution, status persistence,
   report history, run-now trigger → #266
-- Generalizing `CheckTargetRef` so a `DNSCheck` mirrors into `ClusterHealth`,
-  plus its RBAC grant and justification row → #267
+- Generalizing `CheckTargetRef` so a `DNSCheck` mirrors into `ClusterHealth`
+  → #267
 - End-to-end specs for the kind and the operator guide → #268
+
+**Declared here, delivered by #266.** These are contract — externally visible,
+agreed now — but only the controller can perform them, so no task in this
+feature implements them. Listed explicitly so the absence reads as a decision
+rather than a gap:
+
+| Requirement | What #266 owes |
+|---|---|
+| FR-031, FR-037, SC-008 | Place probe pods in the check's own namespace, and the cluster-wide `pods: create` that enables it — plus its written RBAC justification. The operator holds `pods: [delete, list]` only today (`config/rbac/role.yaml:21`); probe pods are created by impersonating per-addon identities in the operator's namespace. Justified by the reachability roadmap (#181, #208), not by this feature |
+| FR-032, FR-033, FR-034, SC-009 | Emit `kind="DNSCheck"` on the existing check gauges, and the new `fathom_dns_target_result` per-target gauge; hold its series ceiling at 288 per check |
+| FR-036 | Rebuild per-target results from the current spec each run and withdraw series for pairs no longer declared |
+| FR-021 | Name the polarity in the summary when a negative assertion fails, so it is not triaged as an outage |
 
 ## Task summary
 
@@ -212,8 +227,14 @@ against a smaller unfinished surface.
 |-------|-------|-------|
 | 1 — Setup | T001 | — |
 | 2 — Foundational | none (justified above) | — |
-| 3 — Declare and validate | T002–T014 (13) | US1 |
+| 3 — Declare and validate | T002–T014, T036–T037 (15) | US1 |
 | 4 — Evaluate what was declared | T015–T029 (15) | US2 |
 | 5 — Polish | T030–T035 (6) | — |
-| **Total** | **35** | |
+| **Total** | **37** | |
+
+T036 and T037 were added after `/speckit-clarify` and `/speckit-analyze`, which
+ran out of order once the plan already existed. They carry FR-038 (the reserved
+`cluster` vantage-point name) and the field documentation for FR-035 (fan-out).
+They are numbered by arrival rather than inserted in sequence, so existing task
+IDs referenced elsewhere stay stable.
 </content>
