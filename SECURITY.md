@@ -20,7 +20,7 @@ Direct link: <https://github.com/skaphos/fathom/security/advisories/new>
 If you cannot use GitHub, email <shawn@skaphos.io> with the details.
 
 Include what you can of: affected component (controller, adapter, CRD/webhook,
-beaconctl, Helm chart), a reproduction or proof of concept, the impact you
+fathomctl, Helm chart), a reproduction or proof of concept, the impact you
 believe it has, and any suggested fix.
 
 ## What to expect

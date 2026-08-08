@@ -175,7 +175,7 @@ that type, else the declarative engine bound to the matching definition.
   `RequeueAfter: interval` from `Reconcile`; run when `now - LastRunTime >= interval`.
 - **On spec change:** keep the generation-triggered immediate run.
 - **On demand:** an explicit trigger — an annotation (`fathom.skaphos.io/run-now`)
-  or the beaconctl `run-now` verb (SKA-45) — forces a run regardless of interval.
+  or the fathomctl `run-now` verb (SKA-45) — forces a run regardless of interval.
 - **Bounded & single-flight:** honor `spec.timeout`; never overlap runs for the
   same AddonCheck; back off on adapter `error`.
 
