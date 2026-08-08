@@ -6,7 +6,7 @@
 # This avoids running the build stage under QEMU emulation (slow) and reduces
 # reliance on binfmt/QEMU being installed in the build environment.
 # CGO is disabled below, so cross-compilation is a pure GOARCH switch.
-FROM --platform=$BUILDPLATFORM golang:1.26.5@sha256:ae5a2316d12f3e78fd99177dad452e6ad4f240af2d71d57b480c3477f250fec6 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5f61502c365 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
