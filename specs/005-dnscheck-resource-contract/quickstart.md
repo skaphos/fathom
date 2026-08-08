@@ -63,7 +63,7 @@ go -C tools tool task test
 ```
 
 The envtest matrix in `api/v1alpha1/` walks every row of
-[`contracts/dnscheck-admission.md`](contracts/dnscheck-admission.md) — 32 cases,
+[`contracts/dnscheck-admission.md`](contracts/dnscheck-admission.md) — 34 cases,
 each asserting accept or reject, and for rejections that the message names the
 offending field.
 
@@ -83,7 +83,8 @@ Confirm the defaults are real rather than documented:
 kubectl get dnscheck cluster-dns -o jsonpath='{.spec.targets[0].recordType} {.spec.interval} {.spec.timeout}'
 ```
 
-Expected: `A 1m 10s`.
+Expected: `Host 1m 10s` — `Host`, not `A`, so the default is satisfied by an
+address of either family.
 
 Confirm a rejection names its field:
 

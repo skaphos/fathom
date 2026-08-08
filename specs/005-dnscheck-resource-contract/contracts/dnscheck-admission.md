@@ -23,8 +23,10 @@ spec:
     - name: kubernetes.default.svc.cluster.local
 ```
 
-Effective after defaulting: `recordType: A`, `absent: false`, `interval: 1m`,
-`timeout: 10s`, `historyLimit: 10`, and resolution from cluster DNS.
+Effective after defaulting: `recordType: Host`, `absent: false`,
+`interval: 1m`, `timeout: 10s`, `historyLimit: 10`, and resolution from cluster
+DNS. `Host` is satisfied by an address of either family, so this check does not
+silently mean "IPv4 only".
 
 ## Fully populated object
 
@@ -80,6 +82,8 @@ write; the message must name the offending field (SC-002).
 | 8 | `timeout: 5m`, `interval: 1m` | rejected — names both fields |
 | 9 | `timeout: 10s`, `interval: 10s` | accepted — equal is legal |
 | 10 | `recordType: TXT` | rejected — names the supported set |
+| 10a | `recordType` omitted | accepted, defaults to `Host` |
+| 10b | `recordType: Host` | accepted |
 | 11 | `absent: true` + `expectedAnswers: [...]` | rejected — contradictory intent |
 | 12 | `absent: true`, no expected answers | accepted |
 | 13 | `name: "not a hostname"` | rejected — malformed subject |

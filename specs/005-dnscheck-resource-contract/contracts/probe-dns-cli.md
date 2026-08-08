@@ -17,16 +17,21 @@ reproduces today's behavior exactly.
 | `-mode` | `dns` | — | unchanged |
 | `-target` | subject | — | unchanged; a name, or an IP when `-record-type=PTR` |
 | `-timeout` | duration | `10s` | unchanged |
-| `-record-type` | `A`\|`AAAA`\|`CNAME`\|`SRV`\|`PTR` | `A` | **new** — which query to issue |
+| `-record-type` | `Host`\|`A`\|`AAAA`\|`CNAME`\|`SRV`\|`PTR` | `Host` | **new** — which query to issue |
 | `-expect-answers` | comma-separated | empty | **new** — answers that must all be present |
 | `-absent` | bool | `false` | **new** — assert the subject must NOT resolve |
 
-**`-record-type=A` must remain equivalent to today's `LookupHost`** for the
-`nodelocaldns` caller. `LookupHost` returns both IPv4 and IPv6; `LookupIP(...,
-"ip4", ...)` returns only IPv4. To avoid a behavior change on a live consumer,
-the default path keeps host-lookup semantics (both families), and `A`/`AAAA`
-narrow only when named explicitly. This distinction is the concrete form of
-FR-030 and is the thing most likely to be got wrong.
+**`Host` is the default and is exactly today's `LookupHost`** — both address
+families, no narrowing. This is what protects the `nodelocaldns` caller
+(FR-030): it passes no `-record-type`, gets `Host`, and behaves precisely as
+before.
+
+`A` and `AAAA` narrow to one family via `LookupIP(ctx, "ip4"|"ip6", …)` and are
+reachable only by naming them. Making `A` the default would have changed the
+existing consumer's behaviour from dual-family to IPv4-only — a silent
+regression on a live check, and the concrete failure FR-030 forbids. The
+resource schema defaults `recordType` to `Host` for the same reason, so the CRD
+default and the probe default are one behaviour rather than two.
 
 ## Vantage point is not a probe flag
 
@@ -70,9 +75,9 @@ failures elsewhere in the rollup.
 
 | Kind | Call | Answers recorded | Notes |
 |------|------|------------------|-------|
-| *(default)* | `LookupHost` | addresses | unchanged path |
-| `A` | `LookupIP(ctx, "ip4", …)` | IPv4 addresses | |
-| `AAAA` | `LookupIP(ctx, "ip6", …)` | IPv6 addresses | |
+| `Host` *(default)* | `LookupHost` | addresses, either family | unchanged path — the FR-030 guarantee |
+| `A` | `LookupIP(ctx, "ip4", …)` | IPv4 addresses | narrowing, explicit only |
+| `AAAA` | `LookupIP(ctx, "ip6", …)` | IPv6 addresses | narrowing, explicit only |
 | `CNAME` | `LookupCNAME` | canonical name | **no CNAME record ⇒ returns the subject itself; that is "absent", not a pass** |
 | `SRV` | `LookupSRV(ctx, "", "", …)` | `target:port` per record | empty service/proto — otherwise the query name is rewritten |
 | `PTR` | `LookupAddr` | names | subject is an address |

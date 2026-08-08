@@ -48,10 +48,18 @@ One declared subject plus the expectation attached to it.
 | Field | Type | Req | Default | Bounds / rules |
 |-------|------|-----|---------|----------------|
 | `name` | `string` | yes | — | `MinLength=1`, `MaxLength=253`, DNS-name or IP pattern |
-| `recordType` | `DNSRecordType` | no | `A` | `Enum=A;AAAA;CNAME;SRV;PTR` |
+| `recordType` | `DNSRecordType` | no | `Host` | `Enum=Host;A;AAAA;CNAME;SRV;PTR` |
 | `expectedAnswers` | `[]string` | no | — | `MaxItems=16`, items `MaxLength=253`, `listType=set` |
 | `absent` | `*bool` | no | `false` | polarity — `true` asserts the name must NOT resolve |
 | `resolver` | `*string` | no | — | names an entry in `spec.resolvers`; `MaxLength=63` |
+
+**`Host` is the default kind, not `A`.** `Host` is satisfied by an address of
+either family and maps to the resolution capability's existing `LookupHost`
+path. Defaulting to `A` would mean a target on an AAAA-only name fails a check
+its author reads as "does this name resolve", and would leave the resource
+default and the probe default as two subtly different behaviours — the exact
+class of mismatch FR-030 exists to prevent. `A` and `AAAA` narrow to one family
+only when named explicitly.
 
 **`absent` over a `polarity` enum**: a two-valued enum (`Present`/`Absent`)
 carries no more information than a bool and reads worse at the call site. The

@@ -49,6 +49,12 @@ coverage. Those are the following slices of the same epic (see Out of Scope).
   capability; the capability is raised to meet the schema. By the same
   reasoning, explicitly addressed resolvers are wired here too, since
   `spec.resolvers[]` would otherwise be equally unhonored.
+- Q (raised during planning): what should an unstated record kind mean, given
+  that defaulting to `A` would verify IPv4 only? → A: **a sixth value, `Host`,
+  meaning an address of either family, as the default.** Defaulting to `A`
+  would fail an AAAA-only name for a reason its author would not expect, and
+  would make the resource's default and the resolution capability's existing
+  default two subtly different behaviours. `Host` collapses them into one.
 - Q: Are negative assertions ("this name MUST NOT resolve") part of the first
   release? → A: **Yes.** Each target carries an explicit polarity. Deferring it
   would have forced a later semantic retrofit, because "no expected answers
@@ -255,9 +261,13 @@ verdict degrades.
   lookups, an IP address for reverse lookups — so malformed entries are
   rejected before storage.
 - **FR-003**: An operator MUST be able to state, per target, which kind of DNS
-  record is expected, drawn from the supported set: `A`, `AAAA`, `CNAME`,
-  `SRV`, and `PTR`. A kind outside that set MUST be rejected at write time with
-  the supported set named. When unstated, a documented default applies.
+  record is expected, drawn from the supported set: `Host`, `A`, `AAAA`,
+  `CNAME`, `SRV`, and `PTR`. A kind outside that set MUST be rejected at write
+  time with the supported set named. When unstated, the default MUST be `Host`
+  — satisfied by an address of either family — so that a target on a
+  dual-stack or IPv6-only name is not failed by a default that silently means
+  "IPv4 only". `A` and `AAAA` narrow to a single family only when named
+  explicitly.
 - **FR-004**: An operator MUST be able to state, per target, the specific
   answers expected, and a check MUST fail when the returned answer set does not
   satisfy that expectation. When no expected answers are stated, any non-empty
@@ -422,7 +432,8 @@ verdict degrades.
   multi-address and round-robin records legitimately return supersets. An
   exact-set assertion is not offered in this release.
 - **Default record kind is host lookup**: a target that does not name a record
-  kind is evaluated as an address lookup, matching both the prior behavior and
+  kind is evaluated as an address lookup satisfied by either address family
+  (`Host`), matching both the prior behaviour of the resolution capability and
   the overwhelmingly common case.
 - **Multiple vantage points fold to the worst outcome**: when the same targets
   are checked from several resolvers, the check's single verdict is the most
@@ -467,5 +478,5 @@ verdict degrades.
   recorded as evidence, but "resolution is slower than X" is not a declarable
   expectation in this release.
 - Exact-set answer assertions (see Assumptions — containment is the rule).
-- Record kinds beyond the five in FR-003 (`TXT`, `MX`, `NS`, `CAA`).
+- Record kinds beyond those in FR-003 (`TXT`, `MX`, `NS`, `CAA`).
 </content>

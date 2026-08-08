@@ -8,13 +8,14 @@ claim below cites the file it was read from; nothing here is recalled.
 
 ---
 
-## R1 — How to evaluate the five record kinds
+## R1 — How to evaluate the record kinds
 
-**Decision**: use the standard library's `net.Resolver`. All five kinds in
-FR-003 are covered without a new dependency:
+**Decision**: use the standard library's `net.Resolver`. Every kind in FR-003
+is covered without a new dependency:
 
 | Kind | Call | Notes |
 |------|------|-------|
+| `Host` *(default)* | `LookupHost(ctx, name)` | either family; today's existing path |
 | `A` | `LookupIP(ctx, "ip4", name)` | returns `[]net.IP` |
 | `AAAA` | `LookupIP(ctx, "ip6", name)` | returns `[]net.IP` |
 | `CNAME` | `LookupCNAME(ctx, name)` | see the trap below |
@@ -287,7 +288,7 @@ Every NEEDS CLARIFICATION from Technical Context is resolved above:
 
 | Unknown | Resolved by |
 |---------|-------------|
-| Can the stdlib evaluate all five record kinds? | R1 — yes, with two traps to handle |
+| Can the stdlib evaluate every record kind? | R1 — yes, with two traps to handle |
 | Does explicit-resolver support need building? | R2 — no, `DNSNameservers` already exists |
 | How is the node vantage point realized? | R2 — `dnsPolicy: Default`, one small addition |
 | How is "unreachable" told from "no such name"? | R3 — `net.DNSError.IsNotFound` |

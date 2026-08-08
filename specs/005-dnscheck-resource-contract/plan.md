@@ -18,7 +18,9 @@ had to be built; it is **already implemented** as `Request.DNSNameservers`
 actually missing is narrower than expected:
 
 - **Probe binary**: record-kind selection, expected-answer matching, negative
-  assertions. Standard library only — `net.Resolver` covers all five kinds.
+  assertions. Standard library only — `net.Resolver` covers every kind, and
+  the default `Host` kind *is* the existing path, so the shared consumer is
+  untouched by construction.
 - **Pod builder**: one `dnsPolicy: Default` case for the node vantage point.
   Cluster and explicit already work.
 - **API**: the new kind, its validation, and its printer columns.
@@ -109,7 +111,7 @@ specs/005-dnscheck-resource-contract/
 ├── checklists/
 │   └── requirements.md            # Spec quality checklist (passing)
 ├── contracts/
-│   ├── dnscheck-admission.md      # 32-row accept/reject matrix
+│   ├── dnscheck-admission.md      # 34-row accept/reject matrix
 │   └── probe-dns-cli.md           # Probe dns-mode CLI + outcome mapping
 └── tasks.md                       # Phase 2 — created by /speckit-tasks
 ```
@@ -120,7 +122,7 @@ specs/005-dnscheck-resource-contract/
 api/v1alpha1/
 ├── dnscheck_types.go              # NEW — DNSCheck, Spec, Status, DNSTarget,
 │                                  #       DNSResolver, DNSTargetResult, enums
-├── dnscheck_validation_test.go    # NEW — envtest admission matrix (32 rows)
+├── dnscheck_validation_test.go    # NEW — envtest admission matrix (34 rows)
 ├── zz_generated.deepcopy.go       # regenerated, never hand-edited
 └── deepcopy_test.go               # extended — fullyPopulatedDNSCheck
 
@@ -157,7 +159,7 @@ Ordering is driven by which failures are cheapest to discover early.
    `task install`. The CEL cost budget is rejected at install time, so this
    runs *before* the matrix is written rather than after (quickstart step 2).
    If it fails, the fix is tighter bounds, and tighter bounds change the types.
-3. **Admission matrix** — the 32 rows in `contracts/dnscheck-admission.md`.
+3. **Admission matrix** — the 34 rows in `contracts/dnscheck-admission.md`.
 4. **Probe capability** — record kinds, matching, polarity, with the two
    research-R1 traps covered by name.
 5. **Pod builder** — `DNSFrom` selector; FR-030 regression first.
@@ -175,26 +177,28 @@ Steps 4 and 5 are independent of 1–3 and can proceed in parallel.
 | Probe-pod churn at the bounds | Low at 48 worst case | Bounded at the schema; batching recorded as the next move with its trigger (research R6) |
 | `isIP()` unavailable on the envtest API server | Low | Regex fallback delivers the same matrix; the matrix is the contract, not the mechanism |
 
-## Open decisions carried into tasks
+## Decisions resolved during planning
 
-**The default record kind.** `data-model.md` defaults `recordType` to `A`,
-which means a default check verifies IPv4 only. On a dual-stack cluster a name
-published as AAAA-only would fail a check that looks, to its author, like "does
-this name resolve". The alternatives:
+**The default record kind — resolved: add `Host`, default to it.**
 
-- **Keep `A` as the default** and document the narrowing. Stays inside the
-  five-kind enum the specification fixed.
-- **Add a sixth value** (`Host`, meaning "A or AAAA", matching today's
-  `LookupHost`) and default to it. Friendlier and matches the probe's existing
-  default path exactly — but it widens the published enum past what the
-  specification settled, so it is a contract change, not an implementation
-  detail.
+Defaulting `recordType` to `A` would have meant a default check verifies IPv4
+only, failing an AAAA-only name for a reason its author would not expect. It
+would also have left two subtly different defaults in the system: the resource
+defaulting to `A` (IPv4) while the probe's existing no-flag path is
+`LookupHost` (either family).
 
-**Recommendation**: add `Host` and default to it. It removes a real dual-stack
-foot-gun, and it makes the CRD default and the probe default the same thing
-instead of two subtly different behaviors — which is itself the kind of
-mismatch FR-030 exists to prevent. Because it changes the published enum, it is
-recorded here for an explicit call rather than decided silently.
+`Host` is now the sixth enum value and the default on both sides, so the CRD
+default and the probe default are one behaviour. `A` and `AAAA` narrow to a
+single family only when named explicitly.
+
+This also turns FR-030 from a constraint that must be defended into one that
+falls out of the design: the existing `nodelocaldns` caller passes no record
+type, receives `Host`, and behaves exactly as before. Had `A` been the default,
+that caller would have silently narrowed to IPv4 — precisely the regression
+FR-030 forbids.
+
+Propagated to `spec.md` (FR-003, Clarifications, Assumptions),
+`data-model.md`, and both contracts. No open decisions remain.
 
 ## Complexity Tracking
 
