@@ -31,15 +31,19 @@ dist/
 *.swp
 *.swo
 .codex
-# Agent-local state (settings.local.json, worktrees/) stays untracked, but the
-# spec-kit command skills are checked in: .specify/ already tracks the spec-kit
-# engine — templates, scripts, and the constitution — so leaving the commands
-# that drive it agent-local means a fresh clone gets the engine with no way to
-# run it. That is exactly how they went missing once already.
+# Claude commands and skills are shared project tooling and are checked in;
+# only genuinely per-developer state (settings.local.json) and scratch
+# (worktrees/) stays local. .specify/ already tracks the spec-kit engine —
+# templates, scripts, constitution — so leaving the commands that drive it
+# agent-local meant a fresh clone got the engine with no way to run it. That
+# is exactly how the spec-kit skills went missing once already.
+#
+# Anything added under .claude/commands/ or .claude/skills/ is committed by
+# default. Keep personal experiments outside those directories, or in your
+# user-level ~/.claude.
 .claude/*
+!.claude/commands/
 !.claude/skills/
-.claude/skills/*
-!.claude/skills/speckit-*/
 .cursor/
 .windsurf/
 .continue/
