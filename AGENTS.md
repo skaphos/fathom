@@ -31,6 +31,8 @@ the canonical resource list.
 - `test/utils/`: shared helpers used by the e2e suite.
 - `tools/`: pinned tooling launched via `go -C tools tool task ...` (Task, controller-gen, kustomize, setup-envtest, golangci-lint, staticcheck, govulncheck, goimports).
 - `hack/boilerplate.go.txt`: SPDX/license header inserted by `controller-gen` into generated Go files.
+- `.specify/`: spec-kit engine — templates, scripts, the project constitution (`.specify/memory/constitution.md`), and integration manifests. Feature specs land in `specs/<NNN>-<short-name>/`.
+- `.claude/skills/speckit-*/`: the spec-kit command skills (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, …). Vendored from [github/spec-kit](https://github.com/github/spec-kit) and checked in deliberately — the rest of `.claude/` is agent-local and ignored. Regenerate with `specify integration upgrade claude`; never hand-edit, and re-run the upgrade rather than patching a skill in place.
 
 ## Build, Test, and Development Commands
 

@@ -31,7 +31,15 @@ dist/
 *.swp
 *.swo
 .codex
-.claude
+# Agent-local state (settings.local.json, worktrees/) stays untracked, but the
+# spec-kit command skills are checked in: .specify/ already tracks the spec-kit
+# engine — templates, scripts, and the constitution — so leaving the commands
+# that drive it agent-local means a fresh clone gets the engine with no way to
+# run it. That is exactly how they went missing once already.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/speckit-*/
 .cursor/
 .windsurf/
 .continue/
