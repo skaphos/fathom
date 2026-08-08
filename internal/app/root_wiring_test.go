@@ -7,6 +7,7 @@ package app
 
 import (
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -91,14 +92,23 @@ func TestNewRootCommand_HelpDoesNotErrorWithoutKubeconfig(t *testing.T) {
 }
 
 // TestNewRootCommand_RunE_SurfacesKubeconfigError exercises RunE up to
-// the ctrl.GetConfig step. With no KUBECONFIG, no in-cluster service
-// account, and no default ~/.kube/config (HOME pointed at a temp dir),
-// ctrl.GetConfig returns an error and RunE wraps it. This also covers
-// Load(...) on a configExplicit=false code path (the default-config-file
-// branch).
+// the ctrl.GetConfig step. Hermeticity needs care here: client-go bakes
+// RecommendedHomeFile from $HOME at package init, so emptying KUBECONFIG
+// would make the loader fall back to the developer's real ~/.kube/config.
+// Instead KUBECONFIG points at a nonexistent file — clientcmd skips
+// missing files with a warning, leaving an empty merged config — and the
+// KUBERNETES_SERVICE_* variables are cleared so the in-cluster fallback
+// on an empty config cannot fire on a pod-hosted runner. ctrl.GetConfig
+// then fails with clientcmd's "no configuration has been provided" error
+// and RunE wraps it. This also covers Load(...) on a configExplicit=false
+// code path (the default-config-file branch).
 func TestNewRootCommand_RunE_SurfacesKubeconfigError(t *testing.T) {
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("HOME", t.TempDir())
+	tmp := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(tmp, "kubeconfig-does-not-exist"))
+	// Not load-bearing today; guards against future loader-precedence changes.
+	t.Setenv("HOME", tmp)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 
 	cmd := NewRootCommand()
 	cmd.SetArgs([]string{})
