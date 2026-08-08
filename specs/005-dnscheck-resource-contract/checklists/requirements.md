@@ -89,8 +89,52 @@ in the tracker matches the boundary here.
   validation-expression language, generator tooling, marker syntax, Go types,
   the probe binary and its flags — appear nowhere in the specification.
 
+**Iteration 3 — 2026-08-08, after `/speckit-clarify`** — all 16 items still
+pass; no regressions. Re-run because clarify was executed out of order, after
+plan and tasks rather than before.
+
+Four questions were asked and integrated, adding FR-031 through FR-036, SC-008,
+SC-009, two Edge Cases, and two acceptance scenarios:
+
+- **Namespace of resolution (FR-031, SC-008).** The specification never said
+  where a check's resolution runs from. Because a check is namespaced and its
+  author may name any resolver address and any subject, running it from the
+  operator's namespace would have let an author borrow an egress posture they
+  do not otherwise hold. Confining it to the check's own namespace makes a
+  check's reach equal to its author's existing reach, which is why no allowlist
+  of resolver addresses is needed.
+- **Metric surface (FR-032–034, SC-009).** Previously unstated, not even as an
+  exclusion. Now: the generic check gauges plus a per-target gauge carrying the
+  outcome as a label. The cardinality cost is real — 288 series per check at
+  the caps — so SC-009 states the ceiling as a computable property rather than
+  leaving it to emerge, and FR-034 makes raising a cap an explicit cardinality
+  decision.
+- **Vantage-point fan-out (FR-035).** FR-006 through FR-008 could be read as
+  either fan-out or a palette of named definitions, differing threefold in
+  evaluation and series count. Now explicitly fan-out with a per-target
+  override — which is what the caps had already been sized for, so no numbers
+  moved.
+- **Pruning removed targets (FR-036).** Elevated in importance by the metric
+  answer: without pruning, a target removed from the specification would keep
+  reporting a verdict, and with per-target gauges that is an alert on something
+  no longer declared that no edit could clear.
+
+**Checklist item that needed work rather than re-judging**: "All functional
+requirements have clear acceptance criteria" would have regressed, because
+FR-035 arrived with no scenario to test it against. Two acceptance scenarios
+were added to User Story 2 rather than marking the item passing on the strength
+of the other requirements.
+
+**Non-blocking note on numbering**: FR-031 through FR-036 are appended by
+number but placed in the sections they belong to, so numbering is
+non-monotonic within sections. The identifiers are stable and referenced from
+`plan.md` and `tasks.md`; renumbering to restore monotonic order would churn
+those references for a cosmetic gain and was not done.
+
 ## Notes
 
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
-- All items pass as of iteration 2. Ready for `/speckit-plan`.
+- All items pass as of iteration 3 (16/16). Clarifications must now be
+  propagated into `plan.md` and `tasks.md`, which were generated before this
+  pass; `/speckit-analyze` is the cross-artifact check that confirms it.
 </content>

@@ -49,6 +49,38 @@ coverage. Those are the following slices of the same epic (see Out of Scope).
   capability; the capability is raised to meet the schema. By the same
   reasoning, explicitly addressed resolvers are wired here too, since
   `spec.resolvers[]` would otherwise be equally unhonored.
+- Q: Which namespace does a check's resolution run from, and what constrains an
+  operator-declared explicit resolver address? → A: **the check's own
+  namespace.** A check is namespaced, so running its resolution anywhere else
+  would let whoever writes the object borrow the egress posture of a namespace
+  they do not otherwise control — a confused deputy of the same class as the
+  unrestricted-egress finding already recorded against the node agent. Running
+  in the check's own namespace makes the reach of a check exactly equal to the
+  reach its author already has, so no separate allowlist of permitted resolver
+  addresses is needed: the namespace's own network policy is the control.
+- Q: What metric surface does the resource publish? → A: **the generic
+  check-level gauges, plus a per-target gauge carrying the subject, record
+  kind, vantage point, and outcome as labels.** This mirrors the existing
+  check-level result gauge one level down, so an operator can alert on an
+  individual failing name rather than only on the check as a whole. The cost is
+  series count: at the schema caps this is 16 × 3 × 6 = 288 series per check
+  object, which is why the bound is stated as a measurable outcome rather than
+  left to emerge. The gauge is emitted by the controller and therefore lands
+  with it, not in this slice.
+- Q: Does declaring several vantage points verify every target from each of
+  them, or merely name vantage points that targets may select? → A: **fan-out,
+  with a per-target override.** A target that names no vantage point is
+  verified from every declared one; a target that names one is verified only
+  from that one. Declaring three vantage points therefore triples the cost of
+  every unoverridden target, which is the intent of FR-006 and is what the
+  declared caps were sized for.
+- Q: What becomes of a target's reported result and its metric series once the
+  target is removed from the specification? → A: **both are pruned on the next
+  evaluation.** Per-target results are rebuilt from the current specification
+  rather than accumulated, and series for pairs no longer declared are deleted.
+  Anything else leaves a removed target reporting a verdict — with per-target
+  gauges in the contract, an alert on something no longer declared, which
+  cannot be cleared by changing the specification.
 - Q (raised during planning): what should an unstated record kind mean, given
   that defaulting to `A` would verify IPv4 only? → A: **a sixth value, `Host`,
   meaning an address of either family, as the default.** Defaulting to `A`
@@ -156,6 +188,14 @@ answer-mismatch, and both polarities. Fully testable as a unit.
 5. **Given** any target, **When** the declared resolver cannot be reached at
    all, **Then** the result distinguishes "resolver unreachable" from "resolver
    answered: no such name".
+6. **Given** a check declaring three vantage points and one target that names
+   none of them, **When** the check is evaluated, **Then** three results are
+   produced — one per vantage point — and a second target naming a single
+   vantage point produces exactly one (FR-035).
+7. **Given** a check whose results include a target, **When** that target is
+   removed from the specification and the check is re-evaluated, **Then** the
+   removed target's result is gone rather than frozen at its last verdict
+   (FR-036).
 
 ---
 
@@ -240,9 +280,21 @@ verdict degrades.
   be distinguishable in the evidence; under a negative assertion they are
   emphatically not equivalent — an unreachable resolver must never be read as
   proof that a name is gone.
+- **An author-chosen resolver is not an escalation**: a check may name any
+  resolver address and any subject, so resolution runs from the check's own
+  namespace (FR-031). The author could already have issued the same query from
+  a workload of their own, so the check grants no new reach — and the
+  namespace's network policy constrains both identically. Running it anywhere
+  else would turn that non-issue into a real one.
 - **Duplicate targets**: the same name declared twice, or declared once per
   resolver, must produce deterministic per-target result identity rather than
   colliding entries.
+- **A target that leaves the specification**: removing a target — or a vantage
+  point that unoverridden targets were fanning out to — must withdraw the
+  results and series for those pairs, not freeze them at their last verdict.
+  The failure mode being avoided is an alert that fires on something the
+  specification no longer declares and that editing the specification cannot
+  silence.
 - **A negative assertion that never becomes true**: an operator asserting a
   name must not resolve, against a resolver that always answers, produces a
   persistent failing verdict — correct behavior, and the reason the summary
@@ -281,12 +333,19 @@ verdict degrades.
   from — the cluster's own DNS service, an explicitly addressed upstream
   resolver, or the resolver the node itself uses — and MUST be able to declare
   more than one so the same targets are verified from multiple vantage points.
-- **FR-007**: When no resolution vantage point is declared, the check MUST
-  default to the cluster's own DNS service, and that default MUST be documented
-  on the field rather than implied.
+- **FR-007**: When the check declares no vantage point at all, it MUST default
+  to the cluster's own DNS service, and that default MUST be documented on the
+  field rather than implied.
 - **FR-008**: An operator MUST be able to override the resolution vantage point
   for an individual target, so that one check can assert both "internal names
   resolve internally" and "external names resolve upstream".
+- **FR-035**: Declared vantage points MUST fan out. A target that names no
+  vantage point MUST be evaluated once against every vantage point the check
+  declares; a target that names one MUST be evaluated only against that one.
+  The unit of evaluation, of per-target result identity, and of per-target
+  metric series is therefore the (target, vantage point) pair, and the number
+  of pairs a check produces MUST be derivable from its own specification
+  without running it.
 - **FR-009**: An explicitly addressed resolver MUST be constrained at write
   time to a routable address with an optional port; a resolver address that
   would itself require name resolution MUST be rejected.
@@ -307,6 +366,15 @@ verdict degrades.
 - **FR-014**: The evaluation path MUST distinguish "the resolver could not be
   reached" from "the resolver answered that the name does not exist", and MUST
   never treat the former as satisfying a negative assertion.
+- **FR-031**: Resolution for a check MUST be performed from the check's own
+  namespace, and MUST NOT be performed from the operator's namespace or any
+  other. A check is namespaced and its author may name an arbitrary resolver
+  address and an arbitrary subject; running that query from a namespace its
+  author does not control would let them borrow that namespace's egress
+  posture. Confining it to the check's own namespace makes a check's reach
+  exactly equal to its author's existing reach, so the namespace's own network
+  policy governs it and no separate allowlist of permitted resolver addresses
+  is required.
 
 **Cadence and bounds**
 
@@ -340,6 +408,12 @@ verdict degrades.
   as a resolution outage.
 - **FR-022**: The resource MUST report per-target results, so an operator can
   tell which of several declared targets is failing without consulting history.
+- **FR-036**: Per-target results MUST be rebuilt from the current
+  specification on each evaluation, never accumulated. A (target, vantage
+  point) pair the specification no longer declares MUST NOT appear in the
+  reported results, and its metric series MUST be withdrawn. A removed target
+  that kept reporting would be an alert on something that no longer exists,
+  and no edit to the specification could clear it.
 - **FR-023**: The resource MUST report when it was last evaluated, which
   on-demand trigger it last consumed, the most recent durable report it
   produced, and structured conditions covering whether its specification was
@@ -347,6 +421,20 @@ verdict degrades.
 - **FR-024**: The resource MUST report the generation of the specification it
   last acted on, so consumers can distinguish a current verdict from one
   predating the latest edit.
+- **FR-032**: The resource MUST participate in the existing check-level result
+  and last-run gauges under its own kind, so that cluster-wide check dashboards
+  include it without per-kind handling.
+- **FR-033**: The resource MUST additionally publish a per-target gauge whose
+  labels identify the check, its namespace, the subject, the record kind, the
+  vantage point, and the outcome — mirroring the check-level result gauge one
+  level down, so an operator can alert on a single failing name rather than
+  only on the check as a whole. Emission belongs to the component that
+  evaluates the check and therefore ships with it, not with this contract.
+- **FR-034**: The per-target gauge's series count MUST remain bounded by the
+  schema caps alone, so the ceiling is computable from the published schema
+  rather than from runtime behaviour. Raising a cap raises the ceiling, and any
+  such change MUST be treated as a cardinality change, not merely a limits
+  change.
 - **FR-025**: A resolution failure under a positive assertion MUST be reported
   as a failing verdict, not as an operator-side error. Error is reserved for
   faults that are not the resolver's answer. This preserves the existing
@@ -416,6 +504,14 @@ verdict degrades.
 - **SC-007**: Introducing the resource produces no compatibility-gate finding
   against any pre-existing kind, and no behavioral change to any check that
   already uses the resolution capability.
+- **SC-008**: A check cannot cause a DNS query to be issued from any namespace
+  other than its own — the count of queries originating outside the declaring
+  check's namespace is zero. An author gains no network reach they did not
+  already have.
+- **SC-009**: The per-target metric series a single check can produce is capped
+  at 288 (16 targets × 3 vantage points × 6 outcomes), derivable from the
+  published schema without observing a running system. An operator can compute
+  the monitoring cost of a check before applying it.
 
 ## Assumptions
 
