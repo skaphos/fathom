@@ -74,7 +74,37 @@ type Request struct {
 	// fully qualified targets. Used by node-local DNS checks to assert the
 	// per-node cache rather than whatever kubelet configured (SKA-511).
 	DNSNameservers []string
+
+	// DNSFrom selects which resolver the probe pod queries. The zero value,
+	// DNSFromCluster, inherits the cluster's resolution path exactly as before
+	// this field existed, so callers that never set it are unaffected.
+	//
+	// The vantage point is a property of the pod, not of the probe binary: the
+	// binary always asks whatever resolver it was given and never needs to know
+	// which of the three it is.
+	DNSFrom DNSSource
+
+	// RecordType, ExpectedAnswers, and Absent shape a dns-mode assertion. Each
+	// is emitted as a flag only when it differs from the probe's default, so
+	// the argv of every existing caller is byte-for-byte unchanged.
+	RecordType      string
+	ExpectedAnswers []string
+	Absent          bool
 }
+
+// DNSSource is the resolver vantage point a dns-mode probe queries from.
+type DNSSource string
+
+const (
+	// DNSFromCluster resolves through the cluster's own DNS service by
+	// inheriting the pod's default policy. It is the zero value.
+	DNSFromCluster DNSSource = ""
+	// DNSFromNode resolves through the node's own resolver by running the pod
+	// with dnsPolicy Default, which despite the name is not the pod default.
+	DNSFromNode DNSSource = "Node"
+	// DNSFromExplicit resolves through the nameservers in DNSNameservers.
+	DNSFromExplicit DNSSource = "Explicit"
+)
 
 type Result struct {
 	Outcome Outcome           `json:"outcome"`
@@ -92,6 +122,19 @@ func Pod(req Request) (*corev1.Pod, error) {
 	}
 	if req.Image == "" {
 		return nil, errors.New("probe image is required")
+	}
+	// dnsPolicy None with no nameservers produces a pod that cannot resolve
+	// anything, and the resulting failures look like a DNS outage rather than
+	// the misconfiguration they are. Reject it at build time.
+	if req.DNSFrom == DNSFromExplicit && len(req.DNSNameservers) == 0 {
+		return nil, errors.New("explicit dns vantage point requires at least one nameserver")
+	}
+	// Nameservers only mean anything under the explicit vantage point. Applying
+	// dnsPolicy Default and quietly discarding them would produce a probe that
+	// queries the node's resolver while its caller believes it is querying the
+	// nameservers it supplied — a wrong answer that looks like a right one.
+	if req.DNSFrom == DNSFromNode && len(req.DNSNameservers) > 0 {
+		return nil, errors.New("node dns vantage point cannot take nameservers; use the explicit vantage point")
 	}
 	args, err := args(req)
 	if err != nil {
@@ -160,7 +203,13 @@ func Pod(req Request) (*corev1.Pod, error) {
 	if req.ServiceAccount != "" {
 		pod.Spec.ServiceAccountName = req.ServiceAccount
 	}
-	if len(req.DNSNameservers) > 0 {
+	// A non-empty DNSNameservers has always meant "pin these resolvers", so it
+	// keeps implying Explicit even when DNSFrom is unset. That is what lets the
+	// existing caller keep working untouched.
+	switch {
+	case req.DNSFrom == DNSFromNode:
+		pod.Spec.DNSPolicy = corev1.DNSDefault
+	case req.DNSFrom == DNSFromExplicit || len(req.DNSNameservers) > 0:
 		pod.Spec.DNSPolicy = corev1.DNSNone
 		pod.Spec.DNSConfig = &corev1.PodDNSConfig{Nameservers: append([]string(nil), req.DNSNameservers...)}
 	}
@@ -176,7 +225,20 @@ func args(req Request) ([]string, error) {
 		if req.Target == "" {
 			return nil, errors.New("dns probe target is required")
 		}
-		return []string{"-mode", string(req.Mode), "-target", req.Target}, nil
+		// Each optional flag is emitted only when it differs from the probe's
+		// own default, so a caller that shapes no assertion produces exactly
+		// the argv it always did.
+		out := []string{"-mode", string(req.Mode), "-target", req.Target}
+		if req.RecordType != "" {
+			out = append(out, "-record-type", req.RecordType)
+		}
+		if len(req.ExpectedAnswers) > 0 {
+			out = append(out, "-expect-answers", strings.Join(req.ExpectedAnswers, ","))
+		}
+		if req.Absent {
+			out = append(out, "-absent")
+		}
+		return out, nil
 	case ModeTCPConnect:
 		if req.Target == "" {
 			return nil, errors.New("tcp-connect probe target is required")

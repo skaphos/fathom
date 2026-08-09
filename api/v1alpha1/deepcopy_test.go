@@ -357,6 +357,100 @@ func fullyPopulatedNodeCertificateCheck() *NodeCertificateCheck {
 	}
 }
 
+func fullyPopulatedDNSCheck() *DNSCheck {
+	interval := metav1.Duration{Duration: time.Minute}
+	timeout := metav1.Duration{Duration: 10 * time.Second}
+	historyLimit := int32(10)
+	lastRun := metav1.NewTime(time.Unix(1_700_000_300, 0))
+	return &DNSCheck{
+		TypeMeta:   metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "DNSCheck"},
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-dns", Namespace: "fathom-system"},
+		Spec: DNSCheckSpec{
+			Targets: []DNSTarget{
+				{Name: "kubernetes.default.svc.cluster.local"},
+				{
+					Name:            "api.internal.example.com.",
+					RecordType:      DNSRecordA,
+					ExpectedAnswers: []string{"10.20.30.40"},
+					Resolver:        "upstream",
+				},
+				{Name: "decommissioned.example.com.", Absent: true},
+			},
+			Resolvers: []DNSResolver{
+				{Name: "in-cluster", From: DNSResolverCluster},
+				{Name: "upstream", From: DNSResolverExplicit, Address: "10.0.0.10:53"},
+			},
+			Interval:     &interval,
+			Timeout:      &timeout,
+			HistoryLimit: &historyLimit,
+		},
+		Status: DNSCheckStatus{
+			ObservedGeneration: 4,
+			Conditions: []metav1.Condition{{
+				Type:               "Accepted",
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: lastRun,
+				Reason:             "Validated",
+			}},
+			LastRunTime:    &lastRun,
+			LastResult:     "Fail",
+			Summary:        "1 of 3 targets failed",
+			LastReportName: "cluster-dns-abc12",
+			LastRunTrigger: "manual-1",
+			TargetResults: []DNSTargetResult{{
+				Name:          "api.internal.example.com.",
+				RecordType:    DNSRecordA,
+				Resolver:      "upstream",
+				Result:        "Fail",
+				Message:       "expected answers are missing",
+				Answers:       []string{"10.20.30.41"},
+				LatencyMillis: 12,
+			}},
+			ObservedTargets: 3,
+		},
+	}
+}
+
+func TestDeepCopy_DNSCheck(t *testing.T) {
+	orig := fullyPopulatedDNSCheck()
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "DNSCheck", orig, copy)
+
+	// Every nested slice must be independently owned. The status slices matter
+	// most: the controller rebuilds TargetResults from the spec on each run, so
+	// a shared backing array would let one evaluation mutate the snapshot
+	// another observer is reading.
+	copy.Spec.Targets[1].ExpectedAnswers[0] = "mutated"
+	if orig.Spec.Targets[1].ExpectedAnswers[0] == "mutated" {
+		t.Fatal("DNSCheck.DeepCopy: nested ExpectedAnswers slice share detected")
+	}
+	copy.Spec.Resolvers[0].Name = "mutated"
+	if orig.Spec.Resolvers[0].Name == "mutated" {
+		t.Fatal("DNSCheck.DeepCopy: Resolvers slice share detected")
+	}
+	copy.Status.TargetResults[0].Answers[0] = "mutated"
+	if orig.Status.TargetResults[0].Answers[0] == "mutated" {
+		t.Fatal("DNSCheck.DeepCopy: nested TargetResults Answers slice share detected")
+	}
+
+	runtimeObjectContract(t, "DNSCheck", orig)
+}
+
+func TestDeepCopy_DNSCheckList(t *testing.T) {
+	orig := &DNSCheckList{
+		TypeMeta: metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "DNSCheckList"},
+		Items:    []DNSCheck{*fullyPopulatedDNSCheck()},
+	}
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "DNSCheckList", orig, copy)
+
+	copy.Items[0].Spec.Targets[0].Name = "mutated"
+	if orig.Items[0].Spec.Targets[0].Name == "mutated" {
+		t.Fatal("DNSCheckList.DeepCopy: Items slice share detected")
+	}
+	runtimeObjectContract(t, "DNSCheckList", orig)
+}
+
 func TestDeepCopy_NodeCertificateCheck(t *testing.T) {
 	orig := fullyPopulatedNodeCertificateCheck()
 	copy := orig.DeepCopy()

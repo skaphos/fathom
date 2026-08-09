@@ -8,6 +8,8 @@ metadata:
 spec:
   group: fathom.skaphos.io
   names:
+    categories:
+    - fathom
     kind: HealthCheck
     listKind: HealthCheckList
     plural: healthchecks

@@ -157,6 +157,7 @@ type AddonCheckStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:categories=fathom
 
 // AddonCheck is the Schema for the addonchecks API.
 type AddonCheck struct {

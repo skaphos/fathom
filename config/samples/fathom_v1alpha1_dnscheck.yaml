@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Asserts that names resolve — and that a retired one does not — from one or
+# more vantage points. A healthy CoreDNS Deployment and a cluster that can
+# actually resolve names are different claims; this checks the second.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: DNSCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: cluster-dns
+spec:
+  # Cadence floors are shared with every other check kind: interval >= 10s,
+  # timeout >= 1s, and timeout must not exceed interval.
+  interval: 1m
+  timeout: 10s
+  historyLimit: 10
+
+  # Vantage points resolution is performed from. Omit this list entirely and
+  # the check resolves through cluster DNS from an implicit vantage point named
+  # "cluster" — a name reserved for exactly that, so results and metrics always
+  # have something to report.
+  resolvers:
+    - name: in-cluster
+      from: Cluster
+    # The node's own resolver, for confirming host-level DNS independently of
+    # the cluster service:
+    # - name: on-node
+    #   from: Node
+    # An explicitly addressed upstream. Targets checked against one of these
+    # must be FULLY QUALIFIED: the probe runs with no cluster search domains,
+    # so a short name that works through cluster DNS will not resolve here.
+    # - name: upstream
+    #   from: Explicit
+    #   address: 10.0.0.10:53
+
+  targets:
+    # recordType defaults to Host — an address of either family — so a
+    # dual-stack or IPv6-only name is not failed by an IPv4-only default.
+    - name: kubernetes.default.svc.cluster.local
+
+    # Assert the specific answers. Matching is containment: extra answers do
+    # not fail the check, because round-robin records return supersets.
+    # - name: api.internal.example.com.
+    #   recordType: A
+    #   expectedAnswers:
+    #     - 10.20.30.40
+
+    # Service records keep their _service._proto labels.
+    # - name: _https._tcp.example.com.
+    #   recordType: SRV
+
+    # A reverse lookup's subject is an address, not a name.
+    # - name: 10.20.30.40
+    #   recordType: PTR
+
+    # Confirm a decommissioned name is really gone. A resolver that cannot be
+    # reached never satisfies this — that is a network fault, not proof of
+    # retirement — so it reports an error rather than a pass.
+    # - name: decommissioned.example.com.
+    #   absent: true
+
+    # A target naming no resolver is checked against EVERY declared vantage
+    # point. With three resolvers that is three evaluations per target, so
+    # pin one when you only mean one:
+    # - name: api.internal.example.com.
+    #   resolver: upstream

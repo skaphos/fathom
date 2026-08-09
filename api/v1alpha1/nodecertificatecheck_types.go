@@ -168,6 +168,7 @@ type NodeCertificateCheckStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:categories=fathom
 // +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.lastResult`
 // +kubebuilder:printcolumn:name="Reporting",type=integer,JSONPath=`.status.reportingNodes`
 // +kubebuilder:printcolumn:name="Desired",type=integer,JSONPath=`.status.desiredNodes`

@@ -154,6 +154,14 @@ type HealthReportSpec struct {
 type HealthReportStatus struct {
 }
 
+// HealthReport is deliberately NOT in the "fathom" category, and that is a
+// decision rather than an omission. The category exists so one command shows
+// what a cluster's health intent is and how it is doing; reports are the
+// evidence behind that, retained HistoryLimit-deep per check. With the default
+// of 10, a cluster with twenty checks holds two hundred reports, so including
+// them would leave `kubectl get fathom` dominated by history and the checks
+// themselves buried — defeating the grouping it was added for. Reports remain
+// listable directly with `kubectl get healthreports`.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
