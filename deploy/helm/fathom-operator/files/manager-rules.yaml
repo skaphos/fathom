@@ -14,7 +14,9 @@
   resources:
   - pods
   verbs:
+  - create
   - delete
+  - get
   - list
 - apiGroups:
   - ""
@@ -61,6 +63,7 @@
   resources:
   - addonchecks/finalizers
   - clusterhealths/finalizers
+  - dnschecks/finalizers
   - healthchecks/finalizers
   - nodecertificatechecks/finalizers
   verbs:
@@ -70,6 +73,7 @@
   resources:
   - addonchecks/status
   - clusterhealths/status
+  - dnschecks/status
   - healthchecks/status
   - nodecertificatechecks/status
   verbs:
@@ -79,22 +83,23 @@
 - apiGroups:
   - fathom.skaphos.io
   resources:
-  - healthreports
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - watch
-- apiGroups:
-  - fathom.skaphos.io
-  resources:
+  - dnschecks
   - nodecertificatechecks
   verbs:
   - get
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - healthreports
+  verbs:
+  - create
+  - delete
+  - get
+  - list
   - watch
 - apiGroups:
   - networking.k8s.io

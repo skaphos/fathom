@@ -49,10 +49,10 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 - [X] T008 [P] Test the gauge's one-hot invariant, partial-match withdrawal by `{namespace,check}`, and that the label set yields at most 288 series per check, in `internal/metrics/check_metrics_test.go`
 - [X] T009 Create the pure planning helpers in `internal/controller/dnscheck_plan.go`: pair expansion from spec, run-budget derivation, per-pair bound as `min(remaining, ceiling)`, start-anchored requeue with floor, truncation fold, and the polarity-aware summary builder
 - [X] T010 Table-driven tests for every helper in `internal/controller/dnscheck_plan_test.go`, covering the quickstart Level 1 rows — including 8 `Pass` + 40 `Unknown` folding to `Unknown` and 1 `Fail` + 47 `Unknown` folding to `Fail`
-- [ ] T011 Create the `DNSCheckReconciler` struct, its `+kubebuilder:rbac` markers (pods `create;get;list;delete` — **no** `watch`), and `SetupWithManager` in `internal/controller/dnscheck_controller.go`
-- [ ] T012 Build a dedicated uncached client for probe pods and register the reconciler in `DefaultControllers` in `internal/app/run.go` (research D2 — a cached Pod read opens a cluster-wide informer)
-- [ ] T013 Regenerate RBAC via `go -C tools tool task manifests` and confirm `config/rbac/role.yaml` gained `create` and `get` on pods and no `watch`
-- [ ] T014 Rewrite the `core / pods` justification row in `docs/reference/operator-rbac.md` to cover the widened verbs, then confirm `TestOperatorClusterRoleRulesAreJustifiedInDoc` in `internal/controller/operator_rbac_doc_test.go` passes
+- [X] T011 Create the `DNSCheckReconciler` struct, its `+kubebuilder:rbac` markers (pods `create;get;list;delete` — **no** `watch`), and `SetupWithManager` in `internal/controller/dnscheck_controller.go`
+- [X] T012 Build a dedicated uncached client for probe pods and register the reconciler in `DefaultControllers` in `internal/app/run.go` (research D2 — a cached Pod read opens a cluster-wide informer)
+- [X] T013 Regenerate RBAC via `go -C tools tool task manifests` and confirm `config/rbac/role.yaml` gained `create` and `get` on pods and no `watch`
+- [X] T014 Rewrite the justification rows in `docs/reference/operator-rbac.md` and confirm `TestOperatorClusterRoleRulesAreJustifiedInDoc` passes — **four rows, not one; see note below**. Also re-synced `deploy/helm/fathom-operator/files/manager-rules.yaml`, which is derived from `config/rbac/role.yaml` and gated.
 
 > **T013 and T014 are one atomic change — do not commit between them.**
 > `operator_rbac_doc_test.go` enforces lockstep between the generated ClusterRole

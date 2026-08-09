@@ -223,6 +223,10 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	if err != nil {
 		return nil, err
 	}
+	probeClient, err := newUncachedProbeClient(mgr)
+	if err != nil {
+		return nil, err
+	}
 	// Resolve a reconciler tracer from the global provider Run installed. When
 	// tracing is disabled the provider is a no-op, so this is effectively free.
 	tracer := otel.Tracer(controller.TracerScope)
@@ -256,7 +260,46 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 			Tracer:         tracer,
 			Recorder:       mgr.GetEventRecorder("fathom-nodecertificatecheck-controller"),
 		},
+		&controller.DNSCheckReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			// Probe pods go through an uncached client on purpose — see
+			// newUncachedProbeClient.
+			ProbeClient:         probeClient,
+			ProbeImage:          opts.ProbeImage,
+			MaxConcurrentProbes: opts.DNSCheck.MaxConcurrentProbes,
+			Tracer:              tracer,
+			Recorder:            mgr.GetEventRecorder("fathom-dnscheck-controller"),
+		},
 	}, nil
+}
+
+// newUncachedProbeClient builds a client that talks to the API server directly,
+// for the DNSCheck reconciler's probe-pod lifecycle.
+//
+// The manager's own client serves structured reads from the shared informer
+// cache. Pod is absent from scopedCacheOptions(), so the first cached Pod read
+// would start an *unfiltered cluster-wide Pod informer* and pull every pod in
+// the cluster into memory — the exact failure removed in #164/SKA-581, and the
+// one internal/probe.Sweeper's doc comment warns about when it insists on a live
+// reader.
+//
+// The adapter path never hits this because adapters are handed the uncached
+// impersonating client, so their probe reads bypass the cache incidentally.
+// DNSCheck has no per-addon ServiceAccount to impersonate, so it cannot inherit
+// that protection and asks for an uncached client outright.
+//
+// mgr.GetAPIReader() would also bypass the cache, but it is a client.Reader:
+// probe.Launcher needs one client.Client that can Create and Delete as well.
+func newUncachedProbeClient(mgr ctrl.Manager) (client.Client, error) {
+	c, err := client.New(mgr.GetConfig(), client.Options{
+		Scheme: mgr.GetScheme(),
+		Mapper: mgr.GetRESTMapper(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build uncached probe client: %w", err)
+	}
+	return c, nil
 }
 
 // BuildAdapterRegistry constructs the in-process registry used by AddonCheck
