@@ -31,11 +31,16 @@ func TestAddToScheme(t *testing.T) {
 		t.Fatalf("AddToScheme: %v", err)
 	}
 
+	// NodeCertificateCheck was missing from this list even though the test
+	// claims to cover every registered Kind, so it is added here alongside
+	// DNSCheck rather than left as a second silent gap.
 	kinds := []runtime.Object{
 		&AddonCheck{}, &AddonCheckList{},
 		&HealthCheck{}, &HealthCheckList{},
 		&ClusterHealth{}, &ClusterHealthList{},
 		&HealthReport{}, &HealthReportList{},
+		&NodeCertificateCheck{}, &NodeCertificateCheckList{},
+		&DNSCheck{}, &DNSCheckList{},
 	}
 	for _, obj := range kinds {
 		gvks, _, err := scheme.ObjectKinds(obj)

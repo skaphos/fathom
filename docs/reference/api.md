@@ -13,6 +13,8 @@ Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API gro
 - [AddonCheckList](#addonchecklist)
 - [ClusterHealth](#clusterhealth)
 - [ClusterHealthList](#clusterhealthlist)
+- [DNSCheck](#dnscheck)
+- [DNSCheckList](#dnschecklist)
 - [HealthCheck](#healthcheck)
 - [HealthCheckList](#healthchecklist)
 - [HealthReport](#healthreport)
@@ -261,6 +263,207 @@ _Appears in:_
 | `matchedCount` _integer_ | MatchedCount is the number of HealthChecks selected for this aggregate. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `children` _[ClusterHealthChildSummary](#clusterhealthchildsummary) array_ | Children summarizes each selected HealthCheck's contribution. |  | Optional: \{\} <br /> |
 | `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt is when the aggregator last refreshed this status. |  | Optional: \{\} <br /> |
+
+
+#### DNSCheck
+
+
+
+DNSCheck is the Schema for the dnschecks API.
+
+
+
+_Appears in:_
+- [DNSCheckList](#dnschecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `DNSCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[DNSCheckSpec](#dnscheckspec)_ |  |  |  |
+| `status` _[DNSCheckStatus](#dnscheckstatus)_ |  |  |  |
+
+
+#### DNSCheckList
+
+
+
+DNSCheckList contains a list of DNSCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `DNSCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[DNSCheck](#dnscheck) array_ |  |  |  |
+
+
+#### DNSCheckSpec
+
+
+
+DNSCheckSpec defines the desired state of DNSCheck.
+
+A DNSCheck asserts that a set of names resolve — or deliberately do not —
+from one or more vantage points, on a cadence. It reports a verdict per
+(target, vantage point) pair and a single folded verdict for the check.
+
+There is no field to pause a DNSCheck. Stopping a check means deleting it.
+
+
+
+_Appears in:_
+- [DNSCheck](#dnscheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `targets` _[DNSTarget](#dnstarget) array_ | Targets are the names this check asserts on. At least one is required —<br />a check with no targets would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
+| `resolvers` _[DNSResolver](#dnsresolver) array_ | Resolvers are the vantage points resolution is performed from. When<br />empty, the check resolves through cluster DNS from an implicit vantage<br />point named "cluster".<br />A target that names no vantage point is checked against every entry<br />here, so the number of evaluations a check performs is<br />len(targets without an override) * len(resolvers), bounded at 48. |  | MaxItems: 3 <br />Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which the check re-runs. Defaults to 1m when<br />unset. Must be at least 10s (MinCheckInterval). |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single evaluation. Defaults to 10s when unset. Must be<br />at least 1s (MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
+| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### DNSCheckStatus
+
+
+
+DNSCheckStatus defines the observed state of DNSCheck.
+
+
+
+_Appears in:_
+- [DNSCheck](#dnscheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the check was last evaluated. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the folded verdict across every (target, vantage point)<br />pair from the most recent evaluation — the most severe pair outcome. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `summary` _string_ | Summary is a human-readable one-line outcome. When a failure stems from<br />an absent assertion, it says so, so a deliberate "this must not resolve"<br />failure is not triaged as a DNS outage. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed, so a given on-demand trigger fires exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `targetResults` _[DNSTargetResult](#dnstargetresult) array_ | TargetResults holds one entry per (target, vantage point) pair. It is<br />rebuilt from the current spec on every evaluation rather than<br />accumulated, so a pair the spec no longer declares disappears instead of<br />freezing at its last verdict. |  | MaxItems: 48 <br />Optional: \{\} <br /> |
+| `observedTargets` _integer_ | ObservedTargets is the number of (target, vantage point) pairs the most<br />recent evaluation covered. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+
+
+#### DNSRecordType
+
+_Underlying type:_ _string_
+
+DNSRecordType is the kind of DNS record a target expects.
+
+Host is the default and is satisfied by an address of either family. A and
+AAAA narrow to a single family and apply only when named explicitly — a
+default of A would silently mean "IPv4 only" and fail an AAAA-only name for
+a reason its author would not expect.
+
+_Validation:_
+- Enum: [Host A AAAA CNAME SRV PTR]
+
+_Appears in:_
+- [DNSTarget](#dnstarget)
+- [DNSTargetResult](#dnstargetresult)
+
+| Field | Description |
+| --- | --- |
+| `Host` |  |
+| `A` |  |
+| `AAAA` |  |
+| `CNAME` |  |
+| `SRV` |  |
+| `PTR` |  |
+
+
+#### DNSResolver
+
+
+
+DNSResolver is a declared vantage point resolution is performed from.
+
+
+
+_Appears in:_
+- [DNSCheckSpec](#dnscheckspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name identifies this vantage point so targets can select it and results<br />can report it. The name "cluster" is reserved. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `from` _[DNSResolverSource](#dnsresolversource)_ | From is where this vantage point resolves: the cluster's own DNS<br />service, the node's resolver, or an explicitly addressed upstream. | Cluster | Enum: [Cluster Node Explicit] <br />Optional: \{\} <br /> |
+| `address` _string_ | Address is the upstream resolver, as an IP with an optional port. It is<br />required when From is Explicit and rejected otherwise.<br />A hostname is not accepted: a resolver that must itself be resolved to be<br />reached cannot answer the question the check is asking. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
+
+
+#### DNSResolverSource
+
+_Underlying type:_ _string_
+
+DNSResolverSource is where a vantage point resolves from.
+
+_Validation:_
+- Enum: [Cluster Node Explicit]
+
+_Appears in:_
+- [DNSResolver](#dnsresolver)
+
+| Field | Description |
+| --- | --- |
+| `Cluster` |  |
+| `Node` |  |
+| `Explicit` |  |
+
+
+#### DNSTarget
+
+
+
+DNSTarget is one subject plus the expectation attached to it.
+The colon clause closes a gap the pattern alone leaves: the pattern must
+admit IPv6 literals so a PTR subject can be one, which would otherwise let a
+colon-bearing non-address such as "abc:def" through as an A target.
+
+
+
+_Appears in:_
+- [DNSCheckSpec](#dnscheckspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the subject to look up: a DNS name for forward record types, or<br />an IP address when RecordType is PTR. A trailing dot is accepted, and<br />SRV subjects may carry the conventional _service._proto labels.<br />A target checked against an Explicit vantage point must be fully<br />qualified. Such a pod runs with no cluster search domains, so a short<br />name that resolves fine through cluster DNS will not resolve there — a<br />failure that reads like an outage but is a missing suffix.<br />The pattern admits DNS names (optionally fully qualified, with the<br />underscore labels SRV needs) and IPv6 literals, because a PTR subject is<br />an address. It is deliberately coarse: the XValidation rules on this type<br />decide which of the two forms is legal for the declared record type. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^(_?[a-zA-Z0-9]([-a-zA-Z0-9]*[a-zA-Z0-9])?(\._?[a-zA-Z0-9]([-a-zA-Z0-9]*[a-zA-Z0-9])?)*\.?\|[0-9a-fA-F:]+)$` <br /> |
+| `recordType` _[DNSRecordType](#dnsrecordtype)_ | RecordType is the kind of record expected. Defaults to Host, an address<br />lookup satisfied by either address family. | Host | Enum: [Host A AAAA CNAME SRV PTR] <br />Optional: \{\} <br /> |
+| `expectedAnswers` _string array_ | ExpectedAnswers are answers the lookup must return. Matching is<br />containment, not equality: extra answers never fail the check, because<br />multi-address and round-robin records legitimately return supersets.<br />When empty, any non-empty answer satisfies the target. |  | MaxItems: 16 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
+| `absent` _boolean_ | Absent inverts the assertion: the target passes when the name does NOT<br />resolve. Use it to confirm a decommissioned name is really gone.<br />A resolver that cannot be reached never satisfies this — that is a<br />network fault, not evidence a name was retired, and it is reported as an<br />error rather than a pass. | false | Optional: \{\} <br /> |
+| `resolver` _string_ | Resolver names the vantage point this target is checked from, either an<br />entry in spec.resolvers or the reserved name "cluster".<br />When empty the target is checked from EVERY declared vantage point, not<br />just the default one. Declaring three vantage points therefore triples<br />the cost of every target that does not name one: three probe runs, three<br />per-target results, and three sets of metric series. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
+
+
+#### DNSTargetResult
+
+
+
+DNSTargetResult is the outcome for one (target, vantage point) pair on the
+most recent evaluation. Identity is the name, record type, and resolver
+together, so the same name checked from two vantage points produces two
+distinct entries rather than colliding.
+
+
+
+_Appears in:_
+- [DNSCheckStatus](#dnscheckstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the subject that was looked up. |  | MaxLength: 253 <br /> |
+| `recordType` _[DNSRecordType](#dnsrecordtype)_ | RecordType is the record kind that was queried, echoed so a result is<br />self-describing without cross-referencing the spec. |  | Enum: [Host A AAAA CNAME SRV PTR] <br /> |
+| `resolver` _string_ | Resolver is the vantage point the query was issued from, or "cluster"<br />for the implicit one. |  | MaxLength: 63 <br /> |
+| `result` _string_ | Result is the outcome for this pair. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
+| `message` _string_ | Message says what was asked and what came back. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+| `answers` _string array_ | Answers are the records returned, retained as the evidence behind the<br />verdict. |  | MaxItems: 16 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
+| `latencyMillis` _integer_ | LatencyMillis is how long the lookup took. It is recorded as evidence<br />only; slow resolution is not by itself a failure in this API version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 
 
 #### HealthCheck

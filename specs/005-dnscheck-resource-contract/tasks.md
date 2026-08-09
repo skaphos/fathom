@@ -33,7 +33,7 @@ Standard kubebuilder layout, unchanged: `api/v1alpha1/`, `cmd/probe/`,
 
 **Purpose**: Register the new kind with the scaffolding.
 
-- [ ] T001 Add the `DNSCheck` resource entry to `PROJECT`, matching the shape of the existing five kinds (group `fathom.skaphos.io`, version `v1alpha1`, namespaced)
+- [X] T001 Add the `DNSCheck` resource entry to `PROJECT`, matching the shape of the existing five kinds (group `fathom.skaphos.io`, version `v1alpha1`, namespaced)
 
 ---
 
@@ -68,30 +68,30 @@ Fully testable with no execution path.
 
 ### Types
 
-- [ ] T002 [US1] Create `api/v1alpha1/dnscheck_types.go` with the SPDX header from `hack/boilerplate.go.txt`, `DNSCheck`, `DNSCheckList`, `DNSCheckSpec`, `DNSCheckStatus`, and `SchemeBuilder.Register` in `init()`, following `nodecertificatecheck_types.go` for shape
-- [ ] T003 [US1] Add `DNSTarget`, `DNSResolver`, `DNSTargetResult`, and the `DNSRecordType` (`Host;A;AAAA;CNAME;SRV;PTR`) and `DNSResolverSource` (`Cluster;Node;Explicit`) enums to `api/v1alpha1/dnscheck_types.go` per [data-model.md](data-model.md)
-- [ ] T004 [US1] Add field-level markers to `api/v1alpha1/dnscheck_types.go`: `MaxItems` (targets 16, resolvers 3, expectedAnswers 16, targetResults 48), `MaxLength` on every string, `Minimum` on `historyLimit`, defaults (`recordType: Host`, `absent: false`, `historyLimit: 10`), and `listType=map` with `listMapKey` on `resolvers` (`name`) and `targetResults` (`name`,`recordType`,`resolver`)
-- [ ] T005 [US1] Add printer columns (`Result`, `Targets`, `Last Run`, `Age`) and `+kubebuilder:resource:categories=…` matching the existing kinds, plus `+kubebuilder:subresource:status`, to `api/v1alpha1/dnscheck_types.go`
+- [X] T002 [US1] Create `api/v1alpha1/dnscheck_types.go` with the SPDX header from `hack/boilerplate.go.txt`, `DNSCheck`, `DNSCheckList`, `DNSCheckSpec`, `DNSCheckStatus`, and `SchemeBuilder.Register` in `init()`, following `nodecertificatecheck_types.go` for shape
+- [X] T003 [US1] Add `DNSTarget`, `DNSResolver`, `DNSTargetResult`, and the `DNSRecordType` (`Host;A;AAAA;CNAME;SRV;PTR`) and `DNSResolverSource` (`Cluster;Node;Explicit`) enums to `api/v1alpha1/dnscheck_types.go` per [data-model.md](data-model.md)
+- [X] T004 [US1] Add field-level markers to `api/v1alpha1/dnscheck_types.go`: `MaxItems` (targets 16, resolvers 3, expectedAnswers 16, targetResults 48), `MaxLength` on every string, `Minimum` on `historyLimit`, defaults (`recordType: Host`, `absent: false`, `historyLimit: 10`), and `listType=map` with `listMapKey` on `resolvers` (`name`) and `targetResults` (`name`,`recordType`,`resolver`)
+- [X] T005 [US1] Add printer columns (`Result`, `Targets`, `Last Run`, `Age`) and `+kubebuilder:resource:categories=…` matching the existing kinds, plus `+kubebuilder:subresource:status`, to `api/v1alpha1/dnscheck_types.go`
 
 ### Validation rules
 
-- [ ] T006 [US1] Add the three cadence CEL rules to `DNSCheckSpec` in `api/v1alpha1/dnscheck_types.go` — `interval >= 10s`, `timeout >= 1s`, `timeout <= interval` — reusing the exact literals already used by `AddonCheckSpec` so the floors cannot drift from `MinCheckInterval`/`MinCheckTimeout`
-- [ ] T007 [US1] Add the per-target CEL rules to `api/v1alpha1/dnscheck_types.go`: `absent == true` forbids `expectedAnswers` (FR-005), and `recordType == PTR` requires an IP subject while other kinds require a DNS name (FR-002, research R5)
-- [ ] T008 [US1] Add the resolver CEL rules to `api/v1alpha1/dnscheck_types.go`: `address` required iff `from == Explicit`, `address` must be `IP` or `IP:port` and never a hostname (FR-009), and each target's `resolver` must name a declared entry or the reserved name `cluster`
-- [ ] T036 [US1] Add the reserved-name CEL rule to `api/v1alpha1/dnscheck_types.go`: an operator-declared resolver MUST NOT be named `cluster` (FR-038), so the implicit vantage point's label means the same thing on every check
-- [ ] T037 [US1] Document fan-out on the `resolver` field doc comment in `api/v1alpha1/dnscheck_types.go` — a target naming no vantage point is evaluated against *every* declared one (FR-035), and one naming `cluster` uses the implicit vantage point. This lands in `kubectl explain` and the generated reference, where the cost multiplier is discoverable before a check is applied rather than after
+- [X] T006 [US1] Add the three cadence CEL rules to `DNSCheckSpec` in `api/v1alpha1/dnscheck_types.go` — `interval >= 10s`, `timeout >= 1s`, `timeout <= interval` — reusing the exact literals already used by `AddonCheckSpec` so the floors cannot drift from `MinCheckInterval`/`MinCheckTimeout`
+- [X] T007 [US1] Add the per-target CEL rules to `api/v1alpha1/dnscheck_types.go`: `absent == true` forbids `expectedAnswers` (FR-005), and `recordType == PTR` requires an IP subject while other kinds require a DNS name (FR-002, research R5)
+- [X] T008 [US1] Add the resolver CEL rules to `api/v1alpha1/dnscheck_types.go`: `address` required iff `from == Explicit`, `address` must be `IP` or `IP:port` and never a hostname (FR-009), and each target's `resolver` must name a declared entry or the reserved name `cluster`
+- [X] T036 [US1] Add the reserved-name CEL rule to `api/v1alpha1/dnscheck_types.go`: an operator-declared resolver MUST NOT be named `cluster` (FR-038), so the implicit vantage point's label means the same thing on every check
+- [X] T037 [US1] Document fan-out on the `resolver` field doc comment in `api/v1alpha1/dnscheck_types.go` — a target naming no vantage point is evaluated against *every* declared one (FR-035), and one naming `cluster` uses the implicit vantage point. This lands in `kubectl explain` and the generated reference, where the cost multiplier is discoverable before a check is applied rather than after
 
 ### Generation and the cost gate
 
-- [ ] T009 [US1] Run `go -C tools tool task manifests generate` to produce `api/v1alpha1/zz_generated.deepcopy.go` and `config/crd/bases/fathom.skaphos.io_dnschecks.yaml`
-- [ ] T010 [US1] **Early gate** — run `go -C tools tool task install` and confirm the CRD installs. A per-CRD CEL cost rejection surfaces here, before tests are built around the rules. If it fails, tighten `MaxItems`/`MaxLength` in T004 and repeat from T009 (research R4, quickstart step 2)
-- [ ] T011 [US1] Write `config/samples/fathom_v1alpha1_dnscheck.yaml` covering the fully populated object from [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), and wire it into `config/samples/kustomization.yaml`
+- [X] T009 [US1] Run `go -C tools tool task manifests generate` to produce `api/v1alpha1/zz_generated.deepcopy.go` and `config/crd/bases/fathom.skaphos.io_dnschecks.yaml`
+- [X] T010 [US1] **Early gate** — run `go -C tools tool task install` and confirm the CRD installs. A per-CRD CEL cost rejection surfaces here, before tests are built around the rules. If it fails, tighten `MaxItems`/`MaxLength` in T004 and repeat from T009 (research R4, quickstart step 2)
+- [X] T011 [US1] Write `config/samples/fathom_v1alpha1_dnscheck.yaml` covering the fully populated object from [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), and wire it into `config/samples/kustomization.yaml`
 
 ### Tests
 
-- [ ] T012 [US1] Add the 36-row envtest admission matrix to `api/v1alpha1/dnscheck_validation_test.go`, one case per row of [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), asserting for each rejection that the message names the offending field
-- [ ] T013 [P] [US1] Add `fullyPopulatedDNSCheck` and its `TestDeepCopy_DNSCheck` / round-trip cases to `api/v1alpha1/deepcopy_test.go`, following the existing `fullyPopulatedNodeCertificateCheck` pattern
-- [ ] T014 [P] [US1] Extend `api/v1alpha1/groupversion_info_test.go` so `DNSCheck` and `DNSCheckList` are covered by the scheme-registration assertions alongside the existing kinds
+- [X] T012 [US1] Add the 36-row envtest admission matrix to `api/v1alpha1/dnscheck_validation_test.go`, one case per row of [contracts/dnscheck-admission.md](contracts/dnscheck-admission.md), asserting for each rejection that the message names the offending field
+- [X] T013 [P] [US1] Add `fullyPopulatedDNSCheck` and its `TestDeepCopy_DNSCheck` / round-trip cases to `api/v1alpha1/deepcopy_test.go`, following the existing `fullyPopulatedNodeCertificateCheck` pattern
+- [X] T014 [P] [US1] Extend `api/v1alpha1/groupversion_info_test.go` so `DNSCheck` and `DNSCheckList` are covered by the scheme-registration assertions alongside the existing kinds
 
 **Checkpoint**: `kubectl get dnschecks` shows the columns, defaults read back as
 `Host 1m 10s`, and every malformed manifest is rejected by name.
@@ -108,30 +108,30 @@ a controlled fixture — no CRD, no cluster resource, no controller.
 
 ### Regression guard first
 
-- [ ] T015 [US2] **Before touching `cmd/probe` or `internal/probe`**, add the FR-030 baseline assertions: `cmd/probe/main_test.go` asserts a `dns` run with no `-record-type` performs a host lookup answering on either address family, and `internal/probe/pod_test.go` asserts a `Request` with no vantage point set produces a pod with no `dnsPolicy` override and one with `DNSNameservers` still produces `dnsPolicy: None` + `dnsConfig.nameservers`
+- [X] T015 [US2] **Before touching `cmd/probe` or `internal/probe`**, add the FR-030 baseline assertions: `cmd/probe/main_test.go` asserts a `dns` run with no `-record-type` performs a host lookup answering on either address family, and `internal/probe/pod_test.go` asserts a `Request` with no vantage point set produces a pod with no `dnsPolicy` override and one with `DNSNameservers` still produces `dnsPolicy: None` + `dnsConfig.nameservers`
 
 ### Probe binary
 
-- [ ] T016 [US2] Add the `-record-type` flag (default `Host`) to `cmd/probe/main.go` and dispatch `runDNS` per kind, keeping `Host` bound to the existing `LookupHost` call so the default path is byte-for-byte today's behaviour
-- [ ] T017 [US2] Implement `A`/`AAAA` via `LookupIP(ctx, "ip4"|"ip6", …)` and `PTR` via `LookupAddr` in `cmd/probe/main.go`, recording answers into `Details`
-- [ ] T018 [US2] Implement `CNAME` in `cmd/probe/main.go`, treating a canonical name equal to the queried subject (modulo trailing dot) as *no CNAME record* rather than a pass — `LookupCNAME` succeeds in that case (research R1, trap 1)
-- [ ] T019 [US2] Implement `SRV` in `cmd/probe/main.go` via `LookupSRV(ctx, "", "", name)` with empty service and proto so the queried name is not rewritten, recording answers as `target:port` (research R1, trap 2)
-- [ ] T020 [US2] Add the `-expect-answers` flag to `cmd/probe/main.go` with containment matching — every declared answer must be present, extras do not fail — normalising trailing dots, ASCII case, and comparing IPs as parsed addresses
-- [ ] T021 [US2] Add the `-absent` flag to `cmd/probe/main.go` and implement the full outcome matrix from [contracts/probe-dns-cli.md](contracts/probe-dns-cli.md), branching on `net.DNSError.IsNotFound` so that under a negative assertion an unreachable resolver is `Error` and never `Pass` (FR-014)
-- [ ] T022 [US2] Make `-absent` combined with `-expect-answers` an `Error` in `cmd/probe/main.go` rather than silently preferring one — admission rejects the combination, but the probe must not assume valid input
+- [X] T016 [US2] Add the `-record-type` flag (default `Host`) to `cmd/probe/main.go` and dispatch `runDNS` per kind, keeping `Host` bound to the existing `LookupHost` call so the default path is byte-for-byte today's behaviour
+- [X] T017 [US2] Implement `A`/`AAAA` via `LookupIP(ctx, "ip4"|"ip6", …)` and `PTR` via `LookupAddr` in `cmd/probe/main.go`, recording answers into `Details`
+- [X] T018 [US2] Implement `CNAME` in `cmd/probe/main.go`, treating a canonical name equal to the queried subject (modulo trailing dot) as *no CNAME record* rather than a pass — `LookupCNAME` succeeds in that case (research R1, trap 1)
+- [X] T019 [US2] Implement `SRV` in `cmd/probe/main.go` via `LookupSRV(ctx, "", "", name)` with empty service and proto so the queried name is not rewritten, recording answers as `target:port` (research R1, trap 2)
+- [X] T020 [US2] Add the `-expect-answers` flag to `cmd/probe/main.go` with containment matching — every declared answer must be present, extras do not fail — normalising trailing dots, ASCII case, and comparing IPs as parsed addresses
+- [X] T021 [US2] Add the `-absent` flag to `cmd/probe/main.go` and implement the full outcome matrix from [contracts/probe-dns-cli.md](contracts/probe-dns-cli.md), branching on `net.DNSError.IsNotFound` so that under a negative assertion an unreachable resolver is `Error` and never `Pass` (FR-014)
+- [X] T022 [US2] Make `-absent` combined with `-expect-answers` an `Error` in `cmd/probe/main.go` rather than silently preferring one — admission rejects the combination, but the probe must not assume valid input
 
 ### Pod builder
 
-- [ ] T023 [US2] Add a `DNSFrom` vantage-point selector (`Cluster`/`Node`/`Explicit`, zero value `Cluster`) to `Request` in `internal/probe/pod.go`, with `Node` setting `dnsPolicy: Default` and `Explicit` keeping today's `dnsPolicy: None` + `dnsConfig.nameservers`; a non-empty `DNSNameservers` with `DNSFrom` unset must continue to mean `Explicit` so the existing caller is unaffected
-- [ ] T024 [US2] Thread `RecordType`, `ExpectedAnswers`, and `Absent` through `Request` and the `args()` builder in `internal/probe/pod.go`, emitting a flag only when the value is non-default so existing callers' argv is unchanged
+- [X] T023 [US2] Add a `DNSFrom` vantage-point selector (`Cluster`/`Node`/`Explicit`, zero value `Cluster`) to `Request` in `internal/probe/pod.go`, with `Node` setting `dnsPolicy: Default` and `Explicit` keeping today's `dnsPolicy: None` + `dnsConfig.nameservers`; a non-empty `DNSNameservers` with `DNSFrom` unset must continue to mean `Explicit` so the existing caller is unaffected
+- [X] T024 [US2] Thread `RecordType`, `ExpectedAnswers`, and `Absent` through `Request` and the `args()` builder in `internal/probe/pod.go`, emitting a flag only when the value is non-default so existing callers' argv is unchanged
 
 ### Tests
 
-- [ ] T025 [US2] Add the per-kind table test to `cmd/probe/main_test.go` covering `Host`, `A`, `AAAA`, `CNAME`, `SRV`, `PTR`, including the named trap cases: a `CNAME` lookup on a name with no CNAME record must not pass, and an `SRV` lookup on an underscore-labelled subject must query the declared name
-- [ ] T026 [US2] Add the outcome-matrix table test to `cmd/probe/main_test.go` covering both polarities against every row of [contracts/probe-dns-cli.md](contracts/probe-dns-cli.md), with the unreachable-under-negation case asserted explicitly as `Error`
-- [ ] T027 [P] [US2] Add answer-matching tests to `cmd/probe/main_test.go` for containment, superset-passes, missing-answer-fails, and normalisation of trailing dots, case, and IP textual forms
-- [ ] T028 [P] [US2] Add vantage-point tests to `internal/probe/pod_test.go` asserting the pod spec produced for each of `Cluster`, `Node`, and `Explicit`
-- [ ] T029 [US2] Run `go test ./internal/adapter/nodelocaldns/...` and confirm it passes unchanged, proving the shared-path edit did not move the live consumer (FR-030)
+- [X] T025 [US2] Add the per-kind table test to `cmd/probe/main_test.go` covering `Host`, `A`, `AAAA`, `CNAME`, `SRV`, `PTR`, including the named trap cases: a `CNAME` lookup on a name with no CNAME record must not pass, and an `SRV` lookup on an underscore-labelled subject must query the declared name
+- [X] T026 [US2] Add the outcome-matrix table test to `cmd/probe/main_test.go` covering both polarities against every row of [contracts/probe-dns-cli.md](contracts/probe-dns-cli.md), with the unreachable-under-negation case asserted explicitly as `Error`
+- [X] T027 [P] [US2] Add answer-matching tests to `cmd/probe/main_test.go` for containment, superset-passes, missing-answer-fails, and normalisation of trailing dots, case, and IP textual forms
+- [X] T028 [P] [US2] Add vantage-point tests to `internal/probe/pod_test.go` asserting the pod spec produced for each of `Cluster`, `Node`, and `Explicit`
+- [X] T029 [US2] Run `go test ./internal/adapter/nodelocaldns/...` and confirm it passes unchanged, proving the shared-path edit did not move the live consumer (FR-030)
 
 **Checkpoint**: `bin/probe -mode dns …` honours every flag, and the nodelocaldns
 adapter behaves exactly as before.

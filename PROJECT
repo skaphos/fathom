@@ -55,4 +55,12 @@ resources:
   kind: NodeCertificateCheck
   path: github.com/skaphos/fathom/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: skaphos.io
+  group: fathom
+  kind: DNSCheck
+  path: github.com/skaphos/fathom/api/v1alpha1
+  version: v1alpha1
 version: "3"

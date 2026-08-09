@@ -155,6 +155,120 @@ func TestPodPinsResolverWhenDNSNameserversSet(t *testing.T) {
 // TestPodBuildsHTTPGetArgs pins the http-get arg contract the adapter relies
 // on: the URL rides -target and the expected metric families are joined into
 // a single -expect value (omitted entirely when none are declared).
+// TestPodLeavesDNSPolicyAloneByDefault pins the FR-030 guarantee on the pod
+// side: a Request that names no vantage point must produce a pod with no
+// dnsPolicy override and no dnsConfig, so the pod inherits cluster DNS exactly
+// as it did before vantage points existed. Every existing caller other than
+// nodelocaldns is in this shape, so a default that set dnsPolicy explicitly
+// would change where every current probe resolves.
+func TestPodLeavesDNSPolicyAloneByDefault(t *testing.T) {
+	pod, err := Pod(Request{Name: "dns-probe", Namespace: "tenant-a", Image: "img", Mode: ModeDNS, Target: "example.com"})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	if pod.Spec.DNSPolicy != "" {
+		t.Fatalf("DNSPolicy = %q, want empty (inherit cluster DNS)", pod.Spec.DNSPolicy)
+	}
+	if pod.Spec.DNSConfig != nil {
+		t.Fatalf("DNSConfig = %#v, want nil", pod.Spec.DNSConfig)
+	}
+	// The default dns argv must stay exactly -mode/-target/-timeout: an
+	// unconditional -record-type would reach the probe binary for every
+	// existing caller.
+	assertArgs(t, pod.Spec.Containers[0].Args, "-mode", "dns", "-target", "example.com", "-timeout", "10s")
+}
+
+// TestPodResolvesFromTheDeclaredVantagePoint covers all three vantage points.
+// The mapping is easy to get backwards: dnsPolicy "Default" is the *node's*
+// resolver, not the pod default, and the pod default (cluster DNS) is
+// expressed by setting no policy at all.
+func TestPodResolvesFromTheDeclaredVantagePoint(t *testing.T) {
+	tests := []struct {
+		name        string
+		req         Request
+		wantPolicy  corev1.DNSPolicy
+		wantServers []string
+	}{
+		{
+			name:       "cluster is the zero value and sets no policy",
+			req:        Request{DNSFrom: DNSFromCluster},
+			wantPolicy: "",
+		},
+		{
+			name:       "node uses dnsPolicy Default",
+			req:        Request{DNSFrom: DNSFromNode},
+			wantPolicy: corev1.DNSDefault,
+		},
+		{
+			name:        "explicit pins the nameservers",
+			req:         Request{DNSFrom: DNSFromExplicit, DNSNameservers: []string{"10.0.0.10"}},
+			wantPolicy:  corev1.DNSNone,
+			wantServers: []string{"10.0.0.10"},
+		},
+		{
+			// Backward compatibility: nameservers alone meant Explicit before
+			// DNSFrom existed, and must keep doing so.
+			name:        "nameservers alone still imply explicit",
+			req:         Request{DNSNameservers: []string{"10.0.0.10"}},
+			wantPolicy:  corev1.DNSNone,
+			wantServers: []string{"10.0.0.10"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := tc.req
+			req.Name, req.Namespace, req.Image, req.Mode, req.Target = "p", "ns", "img", ModeDNS, "example.com."
+			pod, err := Pod(req)
+			if err != nil {
+				t.Fatalf("Pod: %v", err)
+			}
+			if pod.Spec.DNSPolicy != tc.wantPolicy {
+				t.Fatalf("DNSPolicy = %q, want %q", pod.Spec.DNSPolicy, tc.wantPolicy)
+			}
+			if len(tc.wantServers) == 0 {
+				if pod.Spec.DNSConfig != nil {
+					t.Fatalf("DNSConfig = %#v, want nil", pod.Spec.DNSConfig)
+				}
+				return
+			}
+			if pod.Spec.DNSConfig == nil || strings.Join(pod.Spec.DNSConfig.Nameservers, ",") != strings.Join(tc.wantServers, ",") {
+				t.Fatalf("DNSConfig = %#v, want nameservers %v", pod.Spec.DNSConfig, tc.wantServers)
+			}
+		})
+	}
+}
+
+// A pod with dnsPolicy None and no nameservers cannot resolve anything, and
+// the failures it produces read as a DNS outage rather than the
+// misconfiguration they are. Catch it while building the pod.
+func TestPodRejectsExplicitVantagePointWithoutNameservers(t *testing.T) {
+	_, err := Pod(Request{Name: "p", Namespace: "ns", Image: "img", Mode: ModeDNS, Target: "example.com.", DNSFrom: DNSFromExplicit})
+	if err == nil {
+		t.Fatal("expected an error for an explicit vantage point with no nameservers")
+	}
+}
+
+func TestPodBuildsDNSAssertionArgs(t *testing.T) {
+	pod, err := Pod(Request{
+		Name: "p", Namespace: "ns", Image: "img", Mode: ModeDNS, Target: "_https._tcp.example.com.",
+		RecordType: "SRV", ExpectedAnswers: []string{"a.example.com:443", "b.example.com:443"},
+	})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	assertArgs(t, pod.Spec.Containers[0].Args,
+		"-mode", "dns", "-target", "_https._tcp.example.com.",
+		"-record-type", "SRV",
+		"-expect-answers", "a.example.com:443,b.example.com:443",
+		"-timeout", "10s")
+
+	absent, err := Pod(Request{Name: "p", Namespace: "ns", Image: "img", Mode: ModeDNS, Target: "gone.example.com.", Absent: true})
+	if err != nil {
+		t.Fatalf("Pod: %v", err)
+	}
+	assertArgs(t, absent.Spec.Containers[0].Args, "-mode", "dns", "-target", "gone.example.com.", "-absent", "-timeout", "10s")
+}
+
 func TestPodBuildsHTTPGetArgs(t *testing.T) {
 	pod, err := Pod(Request{
 		Name:      "scrape",

@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -45,6 +46,9 @@ func run() error {
 	timeout := flag.Duration("timeout", 10*time.Second, "probe timeout")
 	listenAddress := flag.String("listen-address", "0.0.0.0", "address for tcp-listen")
 	expect := flag.String("expect", "", "comma-separated Prometheus metric family names http-get requires in the body")
+	recordType := flag.String("record-type", "", "dns record kind: Host (default), A, AAAA, CNAME, SRV, PTR")
+	expectAnswers := flag.String("expect-answers", "", "comma-separated answers a dns target must all return")
+	absent := flag.Bool("absent", false, "assert the dns target must NOT resolve")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
@@ -52,7 +56,12 @@ func run() error {
 
 	switch *mode {
 	case "dns":
-		return runDNS(ctx, *target)
+		return runDNS(ctx, dnsQuery{
+			Target:     *target,
+			RecordType: *recordType,
+			Expect:     splitComma(*expectAnswers),
+			Absent:     *absent,
+		})
 	case "tcp-connect":
 		return runTCPConnect(ctx, *target, *port)
 	case "tcp-listen":
@@ -64,39 +73,221 @@ func run() error {
 	}
 }
 
-func runDNS(ctx context.Context, target string) error {
-	if target == "" {
+// DNS record kinds the probe can evaluate. Host is the default and is a plain
+// host lookup answering on either address family; A and AAAA narrow to one
+// family and are reachable only by naming them. Keeping Host as the default is
+// what leaves existing callers — which pass no record kind — untouched.
+const (
+	recordHost  = "Host"
+	recordA     = "A"
+	recordAAAA  = "AAAA"
+	recordCNAME = "CNAME"
+	recordSRV   = "SRV"
+	recordPTR   = "PTR"
+)
+
+// dnsQuery is one DNS assertion: what to look up, how, and what would count as
+// success. The zero value is the pre-existing behavior — a host lookup that
+// passes on any non-empty answer.
+type dnsQuery struct {
+	Target     string
+	RecordType string
+	Expect     []string
+	Absent     bool
+}
+
+// runDNS evaluates one DNS assertion and writes a single result.
+//
+// Outcome classification follows two rules that are easy to get backwards.
+// First, under a positive assertion a resolution failure is a Fail, not an
+// Error: it is precisely the condition the check exists to detect, and Error
+// outranks Fail on the severity ladder (Pass<Skipped<Warn<Unknown<Fail<Error),
+// so reporting a real DNS outage as Error would mask genuine Fails elsewhere
+// in the ClusterHealth rollup.
+//
+// Second, under a negative assertion the two failure modes stop being
+// equivalent. "The resolver says this name does not exist" proves the
+// assertion; "I could not reach the resolver" proves nothing at all. Reporting
+// the latter as Pass would turn a network fault into false evidence that a
+// decommissioned name had been retired, so it is an Error.
+func runDNS(ctx context.Context, q dnsQuery) error {
+	if q.Target == "" {
 		return errors.New("dns probe target is required")
 	}
-	started := time.Now()
-	addresses, err := net.DefaultResolver.LookupHost(ctx, target)
-	latency := time.Since(started)
-	details := map[string]string{"target": target, "latencyMillis": strconv.FormatInt(latency.Milliseconds(), 10)}
-	if err != nil {
-		details["error"] = err.Error()
-		// A DNS-level failure (NXDOMAIN, SERVFAIL, no answer, or a resolver
-		// timeout) is precisely the condition a dns_resolution check exists to
-		// detect, so it is a Fail — the same as a refused TCP dial in
-		// runTCPConnect — not a probe-infrastructure Error. Error outranks Fail
-		// on the severity ladder (Pass<Skipped<Warn<Unknown<Fail<Error), so
-		// misclassifying a real DNS outage as Error would mask genuine Fails
-		// elsewhere in the ClusterHealth rollup. Reserve Error for faults that
-		// are not the resolver's answer (anything that is not a *net.DNSError).
-		var dnsErr *net.DNSError
-		if errors.As(err, &dnsErr) {
-			writeResult(result{Outcome: "Fail", Summary: "DNS resolution failed", Details: details})
-			return nil
-		}
-		writeResult(result{Outcome: "Error", Summary: "DNS resolution failed", Details: details})
-		return err
+	recordType := q.RecordType
+	if recordType == "" {
+		recordType = recordHost
 	}
-	if len(addresses) == 0 {
-		writeResult(result{Outcome: "Fail", Summary: "DNS resolution returned no addresses", Details: details})
+	details := map[string]string{"target": q.Target, "recordType": recordType}
+	if q.Absent && len(q.Expect) > 0 {
+		// Admission rejects this pairing, but the probe must not assume it only
+		// ever sees valid input. Silently honouring one side would answer a
+		// question nobody asked.
+		writeResult(result{Outcome: "Error", Summary: "an absent assertion cannot declare expected answers", Details: details})
 		return nil
 	}
-	details["addresses"] = join(addresses)
+
+	started := time.Now()
+	answers, err := resolveRecord(ctx, recordType, q.Target)
+	details["latencyMillis"] = strconv.FormatInt(time.Since(started).Milliseconds(), 10)
+
+	if err != nil {
+		details["error"] = err.Error()
+		var dnsErr *net.DNSError
+		if !errors.As(err, &dnsErr) {
+			// Not the resolver's answer at all — an unsupported record kind, a
+			// malformed subject, a probe-infrastructure fault.
+			writeResult(result{Outcome: "Error", Summary: "DNS resolution failed", Details: details})
+			return err
+		}
+		if dnsErr.IsNotFound {
+			return writeAbsence(q.Absent, details, "the resolver reports the name does not exist")
+		}
+		// Timeout, temporary failure, SERVFAIL: the resolver did not answer.
+		if q.Absent {
+			writeResult(result{Outcome: "Error", Summary: "resolver did not answer; absence cannot be proven", Details: details})
+			return nil
+		}
+		writeResult(result{Outcome: "Fail", Summary: "DNS resolution failed", Details: details})
+		return nil
+	}
+
+	if len(answers) == 0 {
+		return writeAbsence(q.Absent, details, "the resolver returned no answers")
+	}
+	details["answers"] = join(answers)
+	if q.Absent {
+		writeResult(result{Outcome: "Fail", Summary: "name resolves but was asserted absent", Details: details})
+		return nil
+	}
+	if missing := missingAnswers(q.Expect, answers); len(missing) > 0 {
+		details["missingAnswers"] = join(missing)
+		writeResult(result{Outcome: "Fail", Summary: "expected answers are missing", Details: details})
+		return nil
+	}
 	writeResult(result{Outcome: "Pass", Summary: "DNS resolution succeeded", Details: details})
 	return nil
+}
+
+// writeAbsence records the outcome for a subject that did not resolve, which
+// satisfies a negative assertion and fails a positive one.
+func writeAbsence(absent bool, details map[string]string, reason string) error {
+	if absent {
+		writeResult(result{Outcome: "Pass", Summary: "name does not resolve, as asserted", Details: details})
+		return nil
+	}
+	writeResult(result{Outcome: "Fail", Summary: "DNS resolution failed: " + reason, Details: details})
+	return nil
+}
+
+// resolveRecord issues the query for one record kind and returns its answers
+// as text. Errors are returned unwrapped so the caller can classify them from
+// the *net.DNSError they carry.
+func resolveRecord(ctx context.Context, recordType, target string) ([]string, error) {
+	switch recordType {
+	case recordHost:
+		return net.DefaultResolver.LookupHost(ctx, target)
+	case recordA:
+		return lookupIPs(ctx, "ip4", target)
+	case recordAAAA:
+		return lookupIPs(ctx, "ip6", target)
+	case recordCNAME:
+		return lookupCNAME(ctx, target)
+	case recordSRV:
+		return lookupSRV(ctx, target)
+	case recordPTR:
+		return net.DefaultResolver.LookupAddr(ctx, target)
+	default:
+		return nil, fmt.Errorf("unsupported dns record type %q", recordType)
+	}
+}
+
+func lookupIPs(ctx context.Context, network, target string) ([]string, error) {
+	ips, err := net.DefaultResolver.LookupIP(ctx, network, target)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		out = append(out, ip.String())
+	}
+	return out, nil
+}
+
+// lookupCNAME returns the canonical name for target, or no answers when target
+// has no CNAME record.
+//
+// The trap: LookupCNAME does not fail in the no-record case. It follows the
+// chain and returns the queried name itself, fully qualified, with a nil
+// error. Treating that as an answer would make every CNAME check pass
+// unconditionally — a check that can only ever succeed is worse than no check,
+// because it reads as coverage.
+func lookupCNAME(ctx context.Context, target string) ([]string, error) {
+	cname, err := net.DefaultResolver.LookupCNAME(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if cname == "" || sameDNSName(cname, target) {
+		return nil, nil
+	}
+	return []string{cname}, nil
+}
+
+// lookupSRV looks up target exactly as written.
+//
+// The trap: LookupSRV has two modes. Given a non-empty service and proto it
+// builds "_service._proto.name" itself. Our subjects already carry their own
+// _service._proto labels, so passing them through those parameters would query
+// a mangled name and fail for reasons unrelated to the target's health. The
+// empty-service form queries the name verbatim.
+func lookupSRV(ctx context.Context, target string) ([]string, error) {
+	_, records, err := net.DefaultResolver.LookupSRV(ctx, "", "", target)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(records))
+	for _, record := range records {
+		out = append(out, net.JoinHostPort(strings.TrimSuffix(record.Target, "."), strconv.Itoa(int(record.Port))))
+	}
+	return out, nil
+}
+
+// missingAnswers returns the expected answers absent from got, in declared
+// order. Matching is containment, not equality: extra answers never fail a
+// check, because multi-address and round-robin records legitimately return
+// supersets of any set an operator would write down.
+func missingAnswers(expected, got []string) []string {
+	if len(expected) == 0 {
+		return nil
+	}
+	have := make(map[string]bool, len(got))
+	for _, answer := range got {
+		have[normalizeAnswer(answer)] = true
+	}
+	var missing []string
+	for _, want := range expected {
+		if !have[normalizeAnswer(want)] {
+			missing = append(missing, want)
+		}
+	}
+	return missing
+}
+
+// normalizeAnswer folds the spellings that mean the same answer: a trailing
+// dot on a fully qualified name, ASCII case in a hostname, and the textual
+// variants of an IP address such as IPv6 compression. Comparing raw strings
+// would fail a check whose declared answer differs from the resolver's only in
+// spelling, which reads as an outage rather than as the typo it is.
+func normalizeAnswer(value string) string {
+	trimmed := strings.TrimSuffix(strings.TrimSpace(value), ".")
+	if addr, err := netip.ParseAddr(trimmed); err == nil {
+		return addr.String()
+	}
+	return strings.ToLower(trimmed)
+}
+
+func sameDNSName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSuffix(a, "."), strings.TrimSuffix(b, "."))
 }
 
 func runTCPConnect(ctx context.Context, target string, port int) error {
