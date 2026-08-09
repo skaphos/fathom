@@ -81,6 +81,7 @@ controller-runtime and Go metrics are exposed alongside them):
 | --- | --- | --- | --- |
 | `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
 | `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
+| `fathom_dnscheck_target_result` | gauge | `namespace`, `check`, `name`, `record_type`, `resolver`, `result` | **`fathom_check_result` one level down**, for `DNSCheck` only: one-hot per (target, vantage point) pair, so you can alert on the single name that broke rather than on the check as a whole. See [Per-target DNS results](#per-target-dns-results) for the cardinality budget. |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
 | `fathom_reconcile_duration_seconds` | histogram | `kind` | Reconcile latency per kind. |
 | `fathom_adapter_run_duration_seconds` | histogram | `adapter`, `family`, `outcome` | How long adapter runs take, and their outcome distribution. |
@@ -97,6 +98,45 @@ last run time, and a `ClusterHealth` the freshest of its children — so a
 stale source reads as a stale wrapper, which is what you want to alert on.
 Label cardinality is bounded by design: one series set per check resource,
 and never any free-text label.
+
+### Per-target DNS results
+
+`fathom_dnscheck_target_result` is the only metric that goes below the check
+level. A `DNSCheck` can cover sixteen names from three vantage points, and
+"the check is failing" does not tell an operator *which name* — so this gauge
+carries one one-hot set per **(target, vantage point) pair**.
+
+Its ceiling is fixed by the CRD schema, not by runtime behaviour:
+
+```text
+16 targets  ×  3 vantage points  ×  6 result values  =  288 series per check
+```
+
+That number is computable from a check's own spec **before it is applied**, so
+the monitoring cost of a `DNSCheck` is knowable in advance. A realistic check
+covering three names from one vantage point costs 18 series. Raising a schema
+cap would raise this ceiling and is treated as a cardinality change, not merely
+a limits change.
+
+Series are rebuilt on every run rather than accumulated: a target removed from
+the spec loses its series on the next evaluation instead of freezing at its last
+verdict, and deleting the check withdraws everything it was asserting. Alert on
+the pair, not just the check:
+
+```yaml
+- alert: FathomDNSTargetFailing
+  expr: fathom_dnscheck_target_result{result=~"Fail|Error"} == 1
+  for: 10m
+  annotations:
+    summary: >-
+      {{ $labels.name }} ({{ $labels.record_type }}) is {{ $labels.result }}
+      from {{ $labels.resolver }} in {{ $labels.namespace }}/{{ $labels.check }}
+```
+
+A `result="Unknown"` series means the run did not reach that pair before its
+bound elapsed — the check's `Complete` condition names how many. That is a
+sizing problem rather than a DNS problem; see
+[DNSCheck fan-out](../reference/configuration.md#dnscheck-fan-out).
 
 ### Node-agent metric
 

@@ -221,6 +221,74 @@ kubectl -n fathom-system get healthreport \
   -l 'fathom.skaphos.io/source-kind=NodeCertificateCheck,fathom.skaphos.io/source-name=node-certificates'
 ```
 
+## DNSCheck
+
+`DNSCheck` asserts that names resolve — or deliberately do not — from one or
+more vantage points. Resolution runs in a probe Pod inside **the check's own
+namespace**, so a check author's reach is exactly their existing reach and the
+namespace's own NetworkPolicy governs the query.
+
+The unit of everything here is the **(target, vantage point) pair**. A target
+naming a resolver produces one pair; a target naming none is evaluated against
+every declared vantage point, or against the implicit one named `cluster` when
+the check declares none. The schema caps this at 16 targets × 3 vantage points,
+so a check implies at most 48 pairs and that number is derivable from its spec
+before it ever runs.
+
+Status fields to start with:
+
+- `status.lastResult` — the folded verdict across every pair, using the same
+  vocabulary and precedence as every other kind.
+- `status.summary` — one line. When a failure comes from a negative assertion it
+  says so explicitly, so a deliberate "this name must be gone" failure is not
+  triaged as a DNS outage.
+- `status.targetResults` — one entry per pair, keyed by name, record type, and
+  resolver, carrying the message, the answers returned, and latency as evidence.
+- `status.observedTargets` — how many pairs the last run covered.
+- `status.lastRunTime` / `status.lastReportName` — when it last ran, and the
+  `HealthReport` capturing the current verdict.
+
+Rules worth knowing:
+
+- **Results are rebuilt, never accumulated.** A pair the spec no longer declares
+  disappears from `targetResults` and its metric series is withdrawn on the next
+  run — it does not freeze at its last verdict.
+- **A history record is written only when the verdict changes.** `lastRunTime`
+  still advances every run, so staleness alerting stays honest.
+- **A resolution failure is a `Fail`, not an `Error`.** Error is reserved for
+  faults that are not the resolver's answer, which keeps a real DNS outage from
+  masking unrelated failures in the aggregate.
+- **An unreachable resolver never satisfies `absent: true`.** That is a network
+  fault, not evidence a name was retired, and it reports `Error`.
+- **The next run is scheduled one cadence from when the previous run *started***,
+  not from when it finished, so the effective cadence equals the declared one.
+  A minimum gap applies if a run consumes its whole cadence.
+- **`spec.timeout` bounds the whole run, not each pair.** A check with many pairs
+  and a small bound truncates: see `Complete` below.
+
+There is no `Paused` condition and no `spec.paused` — stopping a `DNSCheck`
+means deleting it.
+
+| Condition | Status / reason | Meaning | Operator action |
+| --- | --- | --- | --- |
+| `Accepted` | `True / SpecAccepted` | The spec was accepted. Structural invalid specs are rejected by CRD validation before reconciliation. | Continue to `Ready`. |
+| `Accepted` | `True / SpecClamped` | A stored `interval`/`timeout` below the schema floors is running clamped up. | Raise the values in the spec to match what is actually running. |
+| `Ready` | `True / EvaluationSucceeded` | Fathom could evaluate the check. This says nothing about what it found — a check whose every name legitimately fails to resolve is `Ready=True` with a `Fail` verdict. | None. |
+| `Ready` | `False / ProbeExecutionFailed` | One or more pairs could not be *performed*: quota, admission, image pull, or an unschedulable node. The message names how many. | Check probe Pod events in the check's namespace; confirm the namespace admits the hardened probe Pod and can pull the probe image. |
+| `Complete` | `True / AllPairsEvaluated` | Every pair the spec implies was reached. | None. |
+| `Complete` | `False / RunTruncated` | The run bound elapsed before every pair was reached. Unreached pairs report `Unknown`, which degrades the verdict without outranking a real `Fail`. The message names the count. | Raise `spec.timeout` (and `spec.interval`, which must not be lower) or declare fewer targets. See [DNSCheck fan-out](configuration.md#dnscheck-fan-out) for sizing. |
+
+```bash
+kubectl -n <namespace> get dnscheck <name> -o yaml
+
+# Which pair failed, without reading controller logs:
+kubectl -n <namespace> get dnscheck <name> \
+  -o jsonpath='{range .status.targetResults[*]}{.name}{" "}{.recordType}{" "}{.resolver}{" -> "}{.result}{"\n"}{end}'
+
+kubectl -n <namespace> get healthreport \
+  -l 'fathom.skaphos.io/source-kind=DNSCheck,fathom.skaphos.io/source-name=<name>'
+```
+
 ## HealthReport
 
 `HealthReport` is an immutable history object created by the controllers; the

@@ -228,7 +228,7 @@ var _ = Describe("DNSCheck lifecycle", Ordered, Label(utils.CoreLabel, "dnscheck
 				"the orphan survived its owner's deletion; garbage collection did not engage")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-		By("waiting for the operator to become ready again")
+		By("waiting for the operator to become ready again after the restart")
 		Eventually(func(g Gomega) {
 			out, readyErr := utils.Run(exec.Command("kubectl", "get", "pods",
 				"-n", "fathom-system", "-l", "control-plane=controller-manager",
