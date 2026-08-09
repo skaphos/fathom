@@ -72,15 +72,34 @@ type TracingOptions struct {
 	Insecure bool `mapstructure:"insecure"`
 }
 
+// DNSCheckOptions tunes the DNSCheck reconciler's probe fan-out.
+//
+// A DNSCheck evaluates one probe pod per (target, resolver) pair, and the
+// schema admits up to 48 pairs, so an unbounded fan-out would create 48 pods at
+// once in a namespace the operator does not own — a quota event on any
+// realistic cluster. Everything else about the run (its deadline, each pair's
+// share of it) is derived from the check's own spec; only the concurrency
+// ceiling is an operator-level policy, because the right value depends on
+// cluster size and tenant quota rather than on the check.
+type DNSCheckOptions struct {
+	// MaxConcurrentProbes bounds how many probe pods a single DNSCheck may have
+	// in flight simultaneously. The cluster-wide ceiling on concurrent probe
+	// pods is this value multiplied by the controller's reconcile concurrency,
+	// so both numbers are derivable from configuration without observing a
+	// running system.
+	MaxConcurrentProbes int `mapstructure:"max_concurrent_probes"`
+}
+
 // Options is the resolved runtime configuration for the operator.
 type Options struct {
-	Metrics                MetricsOptions `mapstructure:"metrics"`
-	Webhook                WebhookOptions `mapstructure:"webhook"`
-	Tracing                TracingOptions `mapstructure:"tracing"`
-	HealthProbeBindAddress string         `mapstructure:"health_probe_bind_address"`
-	LeaderElect            bool           `mapstructure:"leader_elect"`
-	LeaderElectionID       string         `mapstructure:"leader_election_id"`
-	EnableHTTP2            bool           `mapstructure:"enable_http2"`
+	Metrics                MetricsOptions  `mapstructure:"metrics"`
+	Webhook                WebhookOptions  `mapstructure:"webhook"`
+	Tracing                TracingOptions  `mapstructure:"tracing"`
+	DNSCheck               DNSCheckOptions `mapstructure:"dnscheck"`
+	HealthProbeBindAddress string          `mapstructure:"health_probe_bind_address"`
+	LeaderElect            bool            `mapstructure:"leader_elect"`
+	LeaderElectionID       string          `mapstructure:"leader_election_id"`
+	EnableHTTP2            bool            `mapstructure:"enable_http2"`
 
 	// ProbeImage is the cluster-wide default container image for adapter
 	// probe pods (see internal/probe). Adapters consult adapter.Request.ProbeImage
@@ -128,6 +147,13 @@ const DefaultProbeImage = "ghcr.io/skaphos/fathom-probe:v0.5.0" // x-release-ple
 // enforced by scripts/check-version-lockstep.sh — do not hand-edit it.
 const DefaultNodeAgentImage = "ghcr.io/skaphos/fathom-node-agent:v0.5.0" // x-release-please-version
 
+// DefaultDNSCheckMaxConcurrentProbes is how many probe pods one DNSCheck may
+// run at once by default. Four matches the reconcile concurrency AddonCheck
+// settled on, so a cluster running both kinds sees a familiar ceiling, and it
+// keeps a maximum-size check to twelve sequential batches rather than one
+// 48-pod burst in a tenant namespace.
+const DefaultDNSCheckMaxConcurrentProbes = 4
+
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
 //
@@ -151,6 +177,9 @@ func DefaultOptions() Options {
 			Enabled:       false,
 			SamplingRatio: 1.0,
 			Insecure:      false,
+		},
+		DNSCheck: DNSCheckOptions{
+			MaxConcurrentProbes: DefaultDNSCheckMaxConcurrentProbes,
 		},
 		HealthProbeBindAddress: ":8081",
 		// SKA-303: default leader election on so a multi-replica deployment that
@@ -225,13 +254,21 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("tracing.sampling_ratio %v is out of range; must be between 0 and 1", o.Tracing.SamplingRatio))
 	}
 
+	// A zero or negative fan-out cap would stall every DNSCheck rather than
+	// slow it down: no pair could ever be launched, so every run would truncate
+	// to all-Unknown. Fail closed at startup instead of shipping checks that
+	// silently never evaluate.
+	if o.DNSCheck.MaxConcurrentProbes < 1 {
+		errs = append(errs, fmt.Errorf("dnscheck.max_concurrent_probes is %d; must be at least 1", o.DNSCheck.MaxConcurrentProbes))
+	}
+
 	return errors.Join(errs...)
 }
 
 // flagBinding pairs a flag name with its corresponding Viper key. Keeping them
 // in one table guarantees flags, env vars, and config file keys stay in sync.
 //
-// At most one of isBool/isFloat is set; otherwise the binding registers a
+// At most one of isBool/isFloat/isInt is set; otherwise the binding registers a
 // string flag with stringDef as its default.
 type flagBinding struct {
 	flagName  string
@@ -242,6 +279,8 @@ type flagBinding struct {
 	isBool    bool
 	floatDef  float64
 	isFloat   bool
+	intDef    int
+	isInt     bool
 }
 
 func bindings(defaults Options) []flagBinding {
@@ -278,6 +317,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "Container image used by the NodeCertificateCheck controller for its managed node-agent DaemonSet. A dedicated image, distinct from the operator and probe images."},
 		{flagName: "namespace", viperKey: "namespace", stringDef: defaults.Namespace,
 			usage: "The operator's own namespace, where per-addon ServiceAccounts live for adapter impersonation (SKA-58). In cluster it is set from the Pod namespace via the downward API (FATHOM_NAMESPACE) and is required; empty while in-cluster fails closed (SKA-162). Empty is only valid out of cluster."},
+		{flagName: "dnscheck-max-concurrent-probes", viperKey: "dnscheck.max_concurrent_probes", isInt: true, intDef: defaults.DNSCheck.MaxConcurrentProbes,
+			usage: "Maximum probe pods a single DNSCheck may run at once. The cluster-wide ceiling is this times the controller's reconcile concurrency. Lower it where tenant namespaces have tight pod quotas; raise it to shorten runs for checks with many targets."},
 		{flagName: "tracing-enabled", viperKey: "tracing.enabled", isBool: true, boolDef: defaults.Tracing.Enabled,
 			usage: "Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead)."},
 		{flagName: "tracing-otlp-endpoint", viperKey: "tracing.otlp_endpoint", stringDef: defaults.Tracing.OTLPEndpoint,
@@ -300,6 +341,8 @@ func RegisterFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			fs.Bool(b.flagName, b.boolDef, b.usage)
 		case b.isFloat:
 			fs.Float64(b.flagName, b.floatDef, b.usage)
+		case b.isInt:
+			fs.Int(b.flagName, b.intDef, b.usage)
 		default:
 			fs.String(b.flagName, b.stringDef, b.usage)
 		}
@@ -332,6 +375,8 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 			v.SetDefault(b.viperKey, b.boolDef)
 		case b.isFloat:
 			v.SetDefault(b.viperKey, b.floatDef)
+		case b.isInt:
+			v.SetDefault(b.viperKey, b.intDef)
 		default:
 			v.SetDefault(b.viperKey, b.stringDef)
 		}

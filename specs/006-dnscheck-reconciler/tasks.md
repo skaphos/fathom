@@ -23,10 +23,19 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Add an integer binding variant (`isInt` / `intDef`) to the `binding` struct and its two switch statements in `internal/app/options.go` — the table supports string, bool, and float only, and FR-103a needs a configurable integer
-- [ ] T002 Add `DNSCheckMaxConcurrentProbes`, `DNSCheckPerPairTimeoutCeiling`, and `DNSCheckMinRunGap` to `Options` with defaults and `bindings()` rows in `internal/app/options.go`, so flag, `FATHOM_*` env var, config-file key, and default stay in sync
-- [ ] T003 [P] Document the three new options, their defaults, and their interaction with `spec.timeout` in `docs/reference/configuration.md`
-- [ ] T004 [P] Extend the options round-trip test to cover the integer binding's precedence chain in `internal/app/options_test.go`
+- [X] T001 Add an integer binding variant (`isInt` / `intDef`) to the `binding` struct and its two switch statements in `internal/app/options.go` — the table supports string, bool, and float only, and FR-103a needs a configurable integer
+- [X] T002 Add `DNSCheckOptions{MaxConcurrentProbes}` to `Options` with a default, a `bindings()` row, and a `Validate` rule rejecting values below 1, in `internal/app/options.go` — **scope reduced, see note below**
+- [X] T003 [P] Document the option and the pair-count/`spec.timeout` sizing relationship in `docs/reference/configuration.md` (new *DNSCheck Fan-out* section)
+- [X] T004 [P] Cover the integer binding's full precedence chain and both `Validate` rejections in `internal/app/options_test.go`
+
+> **Scope note on T002/T003.** The planned `DNSCheckPerPairTimeoutCeiling` and
+> `DNSCheckMinRunGap` were **not** added as configuration. Only FR-103a requires
+> a configurable value; FR-104's per-pair ceiling and FR-107a's minimum gap are
+> stated as properties, not knobs. The per-pair bound is now *derived* — each
+> pair takes the remaining budget divided by the batches still to run — so it
+> needs no constant at all, and the minimum gap is a documented package
+> constant. Two fewer knobs, every requirement still met. FR-107c is satisfied
+> because a constant is as derivable from documentation as a flag.
 
 ---
 
@@ -34,12 +43,12 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 **Blocks every user story. Nothing below Phase 2 can start until this completes.**
 
-- [ ] T005 [P] Add an `OwnerReferences []metav1.OwnerReference` field to `Request` and stamp it onto the built pod in `internal/probe/pod.go` (research D1 — the probe package sets no owner reference today)
-- [ ] T006 [P] Test that owner references are stamped when set and that an unset field leaves the manifest byte-identical for existing callers, in `internal/probe/pod_test.go`
-- [ ] T007 [P] Add the `DNSCheckTargetResult` gauge (`fathom_dnscheck_target_result`), an `ObserveDNSTarget` setter, and a `DeleteDNSCheckTargetSeries` partial-match withdrawal in `internal/metrics/metrics.go`
-- [ ] T008 [P] Test the gauge's one-hot invariant, partial-match withdrawal by `{namespace,check}`, and that the label set yields at most 288 series per check, in `internal/metrics/check_metrics_test.go`
-- [ ] T009 Create the pure planning helpers in `internal/controller/dnscheck_plan.go`: pair expansion from spec, run-budget derivation, per-pair bound as `min(remaining, ceiling)`, start-anchored requeue with floor, truncation fold, and the polarity-aware summary builder
-- [ ] T010 Table-driven tests for every helper in `internal/controller/dnscheck_plan_test.go`, covering the quickstart Level 1 rows — including 8 `Pass` + 40 `Unknown` folding to `Unknown` and 1 `Fail` + 47 `Unknown` folding to `Fail`
+- [X] T005 [P] Add an `OwnerReferences []metav1.OwnerReference` field to `Request` and stamp it onto the built pod in `internal/probe/pod.go` (research D1 — the probe package sets no owner reference today)
+- [X] T006 [P] Test that owner references are stamped when set and that an unset field leaves the manifest byte-identical for existing callers, in `internal/probe/pod_test.go`
+- [X] T007 [P] Add the `DNSCheckTargetResult` gauge (`fathom_dnscheck_target_result`), an `ObserveDNSTarget` setter, and a `DeleteDNSCheckTargetSeries` partial-match withdrawal in `internal/metrics/metrics.go`
+- [X] T008 [P] Test the gauge's one-hot invariant, partial-match withdrawal by `{namespace,check}`, and that the label set yields at most 288 series per check, in `internal/metrics/check_metrics_test.go`
+- [X] T009 Create the pure planning helpers in `internal/controller/dnscheck_plan.go`: pair expansion from spec, run-budget derivation, per-pair bound as `min(remaining, ceiling)`, start-anchored requeue with floor, truncation fold, and the polarity-aware summary builder
+- [X] T010 Table-driven tests for every helper in `internal/controller/dnscheck_plan_test.go`, covering the quickstart Level 1 rows — including 8 `Pass` + 40 `Unknown` folding to `Unknown` and 1 `Fail` + 47 `Unknown` folding to `Fail`
 - [ ] T011 Create the `DNSCheckReconciler` struct, its `+kubebuilder:rbac` markers (pods `create;get;list;delete` — **no** `watch`), and `SetupWithManager` in `internal/controller/dnscheck_controller.go`
 - [ ] T012 Build a dedicated uncached client for probe pods and register the reconciler in `DefaultControllers` in `internal/app/run.go` (research D2 — a cached Pod read opens a cluster-wide informer)
 - [ ] T013 Regenerate RBAC via `go -C tools tool task manifests` and confirm `config/rbac/role.yaml` gained `create` and `get` on pods and no `watch`

@@ -90,6 +90,33 @@ var (
 	)
 )
 
+// DNSCheck publishes one further gauge: the check-level result above says a
+// check is failing, but a check may cover sixteen names from three vantage
+// points, and an operator needs to alert on the one that broke rather than on
+// the check as a whole (skaphos/fathom#266).
+var (
+	// DNSCheckTargetResult is the check-level result gauge one level down: a
+	// one-hot state set per (target, vantage point) pair, so exactly one series
+	// per pair is 1.
+	//
+	// Series count is bounded by the CRD schema alone — 16 targets × 3 vantage
+	// points × 6 results = 288 per check — so the monitoring cost of a check is
+	// computable from its specification before it is applied. Raising any of
+	// those schema caps raises this ceiling and is a cardinality change, not
+	// merely a limits change.
+	//
+	// The label set is deliberately NOT folded into CheckResult: that gauge is
+	// consumed by cluster-wide dashboards across every kind, and adding target
+	// labels there would multiply every other kind's cardinality.
+	DNSCheckTargetResult = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_dnscheck_target_result",
+			Help: "Current result of one DNSCheck (target, vantage point) pair (one-hot: exactly one series per pair is 1).",
+		},
+		[]string{"namespace", "check", "name", "record_type", "resolver", "result"},
+	)
+)
+
 // checkResultValues is the canonical result vocabulary, mirroring the
 // api/v1alpha1 HealthReportResult constants. It is deliberately a literal —
 // importing the API package here would drag apimachinery into every binary
@@ -126,6 +153,7 @@ func init() {
 		AdapterRegistered,
 		CheckResult,
 		CheckLastRunTimestamp,
+		DNSCheckTargetResult,
 		NodeCertificateExpiryDays,
 	)
 }
@@ -161,6 +189,36 @@ func DeleteCheckSeries(kind, namespace, name string) {
 	labels := prometheus.Labels{"kind": kind, "name": name, "namespace": namespace}
 	CheckResult.DeletePartialMatch(labels)
 	CheckLastRunTimestamp.DeletePartialMatch(labels)
+}
+
+// ObserveDNSTarget mirrors one (target, vantage point) pair's outcome into the
+// per-target gauge as a one-hot set. An empty or unrecognized result is coerced
+// to "Unknown", matching ObserveCheck.
+//
+// Callers rebuild rather than diff: DeleteDNSCheckTargetSeries first, then one
+// ObserveDNSTarget per pair the specification currently declares. A pair the
+// specification dropped is simply never re-set, so its series disappears with no
+// removal detection — and that stays correct across an operator restart, which a
+// diff against remembered state would not.
+func ObserveDNSTarget(namespace, check, name, recordType, resolver, result string) {
+	if !slices.Contains(checkResultValues, result) {
+		result = "Unknown"
+	}
+	for _, value := range checkResultValues {
+		current := 0.0
+		if value == result {
+			current = 1
+		}
+		DNSCheckTargetResult.WithLabelValues(namespace, check, name, recordType, resolver, value).Set(current)
+	}
+}
+
+// DeleteDNSCheckTargetSeries removes every per-target series belonging to one
+// DNSCheck. Called at the start of each evaluation to rebuild the set, and when
+// a reconcile observes the check is gone so a deleted check cannot keep
+// asserting per-target results.
+func DeleteDNSCheckTargetSeries(namespace, check string) {
+	DNSCheckTargetResult.DeletePartialMatch(prometheus.Labels{"namespace": namespace, "check": check})
 }
 
 // RecordReconcile is a convenience helper for reconcilers to record both

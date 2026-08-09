@@ -11,6 +11,8 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestPodBuildsHardenedDNSProbe(t *testing.T) {
@@ -41,6 +43,67 @@ func TestPodBuildsHardenedDNSProbe(t *testing.T) {
 	if len(container.SecurityContext.Capabilities.Drop) != 1 || container.SecurityContext.Capabilities.Drop[0] != "ALL" {
 		t.Fatalf("Capabilities.Drop: got %#v, want [ALL]", container.SecurityContext.Capabilities.Drop)
 	}
+}
+
+// TestPodStampsOwnerReferences covers the field DNSCheck needs so deleting a
+// check garbage-collects its in-flight probe pods. The nil case is the
+// load-bearing half: every adapter caller leaves OwnerReferences unset, and an
+// empty-but-non-nil slice would be a gratuitous manifest diff for them.
+func TestPodStampsOwnerReferences(t *testing.T) {
+	controller := true
+	owner := metav1.OwnerReference{
+		APIVersion: "fathom.skaphos.io/v1alpha1",
+		Kind:       "DNSCheck",
+		Name:       "internal-names",
+		UID:        types.UID("6f3a1c2e-0000-4000-8000-000000000001"),
+		Controller: &controller,
+	}
+
+	t.Run("stamped when set", func(t *testing.T) {
+		pod, err := Pod(Request{
+			Name: "dns-probe", Namespace: "tenant-a", Image: "example.com/probe:v1",
+			Mode: ModeDNS, Target: "kubernetes.default.svc", Timeout: 3 * time.Second,
+			OwnerReferences: []metav1.OwnerReference{owner},
+		})
+		if err != nil {
+			t.Fatalf("Pod: %v", err)
+		}
+		if len(pod.OwnerReferences) != 1 {
+			t.Fatalf("OwnerReferences: got %d, want 1", len(pod.OwnerReferences))
+		}
+		if pod.OwnerReferences[0] != owner {
+			t.Errorf("OwnerReferences[0]: got %+v, want %+v", pod.OwnerReferences[0], owner)
+		}
+	})
+
+	t.Run("nil stays nil for existing callers", func(t *testing.T) {
+		pod, err := Pod(Request{
+			Name: "dns-probe", Namespace: "tenant-a", Image: "example.com/probe:v1",
+			Mode: ModeDNS, Target: "kubernetes.default.svc", Timeout: 3 * time.Second,
+		})
+		if err != nil {
+			t.Fatalf("Pod: %v", err)
+		}
+		if pod.OwnerReferences != nil {
+			t.Errorf("OwnerReferences: got %#v, want nil", pod.OwnerReferences)
+		}
+	})
+
+	t.Run("caller slice is copied, not aliased", func(t *testing.T) {
+		refs := []metav1.OwnerReference{owner}
+		pod, err := Pod(Request{
+			Name: "dns-probe", Namespace: "tenant-a", Image: "example.com/probe:v1",
+			Mode: ModeDNS, Target: "kubernetes.default.svc", Timeout: 3 * time.Second,
+			OwnerReferences: refs,
+		})
+		if err != nil {
+			t.Fatalf("Pod: %v", err)
+		}
+		refs[0].Name = "mutated-after-build"
+		if pod.OwnerReferences[0].Name != "internal-names" {
+			t.Errorf("pod aliased the caller's slice: got %q", pod.OwnerReferences[0].Name)
+		}
+	})
 }
 
 func TestPodSupportsCrossNodeAntiAffinity(t *testing.T) {
