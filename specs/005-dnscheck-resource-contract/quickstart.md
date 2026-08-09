@@ -145,7 +145,7 @@ consumer in `internal/adapter/nodelocaldns/adapter.go:455`.
 
 ```bash
 go test ./internal/adapter/nodelocaldns/...
-go -C tools tool task test-e2e E2E_ADDONS=nodelocaldns
+go -C tools tool task test-e2e E2E_ADDONS=node-local-dns
 ```
 
 Expected: unchanged, both before and after. A default-path `dns` probe must
@@ -153,7 +153,7 @@ still perform a host lookup returning both address families — narrowing it to
 IPv4 would be a silent behavior change on an existing check, which is exactly
 what FR-030 forbids.
 
-`E2E_ADDONS=nodelocaldns` is the scoped run (core tier plus that addon); the
+`E2E_ADDONS=node-local-dns` is the scoped run (core tier plus that addon); the
 full stack is not required for this slice, since no controller or reconciler
 changes.
 
