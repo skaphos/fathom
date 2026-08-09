@@ -106,12 +106,19 @@ write; the message must name the offending field (SC-002).
 | 24 | `from: Explicit`, `address: "10.0.0.10"` | accepted — port optional |
 | 25 | `from: Explicit`, `address: "10.0.0.10:53"` | accepted |
 | 26 | `from: Explicit`, `address: "[2001:db8::1]:53"` | accepted |
+| 26a | `address: "10.0.0.10:abc"` | rejected — port must be numeric |
+| 26b | `address: "[not-an-ip]:53"` | rejected — bracketed shape is not an address |
+| 26c | `address: "2001:db8::1"` (bare IPv6) | accepted |
+| 26e | `address: "10.0.0.10:99999"` | rejected — port outside 1-65535 |
+| 26f | `address: "10.0.0.10:"` | rejected — trailing colon, no port |
 | 27 | two resolvers named `upstream` | rejected — duplicate map key |
 | 27a | a declared resolver named `cluster` | rejected — reserved name (FR-038) |
 | 28 | target `resolver: nope` with no such entry | rejected — must name a declared resolver |
 | 28a | target `resolver: cluster` with no `resolvers` declared | accepted — the implicit vantage point is always addressable by its reserved name |
 | 29 | `spec.paused: true` | rejected — unknown field (structural schema) |
 | 30 | `spec.policy: {}` | rejected — unknown field |
+| 30a | the same target declared twice, identical in every field | rejected — would collide on the per-target result key |
+| 30b | same name under `A` and under `AAAA` | accepted — different result keys |
 | 31 | `historyLimit: 0` | rejected — `Minimum=1` |
 | 32 | 17 `expectedAnswers` on one target | rejected — exceeds `MaxItems=16` |
 

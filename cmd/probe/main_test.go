@@ -344,13 +344,24 @@ func TestRunDNSExpectedAnswers(t *testing.T) {
 }
 
 func TestRunDNSRejectsUnknownRecordKind(t *testing.T) {
+	var err error
 	got := captureResult(t, func() {
 		// An unknown kind is not the resolver's answer, so it is an Error
 		// rather than a Fail — it says nothing about the target's health.
-		_ = runDNS(context.Background(), dnsQuery{Target: "localhost", RecordType: "TXT"})
+		err = runDNS(context.Background(), dnsQuery{Target: "localhost", RecordType: "TXT"})
 	})
 	if got.Outcome != "Error" {
 		t.Fatalf("Outcome = %q, want Error", got.Outcome)
+	}
+	// One result per invocation. Returning the error here would make main()
+	// write a second result, and since the termination log is written with
+	// os.WriteFile the second write overwrites the first — discarding the
+	// Details this result carries. runHTTPGet already documents this rule.
+	if err != nil {
+		t.Fatalf("runDNS must return nil after emitting a result, got %v", err)
+	}
+	if got.Details["target"] == "" || got.Details["recordType"] == "" {
+		t.Fatalf("the emitted result must retain its details, got %#v", got.Details)
 	}
 }
 
@@ -372,6 +383,11 @@ func TestMissingAnswers(t *testing.T) {
 		{"trailing dot folds", []string{"host.example.com"}, []string{"host.example.com."}, nil},
 		{"case folds", []string{"HOST.example.com"}, []string{"host.example.com"}, nil},
 		{"ipv6 spelling folds", []string{"2001:db8:0:0:0:0:0:1"}, []string{"2001:db8::1"}, nil},
+		{"ipv6 case folds", []string{"2001:DB8::1"}, []string{"2001:db8::1"}, nil},
+		// An IPv4-mapped IPv6 answer is the same address an operator would
+		// have written as plain IPv4; failing that match would read as an
+		// outage rather than as the encoding difference it is.
+		{"ipv4-mapped ipv6 folds onto ipv4", []string{"10.0.0.1"}, []string{"::ffff:10.0.0.1"}, nil},
 		{"nothing returned means everything missing", []string{"1.2.3.4"}, nil, []string{"1.2.3.4"}},
 	}
 	for _, tc := range tests {

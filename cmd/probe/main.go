@@ -137,8 +137,14 @@ func runDNS(ctx context.Context, q dnsQuery) error {
 		if !errors.As(err, &dnsErr) {
 			// Not the resolver's answer at all — an unsupported record kind, a
 			// malformed subject, a probe-infrastructure fault.
+			//
+			// Emit-and-return-nil, matching runHTTPGet. Returning the error
+			// would make main() write a second result, and because the
+			// termination log is written with os.WriteFile the second write
+			// overwrites the first — losing every Detail this one gathered and
+			// leaving consumers a bare summary. One result per invocation.
 			writeResult(result{Outcome: "Error", Summary: "DNS resolution failed", Details: details})
-			return err
+			return nil
 		}
 		if dnsErr.IsNotFound {
 			return writeAbsence(q.Absent, details, "the resolver reports the name does not exist")
@@ -247,7 +253,16 @@ func lookupSRV(ctx context.Context, target string) ([]string, error) {
 	}
 	out := make([]string, 0, len(records))
 	for _, record := range records {
-		out = append(out, net.JoinHostPort(strings.TrimSuffix(record.Target, "."), strconv.Itoa(int(record.Port))))
+		host := strings.TrimSuffix(record.Target, ".")
+		if host == "" {
+			// RFC 2782: a target of "." means the service is decidedly NOT
+			// available at this domain. Formatting it as an answer would report
+			// ":<port>" and pass a check against a record that explicitly says
+			// the service is gone — the same silent-lie shape as treating a
+			// CNAME-less name as a CNAME hit.
+			continue
+		}
+		out = append(out, net.JoinHostPort(host, strconv.Itoa(int(record.Port))))
 	}
 	return out, nil
 }
@@ -281,7 +296,9 @@ func missingAnswers(expected, got []string) []string {
 func normalizeAnswer(value string) string {
 	trimmed := strings.TrimSuffix(strings.TrimSpace(value), ".")
 	if addr, err := netip.ParseAddr(trimmed); err == nil {
-		return addr.String()
+		// Unmap so an IPv4-mapped IPv6 answer (::ffff:10.0.0.1) folds onto the
+		// plain IPv4 form an operator would have written down.
+		return addr.Unmap().String()
 	}
 	return strings.ToLower(trimmed)
 }

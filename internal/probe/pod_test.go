@@ -248,6 +248,19 @@ func TestPodRejectsExplicitVantagePointWithoutNameservers(t *testing.T) {
 	}
 }
 
+// Nameservers mean nothing under the node vantage point. Accepting them and
+// quietly discarding them would build a probe that queries the node's resolver
+// while its caller believes it is querying the nameservers it supplied.
+func TestPodRejectsNodeVantagePointWithNameservers(t *testing.T) {
+	_, err := Pod(Request{
+		Name: "p", Namespace: "ns", Image: "img", Mode: ModeDNS, Target: "example.com.",
+		DNSFrom: DNSFromNode, DNSNameservers: []string{"10.0.0.10"},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a node vantage point carrying nameservers")
+	}
+}
+
 func TestPodBuildsDNSAssertionArgs(t *testing.T) {
 	pod, err := Pod(Request{
 		Name: "p", Namespace: "ns", Image: "img", Mode: ModeDNS, Target: "_https._tcp.example.com.",

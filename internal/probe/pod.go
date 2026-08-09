@@ -129,6 +129,13 @@ func Pod(req Request) (*corev1.Pod, error) {
 	if req.DNSFrom == DNSFromExplicit && len(req.DNSNameservers) == 0 {
 		return nil, errors.New("explicit dns vantage point requires at least one nameserver")
 	}
+	// Nameservers only mean anything under the explicit vantage point. Applying
+	// dnsPolicy Default and quietly discarding them would produce a probe that
+	// queries the node's resolver while its caller believes it is querying the
+	// nameservers it supplied — a wrong answer that looks like a right one.
+	if req.DNSFrom == DNSFromNode && len(req.DNSNameservers) > 0 {
+		return nil, errors.New("node dns vantage point cannot take nameservers; use the explicit vantage point")
+	}
 	args, err := args(req)
 	if err != nil {
 		return nil, err

@@ -314,6 +314,10 @@ from one or more vantage points, on a cadence. It reports a verdict per
 (target, vantage point) pair and a single folded verdict for the check.
 
 There is no field to pause a DNSCheck. Stopping a check means deleting it.
+Per-target results are keyed by (name, recordType, resolver), so two targets
+identical in all three would collide there. Rejecting the duplicate at write
+time is far kinder than letting the controller fail a status update later
+with an error that says nothing about the specification that caused it.
 
 
 
@@ -323,7 +327,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `targets` _[DNSTarget](#dnstarget) array_ | Targets are the names this check asserts on. At least one is required —<br />a check with no targets would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
-| `resolvers` _[DNSResolver](#dnsresolver) array_ | Resolvers are the vantage points resolution is performed from. When<br />empty, the check resolves through cluster DNS from an implicit vantage<br />point named "cluster".<br />A target that names no vantage point is checked against every entry<br />here, so the number of evaluations a check performs is<br />len(targets without an override) * len(resolvers), bounded at 48. |  | MaxItems: 3 <br />Optional: \{\} <br /> |
+| `resolvers` _[DNSResolver](#dnsresolver) array_ | Resolvers are the vantage points resolution is performed from. When<br />empty, the check resolves through cluster DNS from an implicit vantage<br />point named "cluster".<br />A target that names no vantage point is checked against every entry<br />here, so the number of evaluations a check performs is<br />len(targets without an override) * max(1, len(resolvers)), bounded at<br />48. The max(1, …) is not a rounding nicety: an empty list still means one<br />vantage point — the implicit "cluster" one — so a check that declares no<br />resolvers evaluates every target once, not zero times. |  | MaxItems: 3 <br />Optional: \{\} <br /> |
 | `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which the check re-runs. Defaults to 1m when<br />unset. Must be at least 10s (MinCheckInterval). |  | Optional: \{\} <br /> |
 | `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single evaluation. Defaults to 10s when unset. Must be<br />at least 1s (MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
@@ -396,7 +400,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name identifies this vantage point so targets can select it and results<br />can report it. The name "cluster" is reserved. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
 | `from` _[DNSResolverSource](#dnsresolversource)_ | From is where this vantage point resolves: the cluster's own DNS<br />service, the node's resolver, or an explicitly addressed upstream. | Cluster | Enum: [Cluster Node Explicit] <br />Optional: \{\} <br /> |
-| `address` _string_ | Address is the upstream resolver, as an IP with an optional port. It is<br />required when From is Explicit and rejected otherwise.<br />A hostname is not accepted: a resolver that must itself be resolved to be<br />reached cannot answer the question the check is asking. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
+| `address` _string_ | Address is the upstream resolver, as an IP with an optional port. It is<br />required when From is Explicit and rejected otherwise.<br />A hostname is not accepted: a resolver that must itself be resolved to be<br />reached cannot answer the question the check is asking.<br />The rule validates the host and the port separately. Checking only that<br />the value "looks addressy" would admit "10.0.0.10:abc" and<br />"[not-an-ip]:53", pushing a misconfiguration to runtime where it surfaces<br />as an unreachable resolver rather than as the typo it is. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
 
 
 #### DNSResolverSource

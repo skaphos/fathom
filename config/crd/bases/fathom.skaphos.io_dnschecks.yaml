@@ -60,6 +60,10 @@ spec:
               (target, vantage point) pair and a single folded verdict for the check.
 
               There is no field to pause a DNSCheck. Stopping a check means deleting it.
+              Per-target results are keyed by (name, recordType, resolver), so two targets
+              identical in all three would collide there. Rejecting the duplicate at write
+              time is far kinder than letting the controller fail a status update later
+              with an error that says nothing about the specification that caused it.
             properties:
               historyLimit:
                 default: 10
@@ -82,7 +86,10 @@ spec:
 
                   A target that names no vantage point is checked against every entry
                   here, so the number of evaluations a check performs is
-                  len(targets without an override) * len(resolvers), bounded at 48.
+                  len(targets without an override) * max(1, len(resolvers)), bounded at
+                  48. The max(1, …) is not a rounding nicety: an empty list still means one
+                  vantage point — the implicit "cluster" one — so a check that declares no
+                  resolvers evaluates every target once, not zero times.
                 items:
                   description: DNSResolver is a declared vantage point resolution
                     is performed from.
@@ -94,13 +101,26 @@ spec:
 
                         A hostname is not accepted: a resolver that must itself be resolved to be
                         reached cannot answer the question the check is asking.
+                        The rule validates the host and the port separately. Checking only that
+                        the value "looks addressy" would admit "10.0.0.10:abc" and
+                        "[not-an-ip]:53", pushing a misconfiguration to runtime where it surfaces
+                        as an unreachable resolver rather than as the typo it is.
                       maxLength: 63
                       type: string
                       x-kubernetes-validations:
-                      - message: address must be an IP address with an optional port,
+                      - message: address must be an IP address with an optional port
+                          in 1-65535 (10.0.0.10, 10.0.0.10:53, 2001:db8::1, [2001:db8::1]:53),
                           not a hostname
-                        rule: isIP(self) || (self.contains(':') && isIP(self.split(':')[0]))
-                          || (self.startsWith('[') && self.contains(']:'))
+                        rule: 'isIP(self) || (self.startsWith(''['') ? (self.indexOf('']:'')
+                          > 1 && isIP(self.substring(1, self.indexOf('']:''))) &&
+                          self.substring(self.indexOf('']:'') + 2).matches(''^[0-9]{1,5}$'')
+                          && int(self.substring(self.indexOf('']:'') + 2)) >= 1 &&
+                          int(self.substring(self.indexOf('']:'') + 2)) <= 65535)
+                          : (self.lastIndexOf('':'') > 0 && isIP(self.substring(0,
+                          self.lastIndexOf('':''))) && self.substring(self.lastIndexOf('':'')
+                          + 1).matches(''^[0-9]{1,5}$'') && int(self.substring(self.lastIndexOf('':'')
+                          + 1)) >= 1 && int(self.substring(self.lastIndexOf('':'')
+                          + 1)) <= 65535))'
                     from:
                       default: Cluster
                       description: |-
@@ -243,6 +263,10 @@ spec:
                 reserved name "cluster"
               rule: self.targets.all(t, !has(t.resolver) || t.resolver == 'cluster'
                 || (has(self.resolvers) && self.resolvers.exists(r, r.name == t.resolver)))
+            - message: targets must be unique by name, recordType, and resolver
+              rule: 'self.targets.all(t, self.targets.filter(o, o.name == t.name &&
+                o.recordType == t.recordType && (has(o.resolver) ? (has(t.resolver)
+                && o.resolver == t.resolver) : !has(t.resolver))).size() == 1)'
           status:
             description: DNSCheckStatus defines the observed state of DNSCheck.
             properties:

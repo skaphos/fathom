@@ -307,6 +307,50 @@ func TestDNSCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			// The first rule shape accepted this: it validated the host and
+			// merely noted a colon, never the port.
+			name: "26a non-numeric port",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "10.0.0.10:abc"}}
+			},
+			wantReject: true, wantInMsg: "address",
+		},
+		{
+			// Likewise this: bracketed shape alone is not an address.
+			name: "26b bracketed non-address",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "[not-an-ip]:53"}}
+			},
+			wantReject: true, wantInMsg: "address",
+		},
+		{
+			name: "26c bare IPv6 without brackets",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "2001:db8::1"}}
+			},
+		},
+		{
+			name: "26d port out of range shape",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "10.0.0.10:notaport"}}
+			},
+			wantReject: true, wantInMsg: "address",
+		},
+		{
+			name: "26e port above the valid range",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "10.0.0.10:99999"}}
+			},
+			wantReject: true, wantInMsg: "address",
+		},
+		{
+			name: "26f trailing colon with no port",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up", From: fathomv1alpha1.DNSResolverExplicit, Address: "10.0.0.10:"}}
+			},
+			wantReject: true, wantInMsg: "address",
+		},
+		{
 			name: "27 duplicate resolver names",
 			mutate: func(c *fathomv1alpha1.DNSCheck) {
 				c.Spec.Resolvers = []fathomv1alpha1.DNSResolver{{Name: "up"}, {Name: "up"}}
@@ -335,6 +379,25 @@ func TestDNSCheckAdmission(t *testing.T) {
 		},
 
 		// --- fields that must not exist ----------------------------------------
+		{
+			name: "30a exact duplicate targets collide in status and are rejected",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Targets = targets(
+					fathomv1alpha1.DNSTarget{Name: "example.com"},
+					fathomv1alpha1.DNSTarget{Name: "example.com"},
+				)
+			},
+			wantReject: true, wantInMsg: "unique",
+		},
+		{
+			name: "30b same name under different record types is not a duplicate",
+			mutate: func(c *fathomv1alpha1.DNSCheck) {
+				c.Spec.Targets = targets(
+					fathomv1alpha1.DNSTarget{Name: "example.com", RecordType: fathomv1alpha1.DNSRecordA},
+					fathomv1alpha1.DNSTarget{Name: "example.com", RecordType: fathomv1alpha1.DNSRecordAAAA},
+				)
+			},
+		},
 		{
 			name: "31 history limit below one",
 			mutate: func(c *fathomv1alpha1.DNSCheck) {
