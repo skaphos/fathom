@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -39,6 +41,10 @@ type fakeDNSLauncher struct {
 	// delay holds each call open, so concurrency is observable and a run can be
 	// driven past its bound.
 	delay time.Duration
+
+	// delayFor overrides delay per request, so one spec can mix pairs that
+	// answer promptly with pairs that outlive the run bound.
+	delayFor func(probe.Request) time.Duration
 }
 
 func (f *fakeDNSLauncher) Run(ctx context.Context, req probe.Request) (probe.Result, error) {
@@ -48,8 +54,12 @@ func (f *fakeDNSLauncher) Run(ctx context.Context, req probe.Request) (probe.Res
 	if f.inFlight > f.maxInFlight {
 		f.maxInFlight = f.inFlight
 	}
-	respond, delay := f.respond, f.delay
+	respond, delay, delayFor := f.respond, f.delay, f.delayFor
 	f.mu.Unlock()
+
+	if delayFor != nil {
+		delay = delayFor(req)
+	}
 
 	release := func() {
 		f.mu.Lock()
@@ -128,6 +138,32 @@ func reconcileDNSCheck(ctx context.Context, r *DNSCheckReconciler, check *fathom
 	})
 	Expect(err).NotTo(HaveOccurred())
 	return result
+}
+
+// dnsTargetGauge reads back the per-target series for one check, keyed
+// "name|record_type|resolver|result". Reading the registry rather than the
+// status is the point: FR-033 is about what an operator can alert on.
+func dnsTargetGauge(ns, check string) map[string]float64 {
+	families, err := ctrlmetrics.Registry.Gather()
+	Expect(err).NotTo(HaveOccurred())
+	out := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != "fathom_dnscheck_target_result" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, pair := range metric.GetLabel() {
+				labels[pair.GetName()] = pair.GetValue()
+			}
+			if labels["namespace"] != ns || labels["check"] != check {
+				continue
+			}
+			key := strings.Join([]string{labels["name"], labels["record_type"], labels["resolver"], labels["result"]}, "|")
+			out[key] = metric.GetGauge().GetValue()
+		}
+	}
+	return out
 }
 
 // targetResultFor finds one pair's reported result by its identity triple.
@@ -340,5 +376,149 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(targetResultFor(got, "ok-1.example.com", "A", "cluster").Result).To(Equal("Pass"))
 		Expect(targetResultFor(got, "ok-2.example.com", "A", "cluster").Result).To(Equal("Pass"))
 		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultError)))
+	})
+
+	// T028 / US2 — SC-104: the failing name is identifiable from the resource
+	// and the metrics alone, with no log reading.
+	It("identifies the single failing target in both status and metrics", func() {
+		check := createDNSCheck(ctx, ns, "pinpoint", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "healthy.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "broken.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "also-healthy.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{respond: func(req probe.Request) (probe.Result, error) {
+			if req.Target == "broken.example.com" {
+				return probe.Result{
+					Outcome: probe.OutcomeFail,
+					Summary: "the resolver reports the name does not exist",
+					Details: map[string]string{"answers": ""},
+				}, nil
+			}
+			return probe.Result{
+				Outcome: probe.OutcomePass,
+				Summary: "resolved",
+				Details: map[string]string{"answers": "10.0.0.1,10.0.0.2"},
+			}, nil
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		broken := targetResultFor(got, "broken.example.com", "A", "cluster")
+		Expect(broken.Result).To(Equal("Fail"))
+		Expect(broken.Message).To(ContainSubstring("does not exist"), "the pair must carry its own evidence")
+
+		healthy := targetResultFor(got, "healthy.example.com", "A", "cluster")
+		Expect(healthy.Answers).To(ConsistOf("10.0.0.1", "10.0.0.2"))
+		Expect(healthy.LatencyMillis).To(BeNumerically(">=", 0))
+
+		gauge := dnsTargetGauge(ns, "pinpoint")
+		Expect(gauge["broken.example.com|A|cluster|Fail"]).To(Equal(1.0))
+		Expect(gauge["broken.example.com|A|cluster|Pass"]).To(Equal(0.0))
+		Expect(gauge["healthy.example.com|A|cluster|Pass"]).To(Equal(1.0))
+	})
+
+	// T029 / US2 — FR-036 and SC-105: a pair the spec no longer declares must
+	// leave both the status and the registry, within one run.
+	It("withdraws a removed target's result and metric series", func() {
+		check := createDNSCheck(ctx, ns, "shrinking", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "keeper.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "doomed.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		Expect(dnsTargetGauge(ns, "shrinking")).To(HaveKey("doomed.example.com|A|cluster|Pass"))
+		Expect(targetResultFor(reloadDNSCheck(ctx, check).Status, "doomed.example.com", "A", "cluster")).NotTo(BeNil())
+
+		edited := reloadDNSCheck(ctx, check)
+		edited.Spec.Targets = []fathomv1alpha1.DNSTarget{
+			{Name: "keeper.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		}
+		Expect(k8sClient.Update(ctx, edited)).To(Succeed())
+		reconcileDNSCheck(ctx, r, edited)
+
+		got := reloadDNSCheck(ctx, check).Status
+		Expect(got.TargetResults).To(HaveLen(1))
+		Expect(targetResultFor(got, "doomed.example.com", "A", "cluster")).
+			To(BeNil(), "a dropped pair must not freeze at its last verdict")
+
+		gauge := dnsTargetGauge(ns, "shrinking")
+		for key := range gauge {
+			Expect(key).NotTo(HavePrefix("doomed.example.com|"),
+				"a dropped pair must not keep asserting a metric series")
+		}
+		Expect(gauge["keeper.example.com|A|cluster|Pass"]).To(Equal(1.0))
+	})
+
+	// T030 / US2 — FR-021. Without the polarity a deliberate "this name must be
+	// gone" failure gets triaged as a DNS outage.
+	It("names assertion polarity in a negative-assertion failure summary", func() {
+		check := createDNSCheck(ctx, ns, "polarity", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "decommissioned.example.com", RecordType: fathomv1alpha1.DNSRecordA, Absent: true},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{respond: func(probe.Request) (probe.Result, error) {
+			return probe.Result{Outcome: probe.OutcomeFail, Summary: "the name resolved"}, nil
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(got.Summary).To(ContainSubstring("asserted absent but resolved"))
+		Expect(got.Summary).To(ContainSubstring("decommissioned.example.com"))
+	})
+
+	// T031 / US2 — FR-106 and FR-106a end to end. Two pairs answer promptly and
+	// two outlive the run bound, so the run truncates partially: the verdict must
+	// degrade to Unknown rather than reporting the two passes as green, and the
+	// Complete condition must name how many were missed.
+	It("degrades to Unknown and reports the unreached count when a run truncates", func() {
+		check := createDNSCheck(ctx, ns, "truncated", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "fast-1.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "fast-2.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "slow-1.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "slow-2.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+			Interval: &metav1.Duration{Duration: 10 * time.Second},
+			Timeout:  &metav1.Duration{Duration: time.Second},
+		})
+
+		launcher := &fakeDNSLauncher{delayFor: func(req probe.Request) time.Duration {
+			if strings.HasPrefix(req.Target, "slow-") {
+				return 10 * time.Second // outlives the 1s run bound
+			}
+			return 5 * time.Millisecond
+		}}
+		r := newDNSCheckReconciler(launcher, 2)
+		r.MinPairBudget = 50 * time.Millisecond
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultUnknown)),
+			"a truncated run must not report the pairs it did reach as the whole story")
+		Expect(targetResultFor(got, "fast-1.example.com", "A", "cluster").Result).To(Equal("Pass"))
+		Expect(targetResultFor(got, "slow-1.example.com", "A", "cluster").Result).To(Equal("Unknown"))
+
+		complete := apiMeta.FindStatusCondition(got.Conditions, dnsCheckConditionComplete)
+		Expect(complete).NotTo(BeNil())
+		Expect(complete.Status).To(Equal(metav1.ConditionFalse))
+		Expect(complete.Reason).To(Equal("RunTruncated"))
+		Expect(complete.Message).To(ContainSubstring("2 of 4"))
+		Expect(got.Summary).To(ContainSubstring("not reached"))
+
+		// Ready stays True: the bound was too small, which is a configuration
+		// problem the operator can fix, not Fathom failing to function.
+		Expect(apiMeta.IsStatusConditionTrue(got.Conditions, dnsCheckConditionReady)).To(BeTrue())
 	})
 })

@@ -95,6 +95,12 @@ type DNSCheckReconciler struct {
 	// probe.Launcher over ProbeClient. Tests inject a fake.
 	Launcher dnsProbeRunner
 
+	// MinPairBudget overrides the least time worth giving a pair before the run
+	// stops dispatching. Mostly useful in tests, where the production floor
+	// would make a truncation case take tens of seconds; production callers
+	// should leave it zero.
+	MinPairBudget time.Duration
+
 	// Tracer creates the per-Reconcile span. Optional; nil falls back to the
 	// global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
@@ -255,7 +261,7 @@ func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1alpha1
 		// its share shrinks what later pairs get instead of silently consuming
 		// their time, and a pair that finished early hands its budget back.
 		budget := perPairBudget(time.Until(deadline), len(pairs)-i, concurrency)
-		if budget < dnsCheckMinPairBudget {
+		if budget < r.minPairBudget() {
 			// Too little left for a pod to schedule, pull, and answer. Launching
 			// anyway would burn the remainder to produce an Error that says
 			// nothing about DNS. The rest stay Unknown — the run did not reach
@@ -318,9 +324,22 @@ func (r *DNSCheckReconciler) runPair(
 	out.LatencyMillis = time.Since(started).Milliseconds()
 
 	if err != nil {
-		// The pair could not be *performed* — quota, admission, image, an
-		// unschedulable node, or the run's deadline arriving mid-flight. That is
-		// a fault on Fathom's side, never a resolver's answer (FR-105).
+		if ctx.Err() != nil {
+			// The RUN's own deadline cut this pair off; the pair was started but
+			// never got an answer. That is "not reached" (FR-106), not a fault.
+			//
+			// Reporting Error here would be actively harmful: Error outranks Fail,
+			// so a check whose bound was merely too small would mask a genuine
+			// resolution failure among the pairs that did complete — the exact
+			// masking that ruled Error out as the truncation outcome in the first
+			// place. Unknown degrades the verdict and still loses to a real Fail.
+			out.Result = string(fathomv1alpha1.HealthReportResultUnknown)
+			out.Message = "not evaluated: the run bound elapsed before this pair completed"
+			return out
+		}
+		// The pair could not be *performed* — quota, admission, image pull, an
+		// unschedulable node. A fault on Fathom's side, never a resolver's
+		// answer (FR-105).
 		out.Result = string(fathomv1alpha1.HealthReportResultError)
 		out.Message = truncateTargetMessage(fmt.Sprintf("probe execution failed: %v", err))
 		return out
@@ -540,6 +559,15 @@ func (r *DNSCheckReconciler) concurrency() int {
 		return 1
 	}
 	return r.MaxConcurrentProbes
+}
+
+// minPairBudget is the least time worth giving a pair, defaulting to the
+// production floor.
+func (r *DNSCheckReconciler) minPairBudget() time.Duration {
+	if r.MinPairBudget > 0 {
+		return r.MinPairBudget
+	}
+	return dnsCheckMinPairBudget
 }
 
 // SetupWithManager registers the reconciler.

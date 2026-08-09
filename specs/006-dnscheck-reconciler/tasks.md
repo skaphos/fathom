@@ -114,15 +114,15 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ### Tests for User Story 2
 
-- [ ] T028 [P] [US2] envtest: one failing target among several is named in `targetResults` with its evidence and carries a gauge series, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T029 [P] [US2] envtest: removing a target from the spec drops its `targetResults` entry and withdraws its metric series on the next run, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T030 [P] [US2] envtest: a negative-assertion failure produces a summary that names the polarity, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T031 [P] [US2] envtest: a run truncated by its bound leaves unreached pairs `Unknown` and sets `Complete=False` naming the count, in `internal/controller/dnscheck_controller_test.go`
+- [X] T028 [P] [US2] envtest: one failing target among several is named in `targetResults` with its evidence and carries a gauge series, in `internal/controller/dnscheck_controller_test.go`
+- [X] T029 [P] [US2] envtest: removing a target from the spec drops its `targetResults` entry and withdraws its metric series on the next run, in `internal/controller/dnscheck_controller_test.go`
+- [X] T030 [P] [US2] envtest: a negative-assertion failure produces a summary that names the polarity, in `internal/controller/dnscheck_controller_test.go`
+- [X] T031 [P] [US2] envtest: a run truncated by its bound leaves unreached pairs `Unknown` and sets `Complete=False` naming the count, in `internal/controller/dnscheck_controller_test.go`
 
 ### Implementation for User Story 2
 
 - [X] T032 [US2] Populate `status.targetResults` by full replacement — never merge — with message, answers, and latency per pair, in `internal/controller/dnscheck_controller.go`
-- [ ] T033 [US2] Emit the per-target gauge by delete-then-set each run in `internal/controller/dnscheck_controller.go`, so a dropped pair's series disappears without removal detection
+- [X] T033 [US2] Emit the per-target gauge by delete-then-set each run in `internal/controller/dnscheck_controller.go`, so a dropped pair's series disappears without removal detection
 - [X] T034 [US2] Set the `Complete` condition to `False` with the unreached count when any pair is still `Unknown` at the deadline, in `internal/controller/dnscheck_controller.go`
 
 ---
