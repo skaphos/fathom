@@ -7,15 +7,31 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
 
+	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apiMeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 )
 
@@ -111,11 +127,401 @@ type DNSCheckReconciler struct {
 
 // Reconcile evaluates a DNSCheck and mirrors the outcome into status, metrics,
 // events, and history.
-func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = ctx
-	_ = req
-	// Body lands with User Story 1 (T022–T027).
-	return ctrl.Result{}, nil
+func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "dnscheck.reconcile", trace.WithAttributes(
+		attribute.String("fathom.kind", dnsCheckKind),
+		attribute.String("fathom.namespace", req.Namespace),
+		attribute.String("fathom.name", req.Name),
+	))
+	defer func() { endReconcileSpan(span, err) }()
+
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.RecordReconcile(dnsCheckKind, outcome, time.Since(start))
+	}()
+
+	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
+
+	var check fathomv1alpha1.DNSCheck
+	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The check is gone: withdraw everything it was asserting, both the
+			// check-level series and every per-target one (FR-114).
+			metrics.DeleteCheckSeries(dnsCheckKind, req.Namespace, req.Name)
+			metrics.DeleteDNSCheckTargetSeries(req.Namespace, req.Name)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Deferred immediately after the Get so every exit path — including error
+	// returns — mirrors status into the gauges and records the Events contract.
+	// The "previous" values come from the status as fetched, never from process
+	// memory, which is what stops an operator restart firing a false transition.
+	before := check.Status.DeepCopy()
+	defer func() {
+		observeCheck(r.Recorder, &check, dnsCheckKind,
+			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			before.Conditions, check.Status.Conditions,
+			check.Status.LastRunTime, err)
+	}()
+
+	check.Status.ObservedGeneration = check.Generation
+	accepted := metav1.Condition{
+		Type:               dnsCheckConditionAccepted,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "SpecAccepted",
+		Message:            "DNSCheck specification has been accepted for reconciliation.",
+	}
+	// A stored sub-floor cadence runs clamped rather than rejected; the Accepted
+	// condition says so and observeCheck turns the transition into an event.
+	if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
+		accepted.Reason = conditionReasonSpecClamped
+		accepted.Message = strings.Join(msgs, "; ") + "."
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, accepted)
+
+	interval := dnsCheckInterval(&check)
+	startedAt := time.Now()
+	outcomes := r.evaluate(ctx, &check, dnsCheckRunBound(&check), startedAt)
+
+	verdict := foldDNSVerdict(outcomes)
+	unreached := countUnreachedDNSPairs(outcomes)
+
+	check.Status.LastResult = string(verdict)
+	check.Status.Summary = summarizeDNSRun(outcomes, verdict, unreached)
+	check.Status.TargetResults = dnsTargetResults(outcomes)
+	check.Status.ObservedTargets = int32(len(outcomes)) //nolint:gosec // bounded at 48 by the schema
+	observed := metav1.NewTime(startedAt)
+	check.Status.LastRunTime = &observed
+
+	r.setDNSCheckComplete(&check, len(outcomes), unreached)
+	r.setDNSCheckReady(&check, outcomes)
+	r.publishDNSTargetSeries(&check, outcomes)
+
+	return r.finishDNSCheck(ctx, log, before, &check, interval, time.Since(startedAt))
+}
+
+// evaluate runs every pair the specification implies and returns one outcome
+// each — always the full set, so a pair that never ran is reported rather than
+// missing.
+//
+// Every pair is seeded Unknown before anything is launched. Whatever is still
+// Unknown when the run ends is exactly what the run did not reach, so truncation
+// needs no separate bookkeeping (FR-106), and the result set is rebuilt from the
+// current specification every time, so a dropped pair cannot survive (FR-036).
+func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1alpha1.DNSCheck, bound time.Duration, startedAt time.Time) []dnsPairOutcome {
+	pairs := expandDNSPairs(&check.Spec)
+	outcomes := make([]dnsPairOutcome, len(pairs))
+	for i, pair := range pairs {
+		outcomes[i] = dnsPairOutcome{
+			pair: pair,
+			result: fathomv1alpha1.DNSTargetResult{
+				Name:       pair.Name,
+				RecordType: pair.RecordType,
+				Resolver:   pair.VantagePoint.Name,
+				Result:     string(fathomv1alpha1.HealthReportResultUnknown),
+			},
+		}
+	}
+	if len(pairs) == 0 {
+		return outcomes
+	}
+
+	// One deadline for the whole run (FR-104). Because the bound never exceeds
+	// the cadence (FR-104a), a run cannot outlast the tick that scheduled it.
+	runCtx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+	deadline := startedAt.Add(bound)
+
+	concurrency := r.concurrency()
+	owner := dnsCheckOwnerReference(check)
+	runID := strconv.FormatInt(startedAt.UnixNano(), 36)
+
+	// A plain errgroup, deliberately not errgroup.WithContext: that cancels the
+	// group on the first error, which would let one pair's failure abort the
+	// rest. Fault isolation between pairs is required (FR-103b), so every
+	// goroutine returns nil and records its own outcome.
+	var group errgroup.Group
+	group.SetLimit(concurrency)
+
+	for i := range pairs {
+		// Read the budget as each slot frees, not up front: a pair that overran
+		// its share shrinks what later pairs get instead of silently consuming
+		// their time, and a pair that finished early hands its budget back.
+		budget := perPairBudget(time.Until(deadline), len(pairs)-i, concurrency)
+		if budget < dnsCheckMinPairBudget {
+			// Too little left for a pod to schedule, pull, and answer. Launching
+			// anyway would burn the remainder to produce an Error that says
+			// nothing about DNS. The rest stay Unknown — the run did not reach
+			// them, which is precisely what that means (FR-106).
+			break
+		}
+		group.Go(func() error {
+			outcomes[i].result = r.runPair(runCtx, check, outcomes[i].pair, budget, owner, runID)
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return outcomes
+}
+
+// runPair evaluates a single (target, vantage point) pair in the check's OWN
+// namespace (FR-031) and maps the probe's answer onto a reported result.
+func (r *DNSCheckReconciler) runPair(
+	ctx context.Context,
+	check *fathomv1alpha1.DNSCheck,
+	pair dnsPair,
+	budget time.Duration,
+	owner metav1.OwnerReference,
+	runID string,
+) fathomv1alpha1.DNSTargetResult {
+	out := fathomv1alpha1.DNSTargetResult{
+		Name:       pair.Name,
+		RecordType: pair.RecordType,
+		Resolver:   pair.VantagePoint.Name,
+	}
+
+	req := probe.Request{
+		Name:      dnsProbePodName(check.Name, pair, runID),
+		Namespace: check.Namespace,
+		Image:     r.ProbeImage,
+		Mode:      probe.ModeDNS,
+		Target:    pair.Name,
+		Timeout:   budget,
+
+		RecordType:      string(pair.RecordType),
+		ExpectedAnswers: pair.Expected,
+		Absent:          pair.Absent,
+
+		// Same namespace as the check, so the reference is legal and deleting
+		// the check garbage-collects any pod still in flight (FR-114).
+		OwnerReferences: []metav1.OwnerReference{owner},
+	}
+	switch pair.VantagePoint.From {
+	case fathomv1alpha1.DNSResolverNode:
+		req.DNSFrom = probe.DNSFromNode
+	case fathomv1alpha1.DNSResolverExplicit:
+		req.DNSFrom = probe.DNSFromExplicit
+		req.DNSNameservers = []string{pair.VantagePoint.Address}
+	default:
+		req.DNSFrom = probe.DNSFromCluster
+	}
+
+	started := time.Now()
+	result, err := r.launcher().Run(ctx, req)
+	out.LatencyMillis = time.Since(started).Milliseconds()
+
+	if err != nil {
+		// The pair could not be *performed* — quota, admission, image, an
+		// unschedulable node, or the run's deadline arriving mid-flight. That is
+		// a fault on Fathom's side, never a resolver's answer (FR-105).
+		out.Result = string(fathomv1alpha1.HealthReportResultError)
+		out.Message = truncateTargetMessage(fmt.Sprintf("probe execution failed: %v", err))
+		return out
+	}
+
+	out.Result = string(dnsResultFromProbeOutcome(result.Outcome))
+	out.Message = truncateTargetMessage(result.Summary)
+	out.Answers = splitProbeAnswers(result.Details["answers"])
+	return out
+}
+
+// dnsResultFromProbeOutcome maps the probe's vocabulary onto the project's.
+//
+// The mapping is deliberately literal. The probe already draws the distinction
+// FR-014 turns on — a resolver that does not answer under an absent assertion is
+// reported Error ("absence cannot be proven"), not Pass — so the controller's
+// only job is to carry that through unchanged. Re-deriving it here would be a
+// second place for the two to disagree.
+func dnsResultFromProbeOutcome(outcome probe.Outcome) fathomv1alpha1.HealthReportResult {
+	switch outcome {
+	case probe.OutcomePass:
+		return fathomv1alpha1.HealthReportResultPass
+	case probe.OutcomeFail:
+		return fathomv1alpha1.HealthReportResultFail
+	case probe.OutcomeError:
+		return fathomv1alpha1.HealthReportResultError
+	default:
+		// An outcome this build does not recognise is not evidence of anything.
+		return fathomv1alpha1.HealthReportResultUnknown
+	}
+}
+
+// dnsTargetMessageMaxLen mirrors the MaxLength on DNSTargetResult.Message.
+const dnsTargetMessageMaxLen = 512
+
+func truncateTargetMessage(s string) string {
+	if utf8.RuneCountInString(s) <= dnsTargetMessageMaxLen {
+		return s
+	}
+	const ellipsis = "…"
+	return string([]rune(s)[:dnsTargetMessageMaxLen-1]) + ellipsis
+}
+
+// dnsAnswersMaxItems mirrors the MaxItems on DNSTargetResult.Answers.
+const dnsAnswersMaxItems = 16
+
+// splitProbeAnswers parses the probe's comma-joined answer list and bounds it to
+// what the schema accepts, so a record set larger than the cap cannot fail the
+// status write.
+func splitProbeAnswers(joined string) []string {
+	if joined == "" {
+		return nil
+	}
+	parts := strings.Split(joined, ",")
+	answers := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		// Answers is a listType=set; a duplicate would be rejected on write.
+		if _, dup := seen[value]; dup {
+			continue
+		}
+		seen[value] = struct{}{}
+		answers = append(answers, value)
+		if len(answers) == dnsAnswersMaxItems {
+			break
+		}
+	}
+	if len(answers) == 0 {
+		return nil
+	}
+	return answers
+}
+
+// dnsCheckOwnerReference makes probe pods dependents of the check. Legal only
+// because FR-031 places them in the check's own namespace — a namespaced owner
+// in another namespace reads as dangling and invites immediate GC.
+func dnsCheckOwnerReference(check *fathomv1alpha1.DNSCheck) metav1.OwnerReference {
+	controller := true
+	blockOwnerDeletion := true
+	return metav1.OwnerReference{
+		APIVersion:         fathomv1alpha1.GroupVersion.String(),
+		Kind:               dnsCheckKind,
+		Name:               check.Name,
+		UID:                check.UID,
+		Controller:         &controller,
+		BlockOwnerDeletion: &blockOwnerDeletion,
+	}
+}
+
+// dnsProbePodName derives a pod name unique to one pair within one run.
+//
+// The run component matters: a deterministic per-pair name would collide with an
+// orphan left by a crashed operator, and the collision would surface as an
+// AlreadyExists Error on every run until the sweeper's minimum age elapsed —
+// turning a one-off crash into sustained false failures. Orphans are still
+// reaped by label (the sweeper) and by owner reference (check deletion).
+func dnsProbePodName(checkName string, pair dnsPair, runID string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		pair.Name, string(pair.RecordType), pair.VantagePoint.Name, runID,
+	}, "\x00")))
+	suffix := hex.EncodeToString(sum[:])[:10]
+
+	const maxPodNameLength = 63
+	base := "fathom-dnscheck-" + checkName
+	if maxBase := maxPodNameLength - len(suffix) - 1; len(base) > maxBase {
+		base = base[:maxBase]
+	}
+	base = strings.Trim(base, "-.")
+	if base == "" {
+		base = "fathom-dnscheck"
+	}
+	return base + "-" + suffix
+}
+
+// setDNSCheckComplete records whether the run reached every pair it planned.
+//
+// This is the actionable half of truncation (FR-106a): the verdict degrading to
+// Unknown says something is wrong, but only the count tells an operator their
+// run bound was too small for the number of pairs they declared.
+func (r *DNSCheckReconciler) setDNSCheckComplete(check *fathomv1alpha1.DNSCheck, planned, unreached int) {
+	condition := metav1.Condition{
+		Type:               dnsCheckConditionComplete,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "AllPairsEvaluated",
+		Message:            fmt.Sprintf("All %d (target, vantage point) pairs were evaluated.", planned),
+	}
+	if unreached > 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "RunTruncated"
+		condition.Message = fmt.Sprintf(
+			"%d of %d pairs were not reached before the run bound elapsed; raise spec.timeout (and spec.interval) or declare fewer targets.",
+			unreached, planned)
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
+}
+
+// setDNSCheckReady reports whether Fathom could evaluate the check at all.
+//
+// Ready is about Fathom's ability to run the check, not about what the check
+// found: a check whose every name legitimately fails to resolve is Ready=True
+// with a Fail verdict. Only pairs that could not be *performed* degrade it.
+func (r *DNSCheckReconciler) setDNSCheckReady(check *fathomv1alpha1.DNSCheck, outcomes []dnsPairOutcome) {
+	var errored int
+	for _, outcome := range outcomes {
+		if outcome.result.Result == string(fathomv1alpha1.HealthReportResultError) {
+			errored++
+		}
+	}
+	condition := metav1.Condition{
+		Type:               dnsCheckConditionReady,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "EvaluationSucceeded",
+		Message:            "DNSCheck evaluated successfully.",
+	}
+	if errored > 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "ProbeExecutionFailed"
+		condition.Message = fmt.Sprintf("%d of %d pairs could not be evaluated.", errored, len(outcomes))
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
+}
+
+// publishDNSTargetSeries rebuilds the per-target gauge for this check: withdraw
+// everything, then set the pairs the current specification declares.
+//
+// Rebuilding rather than diffing is what delivers FR-036 — a pair the
+// specification dropped is simply never re-set, so its series disappears with no
+// removal detection, and the behaviour survives an operator restart.
+func (r *DNSCheckReconciler) publishDNSTargetSeries(check *fathomv1alpha1.DNSCheck, outcomes []dnsPairOutcome) {
+	metrics.DeleteDNSCheckTargetSeries(check.Namespace, check.Name)
+	for _, outcome := range outcomes {
+		metrics.ObserveDNSTarget(check.Namespace, check.Name,
+			outcome.result.Name, string(outcome.result.RecordType), outcome.result.Resolver, outcome.result.Result)
+	}
+}
+
+// finishDNSCheck persists status when it changed and schedules the next run.
+//
+// The requeue is anchored to when this run STARTED, not to when it finished
+// (FR-107): anchoring on completion, as the other check kinds do, silently adds
+// the run's own duration to every interval.
+func (r *DNSCheckReconciler) finishDNSCheck(
+	ctx context.Context,
+	log logr.Logger,
+	before *fathomv1alpha1.DNSCheckStatus,
+	check *fathomv1alpha1.DNSCheck,
+	interval, elapsed time.Duration,
+) (ctrl.Result, error) {
+	if !equality.Semantic.DeepEqual(before, &check.Status) {
+		if err := r.Status().Update(ctx, check); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.V(1).Info("updated DNSCheck status", "result", check.Status.LastResult)
+	}
+	return ctrl.Result{RequeueAfter: nextDNSRequeue(interval, elapsed, dnsCheckMinRunGap)}, nil
 }
 
 // launcher returns the configured runner, defaulting to a probe.Launcher over

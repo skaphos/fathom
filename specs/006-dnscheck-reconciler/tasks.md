@@ -79,24 +79,30 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ### Tests for User Story 1
 
-- [ ] T015 [P] [US1] envtest: applying a check populates `lastResult`, `observedTargets`, `observedGeneration`, and `lastRunTime` after one cadence, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T016 [P] [US1] envtest: one resolvable plus one unresolvable subject under positive assertions folds to `Fail`, not `Error`, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T017 [P] [US1] envtest: a fake launcher returning an *unreachable-resolver* outcome for a pair asserting `absent: true` must **not** fold to `Pass`, in `internal/controller/dnscheck_controller_test.go` — FR-014's sharpest case, and the trap feature 005 called out by name
-- [ ] T018 [P] [US1] envtest: editing the spec is reflected on the next evaluation and `observedGeneration` advances, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T019 [P] [US1] envtest: a check declaring several vantage points evaluates every (target, vantage point) pair exactly once, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T020 [P] [US1] envtest: a fake launcher instrumented with an in-flight counter never exceeds the configured concurrency cap, in `internal/controller/dnscheck_controller_test.go` — without this a silently ignored cap passes every other test
-- [ ] T021 [P] [US1] envtest: a `probe.LaunchError` on one pair marks only that pair `Error` while the rest still evaluate, in `internal/controller/dnscheck_controller_test.go`
+- [X] T015 [P] [US1] envtest: applying a check populates `lastResult`, `observedTargets`, `observedGeneration`, and `lastRunTime` after one cadence, in `internal/controller/dnscheck_controller_test.go`
+- [X] T016 [P] [US1] envtest: one resolvable plus one unresolvable subject under positive assertions folds to `Fail`, not `Error`, in `internal/controller/dnscheck_controller_test.go`
+- [X] T017 [P] [US1] envtest: a fake launcher returning an *unreachable-resolver* outcome for a pair asserting `absent: true` must **not** fold to `Pass`, in `internal/controller/dnscheck_controller_test.go` — FR-014's sharpest case, and the trap feature 005 called out by name
+- [X] T018 [P] [US1] envtest: editing the spec is reflected on the next evaluation and `observedGeneration` advances, in `internal/controller/dnscheck_controller_test.go`
+- [X] T019 [P] [US1] envtest: a check declaring several vantage points evaluates every (target, vantage point) pair exactly once, in `internal/controller/dnscheck_controller_test.go`
+- [X] T020 [P] [US1] envtest: a fake launcher instrumented with an in-flight counter never exceeds the configured concurrency cap, in `internal/controller/dnscheck_controller_test.go` — without this a silently ignored cap passes every other test
+- [X] T021 [P] [US1] envtest: a `probe.LaunchError` on one pair marks only that pair `Error` while the rest still evaluate, in `internal/controller/dnscheck_controller_test.go`
 
 ### Implementation for User Story 1
 
-- [ ] T022 [US1] Implement the `Reconcile` prologue in `internal/controller/dnscheck_controller.go`: trace span, deferred `RecordReconcile`, `Get` with the `NotFound` withdrawal path, status snapshot, deferred `observeCheck`, `observedGeneration`, and the `Accepted` condition with `cadenceClampMessages`
-- [ ] T023 [US1] Plan the run in `internal/controller/dnscheck_controller.go`: expand pairs from the current spec, seed every pair `Unknown`, and derive the single run deadline
-- [ ] T024 [US1] Implement bounded fan-out with `errgroup.SetLimit` in `internal/controller/dnscheck_controller.go`, launching one owner-referenced probe pod per pair with a per-pair bound of `min(remaining, ceiling)`
-- [ ] T025 [US1] Map probe results to pair outcomes in `internal/controller/dnscheck_controller.go`, keeping the FR-105 split — `LaunchError` and unusable results are `Error`; a resolver's answer is `Pass`/`Fail`; an unreachable resolver never satisfies a negative assertion (FR-014)
-- [ ] T026 [US1] Fold with `WorstResult(outcomes, true)` and build the summary in `internal/controller/dnscheck_controller.go`, naming polarity on a negative-assertion failure
-- [ ] T027 [US1] Implement `finish` in `internal/controller/dnscheck_controller.go`: write status only when it differs, and requeue at `max(minGap, interval − elapsed)` measured from run start
+- [X] T022 [US1] Implement the `Reconcile` prologue in `internal/controller/dnscheck_controller.go`: trace span, deferred `RecordReconcile`, `Get` with the `NotFound` withdrawal path, status snapshot, deferred `observeCheck`, `observedGeneration`, and the `Accepted` condition with `cadenceClampMessages`
+- [X] T023 [US1] Plan the run in `internal/controller/dnscheck_controller.go`: expand pairs from the current spec, seed every pair `Unknown`, and derive the single run deadline
+- [X] T024 [US1] Implement bounded fan-out with `errgroup.SetLimit` in `internal/controller/dnscheck_controller.go`, launching one owner-referenced probe pod per pair with a per-pair bound of `min(remaining, ceiling)`
+- [X] T025 [US1] Map probe results to pair outcomes in `internal/controller/dnscheck_controller.go`, keeping the FR-105 split — `LaunchError` and unusable results are `Error`; a resolver's answer is `Pass`/`Fail`; an unreachable resolver never satisfies a negative assertion (FR-014)
+- [X] T026 [US1] Fold with `WorstResult(outcomes, true)` and build the summary in `internal/controller/dnscheck_controller.go`, naming polarity on a negative-assertion failure
+- [X] T027 [US1] Implement `finish` in `internal/controller/dnscheck_controller.go`: write status only when it differs, and requeue at `max(minGap, interval − elapsed)` measured from run start
 
 **Checkpoint**: US1 is independently shippable — checks run and report verdicts.
+
+> **T032 and T034 landed here, not in Phase 4.** US1's own specs assert on
+> `status.targetResults` (T016, T019, T021) and on the `Complete` condition
+> (T015), so populating them was a prerequisite for Phase 3 rather than a
+> follow-on. Phase 4 keeps the per-target *gauge* (T033) and the tests that
+> exercise removal and truncation, which remain genuinely separate work.
 
 ---
 
@@ -115,9 +121,9 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ### Implementation for User Story 2
 
-- [ ] T032 [US2] Populate `status.targetResults` by full replacement — never merge — with message, answers, and latency per pair, in `internal/controller/dnscheck_controller.go`
+- [X] T032 [US2] Populate `status.targetResults` by full replacement — never merge — with message, answers, and latency per pair, in `internal/controller/dnscheck_controller.go`
 - [ ] T033 [US2] Emit the per-target gauge by delete-then-set each run in `internal/controller/dnscheck_controller.go`, so a dropped pair's series disappears without removal detection
-- [ ] T034 [US2] Set the `Complete` condition to `False` with the unreached count when any pair is still `Unknown` at the deadline, in `internal/controller/dnscheck_controller.go`
+- [X] T034 [US2] Set the `Complete` condition to `False` with the unreached count when any pair is still `Unknown` at the deadline, in `internal/controller/dnscheck_controller.go`
 
 ---
 
