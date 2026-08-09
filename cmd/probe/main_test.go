@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,39 +121,70 @@ func TestRunDNSDefaultPathIsHostLookup(t *testing.T) {
 	// evidence text rendered into HealthReport details — and FR-030 protects
 	// outcomes, not evidence key names. The answer *set* is what must not move,
 	// and that is what this asserts.
-	if got.Details["answers"] != join(want) {
-		t.Fatalf("answers = %q, want %q (default path must remain a host lookup)", got.Details["answers"], join(want))
+	if gotAnswers, wantAnswers := sortedCSV(got.Details["answers"]), sortedCSV(join(want)); gotAnswers != wantAnswers {
+		t.Fatalf("answers = %q, want %q (default path must remain a host lookup)", gotAnswers, wantAnswers)
 	}
 }
 
-// TestRunDNSRecordKinds walks the record kinds whose answers are deterministic
-// from /etc/hosts, so the suite stays hermetic rather than depending on any
-// zone being reachable.
+// TestRunDNSRecordKinds asserts each record kind is dispatched to its own
+// resolver call, using subjects that resolve from /etc/hosts so the suite needs
+// no reachable zone.
+//
+// Expected answers are computed from the corresponding stdlib call rather than
+// hardcoded. That is the whole point of the assertion — "the Host kind returns
+// what LookupHost returns" — and hardcoding is actively wrong here: on a host
+// with IPv6 loopback, localhost answers 127.0.0.1 AND ::1, so a literal
+// "127.0.0.1" would fail on exactly the dual-stack machines the Host kind
+// exists to serve.
 func TestRunDNSRecordKinds(t *testing.T) {
 	tests := []struct {
-		name        string
-		query       dnsQuery
-		wantOutcome string
-		wantAnswers string
+		name  string
+		query dnsQuery
+		want  func(context.Context) ([]string, error)
 	}{
-		{"host defaults to either family", dnsQuery{Target: "localhost"}, "Pass", "127.0.0.1"},
-		{"A narrows to ipv4", dnsQuery{Target: "localhost", RecordType: recordA}, "Pass", "127.0.0.1"},
-		{"PTR resolves an address to a name", dnsQuery{Target: "127.0.0.1", RecordType: recordPTR}, "Pass", "localhost"},
+		{
+			name:  "host answers on either family",
+			query: dnsQuery{Target: "localhost"},
+			want: func(ctx context.Context) ([]string, error) {
+				return net.DefaultResolver.LookupHost(ctx, "localhost")
+			},
+		},
+		{
+			name:  "A narrows to ipv4",
+			query: dnsQuery{Target: "localhost", RecordType: recordA},
+			want: func(ctx context.Context) ([]string, error) {
+				return lookupIPs(ctx, "ip4", "localhost")
+			},
+		},
+		{
+			name:  "PTR resolves an address to a name",
+			query: dnsQuery{Target: "127.0.0.1", RecordType: recordPTR},
+			want: func(ctx context.Context) ([]string, error) {
+				return net.DefaultResolver.LookupAddr(ctx, "127.0.0.1")
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
+			want, err := tc.want(ctx)
+			if err != nil || len(want) == 0 {
+				t.Skipf("this host cannot resolve the fixture for %s (answers=%v err=%v)", tc.name, want, err)
+			}
 			got := captureResult(t, func() {
 				if err := runDNS(ctx, tc.query); err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
 			})
-			if got.Outcome != tc.wantOutcome {
-				t.Fatalf("Outcome = %q, want %q", got.Outcome, tc.wantOutcome)
+			if got.Outcome != "Pass" {
+				t.Fatalf("Outcome = %q, want Pass", got.Outcome)
 			}
-			if got.Details["answers"] != tc.wantAnswers {
-				t.Fatalf("answers = %q, want %q", got.Details["answers"], tc.wantAnswers)
+			// Compare as sets: the expectation and the probe issue separate
+			// resolver calls, and nothing guarantees two calls order their
+			// answers identically.
+			if gotAnswers, wantAnswers := sortedCSV(got.Details["answers"]), sortedCSV(join(want)); gotAnswers != wantAnswers {
+				t.Fatalf("answers = %q, want %q", gotAnswers, wantAnswers)
 			}
 			if got.Details["recordType"] == "" {
 				t.Fatal("recordType detail must always be recorded, so a result is self-describing")
@@ -647,6 +679,14 @@ func TestSplitComma(t *testing.T) {
 // captureResult redirects os.Stdout for the duration of fn, then decodes the
 // single JSON probe result that writeResult emits. It lets tests assert on the
 // Outcome field without exporting a seam from the probe binary.
+// sortedCSV normalises a comma-separated answer list for order-insensitive
+// comparison.
+func sortedCSV(list string) string {
+	parts := splitComma(list)
+	sort.Strings(parts)
+	return join(parts)
+}
+
 func captureResult(t *testing.T, fn func()) result {
 	t.Helper()
 	oldStdout := os.Stdout
