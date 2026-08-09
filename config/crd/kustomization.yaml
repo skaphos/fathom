@@ -7,6 +7,7 @@ resources:
 - bases/fathom.skaphos.io_clusterhealths.yaml
 - bases/fathom.skaphos.io_healthreports.yaml
 - bases/fathom.skaphos.io_nodecertificatechecks.yaml
+- bases/fathom.skaphos.io_dnschecks.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

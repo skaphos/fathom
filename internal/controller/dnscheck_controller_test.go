@@ -181,6 +181,31 @@ func dnsHealthReports(ctx context.Context, ns, check string) []fathomv1alpha1.He
 	return reports.Items
 }
 
+// checkResultGauge reads back the shared check-level one-hot series for one
+// check, so a deletion can be shown to withdraw both gauges, not just the
+// DNSCheck-specific one.
+func checkResultGauge(kind, ns, name string) map[string]float64 {
+	families, err := ctrlmetrics.Registry.Gather()
+	Expect(err).NotTo(HaveOccurred())
+	out := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != "fathom_check_result" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, pair := range metric.GetLabel() {
+				labels[pair.GetName()] = pair.GetValue()
+			}
+			if labels["kind"] != kind || labels["namespace"] != ns || labels["name"] != name {
+				continue
+			}
+			out[labels["result"]] = metric.GetGauge().GetValue()
+		}
+	}
+	return out
+}
+
 // Events are drained with drainEvents from check_observability_test.go — the
 // Events contract is shared across every check kind, so its helper is too.
 
@@ -621,5 +646,86 @@ var _ = Describe("DNSCheckReconciler", func() {
 		}
 
 		Expect(dnsHealthReports(ctx, ns, "bounded")).To(HaveLen(int(limit)))
+	})
+
+	// T040 / US4 — FR-113. Ownership is what makes a probe pod accountable to
+	// the check that caused it, and it is legal only because FR-031 puts the pod
+	// in the check's own namespace.
+	It("owns every probe pod it launches, in the check's own namespace", func() {
+		check := createDNSCheck(ctx, ns, "owned", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		stored := reloadDNSCheck(ctx, check)
+		requests := launcher.requests()
+		Expect(requests).To(HaveLen(2))
+		for _, req := range requests {
+			Expect(req.Namespace).To(Equal(ns),
+				"FR-031: resolution must happen in the check's own namespace")
+			Expect(req.OwnerReferences).To(HaveLen(1))
+			owner := req.OwnerReferences[0]
+			Expect(owner.Kind).To(Equal(dnsCheckKind))
+			Expect(owner.Name).To(Equal(check.Name))
+			Expect(owner.UID).To(Equal(stored.UID), "a stale UID would make the reference dangling")
+			Expect(owner.Controller).NotTo(BeNil())
+			Expect(*owner.Controller).To(BeTrue())
+		}
+
+		// Pod names must be distinct per pair and valid as DNS-1123 subdomains.
+		Expect(requests[0].Name).NotTo(Equal(requests[1].Name))
+		for _, req := range requests {
+			Expect(len(req.Name)).To(BeNumerically("<=", 63))
+			Expect(req.Name).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`))
+		}
+	})
+
+	// T040 / US4 — successive runs must not collide with an orphan left behind
+	// by a crashed operator, which would surface as AlreadyExists on every run
+	// until the sweeper's minimum age elapsed.
+	It("gives each run distinct probe pod names", func() {
+		check := createDNSCheck(ctx, ns, "distinct", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		})
+
+		launcher := &fakeDNSLauncher{}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+		reconcileDNSCheck(ctx, r, reloadDNSCheck(ctx, check))
+
+		requests := launcher.requests()
+		Expect(requests).To(HaveLen(2))
+		Expect(requests[0].Name).NotTo(Equal(requests[1].Name),
+			"a deterministic name would collide with an orphan from a crashed run")
+	})
+
+	// T041 / US4 — FR-114. A deleted check must stop asserting anything.
+	It("withdraws every metric series when the check is gone", func() {
+		check := createDNSCheck(ctx, ns, "vanishing", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		})
+
+		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
+		reconcileDNSCheck(ctx, r, check)
+		Expect(dnsTargetGauge(ns, "vanishing")).NotTo(BeEmpty())
+		Expect(checkResultGauge(dnsCheckKind, ns, "vanishing")).NotTo(BeEmpty())
+
+		Expect(k8sClient.Delete(ctx, reloadDNSCheck(ctx, check))).To(Succeed())
+		// The reconcile that observes the deletion is what withdraws the series.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: ns, Name: "vanishing"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(dnsTargetGauge(ns, "vanishing")).To(BeEmpty(),
+			"a deleted check must not keep asserting per-target results")
+		Expect(checkResultGauge(dnsCheckKind, ns, "vanishing")).To(BeEmpty(),
+			"a deleted check must not keep asserting a check-level result")
 	})
 })

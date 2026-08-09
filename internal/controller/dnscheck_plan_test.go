@@ -450,6 +450,54 @@ func TestDNSCheckShouldPersistReport(t *testing.T) {
 	}
 }
 
+// TestDNSNameserverAddress covers the gap between what the contract admits and
+// what a Pod's dnsConfig can carry. Admission validates an optional port
+// 1-65535, but dnsConfig.nameservers takes a bare IP only and the API server
+// rejects anything else — so a ported resolver failed every run with an opaque
+// "spec.dnsConfig.nameservers[0]: Invalid value" until this conversion existed.
+func TestDNSNameserverAddress(t *testing.T) {
+	cases := []struct {
+		name    string
+		address string
+		want    string
+		wantErr string
+	}{
+		{name: "bare IPv4 passes through", address: "10.0.0.10", want: "10.0.0.10"},
+		{name: "bare IPv6 passes through", address: "2001:db8::1", want: "2001:db8::1"},
+		{name: "explicit port 53 is stripped", address: "10.0.0.10:53", want: "10.0.0.10"},
+		{name: "bracketed IPv6 with port 53 is stripped", address: "[2001:db8::1]:53", want: "2001:db8::1"},
+		{
+			// Silently dropping the port would query 53 instead and report a
+			// confident verdict about a resolver the check never asked.
+			name:    "a non-53 port is refused, not silently dropped",
+			address: "10.0.0.10:5353", wantErr: "port 5353 is not supported",
+		},
+		{name: "empty address is refused", address: "", wantErr: "requires an address"},
+		{name: "hostname is refused", address: "resolver.example.com", wantErr: "not an IP"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := dnsNameserverAddress(tc.address)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("got %q, want an error containing %q", got, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error %q does not contain %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDNSTargetResults(t *testing.T) {
 	if got := dnsTargetResults(nil); got != nil {
 		t.Errorf("empty outcomes should project to nil, got %#v", got)

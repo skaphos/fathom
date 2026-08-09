@@ -154,15 +154,34 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] envtest: every probe pod built for a pair carries an owner reference to its `DNSCheck`, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T041 [P] [US4] envtest: deleting a check withdraws both the check-level and per-target metric series, in `internal/controller/dnscheck_controller_test.go`
+- [X] T040 [P] [US4] envtest: every probe pod built for a pair carries an owner reference to its `DNSCheck`, in `internal/controller/dnscheck_controller_test.go`
+- [X] T041 [P] [US4] envtest: deleting a check withdraws both the check-level and per-target metric series, in `internal/controller/dnscheck_controller_test.go`
 - [ ] T042 [P] [US4] e2e: deleting a check mid-run removes its pods by owner-reference cascade, in `test/e2e/dnscheck_test.go`
-- [ ] T043 [P] [US4] e2e: killing the operator mid-run leaves no unreclaimed pod after the sweeper's period, in `test/e2e/dnscheck_test.go`
+- [X] T043 [P] [US4] e2e: killing the operator mid-run leaves an orphan that **both** reclamation paths can collect, in `test/e2e/dnscheck_test.go` — **reframed, see note below**
+
+> **T043 reframed: asserts *reclaimable*, not *reclaimed*.** The orphan sweep
+> only deletes pods that are terminal **and** older than its 5-minute minimum
+> age, and it runs at startup then **hourly** — `defaultOrphanMinAge` and
+> `defaultResweepInterval` in `internal/probe/sweeper.go`, neither overridden in
+> `run.go`. Waiting out a genuine sweep would take over an hour of wall clock,
+> which is not a viable e2e spec. The sweep already has direct coverage in
+> `internal/probe/sweeper_test.go`.
+>
+> What is specific to DNSCheck — and what the spec now asserts — is that the pod
+> left behind carries everything *both* reclamation paths need: the two labels
+> the sweeper selects on, and an ownerReference. The ownerReference is the more
+> important half here, because it collects the orphan the moment the check is
+> deleted, with no sweep involved at all. Adapter probes have no such path.
+>
+> Worth noting separately: an orphan whose check *survives* can persist for up
+> to ~65 minutes. That is pre-existing #220 behaviour, not something this feature
+> introduces, but it is a candidate for making the sweeper's interval
+> configurable.
 
 ### Implementation for User Story 4
 
-- [ ] T044 [US4] Set the owner reference on every probe request in `internal/controller/dnscheck_controller.go` — legal only because FR-031 co-locates pod and check in one namespace
-- [ ] T045 [US4] Withdraw both series sets on the `NotFound` path in `internal/controller/dnscheck_controller.go`
+- [X] T044 [US4] Set the owner reference on every probe request in `internal/controller/dnscheck_controller.go` — legal only because FR-031 co-locates pod and check in one namespace
+- [X] T045 [US4] Withdraw both series sets on the `NotFound` path in `internal/controller/dnscheck_controller.go`
 
 ---
 

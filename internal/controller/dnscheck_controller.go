@@ -330,8 +330,17 @@ func (r *DNSCheckReconciler) runPair(
 	case fathomv1alpha1.DNSResolverNode:
 		req.DNSFrom = probe.DNSFromNode
 	case fathomv1alpha1.DNSResolverExplicit:
+		nameserver, addrErr := dnsNameserverAddress(pair.VantagePoint.Address)
+		if addrErr != nil {
+			// Caught here rather than at pod build: probe.Pod() does not validate
+			// nameserver syntax, so this would otherwise surface as an opaque
+			// API-server rejection naming a field the check's author never wrote.
+			out.Result = string(fathomv1alpha1.HealthReportResultError)
+			out.Message = truncateTargetMessage(addrErr.Error())
+			return out
+		}
 		req.DNSFrom = probe.DNSFromExplicit
-		req.DNSNameservers = []string{pair.VantagePoint.Address}
+		req.DNSNameservers = []string{nameserver}
 	default:
 		req.DNSFrom = probe.DNSFromCluster
 	}

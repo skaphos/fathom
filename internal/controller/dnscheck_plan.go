@@ -6,7 +6,9 @@ SPDX-License-Identifier: MIT
 package controller
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -318,6 +320,37 @@ func describeDNSFailure(outcome dnsPairOutcome, verdict fathomv1alpha1.HealthRep
 	default:
 		return string(verdict) + ": " + subject
 	}
+}
+
+// dnsNameserverAddress converts a declared resolver address into the form a
+// Pod's dnsConfig can carry, which is a bare IP and nothing else.
+//
+// The contract admits an optional port (spec 005 FR-009 validates 1-65535), but
+// Kubernetes `dnsConfig.nameservers` has no way to express one — the API server
+// rejects anything that is not a plain address. So :53 is stripped, and any
+// other port is refused rather than silently dropped: dropping it would send the
+// query to port 53 and report a confident Pass or Fail about a resolver the
+// check never actually asked.
+func dnsNameserverAddress(address string) (string, error) {
+	if address == "" {
+		return "", errors.New("an explicit vantage point requires an address")
+	}
+	if net.ParseIP(address) != nil {
+		return address, nil
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", fmt.Errorf("resolver address %q is not an IP or IP:port", address)
+	}
+	if net.ParseIP(host) == nil {
+		return "", fmt.Errorf("resolver address %q does not contain a valid IP", address)
+	}
+	if port != "53" {
+		return "", fmt.Errorf(
+			"resolver port %s is not supported: a probe pod's DNS configuration can only query port 53, "+
+				"so declare %s without a port or run the resolver on 53", port, host)
+	}
+	return host, nil
 }
 
 // dnsCheckShouldPersistReport decides whether a completed run writes a new
