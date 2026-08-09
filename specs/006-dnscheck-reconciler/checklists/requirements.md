@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
@@ -24,7 +24,7 @@
 
 ## Feature Readiness
 
-- [ ] All functional requirements have clear acceptance criteria
+- [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
@@ -32,22 +32,26 @@
 ## Notes
 
 This is a **thin specification** that inherits feature 005's deferred
-requirements by reference rather than restating them. Three items are
-deliberately unchecked and are expected to be resolved by `/speckit-clarify`
-before planning:
+requirements by reference rather than restating them.
 
-- **Four `[NEEDS CLARIFICATION]` markers remain**, on FR-103 (fan-out topology
-  and concurrency bound), FR-104 (run-bound distribution), FR-106 (outcome for
-  unreached pairs), and FR-107 (overrun policy). Each is catalogued in the
-  spec's *Open Questions* section with the tradeoff it turns on. They are not
-  omissions — each changes observable behaviour and needs a decision, not a
-  default.
-- **Those same four requirements are therefore not yet unambiguous**, and lack
-  firm acceptance criteria. Every other functional requirement is testable as
-  written.
+All four `[NEEDS CLARIFICATION]` markers were resolved in the `/speckit-clarify`
+session of 2026-08-09 and the *Open Questions* section was removed as it
+emptied. The decisions are recorded under *Clarifications* in the spec:
 
-One deliberate exception to "no implementation details": Open Question 1 states
-that the current probe request carries exactly one target, record kind, and
-vantage point. That fact is what makes the fan-out question a real fork rather
-than a free choice, so it is stated where the decision is posed. It appears
-nowhere in the requirements themselves.
+- **FR-103** — one evaluation workload per pair, with a configurable in-flight
+  cap; the probe contract from #294 is unchanged.
+- **FR-104** — the declared bound bounds the whole run, not each pair.
+- **FR-107** — the next run is anchored to the previous run's *start*, with a
+  floor on the gap; this diverges deliberately from `AddonCheck`.
+- **FR-106** — pairs a truncated run never reached report Unknown.
+
+The checklist went from 13/16 to 16/16 as a result. Two follow-ups were
+identified and deliberately left out of scope rather than absorbed: correcting
+`AddonCheck`'s cadence drift, and the multi-query probe mode that would let one
+workload serve several pairs.
+
+One deliberate exception to "no implementation details" survives the clarify
+session: the *Clarifications* entries name #294 and `AddonCheck` to record what
+a decision was measured against. That provenance is the reason each decision is
+defensible later, so it is kept where the decision is recorded. The functional
+requirements themselves remain free of it.

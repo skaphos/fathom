@@ -22,6 +22,31 @@ below, not restated. Restating merged, reviewed language would invite drift
 between two copies of the same obligation. Only requirements this feature
 genuinely introduces are written out.
 
+## Clarifications
+
+### Session 2026-08-09
+
+- Q: Fan-out topology and concurrency bound (FR-103) — one workload per pair, or
+  one per vantage point serving many targets? → A: One workload per pair, with a
+  configurable cap on how many are in flight per check. The probe's single-result
+  contract shipped in #294 is unchanged.
+- Q: Run-bound distribution (FR-104) — is the declared bound per pair or for the
+  whole run? → A: The whole run. A pair's own bound is the lesser of the budget
+  remaining and a per-pair ceiling. This is the only reading under which the
+  shipped `timeout <= interval` admission rule constrains anything, and it makes
+  a run structurally incapable of outlasting its own cadence.
+- Q: Cadence anchoring (FR-107) — is the next run scheduled a cadence after the
+  previous one started, or after it finished? → A: After it started, with a
+  floor on the gap. The next run is due one cadence from the previous run's
+  start; if that moment has already passed, a minimum gap applies instead. This
+  diverges deliberately from `AddonCheck`, which anchors on completion.
+- Q: Outcome for pairs a truncated run never reached (FR-106) → A: Unknown. It
+  participates in the fold above Warn and below Fail, so incomplete evidence
+  degrades the verdict without outranking a genuine failure among the pairs that
+  did run. Skipped would report green on 8-of-48 evidence; Error would mask a
+  real failure. Truncation is additionally signalled at the check level, since
+  the per-pair outcome alone does not tell an operator their bound was too small.
+
 ## Inherited Requirements
 
 Feature 005's *Out of Scope* section is a hand-off list. It names, by identifier,
@@ -154,10 +179,14 @@ survives beyond the existing sweeper's reclamation.
 
 ### Edge Cases
 
-- A check declares more pairs than can be evaluated within its own run bound.
-- A run is still in flight when the next cadence falls due.
+- A check declares more pairs than can be evaluated within its own run bound —
+  the run truncates and the unreached pairs report Unknown (FR-106).
+- A run consumes so much of its cadence that the next is already due — a minimum
+  gap applies rather than continuous running (FR-107a). Two runs of one check
+  overlapping is prevented outright (FR-104a, FR-107b).
 - A pair's evaluation workload cannot be placed at all — quota, admission
-  rejection, image pull failure, or unschedulable node.
+  rejection, image pull failure, or unschedulable node. The remaining pairs of
+  the run still proceed (FR-103b).
 - Every pair fails for the same reason (a genuine resolver outage) versus one
   pair failing on its own merits.
 - A check declares a vantage point that no longer resolves to a reachable
@@ -185,24 +214,57 @@ they can never be confused with the feature 005 identifiers inherited above.
   whose duration is not bounded by the specification MUST NOT be performed
   inside the loop.
 - **FR-103**: Every (target, vantage point) pair the specification implies
-  (FR-035) MUST be evaluated on each run, and the number of evaluation workloads
-  in flight for a single check at any moment MUST be bounded.
-  [NEEDS CLARIFICATION: see Open Question 1 — fan-out topology and concurrency bound]
-- **FR-104**: The declared run bound MUST bound the evaluation as a whole, and
-  no pair may be denied its share of that bound by pairs evaluated before it.
-  [NEEDS CLARIFICATION: see Open Question 2 — budget distribution]
+  (FR-035) MUST be evaluated on each run by its **own** evaluation workload, so
+  a workload serves exactly one pair. The existing single-query evaluation
+  mechanism is used as it stands; this feature does not widen it to carry
+  several queries at once.
+- **FR-103a**: The number of evaluation workloads in flight for a single check
+  at any moment MUST be bounded by a configurable cap. The cluster-wide ceiling
+  on concurrent evaluation workloads is then that cap multiplied by the
+  controller's own reconcile concurrency, and MUST be derivable from
+  configuration alone without observing a running system.
+- **FR-103b**: A pair whose workload cannot be placed MUST NOT prevent the
+  remaining pairs of the same run from being evaluated. Fault isolation between
+  pairs is a property of the one-workload-per-pair choice and MUST be preserved
+  by any future batching.
+- **FR-104**: The declared run bound MUST bound the **run as a whole**, not each
+  pair independently. Every pair is evaluated from that one budget, and a pair's
+  own bound MUST be the lesser of the budget remaining and a per-pair ceiling —
+  so no pair may consume budget that later pairs need, and no single unresponsive
+  pair may consume the whole run.
+- **FR-104a**: A run MUST NOT be able to outlast the cadence that scheduled it.
+  This follows from FR-104 together with the contract's existing rule that the
+  run bound may not exceed the cadence, and MUST be preserved rather than
+  re-derived.
+- **FR-104b**: The relationship between pair count, the per-pair cost of
+  evaluation, and the run bound required to reach every pair MUST be documented,
+  so an operator can size the bound before applying a check rather than
+  discovering the shortfall from truncated runs. A check at the schema's maximum
+  pair count is **not** expected to complete at the schema's default bound.
 - **FR-105**: A pair whose evaluation could not be **performed** MUST be
   reported distinguishably from a pair whose resolver **answered**. The former
   is a fault on Fathom's side; the latter is the check's finding (FR-014,
   FR-025).
-- **FR-106**: When a run cannot complete every pair within the run bound, the
-  outcome reported for the pairs not reached MUST be explicit and MUST NOT be
-  reported as though the resolver had answered.
-  [NEEDS CLARIFICATION: see Open Question 4 — outcome for unreached pairs]
-- **FR-107**: When a run is still in flight as the next cadence falls due, the
-  controller's behaviour MUST be defined and MUST NOT allow unbounded
-  accumulation of concurrent runs for one check.
-  [NEEDS CLARIFICATION: see Open Question 3 — overrun policy]
+- **FR-106**: When a run cannot reach every pair within the run bound, each pair
+  it did not reach MUST be reported as **Unknown** — a participating outcome that
+  ranks above Warn and below Fail. Incomplete evidence therefore degrades the
+  check's verdict, while a genuine failure among the pairs that *were* reached
+  still wins the fold. The unreached pairs MUST NOT be reported as though a
+  resolver had answered, and MUST NOT be reported as informational, which would
+  let a mostly-unevaluated run report as passing.
+- **FR-106a**: A truncated run MUST additionally be signalled at the check level,
+  distinctly from the verdict itself, so an operator learns that the run bound
+  was too small rather than only that the verdict degraded. The signal MUST name
+  how many pairs went unreached.
+- **FR-107**: The next run MUST be scheduled one cadence from the point the
+  previous run **started**, not from the point it finished, so that the
+  effective cadence equals the declared one whenever the run leaves any slack.
+- **FR-107a**: When a run consumes so much of its cadence that the next run is
+  already due, a minimum gap MUST separate them. A check that cannot keep up
+  MUST degrade to a bounded rate, never to continuous back-to-back running.
+- **FR-107b**: Two runs of the same check MUST NOT be in flight simultaneously.
+- **FR-107c**: The effective cadence MUST be derivable by an operator from the
+  declared cadence and the minimum gap alone, without observing timestamps.
 
 **Status**
 
@@ -254,8 +316,15 @@ Feature 005's **SC-008** and **SC-009** are inherited and verified here.
 
 ### Measurable Outcomes
 
-- **SC-101**: A check completes a run within its declared run bound, for every
-  pair count the schema permits — including the maximum of 48 pairs.
+- **SC-101**: A run never exceeds its declared run bound, at every pair count
+  the schema permits — including the maximum of 48. Where the bound is too small
+  to reach every pair, the run truncates visibly rather than overrunning.
+- **SC-107**: An operator can compute, from documentation alone, the run bound a
+  check of a given pair count requires in order to reach every pair — before
+  applying it, without observing a truncated run.
+- **SC-108**: For a check whose runs leave any slack in their cadence, the
+  observed interval between consecutive run starts equals the declared cadence,
+  and does not drift by the duration of the runs themselves.
 - **SC-102**: No evaluation workload outlives its check beyond the existing
   reclamation sweep's period, including when the controller is killed mid-run.
   The steady-state count of unreclaimed workloads is zero.
@@ -270,36 +339,6 @@ Feature 005's **SC-008** and **SC-009** are inherited and verified here.
   justification document, and the granted verbs do not exceed what pod
   placement in a foreign namespace requires.
 
-## Open Questions
-
-These are the decisions this specification deliberately leaves open for
-`/speckit-clarify`. Each changes observable behaviour, so none belongs in the
-plan alone.
-
-1. **Fan-out topology and concurrency bound (FR-103)** — the existing probe
-   request carries exactly one target, one record kind, and one vantage point,
-   so today one pair means one workload. At the schema maximum that is 48
-   workloads for a single run of a single check. The options are to accept
-   per-pair workloads with a concurrency cap, to teach the probe a multi-query
-   mode so one workload serves many pairs, or some hybrid. This drives run
-   latency, cluster load, and how much permission the operator exercises at
-   once.
-
-2. **Run-bound distribution (FR-104)** — whether the declared bound is a
-   per-pair bound, a whole-run budget divided among pairs, or a wall-clock
-   deadline that truncates. Issue #150 flags precisely this failure on the
-   CoreDNS adapter: sequential targets sharing one budget starve the last one.
-   Whatever is chosen must not repeat it.
-
-3. **Overrun policy (FR-107)** — what happens when a run is still in flight as
-   the next cadence falls due: skip the tick, queue exactly one, or let runs
-   overlap.
-
-4. **Outcome for unreached pairs (FR-106)** — when a run is truncated, what
-   outcome the pairs not reached carry, and how that outcome folds into the
-   verdict. It must not read as a resolver answer, and it must not mask a
-   genuine failure elsewhere in the same run.
-
 ## Assumptions
 
 - The `DNSCheck` contract from feature 005 is fixed. This feature does not
@@ -307,8 +346,8 @@ plan alone.
   change against feature 005.
 - The probe binary's DNS mode, its record kinds, its expected-answer matching,
   its negative assertions, and its vantage points are complete as shipped in
-  #294. This feature drives them; it does not extend them — with the possible
-  exception of Open Question 1.
+  #294. This feature drives them; it does not extend them. The one-workload-per-pair
+  decision recorded under Clarifications keeps that boundary intact.
 - The existing workload launcher, pod builder, and reclamation sweep are reused
   as they stand.
 - The shared outcome fold, the check-level metrics, and the event conventions
@@ -329,6 +368,12 @@ plan alone.
   this out of scope and nothing here changes that.
 - **The operator-facing guide.** Documentation of the resource for end users
   travels separately.
+- **Correcting `AddonCheck`'s cadence anchoring.** `AddonCheck` schedules its
+  next run a full cadence after the previous one *finished*, so its effective
+  cadence drifts by the run duration. FR-107 deliberately does not copy that.
+  Whether `AddonCheck` should be brought into line is a real question, but it
+  is a change to a shipped kind's observable timing and belongs in its own
+  issue — not folded into this one.
 - **Extending the record kinds, DNSSEC validation, latency thresholds, and
   exact-set answer assertions** — all out of scope in feature 005 and still out
   of scope here.
