@@ -400,6 +400,56 @@ func TestSummarizeDNSRun(t *testing.T) {
 	})
 }
 
+// TestDNSCheckShouldPersistReport covers FR-111: history gains an entry only
+// when the verdict changes.
+func TestDNSCheckShouldPersistReport(t *testing.T) {
+	cases := []struct {
+		name    string
+		before  *fathomv1alpha1.DNSCheckStatus
+		verdict fathomv1alpha1.HealthReportResult
+		want    bool
+	}{
+		{
+			name: "nil status is a first run", before: nil,
+			verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+		},
+		{
+			name:   "no report yet is a first run",
+			before: &fathomv1alpha1.DNSCheckStatus{}, verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+		},
+		{
+			name:    "unchanged verdict writes nothing",
+			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
+			verdict: fathomv1alpha1.HealthReportResultPass, want: false,
+		},
+		{
+			name:    "changed verdict writes a record",
+			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
+			verdict: fathomv1alpha1.HealthReportResultFail, want: true,
+		},
+		{
+			name:    "recovery is a change too",
+			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Fail"},
+			verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+		},
+		{
+			// A report whose creation failed leaves the name empty, so the next
+			// run must retry rather than treat the transition as recorded.
+			name:    "a failed write is retried on the next run",
+			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "", LastResult: "Fail"},
+			verdict: fathomv1alpha1.HealthReportResultFail, want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := dnsCheckShouldPersistReport(tc.before, tc.verdict); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDNSTargetResults(t *testing.T) {
 	if got := dnsTargetResults(nil); got != nil {
 		t.Errorf("empty outcomes should project to nil, got %#v", got)

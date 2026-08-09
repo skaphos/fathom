@@ -135,14 +135,14 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 ### Tests for User Story 3
 
-- [ ] T035 [P] [US3] Table-driven test of the rollup decision function (persist / refresh-liveness / noop) in `internal/controller/dnscheck_plan_test.go`
-- [ ] T036 [P] [US3] envtest: a stable verdict across several cadences writes exactly one `HealthReport` while `lastRunTime` still advances, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T037 [P] [US3] envtest: a verdict change writes exactly one new `HealthReport` and emits one `ResultChanged` event, in `internal/controller/dnscheck_controller_test.go`
+- [X] T035 [P] [US3] Table-driven test of the rollup decision function (persist / refresh-liveness / noop) in `internal/controller/dnscheck_plan_test.go`
+- [X] T036 [P] [US3] envtest: a stable verdict across several cadences writes exactly one `HealthReport` while `lastRunTime` still advances, in `internal/controller/dnscheck_controller_test.go`
+- [X] T037 [P] [US3] envtest: a verdict change writes exactly one new `HealthReport` and emits one `ResultChanged` event, in `internal/controller/dnscheck_controller_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T038 [US3] Add `decideDNSCheckRollup` to `internal/controller/dnscheck_plan.go`, mirroring the pure three-way shape of `decideNodeCertRollup`
-- [ ] T039 [US3] Persist the `HealthReport` in `internal/controller/dnscheck_controller.go` using `useDeterministicHealthReportName`, `SetControllerReference`, and `createOrReuseHealthReport`, then prune older reports as the other kinds do
+- [X] T038 [US3] Add `dnsCheckShouldPersistReport` to `internal/controller/dnscheck_plan.go` — **binary, not the three-way `decideNodeCertRollup` shape**: that kind is watch-driven and needs a liveness throttle, whereas a DNSCheck reconciles on its own cadence, so the interval *is* the throttle and `lastRunTime` advances every run
+- [X] T039 [US3] Persist the `HealthReport` in `internal/controller/dnscheck_controller.go` using `useDeterministicHealthReportName`, `SetControllerReference`, and `createOrReuseHealthReport`, then prune older reports as the other kinds do
 
 ---
 

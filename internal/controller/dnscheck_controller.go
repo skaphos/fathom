@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -52,6 +54,13 @@ const (
 	dnsCheckConditionAccepted = checkConditionAccepted
 	dnsCheckConditionReady    = checkConditionReady
 	dnsCheckConditionComplete = "Complete"
+
+	// HealthReport provenance. DNSCheck is not an adapter, but the report schema
+	// records which component produced the evidence, and a reader should be able
+	// to tell a DNSCheck record from an adapter's.
+	dnsCheckReportFamily      = "dns_resolution"
+	dnsCheckReportAdapterName = "dnscheck"
+	dnsCheckReportAdapterVer  = "0.1.0"
 )
 
 // dnsProbeRunner is the launcher seam. Production uses *probe.Launcher; tests
@@ -209,6 +218,14 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	r.setDNSCheckComplete(&check, len(outcomes), unreached)
 	r.setDNSCheckReady(&check, outcomes)
 	r.publishDNSTargetSeries(&check, outcomes)
+
+	// Decided against the pre-run snapshot: the fields above already carry this
+	// run's verdict, so comparing them to themselves would never see a change.
+	if dnsCheckShouldPersistReport(before, verdict) {
+		if err := r.persistDNSHealthReport(ctx, log, &check, outcomes, verdict, observed); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return r.finishDNSCheck(ctx, log, before, &check, interval, time.Since(startedAt))
 }
@@ -520,6 +537,146 @@ func (r *DNSCheckReconciler) publishDNSTargetSeries(check *fathomv1alpha1.DNSChe
 		metrics.ObserveDNSTarget(check.Namespace, check.Name,
 			outcome.result.Name, string(outcome.result.RecordType), outcome.result.Resolver, outcome.result.Result)
 	}
+}
+
+// persistDNSHealthReport writes one HealthReport for a verdict transition and
+// prunes the history back to the declared limit.
+//
+// The report's name is derived from content rather than generated, so a
+// reconcile that is retried after a partial failure reuses the same object
+// instead of minting a duplicate for one transition.
+func (r *DNSCheckReconciler) persistDNSHealthReport(
+	ctx context.Context,
+	log logr.Logger,
+	check *fathomv1alpha1.DNSCheck,
+	outcomes []dnsPairOutcome,
+	verdict fathomv1alpha1.HealthReportResult,
+	observedAt metav1.Time,
+) error {
+	report := healthReportForDNSCheck(check, outcomes, verdict, observedAt)
+	useDeterministicHealthReportName(report, check.Name,
+		dnsCheckKind,
+		string(check.UID),
+		strconv.FormatInt(check.Generation, 10),
+		check.Status.LastReportName,
+		string(verdict),
+		observedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if r.Scheme != nil {
+		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
+			return err
+		}
+	}
+	persisted, created, err := createOrReuseHealthReport(ctx, r.Client, report)
+	if err != nil {
+		return err
+	}
+	if created {
+		r.pruneDNSHealthReports(ctx, log, check)
+	}
+
+	check.Status.LastReportName = persisted.Name
+	check.Status.LastResult = string(persisted.Spec.Result)
+	return nil
+}
+
+// healthReportForDNSCheck builds the history record: one entry per (target,
+// vantage point) pair, plus the folded verdict.
+func healthReportForDNSCheck(
+	check *fathomv1alpha1.DNSCheck,
+	outcomes []dnsPairOutcome,
+	verdict fathomv1alpha1.HealthReportResult,
+	observedAt metav1.Time,
+) *fathomv1alpha1.HealthReport {
+	checks := make([]fathomv1alpha1.HealthReportCheck, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		details := map[string]string{
+			"recordType": string(outcome.result.RecordType),
+			"resolver":   outcome.result.Resolver,
+		}
+		if len(outcome.result.Answers) > 0 {
+			details["answers"] = strings.Join(outcome.result.Answers, ",")
+		}
+		if outcome.result.LatencyMillis > 0 {
+			details["latencyMillis"] = strconv.FormatInt(outcome.result.LatencyMillis, 10)
+		}
+		// Polarity is not recoverable from the result alone, and a reader of the
+		// history needs it for the same reason the summary does (FR-021).
+		if outcome.pair.Absent {
+			details["assertion"] = "absent"
+		}
+		checks = append(checks, fathomv1alpha1.HealthReportCheck{
+			Family:     dnsCheckReportFamily,
+			Result:     fathomv1alpha1.HealthReportResult(outcome.result.Result),
+			TargetRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "DNSName", Name: outcome.result.Name},
+			Summary:    outcome.result.Message,
+			Details:    details,
+			ObservedAt: observedAt,
+		})
+	}
+
+	return &fathomv1alpha1.HealthReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    check.Namespace,
+			GenerateName: check.Name + "-",
+			Labels: map[string]string{
+				labelHealthReportSourceKind: dnsCheckKind,
+				labelHealthReportSourceName: check.Name,
+			},
+		},
+		Spec: fathomv1alpha1.HealthReportSpec{
+			SourceRef: fathomv1alpha1.HealthReportTargetRef{
+				APIVersion: fathomv1alpha1.GroupVersion.String(),
+				Kind:       dnsCheckKind,
+				Namespace:  check.Namespace,
+				Name:       check.Name,
+			},
+			AdapterName:    dnsCheckReportAdapterName,
+			AdapterVersion: dnsCheckReportAdapterVer,
+			Result:         verdict,
+			Checks:         checks,
+			ObservedAt:     observedAt,
+		},
+	}
+}
+
+// pruneDNSHealthReports enforces spec.historyLimit. Failures are logged rather
+// than returned: the new report already landed, and the next run retries.
+func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.DNSCheck) {
+	limit := defaultHealthReportHistoryLimit
+	if check.Spec.HistoryLimit != nil {
+		limit = int(*check.Spec.HistoryLimit)
+	}
+	if limit < 1 {
+		return
+	}
+
+	var reports fathomv1alpha1.HealthReportList
+	if err := r.List(ctx, &reports,
+		client.InNamespace(check.Namespace),
+		client.MatchingLabels{
+			labelHealthReportSourceKind: dnsCheckKind,
+			labelHealthReportSourceName: check.Name,
+		},
+	); err != nil {
+		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
+		return
+	}
+	if len(reports.Items) <= limit {
+		return
+	}
+
+	sort.Slice(reports.Items, func(i, j int) bool {
+		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
+	})
+	excess := len(reports.Items) - limit
+	for i := range excess {
+		victim := &reports.Items[i]
+		if err := r.Delete(ctx, victim); err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "delete old HealthReport failed", "name", victim.Name)
+		}
+	}
+	log.V(1).Info("pruned DNSCheck HealthReport history", "deleted", excess, "limit", limit)
 }
 
 // finishDNSCheck persists status when it changed and schedules the next run.

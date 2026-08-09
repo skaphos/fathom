@@ -320,6 +320,29 @@ func describeDNSFailure(outcome dnsPairOutcome, verdict fathomv1alpha1.HealthRep
 	}
 }
 
+// dnsCheckShouldPersistReport decides whether a completed run writes a new
+// HealthReport (FR-111): only when the verdict changed, or when there is no
+// report yet.
+//
+// It reads the status as it was BEFORE this run, not the version the run just
+// built — comparing the new verdict against itself would always look unchanged.
+//
+// This is deliberately simpler than NodeCertificateCheck's three-way decision.
+// That kind is watch-driven, with roughly one reconcile per node-agent write per
+// interval, so it needs a throttle to stop an unchanged verdict rewriting status
+// on every event. A DNSCheck reconciles on its own cadence — the interval *is*
+// the throttle — so every run legitimately advances lastRunTime and the only
+// question left is whether history gains an entry.
+//
+// A report whose creation failed leaves lastReportName empty, so the next run
+// retries rather than silently skipping the transition.
+func dnsCheckShouldPersistReport(before *fathomv1alpha1.DNSCheckStatus, verdict fathomv1alpha1.HealthReportResult) bool {
+	if before == nil {
+		return true
+	}
+	return before.LastReportName == "" || before.LastResult != string(verdict)
+}
+
 // dnsTargetResults projects outcomes onto the status field, in pair order. The
 // slice is rebuilt from the current specification every run and replaces the
 // stored one wholesale, so a pair the specification no longer declares cannot

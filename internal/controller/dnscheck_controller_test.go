@@ -18,6 +18,8 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -165,6 +167,22 @@ func dnsTargetGauge(ns, check string) map[string]float64 {
 	}
 	return out
 }
+
+// dnsHealthReports lists the history records one check has produced.
+func dnsHealthReports(ctx context.Context, ns, check string) []fathomv1alpha1.HealthReport {
+	var reports fathomv1alpha1.HealthReportList
+	Expect(k8sClient.List(ctx, &reports,
+		client.InNamespace(ns),
+		client.MatchingLabels{
+			labelHealthReportSourceKind: dnsCheckKind,
+			labelHealthReportSourceName: check,
+		},
+	)).To(Succeed())
+	return reports.Items
+}
+
+// Events are drained with drainEvents from check_observability_test.go — the
+// Events contract is shared across every check kind, so its helper is too.
 
 // targetResultFor finds one pair's reported result by its identity triple.
 func targetResultFor(status fathomv1alpha1.DNSCheckStatus, name, recordType, resolver string) *fathomv1alpha1.DNSTargetResult {
@@ -520,5 +538,88 @@ var _ = Describe("DNSCheckReconciler", func() {
 		// Ready stays True: the bound was too small, which is a configuration
 		// problem the operator can fix, not Fathom failing to function.
 		Expect(apiMeta.IsStatusConditionTrue(got.Conditions, dnsCheckConditionReady)).To(BeTrue())
+	})
+
+	// T036 / US3 — FR-111, SC-103. History records transitions, not runs.
+	It("writes one HealthReport for a stable verdict while lastRunTime keeps advancing", func() {
+		check := createDNSCheck(ctx, ns, "stable", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{{Name: "steady.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		})
+
+		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
+		reconcileDNSCheck(ctx, r, check)
+		first := reloadDNSCheck(ctx, check).Status
+		Expect(first.LastReportName).NotTo(BeEmpty())
+		Expect(dnsHealthReports(ctx, ns, "stable")).To(HaveLen(1))
+
+		for range 3 {
+			reconcileDNSCheck(ctx, r, reloadDNSCheck(ctx, check))
+		}
+
+		later := reloadDNSCheck(ctx, check).Status
+		Expect(dnsHealthReports(ctx, ns, "stable")).To(HaveLen(1),
+			"an unchanged verdict must not grow history")
+		Expect(later.LastReportName).To(Equal(first.LastReportName))
+		Expect(later.LastRunTime.Time).To(BeTemporally(">=", first.LastRunTime.Time),
+			"liveness must keep advancing even when history does not")
+	})
+
+	// T037 / US3 — one record and one event per transition.
+	It("writes exactly one HealthReport and one event per verdict change", func() {
+		check := createDNSCheck(ctx, ns, "changing", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{{Name: "flappy.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		})
+
+		var failing bool
+		launcher := &fakeDNSLauncher{respond: func(probe.Request) (probe.Result, error) {
+			if failing {
+				return probe.Result{Outcome: probe.OutcomeFail, Summary: "the resolver reports the name does not exist"}, nil
+			}
+			return probe.Result{Outcome: probe.OutcomePass, Summary: "resolved"}, nil
+		}}
+		recorder := events.NewFakeRecorder(16)
+		r := newDNSCheckReconciler(launcher, 4)
+		r.Recorder = recorder
+
+		reconcileDNSCheck(ctx, r, check)
+		Expect(dnsHealthReports(ctx, ns, "changing")).To(HaveLen(1))
+		passReport := reloadDNSCheck(ctx, check).Status.LastReportName
+
+		failing = true
+		reconcileDNSCheck(ctx, r, reloadDNSCheck(ctx, check))
+
+		got := reloadDNSCheck(ctx, check).Status
+		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(dnsHealthReports(ctx, ns, "changing")).To(HaveLen(2))
+		Expect(got.LastReportName).NotTo(Equal(passReport))
+
+		// One ResultChanged event per transition: Unknown->Pass, then Pass->Fail.
+		Expect(drainEvents(recorder)).To(HaveLen(2))
+	})
+
+	// T036 / US3 — history is bounded by the declared limit.
+	It("prunes HealthReport history to spec.historyLimit", func() {
+		limit := int32(2)
+		check := createDNSCheck(ctx, ns, "bounded", fathomv1alpha1.DNSCheckSpec{
+			Targets:      []fathomv1alpha1.DNSTarget{{Name: "churn.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+			HistoryLimit: &limit,
+		})
+
+		var failing bool
+		launcher := &fakeDNSLauncher{respond: func(probe.Request) (probe.Result, error) {
+			if failing {
+				return probe.Result{Outcome: probe.OutcomeFail, Summary: "failed"}, nil
+			}
+			return probe.Result{Outcome: probe.OutcomePass, Summary: "resolved"}, nil
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+
+		// Five transitions would leave five records without pruning.
+		for i := range 5 {
+			failing = i%2 == 0
+			reconcileDNSCheck(ctx, r, reloadDNSCheck(ctx, check))
+		}
+
+		Expect(dnsHealthReports(ctx, ns, "bounded")).To(HaveLen(int(limit)))
 	})
 })
