@@ -133,7 +133,7 @@ type ClusterHealthStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,categories=fathom
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.result`
 // +kubebuilder:printcolumn:name="Matched",type=integer,JSONPath=`.status.matchedCount`

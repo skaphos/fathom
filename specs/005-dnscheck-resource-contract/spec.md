@@ -492,8 +492,14 @@ verdict degrades.
   covered), the time of last evaluation, and the object's age MUST be visible
   in a standard listing without reading the full object.
 - **FR-027**: The resource MUST be reachable by the same category grouping as
-  the other Fathom check kinds, so a single listing command surfaces every
-  check kind.
+  the other Fathom kinds that carry health intent, so a single listing command
+  surfaces every one of them. Because no such grouping existed, satisfying this
+  means introducing it across those kinds, not just declaring it on this one: a
+  grouping that covers some kinds and not others returns a partial answer that
+  looks complete, which is worse than having none.
+  **Durable history is excluded from the grouping.** Reports are the evidence
+  behind a verdict, retained many-deep per check, so including them would leave
+  the listing dominated by history and bury the checks it exists to surface.
 - **FR-028**: The resource MUST be introduced on its own version track at the
   earliest maturity level, and MUST NOT be promoted alongside the pre-existing
   kinds until it has field experience.

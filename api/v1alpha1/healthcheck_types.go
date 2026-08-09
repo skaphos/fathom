@@ -96,6 +96,7 @@ type HealthCheckStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:categories=fathom
 // +kubebuilder:printcolumn:name="Result",type=string,JSONPath=`.status.result`
 // +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=`.spec.checkRef.kind`
 // +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.checkRef.name`

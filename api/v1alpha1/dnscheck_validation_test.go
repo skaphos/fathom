@@ -44,29 +44,58 @@ func TestMain(m *testing.M) {
 		panic("add fathom scheme: " + err.Error())
 	}
 
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-	if dir := firstEnvTestBinaryDir(); dir != "" {
-		testEnv.BinaryAssetsDirectory = dir
-	}
+	// Most tests in this package are static — they read generated YAML and need
+	// no API server. Starting envtest unconditionally would make `go test
+	// ./api/v1alpha1/` fail outright on a machine without the binaries, taking
+	// those tests down with it. So the environment starts only when assets are
+	// actually available, and the tests that need one skip loudly otherwise.
+	//
+	// If assets ARE present, a failure to start is fatal: that is a broken
+	// environment, not an absent one, and silently degrading would let the
+	// admission matrix vanish from a run that looked green.
+	if envTestAssetsAvailable() {
+		testEnv = &envtest.Environment{
+			CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+			ErrorIfCRDPathMissing: true,
+		}
+		if dir := firstEnvTestBinaryDir(); dir != "" {
+			testEnv.BinaryAssetsDirectory = dir
+		}
 
-	var err error
-	cfg, err = testEnv.Start()
-	if err != nil {
-		panic("start envtest (is KUBEBUILDER_ASSETS set? run via `task test`): " + err.Error())
-	}
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	if err != nil {
-		_ = testEnv.Stop()
-		panic("build client: " + err.Error())
+		var err error
+		cfg, err = testEnv.Start()
+		if err != nil {
+			panic("start envtest: " + err.Error())
+		}
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		if err != nil {
+			_ = testEnv.Stop()
+			panic("build client: " + err.Error())
+		}
 	}
 
 	code := m.Run()
-	_ = testEnv.Stop()
+	if testEnv != nil {
+		_ = testEnv.Stop()
+	}
 	os.Exit(code)
+}
+
+// envTestAssetsAvailable reports whether an API server can be started: either
+// the task wrapper exported KUBEBUILDER_ASSETS, or setup-envtest left binaries
+// in bin/k8s for an IDE run.
+func envTestAssetsAvailable() bool {
+	return os.Getenv("KUBEBUILDER_ASSETS") != "" || firstEnvTestBinaryDir() != ""
+}
+
+// requireAPIServer skips a test that cannot run without envtest. CI always has
+// the assets, so this never silently drops coverage there — the task wrapper
+// exports KUBEBUILDER_ASSETS before invoking `go test`.
+func requireAPIServer(t *testing.T) {
+	t.Helper()
+	if k8sClient == nil {
+		t.Skip("envtest assets unavailable; run via `go -C tools tool task test` to exercise admission validation")
+	}
 }
 
 func firstEnvTestBinaryDir() string {
@@ -102,6 +131,7 @@ func targets(t ...fathomv1alpha1.DNSTarget) []fathomv1alpha1.DNSTarget { return 
 // Each rejection also asserts the message names the offending field, because a
 // rejection an operator cannot act on is barely better than a silent one.
 func TestDNSCheckAdmission(t *testing.T) {
+	requireAPIServer(t)
 	tests := []struct {
 		name       string
 		mutate     func(*fathomv1alpha1.DNSCheck)
@@ -448,6 +478,7 @@ func TestDNSCheckAdmission(t *testing.T) {
 // minimal object, so the documented defaults are real rather than aspirational
 // (SC-003).
 func TestDNSCheckDefaults(t *testing.T) {
+	requireAPIServer(t)
 	ctx := context.Background()
 	obj := validDNSCheck()
 	if err := k8sClient.Create(ctx, obj); err != nil {
@@ -475,6 +506,7 @@ func TestDNSCheckDefaults(t *testing.T) {
 // contract, and a future refactor could reintroduce the field without anyone
 // noticing.
 func TestDNSCheckHasNoPauseField(t *testing.T) {
+	requireAPIServer(t)
 	for _, field := range []string{"paused", "policy"} {
 		t.Run(field, func(t *testing.T) {
 			obj := &unstructured.Unstructured{Object: map[string]any{

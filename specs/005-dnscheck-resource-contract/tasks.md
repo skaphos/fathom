@@ -71,7 +71,8 @@ Fully testable with no execution path.
 - [X] T002 [US1] Create `api/v1alpha1/dnscheck_types.go` with the SPDX header from `hack/boilerplate.go.txt`, `DNSCheck`, `DNSCheckList`, `DNSCheckSpec`, `DNSCheckStatus`, and `SchemeBuilder.Register` in `init()`, following `nodecertificatecheck_types.go` for shape
 - [X] T003 [US1] Add `DNSTarget`, `DNSResolver`, `DNSTargetResult`, and the `DNSRecordType` (`Host;A;AAAA;CNAME;SRV;PTR`) and `DNSResolverSource` (`Cluster;Node;Explicit`) enums to `api/v1alpha1/dnscheck_types.go` per [data-model.md](data-model.md)
 - [X] T004 [US1] Add field-level markers to `api/v1alpha1/dnscheck_types.go`: `MaxItems` (targets 16, resolvers 3, expectedAnswers 16, targetResults 48), `MaxLength` on every string, `Minimum` on `historyLimit`, defaults (`recordType: Host`, `absent: false`, `historyLimit: 10`), and `listType=map` with `listMapKey` on `resolvers` (`name`) and `targetResults` (`name`,`recordType`,`resolver`)
-- [X] T005 [US1] Add printer columns (`Result`, `Targets`, `Last Run`, `Age`) and `+kubebuilder:subresource:status` to `api/v1alpha1/dnscheck_types.go`. **FR-027 is only half-satisfied and the reason is recorded rather than hidden**: the task assumed a category to match, but no existing kind declares `+kubebuilder:resource:categories`, so there was nothing to match. `categories=fathom` is declared on `DNSCheck` alone, which means `kubectl get fathom` currently returns only this kind. Delivering FR-027's actual intent — one command surfacing every check kind — needs the same marker on the other four, a small additive change left out of this slice as beyond its scope
+- [X] T005 [US1] Add printer columns (`Result`, `Targets`, `Last Run`, `Age`) and `+kubebuilder:subresource:status` to `api/v1alpha1/dnscheck_types.go`, plus `+kubebuilder:resource:categories=fathom`. The task assumed an existing category to match; none existed, so the grouping had to be introduced rather than joined — see T038
+- [X] T038 Introduce the `fathom` category across the health-intent kinds — `AddonCheck`, `HealthCheck`, `ClusterHealth`, `NodeCertificateCheck` — so FR-027 delivers its actual intent instead of a grouping containing one kind. `HealthReport` is deliberately excluded: reports are evidence retained `HistoryLimit`-deep per check, so a cluster with twenty checks holds hundreds of them and including them would bury the checks the listing exists to surface. Both the inclusions and the exclusion are asserted in `api/v1alpha1/validation_test.go`, with a second test that fails when a new CRD appears without a recorded category decision
 
 ### Validation rules
 
@@ -228,9 +229,10 @@ rather than a gap:
 | 1 — Setup | T001 | — |
 | 2 — Foundational | none (justified above) | — |
 | 3 — Declare and validate | T002–T014, T036–T037 (15) | US1 |
+| 5 — Polish (cont.) | T038 — FR-027 category across kinds | — |
 | 4 — Evaluate what was declared | T015–T029 (15) | US2 |
 | 5 — Polish | T030–T035 (6) | — |
-| **Total** | **37** | |
+| **Total** | **38** | |
 
 T036 and T037 were added after `/speckit-clarify` and `/speckit-analyze`, which
 ran out of order once the plan already existed. They carry FR-038 (the reserved
