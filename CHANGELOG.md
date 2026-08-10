@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.1](https://github.com/skaphos/fathom/compare/v0.5.0...v0.5.1) (2026-08-10)
+
+
+### Features
+
+* **api,probe:** DNSCheck v1alpha1 contract and DNS resolution capability ([#294](https://github.com/skaphos/fathom/issues/294)) ([e1da7fe](https://github.com/skaphos/fathom/commit/e1da7fee5cb26e8a6ea860266a06060bb504a4af))
+* **controller:** DNSCheckReconciler driving the probe dns mode ([#297](https://github.com/skaphos/fathom/issues/297)) ([fbcfeea](https://github.com/skaphos/fathom/commit/fbcfeeaa50002305345e57729f470fb91582fbfe))
+
+
+### Bug Fixes
+
+* **test:** deep-copy the ClusterHealth fixture per parallel subtest ([#301](https://github.com/skaphos/fathom/issues/301)) ([1695fd7](https://github.com/skaphos/fathom/commit/1695fd78807d705fc54f180ee128232912bb4722))
+
 ## [0.5.0](https://github.com/skaphos/fathom/compare/v0.4.1...v0.5.0) (2026-07-24)
 
 
