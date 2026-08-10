@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -273,19 +274,27 @@ func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1alpha1
 	var group errgroup.Group
 	group.SetLimit(concurrency)
 
+	// Pairs dispatched but not yet started. group.Go blocks once the limit is
+	// reached, so a pair can sit queued for a long time — and sizing its budget
+	// at dispatch would hand it a share of a budget that has since been spent.
+	// Each goroutine therefore claims its slot and sizes itself at the moment it
+	// actually begins, which is what makes the #150 property real rather than
+	// merely intended.
+	notStarted := int64(len(pairs))
+
 	for i := range pairs {
-		// Read the budget as each slot frees, not up front: a pair that overran
-		// its share shrinks what later pairs get instead of silently consuming
-		// their time, and a pair that finished early hands its budget back.
-		budget := perPairBudget(time.Until(deadline), len(pairs)-i, concurrency)
-		if budget < r.minPairBudget() {
-			// Too little left for a pod to schedule, pull, and answer. Launching
-			// anyway would burn the remainder to produce an Error that says
-			// nothing about DNS. The rest stay Unknown — the run did not reach
-			// them, which is precisely what that means (FR-106).
-			break
-		}
 		group.Go(func() error {
+			// +1 because the count returned excludes this pair, which is about
+			// to run and must be included in its own fair share.
+			left := int(atomic.AddInt64(&notStarted, -1)) + 1
+			budget := perPairBudget(time.Until(deadline), left, concurrency)
+			if budget < r.minPairBudget() {
+				// Too little left for a pod to schedule, pull, and answer.
+				// Launching anyway would burn the remainder to produce an Error
+				// that says nothing about DNS. This pair stays Unknown — the run
+				// did not reach it, which is precisely what that means (FR-106).
+				return nil
+			}
 			outcomes[i].result = r.runPair(runCtx, check, outcomes[i].pair, budget, owner, runID)
 			return nil
 		})

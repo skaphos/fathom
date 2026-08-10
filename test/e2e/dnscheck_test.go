@@ -55,11 +55,18 @@ type dnsCheckPodList struct {
 }
 
 // listProbePods returns the probe Pods currently present in a namespace,
-// selected the same way the orphan sweeper selects them.
+// selected exactly the way the orphan sweeper selects them: managed-by=fathom
+// AND the probe label present.
+//
+// Both halves are load-bearing. managed-by alone also matches node-agent
+// DaemonSet pods, which are Fathom-managed but are not probes — so a looser
+// selector here would let this suite assert against a pod the sweeper would
+// never touch, and would quietly stop matching probePodSelector() if the two
+// ever diverged. See internal/probe/sweeper.go.
 func listProbePods(namespace string) ([]dnsCheckPod, error) {
 	cmd := exec.Command("kubectl", "get", "pods",
 		"-n", namespace,
-		"-l", "fathom.skaphos.io/managed-by=fathom",
+		"-l", "fathom.skaphos.io/managed-by=fathom,fathom.skaphos.io/probe",
 		"-o", "json",
 	)
 	out, err := utils.Run(cmd)
