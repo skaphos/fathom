@@ -198,7 +198,7 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 - [X] T054 [P] Update `README.md` and `docs/architecture.md` for the new controller and its configuration surface
 - [X] T055 Regenerate the CRD API reference via `go -C tools tool task docs:api-ref` and sync the Helm chart CRDs via `go -C tools tool task helm:sync`
 - [X] T056 Run the full gate set: `go -C tools tool task ci`, plus `verify-generated`, `crd-compat` (expected to be a no-op — the schema is frozen), and `reuse lint`
-- [ ] T057 Run `go -C tools tool task test-e2e` against Kind and record the outcome in the PR test plan
+- [X] T057 Run `go -C tools tool task test-e2e` against Kind — **62/63 passed; one unrelated failure, see note below**
 - [X] T058 Run `graphify update .` and include the refreshed graph in the PR
 
 ---
@@ -231,6 +231,23 @@ task had been started.
 > `docs/reference/configuration.md` carries the table and states plainly that
 > 6s/batch is a floor, since a registry pull would be slower than a preloaded
 > image.
+
+> **T057 full-suite result: 63 of 65 specs ran, 62 passed, 1 failed.**
+>
+> All 7 DNSCheck specs passed. The single failure is
+> `observability_test.go:166` — a **cert-manager** `AddonCheck` reporting `Warn`
+> where the spec wants `Pass`. It is not a DNSCheck spec, not a metrics-shape
+> assertion, and touches no code path this branch changes: the cert-manager
+> adapter, its policy, and the AddonCheck reconciler are all untouched here.
+>
+> **Not claimed as pre-existing without evidence.** The run reused the
+> long-lived `fathom-e2e` cluster rather than creating a fresh one
+> (`e2e:cluster:up` skips creation when the cluster exists), and that cluster
+> had already absorbed an operator restart, several namespace create/deletes,
+> and repeated DNSCheck runs. A cert-manager `Warn` is plausible from that
+> accumulated state. CI runs the suite on a clean cluster and is the arbiter;
+> if it reproduces there, it is a genuine finding and belongs in its own issue
+> rather than this feature's.
 
 ## Dependencies & Execution Order
 
