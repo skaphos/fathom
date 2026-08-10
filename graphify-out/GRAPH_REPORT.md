@@ -1,16 +1,16 @@
-# Graph Report - fathom  (2026-08-08)
+# Graph Report - fathom  (2026-08-10)
 
 ## Corpus Check
-- 322 files · ~365,734 words
+- 338 files · ~396,875 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4339 nodes · 10394 edges · 307 communities (270 shown, 37 thin omitted)
-- Extraction: 78% EXTRACTED · 22% INFERRED · 0% AMBIGUOUS · INFERRED: 2270 edges (avg confidence: 0.8)
+- 4594 nodes · 10847 edges · 330 communities (295 shown, 35 thin omitted)
+- Extraction: 79% EXTRACTED · 21% INFERRED · 0% AMBIGUOUS · INFERRED: 2326 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e1da7fee`
+- Built from commit: `6a319c89`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,23 +20,23 @@
 - quorum-ratio-rollups/internal/adapter/certmanager/adapter.go
 - .DeepCopy
 - New
-- .Get
+- EvalContext
 - newScheme
 - quorum-ratio-rollups/internal/adapter/rbacgen/rbacgen.go
 - Add-on Checks Guide (Adapter Catalog)
 - fathom_check_result Gauge (one-hot current result)
 - quorum-ratio-rollups/internal/controller/nodecertificatecheck_helpers.go
 - observeCheck
-- .Update
+- .List
 - deploymentInNamespace
-- MustEngine
+- .detectAndGateVersion
 - .Register
 - .Run
-- podInNamespace
+- quorum-ratio-rollups/internal/adapter/declarative/engine_test.go
 - assertHasOutcome
 - NewRootCommand
 - newControllerScheme
-- quorum-ratio-rollups/internal/adapter/declarative/podprojection_test.go
+- MustEngine
 - quorum-ratio-rollups/internal/probe/pod_test.go
 - Init
 - Probe/Node-Agent Version Lockstep Gate
@@ -45,33 +45,33 @@
 - CheckResult
 - internal/adapter/certmanager/adapter_test.go
 - cmd/probe/main_test.go
-- .detectAndGateVersion
+- FamilyDefinition
 - .Run
 - .Reconcile
-- TargetRef
+- FamilyPolicy
 - assertHasDetail
 - .Run
 - .checkMetricsEndpoint
 - newFakeClient
 - assertHasDetail
-- FamilyPolicy
+- Tasks: DNSCheck Reconciler
 - properties
-- .Evaluate
-- Family
+- quorum-ratio-rollups/internal/adapter/declarative/evaluator.go
+- adapter/adapter.go
 - deploymentInNamespace
 - HealthReportResult
 - scanAndPublish
 - quorum-ratio-rollups/test/utils/utils.go
-- Write
+- main
 - api/v1alpha1/deepcopy_test.go
 - .DeepCopyInto
 - common.sh
 - Implementation Plan: Pre-1.0 CRD Validation Hardening
-- observeCheck
-- addoncheck_controller.go
+- internal/controller/check_observability_test.go
+- Family
 - Implementation Plan: Quorum/Ratio Semantics for Managed-Resource Rollups
 - Adversarial Review Findings — v0.5.0 Release Gate (#217)
-- BuiltInAdapters Registration
+- internal/app/run_happy_test.go
 - assertHasOutcome
 - Tasks: [FEATURE NAME]
 - speckit-analyze/SKILL.md
@@ -79,28 +79,28 @@
 - kedaHealthyObjects
 - Quickstart Validation: Quorum/Ratio Rollups
 - CertResult
-- .Reconcile
+- ClusterHealthReconciler
 - PolicyRule
 - RatioThresholds
 - Command
-- MustEngine
+- TestCRD_AbsenceResolution
 - join
 - test/utils/utils_test.go
 - internal/adapter/rbacgen/rbacgen.go
 - Tasks: Adversarial Codebase Review for the v0.5.0 Release Gate
-- Registry
-- NewScheme (scheme registration)
-- HealthCheckReconciler
+- EnsureCompatible
+- NewScheme
+- .Reconcile
 - SetRunningInClusterForTest
 - internal/controller/nodecertificatecheck_helpers.go
 - newFakeClient
 - TestAdapterClient
-- .Reconcile
+- addoncheck_controller.go
 - image
 - Load
 - internal/nodecert/scan_test.go
 - runArgoCD
-- internal/adapter/declarative/istio_test.go
+- podInNamespace
 - New
 - internal/probe/sweeper_test.go
 - NewRootCommand
@@ -108,52 +108,52 @@
 - Feature Specification: DNSCheck Resource Contract
 - dnscheck_types.go
 - Options
-- .podInjected
+- .Evaluate
 - properties
 - test/e2e/healthreport_helpers_test.go
-- runConfigMap
+- MustEngine
 - Sweeper
 - Core Principles
 - Fathom Architecture
 - addoncheck_types.go
 - dnscheck_validation_test.go
 - Execution Steps
-- AddonCheckReconciler
+- Authoring an Adapter Guide
 - internal/nodecert/paths.go
 - internal/metrics/check_metrics_test.go
-- Probe Pod Manifest Builder Pod(Request)
+- Pod
 - quorum-ratio-rollups/internal/nodecert/paths.go
 - Tasks: Pre-1.0 CRD Validation Hardening
-- TestCommittedAddonRolesAreReadOnly
-- establishedCRD
+- pkg/adapter/rbac.go
+- DNSCheckReconciler
 - pod.go
 - operator_rbac_doc_test.go
 - .Name
 - .Run
-- quorum-ratio-rollups/internal/nodecert/scan.go
+- quorum-ratio-rollups/internal/nodecert/scan_test.go
 - Tasks: DNSCheck Resource Contract
 - validateAddonCheckPolicy
 - PreferredServedVersion
 - rbac
 - enabled
-- TestClientForSetsImpersonationAndMemoizes
+- fakeClientFactory
 - internal/adapter/declarative/annotation_test.go
 - internal/adapter/declarative/field_test.go
 - NewMetricsServerEngine
 - runProjection
-- writeFile
+- dnscheck_controller_test.go
 - crd_compat_gate_test.go
 - Entity: `DNSCheck`
-- quorum-ratio-rollups/internal/probe/sweeper_test.go
+- dnscheck_plan_test.go
 - NodeCertificateCheck
 - Repository Guidelines
 - values.schema.json
 - properties
-- TestEnvoyGateway_HealthyAndNoGatewaysSkipped
+- .Reconcile
 - Feature Specification: [FEATURE NAME]
-- internal/controller/addoncheck_controller_test.go
+- fakeAddonAdapter
 - healthcheck_types.go
-- Object
+- .DeepCopyObject
 - GitHub Copilot Instructions for Fathom
 - NewExternalDNSEngine
 - writeNodeReportForCheck
@@ -164,7 +164,7 @@
 - speckit-tasks/SKILL.md
 - test/e2e/nodecert_test.go
 - TestExternalSecrets_HealthyAndEmptySyncSkipped
-- cadence_test.go
+- clampCadence
 - Core Principles
 - Changed: AddonCheck (`fathom.skaphos.io/v1alpha1`, namespaced)
 - Research: Pre-1.0 CRD Validation Hardening
@@ -172,14 +172,14 @@
 - Correctness / Reconcile-Time Review — Candidates
 - Implementation Plan: DNSCheck Resource Contract
 - Phase 0 Research: DNSCheck Resource Contract
-- RecordReconcile
+- internal/metrics/metrics_test.go
 - RBAC / Least-Privilege Review — Fathom operator (commit cb845dd)
-- Capabilities
-- .IsReadOnly
-- ClusterHealthReconciler
-- TestCommittedAddonRolesAreReadOnly
+- dnscheck_plan.go
+- .RBACRules
+- internal/adapter/declarative/versiondetect_test.go
+- BuiltInAdapters
 - msHealthyObjects
-- writeNodeReportForCheck
+- quorum-ratio-rollups/internal/adapter/declarative/istio_test.go
 - Implementation Plan: [FEATURE]
 - Entities
 - Phase 0 Research: Adversarial Codebase Review for the v0.5.0 Release Gate
@@ -188,9 +188,9 @@
 - runMain
 - .Run
 - runMain
-- summarizeFromConditions
+- HealthCheckReconciler
 - createOrReuseHealthReport
-- IsReadVerb
+- run.go
 - quorum-ratio-rollups/internal/app/run_happy_test.go
 - Research: Quorum/Ratio Semantics for Managed-Resource Rollups
 - Quickstart Validation: Pre-1.0 CRD Validation Hardening
@@ -204,11 +204,11 @@
 - programmableAdapter
 - .Get
 - PreferredServedVersion
-- Engine
+- Phase 1 Data Model: DNSCheck Reconciler
 - noMatchListClient
 - webhookEntry
 - Operator RBAC
-- nodeAgentTemplateNeedsWrite
+- TestDecideNodeCertRollup
 - runMain
 - quorum-ratio-rollups/internal/controller/policy_validation_test.go
 - Specification Quality Checklist: Adversarial Codebase Review for the v0.5.0 Release Gate
@@ -220,7 +220,7 @@
 - Deliverable Contracts: Findings Report, Refuted Record, Coverage Statement
 - Security review candidates — Fathom (commit cb845dd)
 - quorum-ratio-rollups/pkg/adapter/adapter_test.go
-- .DeepCopy
+- Object
 - .DeepCopy
 - .DeepCopy
 - .DeepCopy
@@ -229,8 +229,8 @@
 - .DeepCopy
 - .DeepCopy
 - speckit-taskstoissues/SKILL.md
-- absentReportingAdapter
-- fakeAddonAdapter
+- Capabilities
+- Feature Specification: DNSCheck Reconciler
 - bindAddress
 - .severity
 - check-version-lockstep.sh
@@ -241,6 +241,7 @@
 - Contract: Runtime Clamp Signal
 - Contract: DNSCheck Admission Validation
 - Phase 3: User Story 1 — Declare DNS intent and have it validated (P1)
+- Phase 0 Research: DNSCheck Reconciler
 - .DeepCopy
 - .DeepCopy
 - .DeepCopy
@@ -248,15 +249,14 @@
 - .DeepCopy
 - .DeepCopy
 - .DeepCopy
-- .DeepCopy
-- .DeepCopy
+- Contract: DNSCheck Metrics, Events, and RBAC
 - .DeepCopy
 - .DeepCopy
 - .DeepCopy
 - .DeepCopy
 - normalizeShell
 - extraArgs
-- countAbsent
+- Contract: DNSCheck Reconcile Loop
 - internal/controller/suite_test.go
 - check-coverage.sh
 - e2e-shards.sh
@@ -269,6 +269,27 @@
 - check-crd-compat.sh
 - github.com/skaphos/fathom
 - github.com/skaphos/fathom/tools
+- AddonCheckReconciler
+- ratioRollupReportChecks
+- Registry
+- quorum-ratio-rollups/internal/metrics/metrics_test.go
+- Implementation Plan: DNSCheck Reconciler
+- dnsCheckInterval
+- observeCheck
+- Quickstart Validation: DNSCheck Reconciler
+- User Scenarios & Testing *(mandatory)*
+- builder
+- .DeepCopy
+- dnscheck_test.go
+- TestRBACRulesDeclaresProbeException
+- Specification Quality Checklist: DNSCheck Reconciler
+- .DeepCopy
+- .Run
+- TestClusterHealthSelectsHealthCheck
+- Dependencies & Execution Order
+- Implementation Strategy
+- createAddonCheckWithStatusForObservability
+- TestFilesRejectsIncompleteRule
 
 ## God Nodes (most connected - your core abstractions)
 1. `assertHasOutcome()` - 142 edges
@@ -277,13 +298,13 @@
 4. `newFakeClient()` - 80 edges
 5. `newFakeClient()` - 77 edges
 6. `New()` - 76 edges
-7. `Family` - 73 edges
-8. `Probe Pod Manifest Builder Pod(Request)` - 72 edges
+7. `Pod()` - 73 edges
+8. `Family` - 73 edges
 9. `join()` - 67 edges
 10. `FamilyPolicy` - 66 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `EnsureCompatible SemVer Handshake` --semantically_similar_to--> `CRD Maturity Ladder (alpha/beta/GA)`  [INFERRED] [semantically similar]
+- `EnsureCompatible()` --semantically_similar_to--> `CRD Maturity Ladder (alpha/beta/GA)`  [INFERRED] [semantically similar]
   pkg/adapter/version.go → docs/reference/api-versioning.md
 - `Adapter` --rationale_for--> `Rationale: in-process interface over gRPC/OCI/plugin loaders`  [EXTRACTED]
   pkg/adapter/adapter.go → docs/adr/0001-in-process-adapter-contract.md
@@ -305,11 +326,11 @@
 - **AddonCheck -> HealthCheck -> ClusterHealth status aggregation chain** — api_v1alpha1_addoncheck_types_addoncheck, api_v1alpha1_healthcheck_types_healthcheck, api_v1alpha1_clusterhealth_types_clusterhealth, api_v1alpha1_healthreport_types_healthreport, controller_addoncheckreconciler, controller_healthcheckreconciler, controller_clusterhealthreconciler [EXTRACTED 1.00]
 - **Probe-pod lifecycle: build, launch, parse, sweep orphans** — internal_probe_pod_pod, internal_probe_launcher_launcher, internal_probe_sweeper_sweeper, docs_architecture_probe_pod_model [EXTRACTED 1.00]
 
-## Communities (307 total, 37 thin omitted)
+## Communities (330 total, 35 thin omitted)
 
 ### Community 0 - ".Run"
-Cohesion: 0.07
-Nodes (51): TestCountAbsent(), TestRun_EmitsSpan(), TestAzureWorkloadIdentity_AbsentWebhookFails(), TestClusterHealthCoversNamespace(), configMap(), runConfigMap(), TestConfigMapCheck(), TestConfigMapCheck_AbsentInheritsOptional() (+43 more)
+Cohesion: 0.05
+Nodes (70): TestCountAbsent(), TestRun_EmitsSpan(), daemonSetWithAnnotations(), lockCheck(), lockJSON(), nodeRebootCheck(), nodeWithAnnotations(), runAnnotation() (+62 more)
 
 ### Community 1 - "quorum-ratio-rollups/cmd/probe/main_test.go"
 Cohesion: 0.11
@@ -317,27 +338,27 @@ Nodes (34): runDNS(), runHTTPGet(), runTCPConnect(), runTCPListen(), scanMetricF
 
 ### Community 2 - "quorum-ratio-rollups/internal/adapter/certmanager/adapter.go"
 Cohesion: 0.14
-Nodes (33): adapterOutcome(), certificateCheck(), certificateDetails(), certManagerComponents(), check(), conditionDetails(), conditionStatus(), conditionType() (+25 more)
+Nodes (23): certificateCheck(), certificateDetails(), certManagerComponents(), conditionDetails(), conditionStatus(), conditionType(), daysRemaining(), daysThreshold() (+15 more)
 
 ### Community 3 - ".DeepCopy"
 Cohesion: 0.34
 Nodes (18): deepCopyContract(), fullyPopulatedAddonCheck(), fullyPopulatedClusterHealth(), fullyPopulatedHealthCheck(), fullyPopulatedHealthReport(), fullyPopulatedNodeCertificateCheck(), runtimeObjectContract(), TestDeepCopy_AddonCheck() (+10 more)
 
 ### Community 4 - "New"
-Cohesion: 0.09
-Nodes (77): adapterWithLauncher(), assertNoKind(), assertNoTarget(), certManagerResource(), daemonSetWithStatus(), dnsEndpointSlice(), dnsEndpointSliceNamed(), dnsService() (+69 more)
+Cohesion: 0.10
+Nodes (74): adapterWithLauncher(), assertFamily(), assertNoKind(), assertNoTarget(), certManagerResource(), daemonSetWithStatus(), dnsEndpointSlice(), dnsEndpointSliceNamed() (+66 more)
 
-### Community 5 - ".Get"
-Cohesion: 0.09
-Nodes (49): firstNamespace(), containsString(), ConditionCheck, ConfigMapCheck, CRDCheck, CronJobCheck, EvalContext, WebhookCheck (+41 more)
+### Community 5 - "EvalContext"
+Cohesion: 0.08
+Nodes (51): firstNamespace(), stringThreshold(), TestCondition_ResolveVersion(), containsString(), ConditionCheck, ConfigMapCheck, CRDCheck, CronJobCheck (+43 more)
 
 ### Community 6 - "newScheme"
-Cohesion: 0.09
-Nodes (22): appFakeAdapter, TestAddToScheme(), TestDeepCopyIntoExercise(), TestSchemeBuilderRegisterReturnsSelf(), Context, Request, Result, TestBuildAdapterRegistry_RegistersBuiltInAdapters() (+14 more)
+Cohesion: 0.11
+Nodes (19): appFakeAdapter, Context, Request, Result, TestBuildAdapterRegistry_RegistersBuiltInAdapters(), TestBuildManagerOptions_CertWatchers(), TestBuildManagerOptions_DefaultsHaveNoCertWatchers(), TestBuildManagerOptions_InsecureMetricsHasNoFilter() (+11 more)
 
 ### Community 7 - "quorum-ratio-rollups/internal/adapter/rbacgen/rbacgen.go"
-Cohesion: 0.22
-Nodes (15): TestFilesRejectsIncompleteRule(), clusterRules(), Files(), groupsCell(), k8sObject, marshalDocs(), objectMeta, renderAddon() (+7 more)
+Cohesion: 0.17
+Nodes (20): TestFilesRejectsIncompleteRule(), allowedWrites(), repoRoot(), TestCommittedAddonRolesAreReadOnly(), TestModelGrantsAreJustified(), TestUnjustifiedGrantsCatchesViolations(), IsReadVerb(), clusterRules() (+12 more)
 
 ### Community 8 - "Add-on Checks Guide (Adapter Catalog)"
 Cohesion: 0.25
@@ -348,40 +369,40 @@ Cohesion: 0.06
 Nodes (49): ClusterHealth External Contract (derived only from HealthCheck.status), Cobra+Viper Configuration Model (flag → env → file → default), Run e2e After Major Changes Policy, AGENTS.md Repository Guidelines (CLAUDE.md symlink), SPDX Boilerplate Header, Breaking Change: ClusterHealth Made Cluster-Scoped (0.4.0), DCO Sign-Off Requirement, Contributor Safety Expectations (Bounded Work, Minimal RBAC) (+41 more)
 
 ### Community 10 - "quorum-ratio-rollups/internal/controller/nodecertificatecheck_helpers.go"
-Cohesion: 0.12
-Nodes (13): TestWorstResult(), WorstResult(), aggregateNodeReports(), controlPlaneTolerations(), healthReportForNodeCert(), joinPaths(), nodeOutcomeToResult(), pruneNodeCertHealthReports() (+5 more)
+Cohesion: 0.15
+Nodes (11): aggregateNodeReports(), controlPlaneTolerations(), healthReportForNodeCert(), joinPaths(), nodeOutcomeToResult(), pruneNodeCertHealthReports(), putIfNotEmpty(), resolveTolerations() (+3 more)
 
 ### Community 11 - "observeCheck"
-Cohesion: 0.11
-Nodes (27): ctrlRegistryGather(), gatherCheckSeries(), gatherOneHot(), TestDeleteCheckSeries(), TestObserveCheckFlipsResult(), TestObserveCheckOneHotInvariant(), TestObserveCheckSentinels(), checkGaugeValue() (+19 more)
+Cohesion: 0.08
+Nodes (37): ctrlRegistryGather(), gatherCheckSeries(), gatherOneHot(), TestDeleteCheckSeries(), TestObserveCheckFlipsResult(), TestObserveCheckOneHotInvariant(), TestObserveCheckSentinels(), checkGaugeValue() (+29 more)
 
-### Community 12 - ".Update"
-Cohesion: 0.18
-Nodes (9): createAddonCheckWithStatusForObservability(), TestClusterHealthSelectsHealthCheck(), TestHealthCheckEventHandler(), conflictOnceStatusClient, conflictOnceStatusWriter, Client, Context, Object (+1 more)
+### Community 12 - ".List"
+Cohesion: 0.11
+Nodes (16): maxRestartCount(), podReady(), podTarget(), Client, Context, DaemonSet, podReady(), Active() (+8 more)
 
 ### Community 13 - "deploymentInNamespace"
-Cohesion: 0.21
-Nodes (27): assertNoOutcome(), deploymentInNamespace(), absenceEngine(), deployEngine(), failedPod(), notReadyPod(), podWithRestarts(), runEngine() (+19 more)
+Cohesion: 0.13
+Nodes (39): assertNoOutcome(), establishedCRD(), NewArgoCDEngine(), argoApp(), argocdHealthyObjects(), runArgoCD(), TestArgoCD_AbsentClusterFails(), TestArgoCD_ApplicationStateRollup() (+31 more)
 
-### Community 14 - "MustEngine"
-Cohesion: 0.17
-Nodes (19): TestMustEngine_PanicsOnInvalid(), crdAbsenceEngine(), TestCRD_AbsenceResolution(), cronJob(), runCronJob(), TestCronJobCheck(), TestCronJobCheck_AbsentInheritsOptional(), TestCronJobCheck_PerpetualFailurePastWindowWarns() (+11 more)
+### Community 14 - ".detectAndGateVersion"
+Cohesion: 0.09
+Nodes (22): versionAddress, endRunSpan(), resolveFamily(), endRunSpan(), Context, Request, Result, Span (+14 more)
 
 ### Community 15 - ".Register"
-Cohesion: 0.23
-Nodes (11): GroupVersion, newFake(), TestCapabilities(), TestConcurrentAccess(), TestLookup(), TestRegister(), TestRegister_DuplicateAddonType(), TestRegister_PartialFailureLeavesRegistryUnchanged() (+3 more)
+Cohesion: 0.47
+Nodes (8): newFake(), TestCapabilities(), TestConcurrentAccess(), TestLookup(), TestRegister(), TestRegister_DuplicateAddonType(), TestRegister_PartialFailureLeavesRegistryUnchanged(), TestRegister_SameAdapterTwiceLogsNotice()
 
 ### Community 16 - ".Run"
 Cohesion: 0.13
-Nodes (57): assertCheck(), findCheck(), ksmService(), passingLauncher(), readyPod(), runRequest(), TestRun_AllFamiliesDisabledEmitsSentinelSkip(), TestRun_HealthyDeploymentAndEndpointsPass() (+49 more)
+Nodes (58): assertCheck(), findCheck(), healthyDeployment(), ksmService(), passingLauncher(), readyPod(), runRequest(), TestRun_AllFamiliesDisabledEmitsSentinelSkip() (+50 more)
 
-### Community 17 - "podInNamespace"
-Cohesion: 0.13
-Nodes (35): daemonSetWithAnnotations(), lockCheck(), lockJSON(), nodeRebootCheck(), nodeWithAnnotations(), runAnnotation(), TestAnnotationStaleness_NamedLock(), TestAnnotationStaleness_NodeList() (+27 more)
+### Community 17 - "quorum-ratio-rollups/internal/adapter/declarative/engine_test.go"
+Cohesion: 0.27
+Nodes (21): NewCiliumEngine(), assertFamily(), assertHasDetail(), assertHasOutcome(), assertNoKind(), assertNoOutcome(), ciliumCRDNames(), daemonSetInNamespace() (+13 more)
 
 ### Community 18 - "assertHasOutcome"
-Cohesion: 0.18
-Nodes (30): assertHasOutcome(), runManaged(), TestCondition_ClusterScopedListsWithoutNamespace(), TestCondition_ConditionStatus(), TestCondition_InvalidAPIVersionErrors(), TestCondition_InvalidSelectorErrors(), TestCondition_ListErrorDescribesNamespaceScope(), TestCondition_ListNameFallsBackToKind() (+22 more)
+Cohesion: 0.19
+Nodes (29): assertHasOutcome(), runManaged(), TestCondition_ClusterScopedListsWithoutNamespace(), TestCondition_ConditionStatus(), TestCondition_InvalidAPIVersionErrors(), TestCondition_InvalidSelectorErrors(), TestCondition_ListErrorDescribesNamespaceScope(), TestCondition_ListNameFallsBackToKind() (+21 more)
 
 ### Community 19 - "NewRootCommand"
 Cohesion: 0.23
@@ -391,17 +412,17 @@ Nodes (11): NewRootCommand(), signalContext(), TestSignalContext_PropagatesParen
 Cohesion: 0.13
 Nodes (22): TestListSelectedHealthChecks_ErrorNamesScope(), failingHealthCheckListClient, InMemoryExporter, Client, T, TestListSelectedHealthChecks_ErrorNamesScope(), attrValue(), Scheme (+14 more)
 
-### Community 21 - "quorum-ratio-rollups/internal/adapter/declarative/podprojection_test.go"
-Cohesion: 0.24
-Nodes (16): NewEngine(), TestNewEngine_Validation(), validVersionSource(), validWorkloadKind(), optedInPod(), runProjection(), TestNewEngine_PodProjectionValidation(), TestPodProjection_AllInjectedPasses() (+8 more)
+### Community 21 - "MustEngine"
+Cohesion: 0.10
+Nodes (34): TestMustEngine_PanicsOnInvalid(), crdAbsenceEngine(), TestCRD_AbsenceResolution(), MustEngine(), NewEngine(), TestNewEngine_Validation(), validVersionSource(), validWorkloadKind() (+26 more)
 
 ### Community 22 - "quorum-ratio-rollups/internal/probe/pod_test.go"
 Cohesion: 0.25
 Nodes (4): assertArgs(), TestPodBuildsHardenedDNSProbe(), TestPodBuildsHTTPGetArgs(), TestPodRejectsInvalidRequests()
 
 ### Community 23 - "Init"
-Cohesion: 0.22
-Nodes (12): Context, Init(), T, restoreGlobalProvider(), TestInit_DisabledInstallsNoopProvider(), TestInit_EnabledInstallsRecordingProvider(), Config, Init() (+4 more)
+Cohesion: 0.20
+Nodes (13): disableHTTP2(), Context, Init(), T, restoreGlobalProvider(), TestInit_DisabledInstallsNoopProvider(), TestInit_EnabledInstallsRecordingProvider(), Config (+5 more)
 
 ### Community 24 - "Probe/Node-Agent Version Lockstep Gate"
 Cohesion: 0.40
@@ -416,8 +437,8 @@ Cohesion: 0.83
 Nodes (3): runLockstep(), TestVersionLockstepDetectsDrift(), TestVersionLockstepInSync()
 
 ### Community 51 - "CheckResult"
-Cohesion: 0.06
-Nodes (65): CheckResult, dryRunCertificate(), dryRunCreate(), dryRunIssuer(), familyEnabled(), includesKind(), mutatingWebhookClients(), restartWarnCount() (+57 more)
+Cohesion: 0.07
+Nodes (59): check(), CheckResult, validateWebhookClients(), Adapter, webhookClient, Adapter, CreateOptions, certificateCheck() (+51 more)
 
 ### Community 52 - "internal/adapter/certmanager/adapter_test.go"
 Cohesion: 0.11
@@ -427,57 +448,57 @@ Nodes (63): clientObject, New(), assertFamily(), assertHasDetail(), assertHasOut
 Cohesion: 0.10
 Nodes (59): Context, result, Reader, join(), lookupCNAME(), lookupIPs(), lookupSRV(), main() (+51 more)
 
-### Community 54 - ".detectAndGateVersion"
-Cohesion: 0.06
-Nodes (52): CRDCheck, FamilyDefinition, Posture, versionAddress, VersionSource, WorkloadKind, AnnotationStalenessCheck, ConditionCheck (+44 more)
+### Community 54 - "FamilyDefinition"
+Cohesion: 0.09
+Nodes (31): CRDCheck, AddonDefinition, Engine, FamilyDefinition, Posture, VersionSource, WorkloadKind, AnnotationStalenessCheck (+23 more)
 
 ### Community 55 - ".Run"
 Cohesion: 0.12
 Nodes (54): clientObject, fakeLauncher, New(), adapterWithLauncher(), assertHasDetail(), assertHasOutcome(), assertNoOutcome(), dnsEndpointSlice() (+46 more)
 
 ### Community 56 - ".Reconcile"
-Cohesion: 0.09
-Nodes (39): NodeCertificateCheckReconciler, nodeCertRollupDecision, TestNodeCertCadenceHelpersClamp(), admissionPolicyUnsupported(), checkForReportConfigMap(), clearNodeCertRollupStatus(), decideNodeCertRollup(), Client (+31 more)
+Cohesion: 0.10
+Nodes (35): NodeCertificateCheckReconciler, nodeCertRollupDecision, admissionPolicyUnsupported(), checkForReportConfigMap(), clearNodeCertRollupStatus(), decideNodeCertRollup(), Client, ConditionStatus (+27 more)
 
-### Community 57 - "TargetRef"
-Cohesion: 0.07
-Nodes (38): boundedNodeList(), TargetRef, TestBoundedNodeListCapsAtMax(), podTarget(), adapterOutcome(), boundedNodeList(), check(), dnsProbePodName() (+30 more)
+### Community 57 - "FamilyPolicy"
+Cohesion: 0.06
+Nodes (65): adapterOutcome(), boundedNodeList(), deploymentAvailable(), dnsProbePodName(), dnsTargets(), endAdapterRunSpan(), familyForTarget(), FamilyPolicy (+57 more)
 
 ### Community 58 - "assertHasDetail"
-Cohesion: 0.12
-Nodes (42): assertFamily(), assertHasDetail(), NewAzureWorkloadIdentityEngine(), healthyAzureWIObjects(), TestAzureWorkloadIdentity_Capabilities(), TestAzureWorkloadIdentity_HealthyClusterAllPass(), TestAzureWorkloadIdentity_NoOptedInPodsProjectionSkipped(), TestAzureWorkloadIdentity_UnpopulatedCABundleFails() (+34 more)
+Cohesion: 0.18
+Nodes (30): assertHasDetail(), NewAzureWorkloadIdentityEngine(), healthyAzureWIObjects(), TestAzureWorkloadIdentity_AbsentWebhookFails(), TestAzureWorkloadIdentity_Capabilities(), TestAzureWorkloadIdentity_HealthyClusterAllPass(), TestAzureWorkloadIdentity_NoOptedInPodsProjectionSkipped(), TestAzureWorkloadIdentity_UnpopulatedCABundleFails() (+22 more)
 
 ### Community 59 - ".Run"
 Cohesion: 0.17
 Nodes (42): New(), adapterWithLauncher(), assertHasDetail(), assertHasOutcome(), assertNoTarget(), daemonSetWithStatus(), Adapter, Client (+34 more)
 
 ### Community 60 - ".checkMetricsEndpoint"
-Cohesion: 0.10
-Nodes (34): endpointTarget(), Result, scrapeProbePodName(), servicePortDeclared(), servicePortList(), adapterOutcome(), csvThreshold(), deploymentAvailable() (+26 more)
+Cohesion: 0.09
+Nodes (40): csvThreshold(), endpointTarget(), int32Threshold(), New(), Result, scrapeProbePodName(), servicePortDeclared(), servicePortList() (+32 more)
 
 ### Community 61 - "newFakeClient"
-Cohesion: 0.12
-Nodes (39): clientObject, Engine, NewCiliumEngine(), TestDescheduler_HealthyDeploymentMode(), assertFamily(), assertNoKind(), ciliumCRDNames(), daemonSetInNamespace() (+31 more)
+Cohesion: 0.11
+Nodes (41): clientObject, Engine, NewCiliumEngine(), assertFamily(), assertNoKind(), ciliumCRDNames(), daemonSetInNamespace(), establishedCRD() (+33 more)
 
 ### Community 62 - "assertHasDetail"
-Cohesion: 0.14
-Nodes (41): Engine, NewAzureWorkloadIdentityEngine(), clientObject, T, healthyAzureWIObjects(), TestAzureWorkloadIdentity_AbsentWebhookFails(), TestAzureWorkloadIdentity_Capabilities(), TestAzureWorkloadIdentity_HealthyClusterAllPass() (+33 more)
+Cohesion: 0.15
+Nodes (39): Engine, NewAzureWorkloadIdentityEngine(), clientObject, T, healthyAzureWIObjects(), TestAzureWorkloadIdentity_AbsentWebhookFails(), TestAzureWorkloadIdentity_Capabilities(), TestAzureWorkloadIdentity_HealthyClusterAllPass() (+31 more)
 
-### Community 63 - "FamilyPolicy"
-Cohesion: 0.10
-Nodes (31): FamilyPolicy, Adapter, dnsProbeLauncher, adapterOutcome(), check(), deploymentAvailable(), dnsProbePodName(), dnsTargets() (+23 more)
+### Community 63 - "Tasks: DNSCheck Reconciler"
+Cohesion: 0.08
+Nodes (26): Analysis remediation, Critical Path, Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Implementation for User Story 4 (+18 more)
 
 ### Community 64 - "properties"
 Cohesion: 0.05
 Nodes (39): type, type, type, type, type, type, type, type (+31 more)
 
-### Community 65 - ".Evaluate"
-Cohesion: 0.10
-Nodes (15): policyNamespaces(), TestPolicyNamespaceResolution(), AnnotationStalenessCheck, Evaluator, durationThreshold(), isFutureTimestamp(), namespaceScope(), AnnotationStalenessCheck (+7 more)
+### Community 65 - "quorum-ratio-rollups/internal/adapter/declarative/evaluator.go"
+Cohesion: 0.12
+Nodes (11): AnnotationStalenessCheck, Evaluator, durationThreshold(), isFutureTimestamp(), namespaceScope(), AnnotationStalenessCheck, GroupVersion, Time (+3 more)
 
-### Community 66 - "Family"
-Cohesion: 0.09
-Nodes (28): Family, Outcome, Request, ThresholdAdvertiser, fakeAdvertisingAdapter, endRunSpan(), resolveFamily(), endRunSpan() (+20 more)
+### Community 66 - "adapter/adapter.go"
+Cohesion: 0.17
+Nodes (12): Outcome, Request, ThresholdAdvertiser, Client, Duration, Logger, MarkVersionGate(), T (+4 more)
 
 ### Community 67 - "deploymentInNamespace"
 Cohesion: 0.19
@@ -489,15 +510,15 @@ Nodes (27): Condition, LabelSelector, ListMeta, ObjectMeta, Time, TypeMeta, Clus
 
 ### Community 69 - "scanAndPublish"
 Cohesion: 0.12
-Nodes (29): Context, Duration, Time, main(), metricsMux(), parseConfig(), publishGauges(), run() (+21 more)
+Nodes (30): Context, Duration, Time, main(), metricsMux(), parseConfig(), publishGauges(), run() (+22 more)
 
 ### Community 70 - "quorum-ratio-rollups/test/utils/utils.go"
-Cohesion: 0.11
-Nodes (27): TestE2EShardPlannerKnowsEveryOptInAddon(), TestE2E(), AddonSelection, CoreAddons(), GetNonEmptyLines(), GetProjectDir(), InstallPrometheusOperator(), IsPrometheusCRDsInstalled() (+19 more)
+Cohesion: 0.13
+Nodes (23): TestE2EShardPlannerKnowsEveryOptInAddon(), TestE2E(), AddonSelection, CoreAddons(), GetNonEmptyLines(), GetProjectDir(), InstallPrometheusOperator(), IsPrometheusCRDsInstalled() (+15 more)
 
-### Community 71 - "Write"
-Cohesion: 0.11
-Nodes (24): main(), metricsMux(), parseConfig(), publishGauges(), run(), sanitizeLabelValue(), scanAndPublish(), splitCSV() (+16 more)
+### Community 71 - "main"
+Cohesion: 0.13
+Nodes (21): main(), metricsMux(), parseConfig(), publishGauges(), run(), sanitizeLabelValue(), scanAndPublish(), splitCSV() (+13 more)
 
 ### Community 72 - "api/v1alpha1/deepcopy_test.go"
 Cohesion: 0.19
@@ -505,7 +526,7 @@ Nodes (29): deepCopyContract(), fullyPopulatedAddonCheck(), fullyPopulatedCluste
 
 ### Community 73 - ".DeepCopyInto"
 Cohesion: 0.08
-Nodes (11): ClusterHealthSpec, DNSCheck, DNSCheckList, DNSCheckSpec, DNSCheckStatus, DNSResolver, DNSTarget, DNSTargetResult (+3 more)
+Nodes (12): AddonCheckFamilyPolicy, DNSCheckList, DNSCheckSpec, DNSCheckStatus, DNSResolver, DNSTarget, DNSTargetResult, HealthReportCheck (+4 more)
 
 ### Community 74 - "common.sh"
 Cohesion: 0.09
@@ -515,13 +536,13 @@ Nodes (14): check-prerequisites.sh script, check_dir(), check_file(), get_featur
 Cohesion: 0.07
 Nodes (27): Content Quality, Feature Readiness, Notes, Requirement Completeness, Specification Quality Checklist: Pre-1.0 CRD Validation Hardening, Complexity Tracking, Constitution Check, Documentation (this feature) (+19 more)
 
-### Community 76 - "observeCheck"
-Cohesion: 0.15
-Nodes (27): AddonCheckStatus, FakeRecorder, TestObserveCheckEmitsCadenceClampedOncePerEpisode(), checkGaugeValue(), createAddonCheckWithStatusForObservability(), drainEvents(), gatherGaugeValue(), Condition (+19 more)
+### Community 76 - "internal/controller/check_observability_test.go"
+Cohesion: 0.26
+Nodes (17): FakeRecorder, checkGaugeValue(), drainEvents(), gatherGaugeValue(), Condition, ConditionStatus, Object, T (+9 more)
 
-### Community 77 - "addoncheck_controller.go"
-Cohesion: 0.16
-Nodes (25): WorstResult(), familyRatioRollup, HealthReportCheck, HealthReportTargetRef, aggregateHealthReportResult(), aggregateWithRatioRollups(), copyStringMap(), HealthReport (+17 more)
+### Community 77 - "Family"
+Cohesion: 0.22
+Nodes (18): Family, WorstResult(), fakeAdvertisingAdapter, aggregateHealthReportResult(), aggregateWithRatioRollups(), HealthReport, Outcome, healthReportForAddonCheck() (+10 more)
 
 ### Community 78 - "Implementation Plan: Quorum/Ratio Semantics for Managed-Resource Rollups"
 Cohesion: 0.07
@@ -531,9 +552,9 @@ Nodes (25): Content Quality, Feature Readiness, Notes, Requirement Completeness,
 Cohesion: 0.07
 Nodes (24): Coverage Statement — v0.5.0 Release Gate (#217), Intentionally excluded, Perspective results (SC-001), Post-anchor deltas, Reviewed, Scope notes, Adversarial Review Findings — v0.5.0 Release Gate (#217), API-1: HealthCheck status.summary MaxLength=1024 wedges mirroring on long condition messages (high) (+16 more)
 
-### Community 80 - "BuiltInAdapters Registration"
-Cohesion: 0.13
-Nodes (25): Setupper, Bool, Checker, adapterName(), BuildAdapterRegistry(), BuiltInAdapters Registration, DefaultControllers(), disableHTTP2() (+17 more)
+### Community 80 - "internal/app/run_happy_test.go"
+Cohesion: 0.26
+Nodes (11): adapterName(), Adapter, firstEnvtestBinaryDir(), M, T, TestAdapterName_NilReturnsPlaceholder(), TestAdapterName_NonNilReturnsName(), TestDisableHTTP2() (+3 more)
 
 ### Community 81 - "assertHasOutcome"
 Cohesion: 0.25
@@ -548,12 +569,12 @@ Cohesion: 0.08
 Nodes (25): 1. Initialize Analysis Context, 2. Load Artifacts (Progressive Disclosure), 3. Build Semantic Models, 4. Detection Passes (Token-Efficient Analysis), 5. Severity Assignment, 6. Produce Compact Analysis Report, 7. Provide Next Actions, 8. Offer Remediation (+17 more)
 
 ### Community 84 - ".Evaluate"
-Cohesion: 0.12
-Nodes (16): conditionStatus(), policySelector(), resourceAbsent(), FieldCheck, defaultOutcome(), conditionStatus(), LabelSelector, Selector (+8 more)
+Cohesion: 0.13
+Nodes (15): conditionStatus(), policySelector(), resourceAbsent(), TestResourceAbsent_DoesNotTreatMissingNamespaceAsMissingAPI(), FieldCheck, defaultOutcome(), LabelSelector, Selector (+7 more)
 
 ### Community 85 - "kedaHealthyObjects"
-Cohesion: 0.14
-Nodes (21): Engine, WorkloadCheck, kedaDeployment(), NewKedaEngine(), conditionCR(), clientObject, T, Unstructured (+13 more)
+Cohesion: 0.13
+Nodes (23): Engine, WorkloadCheck, kedaDeployment(), NewKedaEngine(), conditionCR(), clientObject, T, Unstructured (+15 more)
 
 ### Community 86 - "Quickstart Validation: Quorum/Ratio Rollups"
 Cohesion: 0.08
@@ -563,97 +584,97 @@ Nodes (22): Configuration surface (AddonCheck), Contract: Ratio Rollup Threshold
 Cohesion: 0.27
 Nodes (21): Certificate, classify(), classifyAll(), daysFromDuration(), errorResult(), Duration, Time, parsePEMCertificates() (+13 more)
 
-### Community 88 - ".Reconcile"
-Cohesion: 0.14
-Nodes (17): clearClusterHealthAggregateStatus(), clusterHealthCoversNamespace(), clusterHealthSelectsHealthCheck(), ClusterHealth, Context, HealthCheck, LabelSelector, Request (+9 more)
+### Community 88 - "ClusterHealthReconciler"
+Cohesion: 0.12
+Nodes (21): ClusterHealthReconciler, EventHandler, clearClusterHealthAggregateStatus(), clusterHealthCoversNamespace(), clusterHealthSelectsHealthCheck(), Client, ClusterHealth, Context (+13 more)
 
 ### Community 89 - "PolicyRule"
-Cohesion: 0.13
-Nodes (17): PolicyRule, T, hasResource(), hasVerb(), TestRBACRulesDeclaresDryRunException(), T, hasResource(), hasVerb() (+9 more)
+Cohesion: 0.18
+Nodes (13): PolicyRule, T, hasResource(), hasVerb(), TestRBACRulesDeclaresDryRunException(), T, hasResource(), hasVerb() (+5 more)
 
 ### Community 90 - "RatioThresholds"
 Cohesion: 0.18
 Nodes (18): RatioPercent, RatioRollup, RatioThresholds, ratioThresholdsByFamily(), FamilyRatioVerdict(), Outcome, isDigits(), parseRatioPercent() (+10 more)
 
 ### Community 91 - "Command"
-Cohesion: 0.18
-Nodes (19): Cmd, Command, eventRow, getMetricsOutput(), serviceAccountToken(), addonCheckLastResult(), addonCheckReadyTrue(), dumpAddonCheckDiagnostics() (+11 more)
+Cohesion: 0.16
+Nodes (22): Cmd, Command, applyDNSCheck(), dnsCheckField(), ensureNamespaceActive(), eventuallyDNSResult(), getMetricsOutput(), serviceAccountToken() (+14 more)
 
-### Community 92 - "MustEngine"
-Cohesion: 0.15
-Nodes (19): CronJob, AddonDefinition, crdAbsenceEngine(), Engine, T, TestCRD_AbsenceResolution(), cronJob(), CronJobCheck (+11 more)
+### Community 92 - "TestCRD_AbsenceResolution"
+Cohesion: 0.50
+Nodes (4): crdAbsenceEngine(), Engine, T, TestCRD_AbsenceResolution()
 
 ### Community 93 - "join"
-Cohesion: 0.17
-Nodes (19): serviceAccountToken(), join(), applyManifest(), scrapeOperatorMetrics(), newTestFlags(), TestDefaultOptions_MatchFlagDefaults(), TestLoad_ConfigOverridesDefault(), TestLoad_EnvOverridesConfig() (+11 more)
+Cohesion: 0.12
+Nodes (28): eventRow, serviceAccountToken(), join(), TestMain_ExitsNonZeroOnWriteError(), applyManifest(), scrapeOperatorMetrics(), newTestFlags(), TestDefaultOptions_MatchFlagDefaults() (+20 more)
 
 ### Community 94 - "test/utils/utils_test.go"
 Cohesion: 0.14
 Nodes (20): T, TestE2EShardPlannerKnowsEveryOptInAddon(), T, TestE2E(), CoreAddons(), OptInAddons(), ParseAddonSelection(), T (+12 more)
 
 ### Community 95 - "internal/adapter/rbacgen/rbacgen.go"
-Cohesion: 0.19
-Nodes (19): T, TestFilesRejectsIncompleteRule(), clusterRules(), Collect(), Files(), Adapter, groupsCell(), marshalDocs() (+11 more)
+Cohesion: 0.26
+Nodes (16): clusterRules(), Files(), groupsCell(), marshalDocs(), renderAddon(), renderDocs(), renderHelmData(), renderImpersonator() (+8 more)
 
 ### Community 96 - "Tasks: Adversarial Codebase Review for the v0.5.0 Release Gate"
 Cohesion: 0.09
 Nodes (21): Consolidation and refutation, Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation Strategy, Incremental Delivery, MVP First (US1 only), Notes, Parallel Example: User Story 1 (+13 more)
 
-### Community 97 - "Registry"
-Cohesion: 0.15
-Nodes (16): version, Rationale: in-process interface over gRPC/OCI/plugin loaders, CRD API Versioning Standard, CRD Maturity Ladder (alpha/beta/GA), Adapter, Logger, ContractVersion Constant, EnsureCompatible SemVer Handshake (+8 more)
+### Community 97 - "EnsureCompatible"
+Cohesion: 0.26
+Nodes (11): version, CRD API Versioning Standard, CRD Maturity Ladder (alpha/beta/GA), ContractVersion Constant, EnsureCompatible(), parseVersion(), T, TestContractVersionParses() (+3 more)
 
-### Community 98 - "NewScheme (scheme registration)"
-Cohesion: 0.25
-Nodes (20): CertWatcher, DefaultOptions(), BuildManagerOptions(), Scheme, NewScheme (scheme registration), T, TestBuildAdapterRegistry_RegistersBuiltInAdapters(), TestBuildAdapterRegistry_WrapsRegistrationErrors() (+12 more)
+### Community 98 - "NewScheme"
+Cohesion: 0.21
+Nodes (23): CertWatcher, DefaultOptions(), BuildAdapterRegistry(), BuildManagerOptions(), Logger, Scheme, NewScheme(), T (+15 more)
 
-### Community 99 - "HealthCheckReconciler"
-Cohesion: 0.12
-Nodes (16): HealthCheckReconciler, clearMirroredHealthCheckStatus(), Client, Context, EventRecorder, HealthCheck, Manager, Object (+8 more)
+### Community 99 - ".Reconcile"
+Cohesion: 0.16
+Nodes (9): Context, Object, Request, Result, endReconcileSpan(), Span, Tracer, reconcilerTracer() (+1 more)
 
 ### Community 100 - "SetRunningInClusterForTest"
 Cohesion: 0.12
 Nodes (16): defaultRunningInCluster(), inClusterFromConfigErr(), T, TestInClusterFromConfigErr(), RunningInCluster(), SetRunningInClusterForTest(), T, TestRunningInCluster_TestOverride() (+8 more)
 
 ### Community 101 - "internal/controller/nodecertificatecheck_helpers.go"
-Cohesion: 0.13
-Nodes (19): aggregateNodeReports(), controlPlaneTolerations(), Client, Context, HealthReport, Logger, Outcome, Time (+11 more)
+Cohesion: 0.12
+Nodes (28): agentLabels(), aggregateNodeReports(), controlPlaneTolerations(), Client, Context, Duration, HealthReport, Logger (+20 more)
 
 ### Community 102 - "newFakeClient"
 Cohesion: 0.30
 Nodes (20): dnsRequest(), Client, PodPhase, Request, T, newFakeClient(), simulateKubelet(), TestLauncherRun_ConcurrentRunsAreIndependent() (+12 more)
 
 ### Community 103 - "TestAdapterClient"
-Cohesion: 0.13
-Nodes (13): addonSA(), TestAdapterClient(), TestRunAddonCheckFailsClosedWhenNamespaceEmptyInCluster(), TestRunAddonCheckFailsClosedWithoutScopedClient(), fakeClientFactory, TestDefaultControllers_InClusterRequiresNamespace(), defaultRunningInCluster(), inClusterFromConfigErr() (+5 more)
+Cohesion: 0.15
+Nodes (11): addonSA(), TestAdapterClient(), TestRunAddonCheckFailsClosedWhenNamespaceEmptyInCluster(), TestRunAddonCheckFailsClosedWithoutScopedClient(), TestDefaultControllers_InClusterRequiresNamespace(), defaultRunningInCluster(), inClusterFromConfigErr(), TestInClusterFromConfigErr() (+3 more)
 
-### Community 104 - ".Reconcile"
-Cohesion: 0.18
-Nodes (16): addonAdapterLookup, addonCheckDueForRun(), addonCheckInterval(), addonCheckTargetRef(), addonCheckTimeout(), Adapter, AddonCheck, Context (+8 more)
+### Community 104 - "addoncheck_controller.go"
+Cohesion: 0.16
+Nodes (19): addonAdapterLookup, T, TestCountAbsent(), addonCheckDueForRun(), addonCheckInterval(), addonCheckPolicy(), addonCheckTargetRef(), addonCheckTimeout() (+11 more)
 
 ### Community 105 - "image"
 Cohesion: 0.11
 Nodes (20): properties, required, type, properties, required, type, image, probeImage (+12 more)
 
 ### Community 106 - "Load"
-Cohesion: 0.31
-Nodes (19): Load(), FlagSet, T, newTestFlags(), TestDefaultOptions_MatchFlagDefaults(), TestLoad_ConfigOverridesDefault(), TestLoad_EnvOverridesConfig(), TestLoad_FlagOverridesEverything() (+11 more)
+Cohesion: 0.30
+Nodes (20): Load(), FlagSet, T, newTestFlags(), TestDefaultOptions_MatchFlagDefaults(), TestLoad_ConfigOverridesDefault(), TestLoad_DNSCheckMaxConcurrentProbesPrecedence(), TestLoad_EnvOverridesConfig() (+12 more)
 
 ### Community 107 - "internal/nodecert/scan_test.go"
-Cohesion: 0.28
-Nodes (19): Scan(), T, Time, makeCertPEM(), TestClassifyBoundaries(), TestDaysFromDuration(), TestEncodeDecodeReportRoundTrip(), TestMinimalMountDirs() (+11 more)
+Cohesion: 0.30
+Nodes (18): Scan(), T, Time, makeCertPEM(), TestClassifyBoundaries(), TestDaysFromDuration(), TestMinimalMountDirs(), TestNodeReportConfigMapNameDeterministicAndSafe() (+10 more)
 
 ### Community 108 - "runArgoCD"
 Cohesion: 0.20
 Nodes (17): argocdDeployment(), Engine, WorkloadCheck, NewArgoCDEngine(), argoApp(), argocdHealthyObjects(), clientObject, Result (+9 more)
 
-### Community 109 - "internal/adapter/declarative/istio_test.go"
+### Community 109 - "podInNamespace"
 Cohesion: 0.27
-Nodes (17): Engine, NewIstioEngine(), clientObject, T, istioAmbientObjects(), istioCRDObjects(), istiodControlPlane(), istioHealthyObjects() (+9 more)
+Nodes (18): podInNamespace(), Engine, NewIstioEngine(), clientObject, T, istioAmbientObjects(), istioCRDObjects(), istiodControlPlane() (+10 more)
 
 ### Community 110 - "New"
-Cohesion: 0.23
-Nodes (14): New(), Context, Request, Result, T, newFake(), TestCapabilities(), TestConcurrentAccess() (+6 more)
+Cohesion: 0.33
+Nodes (11): New(), T, newFake(), TestCapabilities(), TestConcurrentAccess(), TestLookup(), TestRegister(), TestRegister_DuplicateAddonType() (+3 more)
 
 ### Community 111 - "internal/probe/sweeper_test.go"
 Cohesion: 0.27
@@ -677,11 +698,11 @@ Nodes (15): Condition, Duration, ListMeta, ObjectMeta, Time, TypeMeta, DNSCheck,
 
 ### Community 116 - "Options"
 Cohesion: 0.18
-Nodes (14): flagBinding, MetricsOptions, Options, TracingOptions, WebhookOptions, factory, Client, Mutex (+6 more)
+Nodes (14): DNSCheckOptions, flagBinding, MetricsOptions, Options, TracingOptions, WebhookOptions, factory, Client (+6 more)
 
-### Community 117 - ".podInjected"
+### Community 117 - ".Evaluate"
 Cohesion: 0.16
-Nodes (12): PodProjectionCheck, capNames(), containerHasEnv(), formatSelector(), Container, PodProjectionCheck, hasProjectedTokenVolume(), capNames() (+4 more)
+Nodes (15): policyNamespaces(), TestPolicyNamespaces_EmptyMeansAllNamespaces(), TestPolicyNamespaceResolution(), PodProjectionCheck, capNames(), containerHasEnv(), formatSelector(), Container (+7 more)
 
 ### Community 118 - "properties"
 Cohesion: 0.12
@@ -691,9 +712,9 @@ Nodes (17): type, type, type, type, type, allOf, $comment, properties (+9 more)
 Cohesion: 0.20
 Nodes (12): checkResult, eventList, healthReport, healthReportList, addonCheckLastResult(), addonCheckReadyTrue(), dumpAddonCheckDiagnostics(), latestHealthReport() (+4 more)
 
-### Community 120 - "runConfigMap"
-Cohesion: 0.21
-Nodes (14): configMap(), ConfigMap, ConfigMapCheck, T, runConfigMap(), TestConfigMapCheck(), TestConfigMapCheck_AbsentInheritsOptional(), TestConfigMapCheck_NoAPIVersionAssertionPassesAnyYAML() (+6 more)
+### Community 120 - "MustEngine"
+Cohesion: 0.13
+Nodes (26): CronJob, configMap(), ConfigMap, ConfigMapCheck, T, runConfigMap(), TestConfigMapCheck(), TestConfigMapCheck_AbsentInheritsOptional() (+18 more)
 
 ### Community 121 - "Sweeper"
 Cohesion: 0.16
@@ -704,8 +725,8 @@ Cohesion: 0.12
 Nodes (16): Core Principles, Development Workflow & Quality Gates, Engineering Constraints, Fathom Constitution, Fathom-Specific Constraints, Governance, I. Explicit State Over Implicit Behavior, II. Git Is the Durable Desired-State Boundary (+8 more)
 
 ### Community 123 - "Fathom Architecture"
-Cohesion: 0.28
-Nodes (16): Adapter, ADR-0001 In-process Adapter Contract, ADR-0002 HealthReport as First-class CRD, ADR-0003 Probe-pod Model, Rationale: representative network topology without a DaemonSet, ADR-0004 HealthCheck as Thin Wrapper, Rationale: uniform wrapper preserves aggregator contract, ClusterHealth-from-HealthCheck.status-only Invariant (+8 more)
+Cohesion: 0.31
+Nodes (14): ADR-0001 In-process Adapter Contract, ADR-0002 HealthReport as First-class CRD, ADR-0003 Probe-pod Model, Rationale: representative network topology without a DaemonSet, ADR-0004 HealthCheck as Thin Wrapper, Rationale: uniform wrapper preserves aggregator contract, ClusterHealth-from-HealthCheck.status-only Invariant, Fathom Architecture (+6 more)
 
 ### Community 124 - "addoncheck_types.go"
 Cohesion: 0.17
@@ -719,65 +740,65 @@ Nodes (15): duration(), envTestAssetsAvailable(), firstEnvTestBinaryDir(), DNSCh
 Cohesion: 0.12
 Nodes (15): 1. Initialize Convergence Context, 2. Load Artifacts (Progressive Disclosure), 3. Build the Intent Inventory, 4. Assess the Codebase and Classify Findings, 5. Assign Severity, 6. Present the In-Session Findings Summary, 7. Append Convergence Tasks (or report converged), 8. Provide Next Actions (Handoff) (+7 more)
 
-### Community 127 - "AddonCheckReconciler"
-Cohesion: 0.23
-Nodes (14): AddonCheckReconciler, Absence Semantics (Required/Optional, MarkAbsent), Declarative Adapter Engine (MustEngine), Authoring an Adapter Guide, Version Detection and SupportedVersions Gating, Rationale: five shaping decisions (declarative-first epic), Addon Adapters Implementation Plan (v2), Per-addon Least-Privilege ServiceAccount Impersonation (+6 more)
+### Community 127 - "Authoring an Adapter Guide"
+Cohesion: 0.51
+Nodes (10): Adapter, Absence Semantics (Required/Optional, MarkAbsent), Declarative Adapter Engine (MustEngine), Authoring an Adapter Guide, Version Detection and SupportedVersions Gating, Rationale: five shaping decisions (declarative-first epic), Addon Adapters Implementation Plan (v2), Per-addon Least-Privilege ServiceAccount Impersonation (+2 more)
 
 ### Community 128 - "internal/nodecert/paths.go"
-Cohesion: 0.22
-Nodes (14): resolveCertPaths(), TestResolveCertPathsFiltersDisallowed(), AllowedPathPrefixes(), DefaultCertPaths(), FilterAllowedPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs() (+6 more)
+Cohesion: 0.26
+Nodes (11): AllowedPathPrefixes(), FilterAllowedPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs(), PathAllowed(), T, TestAllowedPathPrefixesMatchCRDRule() (+3 more)
 
 ### Community 129 - "internal/metrics/check_metrics_test.go"
 Cohesion: 0.28
-Nodes (13): ctrlRegistryGather(), gatherCheckSeries(), gatherOneHot(), T, TestCheckResultValuesMatchAPIVocabulary(), TestDeleteCheckSeries(), TestObserveCheckFlipsResult(), TestObserveCheckOneHotInvariant() (+5 more)
+Nodes (19): ctrlRegistryGather(), gatherCheckSeries(), gatherDNSTargetSeries(), gatherOneHot(), T, TestCheckResultValuesMatchAPIVocabulary(), TestDeleteCheckSeries(), TestDeleteDNSCheckTargetSeries() (+11 more)
 
-### Community 130 - "Probe Pod Manifest Builder Pod(Request)"
-Cohesion: 0.34
-Nodes (15): Probe Pod Manifest Builder Pod(Request), assertArgs(), T, TestParseResult(), TestPodBuildsDNSAssertionArgs(), TestPodBuildsHardenedDNSProbe(), TestPodBuildsHTTPGetArgs(), TestPodLeavesDNSPolicyAloneByDefault() (+7 more)
+### Community 130 - "Pod"
+Cohesion: 0.29
+Nodes (17): maxRestartCount(), Pod(), assertArgs(), T, TestParseResult(), TestPodBuildsDNSAssertionArgs(), TestPodBuildsHardenedDNSProbe(), TestPodBuildsHTTPGetArgs() (+9 more)
 
 ### Community 131 - "quorum-ratio-rollups/internal/nodecert/paths.go"
 Cohesion: 0.19
 Nodes (14): resolveCertPaths(), TestResolveCertPathsFiltersDisallowed(), AllowedPathPrefixes(), DefaultCertPaths(), FilterAllowedPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs() (+6 more)
 
 ### Community 132 - "Tasks: Pre-1.0 CRD Validation Hardening"
-Cohesion: 0.12
-Nodes (16): Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Parallel Example: User Story 1, Parallel Opportunities, Phase 1: Setup (+8 more)
+Cohesion: 0.17
+Nodes (12): Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Parallel Example: User Story 1, Phase 1: Setup, Phase 2: Foundational (Blocking Prerequisites), Phase 3: User Story 1 - Reject dangerously short check cadences at admission (Priority: P1) 🎯 MVP (+4 more)
 
-### Community 133 - "TestCommittedAddonRolesAreReadOnly"
-Cohesion: 0.18
-Nodes (12): RBACDeclarer, allowedWrites(), repoRoot(), TestCommittedAddonRolesAreReadOnly(), TestModelGrantsAreJustified(), TestUnjustifiedGrantsCatchesViolations(), AddonServiceAccountName(), IsReadVerb() (+4 more)
+### Community 133 - "pkg/adapter/rbac.go"
+Cohesion: 0.16
+Nodes (10): RBACDeclarer, AddonServiceAccountName(), T, TestAddonServiceAccountName(), TestIsReadVerb(), TestPolicyRuleIsReadOnly(), AddonServiceAccountName(), TestAddonServiceAccountName() (+2 more)
 
-### Community 134 - "establishedCRD"
-Cohesion: 0.25
-Nodes (12): establishedCRD(), NewArgoCDEngine(), argoApp(), argocdHealthyObjects(), runArgoCD(), TestArgoCD_AbsentClusterFails(), TestArgoCD_ApplicationStateRollup(), TestArgoCD_HealthyWithSyncedApplication() (+4 more)
+### Community 134 - "DNSCheckReconciler"
+Cohesion: 0.14
+Nodes (17): DNSCheckReconciler, dnsProbeRunner, dnsCheckOwnerReference(), dnsProbePodName(), dnsResultFromProbeOutcome(), Client, DNSTargetResult, Duration (+9 more)
 
 ### Community 135 - "pod.go"
-Cohesion: 0.19
-Nodes (14): Affinity, antiAffinity(), args(), boolPtr(), copyStringMap(), Duration, Result, Toleration (+6 more)
+Cohesion: 0.17
+Nodes (15): Affinity, antiAffinity(), args(), boolPtr(), copyStringMap(), Duration, OwnerReference, Result (+7 more)
 
 ### Community 136 - "operator_rbac_doc_test.go"
 Cohesion: 0.25
 Nodes (13): ClusterRole, docRow, equalStrings(), T, loadJustificationRows(), loadOperatorClusterRole(), normalizeSet(), ruleKey() (+5 more)
 
 ### Community 137 - ".Name"
-Cohesion: 0.24
-Nodes (8): fakePolicyAdapter, TestEngine_Metadata(), TestEnvoyGateway_AdapterMetadata(), TestExternalDNS_AdapterMetadata(), TestIstio_AdapterMetadata(), TestMetricsServer_AdapterMetadata(), Collect(), getFirstFoundEnvTestBinaryDir()
+Cohesion: 0.13
+Nodes (19): TestAdapterMetadata(), fakePolicyAdapter, TestEngine_Metadata(), NewEnvoyGatewayEngine(), egHealthyObjects(), gatewayObject(), TestEnvoyGateway_AdapterMetadata(), TestEnvoyGateway_GatewayConditionScoring() (+11 more)
 
 ### Community 138 - ".Run"
 Cohesion: 0.20
 Nodes (9): extractResult(), Client, Context, Duration, Request, Result, hasTerminationMessage(), Launcher (+1 more)
 
-### Community 139 - "quorum-ratio-rollups/internal/nodecert/scan.go"
-Cohesion: 0.32
-Nodes (14): minimalKubeconfig, classify(), classifyAll(), daysFromDuration(), errorResult(), parsePEMCertificates(), scanCertFile(), scanDir() (+6 more)
+### Community 139 - "quorum-ratio-rollups/internal/nodecert/scan_test.go"
+Cohesion: 0.19
+Nodes (24): minimalKubeconfig, classify(), classifyAll(), daysFromDuration(), errorResult(), parsePEMCertificates(), Scan(), scanCertFile() (+16 more)
 
 ### Community 140 - "Tasks: DNSCheck Resource Contract"
 Cohesion: 0.13
 Nodes (15): Dependencies, Format: `[ID] [P?] [Story] Description`, Implementation strategy, Parallel opportunities, Path Conventions, Phase 1: Setup, Phase 2: Foundational (Blocking Prerequisites), Phase 4: User Story 2 — Every declared expectation is evaluated (P1) (+7 more)
 
 ### Community 141 - "validateAddonCheckPolicy"
-Cohesion: 0.27
-Nodes (13): AddonCheckFamilyPolicy, unknownThresholdKeys(), validateAddonCheckPolicy(), badSelector(), checkWithPolicy(), AddonCheck, LabelSelector, T (+5 more)
+Cohesion: 0.31
+Nodes (12): AddonCheckFamilyPolicy, validateAddonCheckPolicy(), badSelector(), checkWithPolicy(), AddonCheck, LabelSelector, T, TestSetAddonCheckAccepted() (+4 more)
 
 ### Community 142 - "PreferredServedVersion"
 Cohesion: 0.23
@@ -791,13 +812,13 @@ Nodes (14): type, type, type, annotations, create, name, rbac, serviceAccount (+
 Cohesion: 0.14
 Nodes (14): properties, type, type, type, maximum, minimum, type, config (+6 more)
 
-### Community 145 - "TestClientForSetsImpersonationAndMemoizes"
-Cohesion: 0.19
-Nodes (10): SAUsername(), TestClientForSetsImpersonationAndMemoizes(), TestSAUsername(), ClientFactory, Manager, New(), SAUsername(), T (+2 more)
+### Community 145 - "fakeClientFactory"
+Cohesion: 0.15
+Nodes (12): fakeClientFactory, SAUsername(), TestClientForSetsImpersonationAndMemoizes(), TestSAUsername(), ClientFactory, Manager, New(), SAUsername() (+4 more)
 
 ### Community 146 - "internal/adapter/declarative/annotation_test.go"
-Cohesion: 0.26
-Nodes (13): daemonSetWithAnnotations(), AnnotationStalenessCheck, DaemonSet, Node, T, Time, lockCheck(), lockJSON() (+5 more)
+Cohesion: 0.17
+Nodes (20): daemonSetWithAnnotations(), AnnotationStalenessCheck, DaemonSet, Node, T, Time, lockCheck(), lockJSON() (+12 more)
 
 ### Community 147 - "internal/adapter/declarative/field_test.go"
 Cohesion: 0.37
@@ -811,9 +832,9 @@ Nodes (12): Engine, NewMetricsServerEngine(), apiService(), clientObject, T, Uns
 Cohesion: 0.43
 Nodes (13): PodProjectionCheck, T, optedInPod(), runProjection(), TestNewEngine_PodProjectionValidation(), TestPodProjection_AllInjectedPasses(), TestPodProjection_CapNames(), TestPodProjection_InactivePodsSkipped() (+5 more)
 
-### Community 150 - "writeFile"
-Cohesion: 0.35
-Nodes (13): Scan(), makeCertPEM(), TestScanBundleEmitsPerCert(), TestScanDefaultsWhenNoPaths(), TestScanDirectoryRecursiveAndIgnoresNonCerts(), TestScanKubeconfig(), TestScanMissingPathIsSilent(), TestScanPermissionDeniedIsSkippedNotError() (+5 more)
+### Community 150 - "dnscheck_controller_test.go"
+Cohesion: 0.13
+Nodes (17): fakeDNSLauncher, createDNSCheck(), dnsHealthReports(), Context, DNSCheck, DNSCheckSpec, DNSCheckStatus, DNSTargetResult (+9 more)
 
 ### Community 151 - "crd_compat_gate_test.go"
 Cohesion: 0.53
@@ -823,9 +844,9 @@ Nodes (13): fixtureCRD(), T, runCRDCompat(), TestCRDCompatAddedOptionalFieldPass
 Cohesion: 0.14
 Nodes (14): Changes to existing types, `cmd/probe` — dns mode flags, `DNSCheckSpec`, `DNSCheckStatus`, `DNSResolver`, `DNSTarget`, `DNSTargetResult`, Entity: `DNSCheck` (+6 more)
 
-### Community 153 - "quorum-ratio-rollups/internal/probe/sweeper_test.go"
-Cohesion: 0.32
-Nodes (11): probeLabels(), probeShape(), sweepPod(), terminatedAt(), TestSweeper_LabelledPodNotMatchingProbeShapeIsSpared(), TestSweeper_LongRunningProbeIsNotReapedOnCreationAge(), TestSweeper_ReapsPodTerminatedLongerThanMinAge(), TestSweeper_StartSweepsImmediatelyAndStopsOnCancel() (+3 more)
+### Community 153 - "dnscheck_plan_test.go"
+Cohesion: 0.15
+Nodes (22): countUnreachedDNSPairs(), dnsCheckShouldPersistReport(), dnsNameserverAddress(), foldDNSVerdict(), DNSCheckStatus, nextDNSRequeue(), perPairBudget(), T (+14 more)
 
 ### Community 154 - "NodeCertificateCheck"
 Cohesion: 0.21
@@ -843,25 +864,25 @@ Nodes (12): properties, required, type, nodeAgent, required, $schema, title, typ
 Cohesion: 0.15
 Nodes (13): type, type, type, interval, labels, namespace, scrapeTimeout, serviceMonitor (+5 more)
 
-### Community 158 - "TestEnvoyGateway_HealthyAndNoGatewaysSkipped"
-Cohesion: 0.26
-Nodes (11): Engine, NewEnvoyGatewayEngine(), egHealthyObjects(), gatewayObject(), clientObject, T, Unstructured, TestEnvoyGateway_AdapterMetadata() (+3 more)
+### Community 158 - ".Reconcile"
+Cohesion: 0.22
+Nodes (10): Context, DNSCheck, DNSCheckStatus, HealthReport, Logger, Request, Result, Time (+2 more)
 
 ### Community 159 - "Feature Specification: [FEATURE NAME]"
 Cohesion: 0.15
 Nodes (12): Assumptions, Edge Cases, Feature Specification: [FEATURE NAME], Functional Requirements, Key Entities *(include if feature involves data)*, Measurable Outcomes, Requirements *(mandatory)*, Success Criteria *(mandatory)* (+4 more)
 
-### Community 160 - "internal/controller/addoncheck_controller_test.go"
-Cohesion: 0.20
-Nodes (8): healthReportCount(), countingStatusClient, countingStatusWriter, Client, NamespacedName, Object, SubResourceWriter, healthReportCount()
+### Community 160 - "fakeAddonAdapter"
+Cohesion: 0.14
+Nodes (9): healthReportCount(), countingStatusClient, countingStatusWriter, fakeAddonAdapter, Client, NamespacedName, Object, SubResourceWriter (+1 more)
 
 ### Community 161 - "healthcheck_types.go"
 Cohesion: 0.24
 Nodes (10): Condition, ListMeta, ObjectMeta, Time, TypeMeta, CheckTargetRef, HealthCheck, HealthCheckList (+2 more)
 
-### Community 162 - "Object"
-Cohesion: 0.23
-Nodes (6): Object, HealthReportList, NodeCertificateCheckList, TestDeepCopyRoundTrip(), HealthReportList, NodeCertificateCheckList
+### Community 162 - ".DeepCopyObject"
+Cohesion: 0.22
+Nodes (6): NodeCertificateCheckList, TestAddToScheme(), TestDeepCopyIntoExercise(), TestDeepCopyRoundTrip(), TestSchemeBuilderRegisterReturnsSelf(), NodeCertificateCheckList
 
 ### Community 163 - "GitHub Copilot Instructions for Fathom"
 Cohesion: 0.17
@@ -903,9 +924,9 @@ Nodes (8): dsRollout, nodeCertStatusView, daemonSetRollout(), dumpNodeCertDiagno
 Cohesion: 0.25
 Nodes (9): esoDeployment(), Engine, WorkloadCheck, NewExternalSecretsEngine(), esoHealthyObjects(), clientObject, T, TestExternalSecrets_HealthyAndEmptySyncSkipped() (+1 more)
 
-### Community 173 - "cadence_test.go"
-Cohesion: 0.35
-Nodes (10): acceptedCondition(), durp(), findCondition(), Condition, Duration, T, TestAddonCheckCadenceHelpersClamp(), TestCadenceClampMessages() (+2 more)
+### Community 173 - "clampCadence"
+Cohesion: 0.23
+Nodes (15): cadenceClampMessages(), clampCadence(), Duration, acceptedCondition(), durp(), findCondition(), Condition, Duration (+7 more)
 
 ### Community 174 - "Core Principles"
 Cohesion: 0.18
@@ -935,33 +956,37 @@ Nodes (11): Complexity Tracking, Constitution Check, Decisions resolved during p
 Cohesion: 0.18
 Nodes (10): Phase 0 Research: DNSCheck Resource Contract, R1 — How to evaluate the record kinds, R2 — How the three resolver vantage points are realized, R3 — Outcome mapping, including negative assertions, R4 — Keeping CEL inside the cost budget, R5 — Subject syntax validation, R6 — How many probe pods a run costs, and the bounds that follow, R7 — Where answer-matching and polarity are evaluated (+2 more)
 
-### Community 181 - "RecordReconcile"
-Cohesion: 0.31
-Nodes (9): Duration, RecordReconcile(), T, TestAdapterMetrics(), TestMetricsAreValidCollectors(), TestMetricsCanBeUsedFromOtherPackages(), TestReconcileMetrics(), TestRecordAdapterRunHelper() (+1 more)
+### Community 181 - "internal/metrics/metrics_test.go"
+Cohesion: 0.43
+Nodes (7): T, TestAdapterMetrics(), TestMetricsAreValidCollectors(), TestMetricsCanBeUsedFromOtherPackages(), TestReconcileMetrics(), TestRecordAdapterRunHelper(), TestRecordReconcileHelper()
 
 ### Community 182 - "RBAC / Least-Privilege Review — Fathom operator (commit cb845dd)"
 Cohesion: 0.20
 Nodes (9): Positive observations (examined, no defect), RBAC-1: Operator ClusterRole grants create/update/patch/delete on the three primary CRDs the reconcilers never write (medium), RBAC-2: Runtime node-agent ClusterRole allows get/update of ANY ConfigMap in the operator namespace, though the agent writes exactly one (medium), RBAC-3: Node-agent NetworkPolicy egress permits TCP/443 + TCP/6443 to ANY destination, not just the API server (medium), RBAC-4: Operator holds cluster-wide create/get/list/update/watch on ClusterRoles and RoleBindings with no resourceNames (high), RBAC-5: Operator holds cluster-wide apps/daemonsets create/update/delete — a DaemonSet-on-every-node takeover primitive (high), RBAC-6: Impersonated addon ServiceAccounts hold cluster-wide pods create/delete, granting the operator (via impersonation) a pod-create capability its own role lacks (medium), RBAC-7: Unused finalizer subresource grants across all four reconcilers (low) (+1 more)
 
-### Community 184 - ".IsReadOnly"
-Cohesion: 0.50
+### Community 183 - "dnscheck_plan.go"
+Cohesion: 0.32
+Nodes (14): dnsPair, dnsPairOutcome, dnsVantagePoint, describeDNSFailure(), dnsTargetResults(), dnsVantagePoints(), expandDNSPairs(), firstOutcomeWithResult() (+6 more)
+
+### Community 184 - ".RBACRules"
+Cohesion: 0.44
 Nodes (4): hasResource(), hasVerb(), TestRBACRulesDeclaresDryRunException(), TestRBACRulesDeclaresProbeException()
 
-### Community 185 - "ClusterHealthReconciler"
-Cohesion: 0.25
-Nodes (7): ClusterHealthReconciler, EventHandler, Client, EventRecorder, Manager, Scheme, Tracer
+### Community 185 - "internal/adapter/declarative/versiondetect_test.go"
+Cohesion: 0.30
+Nodes (14): deploymentWithImage(), deploymentWithMetaVersion(), deploymentWithTemplateVersion(), Deployment, Engine, T, TestDetectAddonVersion(), TestDetectAndGateVersion() (+6 more)
 
-### Community 186 - "TestCommittedAddonRolesAreReadOnly"
-Cohesion: 0.42
-Nodes (8): allowedWrites(), T, repoRoot(), TestCommittedAddonRolesAreReadOnly(), TestModelGrantsAreJustified(), TestUnjustifiedGrantsCatchesViolations(), UnjustifiedGrants(), writeKey
+### Community 186 - "BuiltInAdapters"
+Cohesion: 0.18
+Nodes (16): main(), allowedWrites(), T, repoRoot(), TestCommittedAddonRolesAreReadOnly(), TestModelGrantsAreJustified(), TestUnjustifiedGrantsCatchesViolations(), Collect() (+8 more)
 
 ### Community 187 - "msHealthyObjects"
 Cohesion: 0.47
 Nodes (7): NewMetricsServerEngine(), apiService(), msHealthyObjects(), TestMetricsServer_HealthyPassesAllFamilies(), TestMetricsServer_MissingAPIServiceFails(), TestMetricsServer_MissingDeploymentFails(), TestMetricsServer_UnavailableAPIServiceFails()
 
-### Community 188 - "writeNodeReportForCheck"
-Cohesion: 0.31
-Nodes (7): nodeCertHealthReportCount(), setNodeAgentDaemonSetStatus(), setNodeAgentDaemonSetStatusFull(), writeNodeReport(), writeNodeReportAt(), writeNodeReportForCheck(), agentResourceName()
+### Community 188 - "quorum-ratio-rollups/internal/adapter/declarative/istio_test.go"
+Cohesion: 0.32
+Nodes (12): NewIstioEngine(), istioAmbientObjects(), istioCRDObjects(), istiodControlPlane(), istioHealthyObjects(), istioInjectorConfig(), istioValidatorConfig(), TestIstio_AmbientDataPlanePasses() (+4 more)
 
 ### Community 189 - "Implementation Plan: [FEATURE]"
 Cohesion: 0.22
@@ -988,24 +1013,24 @@ Cohesion: 0.43
 Nodes (6): main(), T, runMain(), TestMain_BadFlagExitsNonZero(), TestMain_HelpExitsZero(), TestMain_RunsAsMainOnDemand()
 
 ### Community 195 - ".Run"
-Cohesion: 0.46
-Nodes (3): Context, Request, Result
+Cohesion: 0.27
+Nodes (4): versionReportingAdapter, Context, Request, Result
 
 ### Community 196 - "runMain"
-Cohesion: 0.43
-Nodes (6): main(), T, runMain(), TestMain_ExitsNonZeroOnWriteError(), TestMain_RunsAsMainOnDemand(), TestMain_WritesArtifacts()
+Cohesion: 0.67
+Nodes (5): T, runMain(), TestMain_ExitsNonZeroOnWriteError(), TestMain_RunsAsMainOnDemand(), TestMain_WritesArtifacts()
 
-### Community 197 - "summarizeFromConditions"
-Cohesion: 0.36
-Nodes (6): Condition, summarizeFromConditions(), truncateSummary(), T, TestSummarizeFromConditionsBoundsLength(), TestSummarizeFromConditionsNoReadyCondition()
+### Community 197 - "HealthCheckReconciler"
+Cohesion: 0.15
+Nodes (14): HealthCheckReconciler, clearMirroredHealthCheckStatus(), Client, Condition, EventRecorder, HealthCheck, Manager, Scheme (+6 more)
 
 ### Community 198 - "createOrReuseHealthReport"
 Cohesion: 0.39
 Nodes (7): createOrReuseHealthReport(), deterministicHealthReportName(), Client, Context, HealthReport, useDeterministicHealthReportName(), validateReusableHealthReport()
 
-### Community 199 - "IsReadVerb"
-Cohesion: 0.36
-Nodes (6): AddonServiceAccountName(), IsReadVerb(), T, TestAddonServiceAccountName(), TestIsReadVerb(), TestPolicyRuleIsReadOnly()
+### Community 199 - "run.go"
+Cohesion: 0.26
+Nodes (12): Setupper, Bool, Checker, DefaultControllers(), Client, Context, Manager, newUncachedProbeClient() (+4 more)
 
 ### Community 200 - "quorum-ratio-rollups/internal/app/run_happy_test.go"
 Cohesion: 0.29
@@ -1048,7 +1073,7 @@ Cohesion: 0.29
 Nodes (6): Completion Report, Done When, Mandatory Post-Execution Hooks, Outline, Pre-Execution Checks, User Input
 
 ### Community 210 - "programmableAdapter"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (3): programmableAdapter, Mutex, Outcome
 
 ### Community 211 - ".Get"
@@ -1056,8 +1081,12 @@ Cohesion: 0.29
 Nodes (5): transientAddonCheckGetClient, Client, Context, Object, ObjectKey
 
 ### Community 212 - "PreferredServedVersion"
-Cohesion: 0.43
-Nodes (6): PreferredServedVersion(), crd(), crdWithServed(), TestEstablished(), TestPreferredServedVersion(), TestPreferredServedVersion_IgnoresUnservedEntries()
+Cohesion: 0.33
+Nodes (7): Established(), PreferredServedVersion(), crd(), crdWithServed(), TestEstablished(), TestPreferredServedVersion(), TestPreferredServedVersion_IgnoresUnservedEntries()
+
+### Community 213 - "Phase 1 Data Model: DNSCheck Reconciler"
+Cohesion: 0.15
+Nodes (13): 1. In-memory entities, 2. Mapping onto the frozen schema, 3. Metric series, 4. Lifecycle and ownership, 5. State transitions, Conditions, Existing, reused unchanged (FR-032), New (FR-033) (+5 more)
 
 ### Community 214 - "noMatchListClient"
 Cohesion: 0.38
@@ -1071,13 +1100,9 @@ Nodes (5): webhookEntry, appendEntry(), WebhookClientConfig, ServiceReference, a
 Cohesion: 0.29
 Nodes (6): Auxiliary roles shipped alongside the operator, Namespace-scoping analysis, Operator ClusterRole rules, Operator RBAC, Runtime-created RBAC, Why these grants are cluster-scoped
 
-### Community 217 - "nodeAgentTemplateNeedsWrite"
-Cohesion: 0.24
-Nodes (5): nodeAgentTemplateNeedsWrite(), T, TestNodeAgentTemplateNeedsWrite(), T, TestDecideNodeCertRollup()
-
 ### Community 218 - "runMain"
 Cohesion: 0.48
-Nodes (5): runMain(), TestMain_BadFlagExitsNonZero(), TestMain_ExitsNonZeroOnWriteError(), TestMain_HelpExitsZero(), TestMain_WritesArtifacts()
+Nodes (5): runMain(), TestMain_BadFlagExitsNonZero(), TestMain_HelpExitsZero(), TestMain_RunsAsMainOnDemand(), TestMain_WritesArtifacts()
 
 ### Community 219 - "quorum-ratio-rollups/internal/controller/policy_validation_test.go"
 Cohesion: 0.48
@@ -1115,17 +1140,25 @@ Nodes (6): 1. `review/findings.md` — ranked confirmed findings (deliverable 1)
 Cohesion: 0.33
 Nodes (5): SEC-1: Report-authenticity ValidatingAdmissionPolicy exempts every non-`*-node-agent` writer (medium), SEC-2: node-agent `/metrics` endpoint is unauthenticated and leaks per-node certificate inventory (medium), SEC-3: node-agent hostPath mounts use `DirectoryOrCreate`, letting a check seed root-owned dirs on every node (low), SEC-4: User-controlled DNS targets and resolver address drive arbitrary DNS egress from probe pods (low), Security review candidates — Fathom (commit cb845dd)
 
+### Community 231 - "Object"
+Cohesion: 0.24
+Nodes (4): Object, AddonCheck, DNSCheck, AddonCheck
+
 ### Community 239 - "speckit-taskstoissues/SKILL.md"
 Cohesion: 0.40
 Nodes (4): Outline, Post-Execution Checks, Pre-Execution Checks, User Input
+
+### Community 241 - "Feature Specification: DNSCheck Reconciler"
+Cohesion: 0.15
+Nodes (13): Assumptions, Clarifications, Feature Specification: DNSCheck Reconciler, Functional Requirements, Inherited Requirements, Key Entities, Measurable Outcomes, Numbering (+5 more)
 
 ### Community 242 - "bindAddress"
 Cohesion: 0.40
 Nodes (5): type, properties, type, bindAddress, healthProbe
 
 ### Community 243 - ".severity"
-Cohesion: 0.60
-Nodes (3): TestHealthReportResultSeverity_EmptyAndUnrecognizedReturnZero(), TestHealthReportResultSeverity_OrderingAcrossEnumValues(), TestHealthReportResultSeverity_PassIsLowestNonZero()
+Cohesion: 0.22
+Nodes (7): TestWorstResult(), WorstResult(), TestHealthReportResultSeverity_EmptyAndUnrecognizedReturnZero(), TestHealthReportResultSeverity_OrderingAcrossEnumValues(), TestHealthReportResultSeverity_PassIsLowestNonZero(), TestWorstOutcome(), WorstOutcome()
 
 ### Community 245 - "scripts/coverage_gate_test.go"
 Cohesion: 0.60
@@ -1155,6 +1188,14 @@ Nodes (5): Accept / reject matrix, Contract: DNSCheck Admission Validation, Full
 Cohesion: 0.40
 Nodes (5): Generation and the cost gate, Phase 3: User Story 1 — Declare DNS intent and have it validated (P1), Tests, Types, Validation rules
 
+### Community 253 - "Phase 0 Research: DNSCheck Reconciler"
+Cohesion: 0.17
+Nodes (12): D10 — Configuration needs an integer binding, which does not exist yet, D1 — Probe pods carry no ownerReference today, and DNSCheck is the first kind that can give them one, D2 — Probe pod reads must not go through the manager cache, D3 — Fan-out is bounded-concurrency goroutines, not sequential iteration, D4 — One run deadline, derived per-pair bounds, D5 — Cadence is anchored to run start, with a floor, D6 — Unreached pairs are `Unknown`; truncation is also a condition, D7 — A new per-target gauge, rebuilt by delete-then-set (+4 more)
+
+### Community 261 - "Contract: DNSCheck Metrics, Events, and RBAC"
+Cohesion: 0.20
+Nodes (10): 1. Check-level metrics (inherited, FR-032), 2. Per-target metric (new, FR-033), 3. Events (inherited, FR-112), 4. Conditions, 5. RBAC (FR-115 / inherited FR-037), Contract: DNSCheck Metrics, Events, and RBAC, Current state, Required (+2 more)
+
 ### Community 266 - "normalizeShell"
 Cohesion: 0.83
 Nodes (3): normalizeShell(), stripShellComment(), TestCoverageGateSkipsNoPackages()
@@ -1163,9 +1204,9 @@ Nodes (3): normalizeShell(), stripShellComment(), TestCoverageGateSkipsNoPackage
 Cohesion: 0.50
 Nodes (4): items, type, type, extraArgs
 
-### Community 268 - "countAbsent"
-Cohesion: 0.50
-Nodes (3): T, TestCountAbsent(), countAbsent()
+### Community 268 - "Contract: DNSCheck Reconcile Loop"
+Cohesion: 0.20
+Nodes (9): Contract: DNSCheck Reconcile Loop, Explicitly out of contract, Failure handling, Invocation, Ordered sequence, Outcome classification, Ownership, Status write discipline (+1 more)
 
 ### Community 272 - "Contract: CRD Admission Validation"
 Cohesion: 0.50
@@ -1175,20 +1216,92 @@ Nodes (4): AddonCheck `spec.policy`, Cadence floors (both kinds), Compatibility 
 Cohesion: 0.50
 Nodes (4): Implementation Strategy, Incremental Delivery, MVP First (User Story 1 Only), Single-Branch Note
 
+### Community 307 - "AddonCheckReconciler"
+Cohesion: 0.29
+Nodes (6): AddonCheckReconciler, Client, EventRecorder, Manager, Scheme, Tracer
+
+### Community 308 - "ratioRollupReportChecks"
+Cohesion: 0.32
+Nodes (8): familyRatioRollup, HealthReportCheck, HealthReportTargetRef, copyStringMap(), Time, healthReportChecks(), ratioRollupReportChecks(), ratioRollupSummary()
+
+### Community 309 - "Registry"
+Cohesion: 0.32
+Nodes (5): Rationale: in-process interface over gRPC/OCI/plugin loaders, Adapter, Logger, Registry, RWMutex
+
+### Community 310 - "quorum-ratio-rollups/internal/metrics/metrics_test.go"
+Cohesion: 0.25
+Nodes (5): RecordReconcile(), TestAdapterMetrics(), TestMetricsAreValidCollectors(), TestRecordAdapterRunHelper(), TestRecordReconcileHelper()
+
+### Community 312 - "Implementation Plan: DNSCheck Reconciler"
+Cohesion: 0.25
+Nodes (8): Complexity Tracking, Constitution Check, Documentation (this feature), Implementation Plan: DNSCheck Reconciler, Project Structure, Source Code (repository root), Summary, Technical Context
+
+### Community 313 - "dnsCheckInterval"
+Cohesion: 0.43
+Nodes (7): dnsCheckInterval(), dnsCheckRunBound(), DNSCheck, Duration, dur(), Duration, TestDNSCheckCadence()
+
+### Community 314 - "observeCheck"
+Cohesion: 0.33
+Nodes (6): coerceResult(), Condition, EventRecorder, Object, Time, observeCheck()
+
+### Community 315 - "Quickstart Validation: DNSCheck Reconciler"
+Cohesion: 0.29
+Nodes (7): Level 1 — unit, no cluster, Level 2 — envtest, real API server, faked launcher, Level 3 — e2e on Kind, Level 4 — gates before the PR is ready, Manual review items no gate catches, Prerequisites, Quickstart Validation: DNSCheck Reconciler
+
+### Community 316 - "User Scenarios & Testing *(mandatory)*"
+Cohesion: 0.33
+Nodes (6): Edge Cases, User Scenarios & Testing *(mandatory)*, User Story 1 - A declared check produces a verdict on its cadence (Priority: P1), User Story 2 - An operator sees which name failed, not just that the check failed (Priority: P2), User Story 3 - Result history is recorded without noise (Priority: P3), User Story 4 - Evaluation workloads never outlive their check (Priority: P3)
+
+### Community 317 - "builder"
+Cohesion: 0.40
+Nodes (3): GroupVersion, SchemeBuilder, builder
+
+### Community 319 - "dnscheck_test.go"
+Cohesion: 0.60
+Nodes (3): dnsCheckPod, dnsCheckPodList, listProbePods()
+
+### Community 320 - "TestRBACRulesDeclaresProbeException"
+Cohesion: 0.60
+Nodes (4): T, hasResource(), hasVerb(), TestRBACRulesDeclaresProbeException()
+
+### Community 321 - "Specification Quality Checklist: DNSCheck Reconciler"
+Cohesion: 0.40
+Nodes (5): Content Quality, Feature Readiness, Notes, Requirement Completeness, Specification Quality Checklist: DNSCheck Reconciler
+
+### Community 323 - ".Run"
+Cohesion: 0.50
+Nodes (3): Context, Request, Result
+
+### Community 324 - "TestClusterHealthSelectsHealthCheck"
+Cohesion: 0.67
+Nodes (3): T, TestClusterHealthSelectsHealthCheck(), TestHealthCheckEventHandler()
+
+### Community 325 - "Dependencies & Execution Order"
+Cohesion: 0.50
+Nodes (4): Dependencies & Execution Order, Parallel Opportunities, Phase Dependencies, Within Each User Story
+
+### Community 326 - "Implementation Strategy"
+Cohesion: 0.50
+Nodes (4): Implementation Strategy, Incremental Delivery, MVP First, Suggested PR Scope
+
+### Community 327 - "createAddonCheckWithStatusForObservability"
+Cohesion: 0.67
+Nodes (3): AddonCheckStatus, createAddonCheckWithStatusForObservability(), Context
+
 ## Knowledge Gaps
-- **599 isolated node(s):** `post-install.sh script`, `common.sh script`, `$schema`, `title`, `type` (+594 more)
+- **686 isolated node(s):** `post-install.sh script`, `common.sh script`, `$schema`, `title`, `type` (+681 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **37 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **35 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `CheckResult` connect `CheckResult` to `quorum-ratio-rollups/internal/adapter/certmanager/adapter.go`, `.Get`, `countAbsent`, `.Run`, `internal/adapter/declarative/annotation_test.go`, `internal/adapter/declarative/field_test.go`, `runProjection`, `internal/adapter/certmanager/adapter_test.go`, `.detectAndGateVersion`, `.Run`, `TargetRef`, `.Run`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `FamilyPolicy`, `.Evaluate`, `Family`, `deploymentInNamespace`, `addoncheck_controller.go`, `assertHasOutcome`, `.Evaluate`, `RatioThresholds`, `MustEngine`, `runConfigMap`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
-- **Why does `New()` connect `New` to `.Run`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `observeCheck`, `.Update`, `quorum-ratio-rollups/cmd/probe/main_test.go`, `newScheme`, `.Register`, `.Run`, `.DeepCopy`, `TestClientForSetsImpersonationAndMemoizes`, `Init`, `quorum-ratio-rollups/internal/probe/sweeper_test.go`, `Object`, `.detectAndGateVersion`, `quorum-ratio-rollups/test/utils/utils.go`, `.DeepCopyInto`, `TestAdapterClient`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
-- **Why does `Family` connect `Family` to `.Get`, `.Name`, `validateAddonCheckPolicy`, `internal/adapter/declarative/field_test.go`, `NewMetricsServerEngine`, `runProjection`, `TestEnvoyGateway_HealthyAndNoGatewaysSkipped`, `NewExternalDNSEngine`, `TestExternalSecrets_HealthyAndEmptySyncSkipped`, `CheckResult`, `internal/adapter/certmanager/adapter_test.go`, `.detectAndGateVersion`, `Capabilities`, `TargetRef`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `FamilyPolicy`, `.Run`, `deploymentInNamespace`, `addoncheck_controller.go`, `assertHasOutcome`, `kedaHealthyObjects`, `RatioThresholds`, `runArgoCD`, `internal/adapter/declarative/istio_test.go`, `New`?**
-  _High betweenness centrality (0.083) - this node is a cross-community bridge._
+- **Why does `CheckResult` connect `CheckResult` to `EvalContext`, `.List`, `.detectAndGateVersion`, `.Run`, `internal/adapter/declarative/annotation_test.go`, `internal/adapter/declarative/field_test.go`, `runProjection`, `internal/adapter/certmanager/adapter_test.go`, `ratioRollupReportChecks`, `.Run`, `FamilyPolicy`, `.Run`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `quorum-ratio-rollups/internal/adapter/declarative/evaluator.go`, `adapter/adapter.go`, `deploymentInNamespace`, `Family`, `assertHasOutcome`, `.Evaluate`, `RatioThresholds`, `addoncheck_controller.go`, `.Evaluate`, `MustEngine`?**
+  _High betweenness centrality (0.120) - this node is a cross-community bridge._
+- **Why does `New()` connect `New` to `.Run`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.Name`, `.DeepCopy`, `observeCheck`, `.DeepCopy`, `quorum-ratio-rollups/cmd/probe/main_test.go`, `.detectAndGateVersion`, `.Register`, `.Run`, `fakeClientFactory`, `Init`, `newScheme`, `.DeepCopyObject`, `.DeepCopy`, `.DeepCopy`, `.DeepCopyInto`, `join`, `TestAdapterClient`, `Object`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`?**
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
+- **Why does `Family` connect `Family` to `EvalContext`, `.Name`, `validateAddonCheckPolicy`, `.detectAndGateVersion`, `internal/adapter/declarative/field_test.go`, `NewMetricsServerEngine`, `runProjection`, `NewExternalDNSEngine`, `TestExternalSecrets_HealthyAndEmptySyncSkipped`, `CheckResult`, `ratioRollupReportChecks`, `internal/adapter/certmanager/adapter_test.go`, `FamilyDefinition`, `FamilyPolicy`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `adapter/adapter.go`, `.Run`, `deploymentInNamespace`, `assertHasOutcome`, `kedaHealthyObjects`, `RatioThresholds`, `addoncheck_controller.go`, `runArgoCD`, `podInNamespace`, `New`, `Capabilities`, `MustEngine`?**
+  _High betweenness centrality (0.081) - this node is a cross-community bridge._
 - **Are the 108 inferred relationships involving `assertHasOutcome()` (e.g. with `TestAnnotationStaleness_NamedLock()` and `TestAnnotationStaleness_NodeList()`) actually correct?**
   _`assertHasOutcome()` has 108 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 110 inferred relationships involving `assertHasOutcome()` (e.g. with `TestAnnotationStaleness_NamedLock()` and `TestAnnotationStaleness_NodeList()`) actually correct?**

@@ -84,6 +84,7 @@ the viper key by the rule above.
 | `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.4.0` | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |
 | `--node-agent-image` | `node_agent_image` | `FATHOM_NODE_AGENT_IMAGE` | `ghcr.io/skaphos/fathom-node-agent:v0.4.0` | Container image used by the `NodeCertificateCheck` controller for the managed node-agent DaemonSet. See [Node-agent image default](#node-agent-image-default). |
 | `--namespace` | `namespace` | `FATHOM_NAMESPACE` | _(empty)_ | Operator namespace where per-addon ServiceAccounts live for adapter impersonation. In-cluster deployments set it from the pod namespace via downward API; empty disables impersonation for local out-of-cluster runs. |
+| `--dnscheck-max-concurrent-probes` | `dnscheck.max_concurrent_probes` | `FATHOM_DNSCHECK_MAX_CONCURRENT_PROBES` | `4` | Maximum probe pods a single `DNSCheck` may run at once. See [DNSCheck fan-out](#dnscheck-fan-out). |
 | `--tracing-enabled` | `tracing.enabled` | `FATHOM_TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead). See [Tracing](#tracing). |
 | `--tracing-otlp-endpoint` | `tracing.otlp_endpoint` | `FATHOM_TRACING_OTLP_ENDPOINT` | _(empty)_ | OTLP/gRPC collector endpoint (`host:port`). Empty uses the OTel SDK default (`localhost:4317`) and the standard `OTEL_EXPORTER_OTLP_*` env vars. |
 | `--tracing-sampling-ratio` | `tracing.sampling_ratio` | `FATHOM_TRACING_SAMPLING_RATIO` | `1.0` | Head-based trace sampling probability in `[0,1]` for a parent-based ratio sampler. `1.0` samples every root span. |
@@ -135,6 +136,76 @@ is not the operator image and not the probe image.
 With Helm, set `nodeAgent.image.repository` / `nodeAgent.image.tag`. The chart
 passes the rendered image to the operator as `--node-agent-image`; it does not
 template the node-agent DaemonSet itself.
+
+## DNSCheck Fan-out
+
+A `DNSCheck` evaluates one probe pod per **(target, resolver) pair**. A target
+that names a resolver produces one pair; a target that names none is evaluated
+against every resolver the check declares. The schema caps this at 16 targets ×
+3 resolvers, so a single check can imply up to **48 pairs** — and the pair count
+is derivable from the check's own spec, before it ever runs.
+
+`--dnscheck-max-concurrent-probes` (default `4`) bounds how many of those pods
+are in flight at once for one check. The cluster-wide ceiling is:
+
+```text
+--dnscheck-max-concurrent-probes  ×  the DNSCheck controller's reconcile concurrency
+```
+
+Both numbers come from configuration, so the maximum number of probe pods Fathom
+can create at any moment is computable without observing a running system.
+
+Lower it where tenant namespaces enforce tight pod quotas; raise it to shorten
+runs for checks with many targets. Zero or negative is rejected at startup — it
+would stall every check rather than slow it down, since no pair could ever be
+launched and every run would report all-`Unknown`.
+
+### Sizing `spec.timeout` against the pair count
+
+`spec.timeout` bounds the **whole run**, not each pair, and the schema requires
+it not to exceed `spec.interval`. Pairs are evaluated in batches of at most
+`--dnscheck-max-concurrent-probes`, so:
+
+```text
+run duration  ≈  fixed overhead  +  ceil(pairs ÷ maxConcurrentProbes) × per-batch cost
+```
+
+**Measured** on a single-node kind cluster (Kubernetes 1.36, probe image already
+present on the node, default concurrency of 4), resolving in-cluster names
+through cluster DNS:
+
+| Pairs | Batches | Run duration |
+| --- | --- | --- |
+| 4 | 1 | ~6.2s |
+| 12 | 3 | ~15.5–18.8s |
+
+That is roughly **6 seconds per batch**, with about 0.7s of fixed overhead paid
+once. The cost is dominated by Pod scheduling and startup, not by the DNS query
+— which is why it scales with *batches*, not with pairs.
+
+Treat 6s/batch as a **floor, not a budget**. It assumes the probe image is
+already on the node; a cluster pulling from a remote registry, a busy scheduler,
+or a namespace with admission webhooks will all be slower. Size with headroom:
+
+```text
+spec.timeout  ≥  2 × ceil(pairs ÷ maxConcurrentProbes) × 6s
+```
+
+Worked examples at the default concurrency of 4:
+
+| Pairs | Batches | Measured floor | Suggested `spec.timeout` |
+| --- | --- | --- | --- |
+| 1–4 | 1 | ~6s | `30s` |
+| 12 | 3 | ~18s | `1m` |
+| 24 | 6 | ~36s | `2m` |
+| **48** (schema maximum) | 12 | **~72s** | **`3m`** (with `interval ≥ 3m`) |
+
+**A check at the schema's maximum pair count will not complete at the default
+`spec.timeout` of 10s.** It truncates: the pairs it never reached report
+`Unknown`, the verdict degrades accordingly, and the `Complete` condition goes
+`False` naming the count. That is deliberate — a truncated run says so rather
+than silently overrunning its bound. Raise `spec.timeout` and `spec.interval`
+together, raise `--dnscheck-max-concurrent-probes`, or declare fewer targets.
 
 ## Operator Namespace and Adapter Impersonation
 

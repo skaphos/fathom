@@ -53,15 +53,23 @@ section is the conceptual overview.
 | --- | --- | --- | --- |
 | `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
 | `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
+| `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. | Yes (via probe Pods) |
 | `HealthCheck` | `api/v1alpha1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
 | `ClusterHealth` | `api/v1alpha1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
 | `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
 
-`AddonCheck` and `NodeCertificateCheck` are the kinds that drive work
-(`AddonCheck` in-process via an adapter; `NodeCertificateCheck` on each node via
-the node-agent DaemonSet). `HealthCheck` and
-`ClusterHealth` are projection/aggregation layers; `HealthReport` is the audit
-trail.
+`AddonCheck`, `NodeCertificateCheck`, and `DNSCheck` are the kinds that drive
+work — `AddonCheck` in-process via an adapter, `NodeCertificateCheck` on each
+node via the node-agent DaemonSet, and `DNSCheck` from short-lived probe Pods in
+the check's own namespace. `HealthCheck` and `ClusterHealth` are
+projection/aggregation layers; `HealthReport` is the audit trail.
+
+`DNSCheck` is the one kind whose workloads carry an `ownerReference`. Its probe
+Pods run in the *check's* namespace — which is what makes a check author's reach
+exactly their existing reach, and puts the query under that namespace's own
+NetworkPolicy — and a namespaced owner must share its dependent's namespace.
+Adapter probe Pods follow the add-on under check into *its* namespace, so they
+cannot be owned and rely on the label-based orphan sweep instead.
 
 ### Result severity
 

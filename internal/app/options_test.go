@@ -58,6 +58,84 @@ func TestDefaultOptions_MatchFlagDefaults(t *testing.T) {
 	if got.EnableHTTP2 != want.EnableHTTP2 {
 		t.Errorf("EnableHTTP2: got %v, want %v", got.EnableHTTP2, want.EnableHTTP2)
 	}
+	if got.DNSCheck != want.DNSCheck {
+		t.Errorf("DNSCheck: got %+v, want %+v", got.DNSCheck, want.DNSCheck)
+	}
+}
+
+// TestLoad_DNSCheckMaxConcurrentProbesPrecedence walks the full precedence chain
+// for the only integer-typed binding. The table grew an int case to carry it
+// (previously string/bool/float only), and an integer that silently arrives as a
+// string would still satisfy mapstructure's WeaklyTypedInput — so this asserts
+// the resolved value at each level rather than merely that Load succeeds.
+func TestLoad_DNSCheckMaxConcurrentProbesPrecedence(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "fathom.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+dnscheck:
+  max_concurrent_probes: 6
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Run("default when nothing set", func(t *testing.T) {
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, "", false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.DNSCheck.MaxConcurrentProbes != DefaultDNSCheckMaxConcurrentProbes {
+			t.Errorf("MaxConcurrentProbes: got %d, want default %d",
+				got.DNSCheck.MaxConcurrentProbes, DefaultDNSCheckMaxConcurrentProbes)
+		}
+	})
+
+	t.Run("config beats default", func(t *testing.T) {
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.DNSCheck.MaxConcurrentProbes != 6 {
+			t.Errorf("MaxConcurrentProbes: got %d, want 6", got.DNSCheck.MaxConcurrentProbes)
+		}
+	})
+
+	t.Run("env beats config", func(t *testing.T) {
+		t.Setenv("FATHOM_DNSCHECK_MAX_CONCURRENT_PROBES", "8")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.DNSCheck.MaxConcurrentProbes != 8 {
+			t.Errorf("MaxConcurrentProbes: got %d, want 8", got.DNSCheck.MaxConcurrentProbes)
+		}
+	})
+
+	t.Run("flag beats env", func(t *testing.T) {
+		t.Setenv("FATHOM_DNSCHECK_MAX_CONCURRENT_PROBES", "8")
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse([]string{"--dnscheck-max-concurrent-probes=2"}); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, configPath, true)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got.DNSCheck.MaxConcurrentProbes != 2 {
+			t.Errorf("MaxConcurrentProbes: got %d, want 2", got.DNSCheck.MaxConcurrentProbes)
+		}
+	})
 }
 
 func TestLoad_FlagOverridesEverything(t *testing.T) {
@@ -352,6 +430,23 @@ func TestValidate(t *testing.T) {
 				o.HealthProbeBindAddress = ""
 			},
 			wantErr: "health_probe_bind_address",
+		},
+		{
+			// A zero cap cannot launch any pair, so every DNSCheck run would
+			// truncate to all-Unknown rather than merely running slowly. Fail at
+			// startup instead of shipping checks that never evaluate.
+			name: "zero dnscheck concurrency is rejected",
+			mutate: func(o *Options) {
+				o.DNSCheck.MaxConcurrentProbes = 0
+			},
+			wantErr: "dnscheck.max_concurrent_probes",
+		},
+		{
+			name: "negative dnscheck concurrency is rejected",
+			mutate: func(o *Options) {
+				o.DNSCheck.MaxConcurrentProbes = -1
+			},
+			wantErr: "dnscheck.max_concurrent_probes",
 		},
 		{
 			name: "insecure metrics on network port is rejected",

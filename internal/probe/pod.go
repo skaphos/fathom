@@ -90,6 +90,22 @@ type Request struct {
 	RecordType      string
 	ExpectedAnswers []string
 	Absent          bool
+
+	// OwnerReferences, when set, make the probe pod a dependent of the resource
+	// that caused it, so deleting that resource garbage-collects the pod.
+	//
+	// Only a caller that places the pod in the *same namespace* as its owner may
+	// set this: Kubernetes rejects a namespaced owner in another namespace, and
+	// a cross-namespace reference is silently treated as a dangling one, which
+	// makes the pod eligible for immediate GC. That rules it out for adapter
+	// probes, whose pods follow the addon under check into its own namespace —
+	// they rely on the label-based Sweeper instead. DNSCheck resolves inside the
+	// check's own namespace, so it can and does set this.
+	//
+	// Ownership does not replace the Sweeper. Kubernetes does not garbage-collect
+	// a terminated pod whose owner still exists, so an operator that dies between
+	// Create and Run's delete defer still leaves an orphan for the sweep to reap.
+	OwnerReferences []metav1.OwnerReference
 }
 
 // DNSSource is the resolver vantage point a dns-mode probe queries from.
@@ -166,7 +182,15 @@ func Pod(req Request) (*corev1.Pod, error) {
 		activeDeadlineSeconds = 6
 	}
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: req.Name, Namespace: req.Namespace, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+			Labels:    labels,
+			// Copied rather than aliased: the caller keeps ownership of its slice,
+			// and a nil OwnerReferences stays nil so an existing caller's manifest
+			// is byte-for-byte what it was before this field existed.
+			OwnerReferences: append([]metav1.OwnerReference(nil), req.OwnerReferences...),
+		},
 		Spec: corev1.PodSpec{
 			AutomountServiceAccountToken:  boolPtr(false),
 			RestartPolicy:                 corev1.RestartPolicyNever,
