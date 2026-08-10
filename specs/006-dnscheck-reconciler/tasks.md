@@ -156,7 +156,7 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 
 - [X] T040 [P] [US4] envtest: every probe pod built for a pair carries an owner reference to its `DNSCheck`, in `internal/controller/dnscheck_controller_test.go`
 - [X] T041 [P] [US4] envtest: deleting a check withdraws both the check-level and per-target metric series, in `internal/controller/dnscheck_controller_test.go`
-- [ ] T042 [P] [US4] e2e: deleting a check mid-run removes its pods by owner-reference cascade, in `test/e2e/dnscheck_test.go`
+- [X] T042 [P] [US4] e2e: deleting a check mid-run removes its pods by owner-reference cascade, in `test/e2e/dnscheck_test.go`
 - [X] T043 [P] [US4] e2e: killing the operator mid-run leaves an orphan that **both** reclamation paths can collect, in `test/e2e/dnscheck_test.go` — **reframed, see note below**
 
 > **T043 reframed: asserts *reclaimable*, not *reclaimed*.** The orphan sweep
