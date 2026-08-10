@@ -199,7 +199,7 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 - [X] T055 Regenerate the CRD API reference via `go -C tools tool task docs:api-ref` and sync the Helm chart CRDs via `go -C tools tool task helm:sync`
 - [X] T056 Run the full gate set: `go -C tools tool task ci`, plus `verify-generated`, `crd-compat` (expected to be a no-op — the schema is frozen), and `reuse lint`
 - [ ] T057 Run `go -C tools tool task test-e2e` against Kind and record the outcome in the PR test plan
-- [ ] T058 Run `graphify update .` and include the refreshed graph in the PR
+- [X] T058 Run `graphify update .` and include the refreshed graph in the PR
 
 ---
 
