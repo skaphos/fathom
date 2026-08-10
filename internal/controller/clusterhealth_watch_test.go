@@ -200,7 +200,11 @@ func TestHealthCheckEventHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r := &ClusterHealthReconciler{
-				Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(ch).Build(),
+				// DeepCopy, not ch: these subtests run in parallel, and Build() ->
+				// versionedTracker.Add() writes resourceVersion onto every object it
+				// is given. Sharing one pointer across five parallel builders is a
+				// data race on that field, which -race reports on every subtest.
+				Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(ch.DeepCopy()).Build(),
 				Scheme: scheme,
 			}
 			q := workqueue.NewTypedRateLimitingQueue[reconcile.Request](
