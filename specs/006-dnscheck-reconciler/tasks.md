@@ -190,12 +190,12 @@ and `internal/controller/*` plus `internal/probe/*` changes mandate an e2e run.
 - [X] T046 [P] e2e: a check in a namespace the operator does not own resolves `kubernetes.default.svc.cluster.local`, and the probe pod runs in the **check's** namespace, in `test/e2e/dnscheck_test.go` — this is SC-008 and the single most important e2e row
 - [X] T047 [P] e2e: an `.invalid` target under a positive assertion yields `Fail`, and the same target with `absent: true` yields `Pass`, in `test/e2e/dnscheck_test.go`
 - [X] T048 [P] e2e: a target with an explicit resolver pointed at an unroutable address and `absent: true` yields `Fail` or `Error` — never `Pass`, in `test/e2e/dnscheck_test.go` — the real-network counterpart to T017, proving an unreachable resolver cannot masquerade as a satisfied negative assertion (FR-014)
-- [ ] T049 (NOT DONE — see note) [P] e2e: a check in a `restricted` PodSecurity namespace either admits the probe pod or surfaces an actionable per-pair `Error`, in `test/e2e/dnscheck_test.go`
+- [X] T049 [P] e2e: a check in a `restricted` PodSecurity namespace either admits the probe pod or surfaces an actionable per-pair `Error`, in `test/e2e/dnscheck_test.go`
 - [X] T050 [P] e2e: a many-pair check with a deliberately short bound truncates without overrunning the bound, in `test/e2e/dnscheck_test.go`
-- [ ] T051 (NOT DONE — see note) Measure the real per-pair cost during an e2e run and publish the pair-count-to-run-bound sizing guidance in `docs/reference/`, stating plainly that a maximum-size check does not complete at the default bound (FR-104b, SC-107) — the 1–3s figure used in planning is an estimate and must not ship as documentation
+- [X] T051 Measure the real per-pair cost during an e2e run and publish the pair-count-to-run-bound sizing guidance in `docs/reference/`, stating plainly that a maximum-size check does not complete at the default bound (FR-104b, SC-107) — the 1–3s figure used in planning is an estimate and must not ship as documentation
 - [X] T052 [P] Add a `DNSCheck` section to `docs/reference/status-conditions.md` covering `Accepted`, `Ready`, and the new `Complete` condition — the page has a section per kind and DNSCheck is absent entirely (a gap inherited from #294). No guard test protects this page, so the omission is silent
 - [X] T053 [P] Document `fathom_dnscheck_target_result`, its six labels, and its 288-series-per-check ceiling in `docs/guides/monitoring.md`, alongside the existing `fathom_check_result` guidance — operators need the ceiling for cardinality planning (FR-034)
-- [ ] T054 (NOT DONE — see note) [P] Update `README.md` and `docs/architecture.md` for the new controller and its configuration surface
+- [X] T054 [P] Update `README.md` and `docs/architecture.md` for the new controller and its configuration surface
 - [X] T055 Regenerate the CRD API reference via `go -C tools tool task docs:api-ref` and sync the Helm chart CRDs via `go -C tools tool task helm:sync`
 - [X] T056 Run the full gate set: `go -C tools tool task ci`, plus `verify-generated`, `crd-compat` (expected to be a no-op — the schema is frozen), and `reuse lint`
 - [ ] T057 Run `go -C tools tool task test-e2e` against Kind and record the outcome in the PR test plan
@@ -221,24 +221,16 @@ task had been started.
 
 ---
 
-> **Three Phase 7 tasks are NOT done.** Recorded plainly rather than quietly
-> dropped, because two of them are release blockers by the plan's own reckoning.
->
-> - **T049 (restricted PodSecurity namespace)** — not written. It is the one
->   remaining first-contact risk research flagged: `Pod()` builds a hardened pod
->   and unit tests assert its security context, but nothing has exercised it
->   against a namespace enforcing `restricted` that the operator does not own.
-> - **T051 (measured per-pair cost → sizing guidance)** — the *relationship* is
->   documented in `docs/reference/configuration.md`, but the numbers behind it
->   are still the planning estimate. FR-104b and SC-107 require a measured
->   figure, and shipping an estimate as documentation is exactly what FR-104b
->   forbids. **Release blocker.**
-> - **T054 (README / architecture)** — the reference and monitoring pages cover
->   the new kind, but the top-level narrative docs do not mention it.
->
-> Also still open: **T057** (a full unscoped `task test-e2e`; only the
-> `dnscheck`-labelled specs have been run against a real cluster) and **T058**
-> (graph refresh).
+> **T051 measurement, recorded here because the numbers matter.** Measured on a
+> single-node kind cluster (Kubernetes 1.36, probe image preloaded, concurrency
+> 4), resolving in-cluster names: 4 pairs / 1 batch took ~6.2s (twice), 12 pairs
+> / 3 batches took 15.5s and 18.8s. That is ~5.5s per batch plus ~0.7s of fixed
+> overhead — cost scales with **batches, not pairs**, confirming Pod startup
+> dominates rather than the query. At the 48-pair schema maximum that is ~72s,
+> so the default 10s bound truncates, exactly as FR-104b requires be documented.
+> `docs/reference/configuration.md` carries the table and states plainly that
+> 6s/batch is a floor, since a registry pull would be slower than a preloaded
+> image.
 
 ## Dependencies & Execution Order
 

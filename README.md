@@ -176,6 +176,49 @@ reason `InvalidPolicy` before anything runs):
 - Threshold semantics: the 0–100 range of `warnRatio`/`failRatio` and
   cross-key rules.
 
+## DNS checks
+
+A `DNSCheck` asserts that names **resolve** — or deliberately **do not** — from
+one or more vantage points. A healthy CoreDNS Deployment and a cluster that can
+actually resolve names are different claims; this checks the second.
+
+Resolution runs in a short-lived, hardened probe Pod **inside the check's own
+namespace**. That is deliberate: it makes a check author's reach exactly their
+existing reach, so the namespace's own NetworkPolicy governs the query and no
+separate allowlist of permitted resolver addresses is needed.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: DNSCheck
+metadata:
+  name: cluster-dns
+spec:
+  interval: 1m
+  timeout: 30s
+  targets:
+    - name: kubernetes.default.svc.cluster.local   # recordType defaults to Host
+    - name: decommissioned.example.com.
+      absent: true                                  # assert it is really gone
+```
+
+- **Record kinds**: `Host` (either address family), `A`, `AAAA`, `CNAME`, `SRV`,
+  `PTR`. Expected answers match by *containment*, so round-robin records that
+  return supersets do not fail the check.
+- **Vantage points**: cluster DNS, the node's own resolver, or an explicitly
+  addressed upstream. A target naming none is evaluated against *every* declared
+  vantage point, so the unit of everything — results, metrics, cost — is the
+  **(target, vantage point) pair**.
+- **A resolution failure is a `Fail`, not an `Error`**, and an unreachable
+  resolver never satisfies `absent: true` — that is a network fault, not proof a
+  name was retired.
+- **Per-target metrics**: `fathom_dnscheck_target_result` lets you alert on the
+  single name that broke rather than on the check as a whole.
+
+Sizing matters once a check covers many names: `spec.timeout` bounds the *whole
+run*, and pairs are evaluated in bounded batches. See
+[DNSCheck fan-out](docs/reference/configuration.md#dnscheck-fan-out) for measured
+per-batch costs and the resulting timeout guidance.
+
 ## Node certificate checks
 
 A `NodeCertificateCheck` continuously scans **on-disk X.509 certificates on each

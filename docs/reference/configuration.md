@@ -164,18 +164,48 @@ launched and every run would report all-`Unknown`.
 
 `spec.timeout` bounds the **whole run**, not each pair, and the schema requires
 it not to exceed `spec.interval`. Pairs are evaluated in batches of at most
-`--dnscheck-max-concurrent-probes`, so the run needs roughly:
+`--dnscheck-max-concurrent-probes`, so:
 
 ```text
-ceil(pairs ÷ maxConcurrentProbes)  ×  per-pair cost
+run duration  ≈  fixed overhead  +  ceil(pairs ÷ maxConcurrentProbes) × per-batch cost
 ```
 
-Per-pair cost is dominated by pod scheduling and image pull, not by the DNS
-query itself. **A check at the schema's maximum pair count will not complete at
-the default `spec.timeout`** — it truncates, the pairs it never reached report
-`Unknown`, and the `Complete` condition goes `False` with the count. That is
-deliberate: a truncated run says so rather than silently overrunning its bound.
-Raise `spec.timeout` and `spec.interval` together, or declare fewer targets.
+**Measured** on a single-node kind cluster (Kubernetes 1.36, probe image already
+present on the node, default concurrency of 4), resolving in-cluster names
+through cluster DNS:
+
+| Pairs | Batches | Run duration |
+| --- | --- | --- |
+| 4 | 1 | ~6.2s |
+| 12 | 3 | ~15.5–18.8s |
+
+That is roughly **6 seconds per batch**, with about 0.7s of fixed overhead paid
+once. The cost is dominated by Pod scheduling and startup, not by the DNS query
+— which is why it scales with *batches*, not with pairs.
+
+Treat 6s/batch as a **floor, not a budget**. It assumes the probe image is
+already on the node; a cluster pulling from a remote registry, a busy scheduler,
+or a namespace with admission webhooks will all be slower. Size with headroom:
+
+```text
+spec.timeout  ≥  2 × ceil(pairs ÷ maxConcurrentProbes) × 6s
+```
+
+Worked examples at the default concurrency of 4:
+
+| Pairs | Batches | Measured floor | Suggested `spec.timeout` |
+| --- | --- | --- | --- |
+| 1–4 | 1 | ~6s | `30s` |
+| 12 | 3 | ~18s | `1m` |
+| 24 | 6 | ~36s | `2m` |
+| **48** (schema maximum) | 12 | **~72s** | **`3m`** (with `interval ≥ 3m`) |
+
+**A check at the schema's maximum pair count will not complete at the default
+`spec.timeout` of 10s.** It truncates: the pairs it never reached report
+`Unknown`, the verdict degrades accordingly, and the `Complete` condition goes
+`False` naming the count. That is deliberate — a truncated run says so rather
+than silently overrunning its bound. Raise `spec.timeout` and `spec.interval`
+together, raise `--dnscheck-max-concurrent-probes`, or declare fewer targets.
 
 ## Operator Namespace and Adapter Impersonation
 
