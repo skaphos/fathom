@@ -227,42 +227,42 @@ jobs:
           done
 
       - name: Attest operator image provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.img_name }}
           subject-digest: ${{ steps.operator.outputs.digest }}
           push-to-registry: true
 
       - name: Attest probe image provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.probe_name }}
           subject-digest: ${{ steps.probe.outputs.digest }}
           push-to-registry: true
 
       - name: Attest node-agent image provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.node_agent_name }}
           subject-digest: ${{ steps.node_agent.outputs.digest }}
           push-to-registry: true
 
       - name: Attest OLM bundle provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.bundle_name }}
           subject-digest: ${{ steps.bundle.outputs.digest }}
           push-to-registry: true
 
       - name: Attest OLM catalog provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.catalog_name }}
           subject-digest: ${{ steps.catalog.outputs.digest }}
           push-to-registry: true
 
       - name: Attest Helm chart provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.vars.outputs.chart_name }}
           subject-digest: ${{ steps.chart.outputs.digest }}
