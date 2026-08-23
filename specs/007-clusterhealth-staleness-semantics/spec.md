@@ -133,8 +133,23 @@ Therefore:
   children, not by giving it a cadence it does not have.
 - No check kind gains a staleness field in its own status (see D1 corollary).
 
-`HealthCheck` is explicitly out of scope: it mirrors an external source whose
-cadence Fathom does not know, so no meaningful cadence can be published for it.
+**Corrected during Phase 0 research (see [research.md](./research.md) R4).** An
+earlier draft of this decision excluded `HealthCheck` on the grounds that it
+mirrors an external source whose cadence Fathom cannot know. That is wrong:
+`HealthCheck.Spec.CheckRef` references a **Fathom-native** check (`AddonCheck`,
+`DNSCheck`, `NodeHealthCheck`, `NodeCertificateCheck`, `ReachabilityCheck`) whose
+cadence Fathom owns.
+
+The correction is structural, not cosmetic. `ClusterHealth` selects
+`HealthCheck`s, so the cadence chain is
+`ClusterHealth → HealthCheck → source check`. With `HealthCheck` excluded the
+aggregate has **no path to any cadence at all**, and User Story 2 cannot be
+satisfied. `HealthCheck` therefore surfaces its source's effective cadence, and
+the aggregate's own effective cadence is the **maximum** across its children — an
+aggregate can only be as current as its slowest legitimate contributor.
+
+Where a `CheckRef` names a kind that cannot yet be resolved, no cadence is
+published for that `HealthCheck` and the reconcile continues normally.
 
 **Consequence for CRD schema**: this feature adds **no new CRD fields**. It does,
 however, add a size constraint to an existing status list (FR-016, resolved in
@@ -170,7 +185,7 @@ incorrect text, and in this decision where the word itself is the subject.
 
 ### Session 2026-08-23
 
-- Q: Should the overdue allowance be a fixed multiplier, or operator-tunable? → A: Configurable via the existing cobra/viper options, defaulting to 3× the check's cadence.
+- Q: Should the overdue allowance be a fixed multiplier, or operator-tunable? → A: Adopter-configurable, defaulting to 3× the check's cadence. *(The decision — tunable, not fixed — stands. The answer originally named the operator's cobra/viper options as its home; Phase 0 research moved it to the shipped alert rules, since D1 means the operator never evaluates staleness. See FR-015 and [research.md](./research.md) R5.)*
 - Q: How should the redefinition of the existing staleness field be classified and communicated? → A: As a breaking change (`BREAKING CHANGE` footer) plus an ADR recording the semantic redefinition.
 - Q: Should the aggregate's child-summary list be bounded, or is its unbounded size out of scope? → A: Bound it with `MaxItems`, paired with defined overflow behavior so the cap cannot wedge reconciliation.
 - Q: Is "freshness" or "staleness" the canonical term for the signal? → A: Staleness. Health is a risk surface — the operator asks how stale the signal is, not how fresh (D3).
@@ -342,13 +357,18 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   a consumer receives.
 - **FR-013**: No check kind may gain a staleness field in its own status.
 - **FR-014**: The overdue allowance (how far past its cadence a check may drift
-  before counting as overdue) MUST be operator-configurable cluster-wide,
-  defaulting to **3× the check's cadence**, and MUST be stated in
-  operator-facing documentation. It MUST apply consistently across kinds — it is
-  a single cluster-wide tolerance, not a per-kind or per-resource value.
-- **FR-015**: The overdue allowance MUST be configured through the existing
-  configuration model, so the flag, `FATHOM_*` environment variable, config-file
-  key, and default stay in sync. It MUST NOT introduce a CRD field.
+  before counting as overdue) MUST be adopter-configurable, defaulting to **3× the
+  check's cadence**, and MUST be stated in operator-facing documentation. It MUST
+  apply consistently across kinds — it is a single cluster-wide tolerance, not a
+  per-kind or per-resource value.
+- **FR-015**: The overdue allowance MUST be settable where the shipped alerting
+  rules are rendered — the Helm chart value and the kustomize component —
+  defaulting to 3. It MUST NOT introduce a CRD field, and MUST NOT be an operator
+  runtime option. *(Corrected during Phase 0 research, [research.md](./research.md)
+  R5: an earlier draft placed it in the operator's cobra/viper options, but D1
+  establishes that the operator never evaluates staleness. The multiplier's only
+  consumer is the alert expression, so an operator flag would be read by nothing.
+  This correction reduces scope — no `Options` change and no `bindings()` row.)*
 - **FR-016**: The aggregate's child-summary list MUST carry an explicit maximum
   size, so a selector matching an unbounded population cannot grow the stored
   object without limit.
@@ -435,9 +455,9 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **Constitution — bounded, idempotent reconciliation**: per-child staleness
   evaluation must not introduce unbounded work, and this feature must not add
   timer-based requeue to the aggregate (see D1).
-- **Constitution — configuration model**: the overdue allowance (FR-015) enters
-  through the established precedence chain (flag → `FATHOM_*` env var → config
-  file → default) by extending the options table, so all four stay in sync.
+- **Constitution — configuration model**: not engaged. After the FR-015
+  correction the feature adds **no** operator runtime option, so `Options` and the
+  bindings table are untouched.
 - **On the #149 critical path.** The child-list size constraint (FR-016) is a
   schema change and must land before the `v1alpha1` → `v1` freeze; tightening
   validation on a GA version afterwards is forbidden. This is the single most
