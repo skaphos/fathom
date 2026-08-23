@@ -1,7 +1,7 @@
 # Graph Report - fathom  (2026-08-10)
 
 ## Corpus Check
-- 338 files · ~397,212 words
+- 338 files · ~396,875 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1695fd78`
+- Built from commit: `6a319c89`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -27,7 +27,7 @@
 - fathom_check_result Gauge (one-hot current result)
 - quorum-ratio-rollups/internal/controller/nodecertificatecheck_helpers.go
 - observeCheck
-- TargetRef
+- .List
 - deploymentInNamespace
 - .detectAndGateVersion
 - .Register
@@ -286,7 +286,7 @@
 - .DeepCopy
 - .Run
 - TestClusterHealthSelectsHealthCheck
-- quorum-ratio-rollups/internal/adapter/declarative/podprojection_test.go
+- Dependencies & Execution Order
 - Implementation Strategy
 - createAddonCheckWithStatusForObservability
 - TestFilesRejectsIncompleteRule
@@ -329,8 +329,8 @@
 ## Communities (330 total, 35 thin omitted)
 
 ### Community 0 - ".Run"
-Cohesion: 0.06
-Nodes (64): TestCountAbsent(), TestRun_EmitsSpan(), daemonSetWithAnnotations(), lockCheck(), lockJSON(), nodeRebootCheck(), nodeWithAnnotations(), runAnnotation() (+56 more)
+Cohesion: 0.05
+Nodes (70): TestCountAbsent(), TestRun_EmitsSpan(), daemonSetWithAnnotations(), lockCheck(), lockJSON(), nodeRebootCheck(), nodeWithAnnotations(), runAnnotation() (+62 more)
 
 ### Community 1 - "quorum-ratio-rollups/cmd/probe/main_test.go"
 Cohesion: 0.11
@@ -376,9 +376,9 @@ Nodes (11): aggregateNodeReports(), controlPlaneTolerations(), healthReportForNo
 Cohesion: 0.08
 Nodes (37): ctrlRegistryGather(), gatherCheckSeries(), gatherOneHot(), TestDeleteCheckSeries(), TestObserveCheckFlipsResult(), TestObserveCheckOneHotInvariant(), TestObserveCheckSentinels(), checkGaugeValue() (+29 more)
 
-### Community 12 - "TargetRef"
-Cohesion: 0.07
-Nodes (39): podReady(), TargetRef, podTarget(), familyForTarget(), podTarget(), adapterOutcome(), boundedNodeList(), check() (+31 more)
+### Community 12 - ".List"
+Cohesion: 0.11
+Nodes (16): maxRestartCount(), podReady(), podTarget(), Client, Context, DaemonSet, podReady(), Active() (+8 more)
 
 ### Community 13 - "deploymentInNamespace"
 Cohesion: 0.13
@@ -413,8 +413,8 @@ Cohesion: 0.13
 Nodes (22): TestListSelectedHealthChecks_ErrorNamesScope(), failingHealthCheckListClient, InMemoryExporter, Client, T, TestListSelectedHealthChecks_ErrorNamesScope(), attrValue(), Scheme (+14 more)
 
 ### Community 21 - "MustEngine"
-Cohesion: 0.13
-Nodes (24): TestMustEngine_PanicsOnInvalid(), crdAbsenceEngine(), TestCRD_AbsenceResolution(), cronJob(), runCronJob(), TestCronJobCheck(), TestCronJobCheck_AbsentInheritsOptional(), TestCronJobCheck_PerpetualFailurePastWindowWarns() (+16 more)
+Cohesion: 0.10
+Nodes (34): TestMustEngine_PanicsOnInvalid(), crdAbsenceEngine(), TestCRD_AbsenceResolution(), MustEngine(), NewEngine(), TestNewEngine_Validation(), validVersionSource(), validWorkloadKind() (+26 more)
 
 ### Community 22 - "quorum-ratio-rollups/internal/probe/pod_test.go"
 Cohesion: 0.25
@@ -461,8 +461,8 @@ Cohesion: 0.10
 Nodes (35): NodeCertificateCheckReconciler, nodeCertRollupDecision, admissionPolicyUnsupported(), checkForReportConfigMap(), clearNodeCertRollupStatus(), decideNodeCertRollup(), Client, ConditionStatus (+27 more)
 
 ### Community 57 - "FamilyPolicy"
-Cohesion: 0.08
-Nodes (40): adapterOutcome(), boundedNodeList(), deploymentAvailable(), dnsProbePodName(), dnsTargets(), endAdapterRunSpan(), familyForTarget(), FamilyPolicy (+32 more)
+Cohesion: 0.06
+Nodes (65): adapterOutcome(), boundedNodeList(), deploymentAvailable(), dnsProbePodName(), dnsTargets(), endAdapterRunSpan(), familyForTarget(), FamilyPolicy (+57 more)
 
 ### Community 58 - "assertHasDetail"
 Cohesion: 0.18
@@ -509,8 +509,8 @@ Cohesion: 0.10
 Nodes (27): Condition, LabelSelector, ListMeta, ObjectMeta, Time, TypeMeta, ClusterHealth, ClusterHealthChildSummary (+19 more)
 
 ### Community 69 - "scanAndPublish"
-Cohesion: 0.17
-Nodes (22): Context, Duration, Time, main(), metricsMux(), parseConfig(), publishGauges(), run() (+14 more)
+Cohesion: 0.12
+Nodes (30): Context, Duration, Time, main(), metricsMux(), parseConfig(), publishGauges(), run() (+22 more)
 
 ### Community 70 - "quorum-ratio-rollups/test/utils/utils.go"
 Cohesion: 0.13
@@ -701,8 +701,8 @@ Cohesion: 0.18
 Nodes (14): DNSCheckOptions, flagBinding, MetricsOptions, Options, TracingOptions, WebhookOptions, factory, Client (+6 more)
 
 ### Community 117 - ".Evaluate"
-Cohesion: 0.13
-Nodes (17): policyNamespaces(), TestPolicyNamespaces_EmptyMeansAllNamespaces(), TestPolicyNamespaceResolution(), PodProjectionCheck, capNames(), containerHasEnv(), formatSelector(), Container (+9 more)
+Cohesion: 0.16
+Nodes (15): policyNamespaces(), TestPolicyNamespaces_EmptyMeansAllNamespaces(), TestPolicyNamespaceResolution(), PodProjectionCheck, capNames(), containerHasEnv(), formatSelector(), Container (+7 more)
 
 ### Community 118 - "properties"
 Cohesion: 0.12
@@ -761,8 +761,8 @@ Cohesion: 0.19
 Nodes (14): resolveCertPaths(), TestResolveCertPathsFiltersDisallowed(), AllowedPathPrefixes(), DefaultCertPaths(), FilterAllowedPaths(), isCertFile(), isKubeconfigFile(), MinimalMountDirs() (+6 more)
 
 ### Community 132 - "Tasks: Pre-1.0 CRD Validation Hardening"
-Cohesion: 0.12
-Nodes (16): Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Parallel Example: User Story 1, Parallel Opportunities, Phase 1: Setup (+8 more)
+Cohesion: 0.17
+Nodes (12): Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Parallel Example: User Story 1, Phase 1: Setup, Phase 2: Foundational (Blocking Prerequisites), Phase 3: User Story 1 - Reject dangerously short check cadences at admission (Priority: P1) 🎯 MVP (+4 more)
 
 ### Community 133 - "pkg/adapter/rbac.go"
 Cohesion: 0.16
@@ -893,8 +893,8 @@ Cohesion: 0.33
 Nodes (10): Engine, NewExternalDNSEngine(), extdnsHealthyObjects(), clientObject, T, TestExternalDNS_AdapterMetadata(), TestExternalDNS_DeploymentNameThresholdOverride(), TestExternalDNS_HealthyPassesAllFamilies() (+2 more)
 
 ### Community 165 - "writeNodeReportForCheck"
-Cohesion: 0.16
-Nodes (19): Context, NodeCertificateCheck, writeReportWithAnnotation(), Context, NamespacedName, NodeCertificateCheck, Time, newNodeCertReconciler() (+11 more)
+Cohesion: 0.36
+Nodes (11): Context, NamespacedName, NodeCertificateCheck, Time, newNodeCertReconciler(), nodeCertHealthReportCount(), setNodeAgentDaemonSetStatus(), setNodeAgentDaemonSetStatusFull() (+3 more)
 
 ### Community 166 - "Tasks: Quorum/Ratio Semantics for Managed-Resource Rollups"
 Cohesion: 0.17
@@ -1276,9 +1276,9 @@ Nodes (3): Context, Request, Result
 Cohesion: 0.67
 Nodes (3): T, TestClusterHealthSelectsHealthCheck(), TestHealthCheckEventHandler()
 
-### Community 325 - "quorum-ratio-rollups/internal/adapter/declarative/podprojection_test.go"
-Cohesion: 0.24
-Nodes (16): NewEngine(), TestNewEngine_Validation(), validVersionSource(), validWorkloadKind(), optedInPod(), runProjection(), TestNewEngine_PodProjectionValidation(), TestPodProjection_AllInjectedPasses() (+8 more)
+### Community 325 - "Dependencies & Execution Order"
+Cohesion: 0.50
+Nodes (4): Dependencies & Execution Order, Parallel Opportunities, Phase Dependencies, Within Each User Story
 
 ### Community 326 - "Implementation Strategy"
 Cohesion: 0.50
@@ -1296,11 +1296,11 @@ Nodes (3): AddonCheckStatus, createAddonCheckWithStatusForObservability(), Conte
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `CheckResult` connect `CheckResult` to `EvalContext`, `TargetRef`, `.detectAndGateVersion`, `.Run`, `internal/adapter/declarative/annotation_test.go`, `internal/adapter/declarative/field_test.go`, `runProjection`, `internal/adapter/certmanager/adapter_test.go`, `ratioRollupReportChecks`, `.Run`, `FamilyPolicy`, `.Run`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `quorum-ratio-rollups/internal/adapter/declarative/evaluator.go`, `adapter/adapter.go`, `deploymentInNamespace`, `Family`, `assertHasOutcome`, `.Evaluate`, `RatioThresholds`, `addoncheck_controller.go`, `.Evaluate`, `MustEngine`?**
+- **Why does `CheckResult` connect `CheckResult` to `EvalContext`, `.List`, `.detectAndGateVersion`, `.Run`, `internal/adapter/declarative/annotation_test.go`, `internal/adapter/declarative/field_test.go`, `runProjection`, `internal/adapter/certmanager/adapter_test.go`, `ratioRollupReportChecks`, `.Run`, `FamilyPolicy`, `.Run`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `quorum-ratio-rollups/internal/adapter/declarative/evaluator.go`, `adapter/adapter.go`, `deploymentInNamespace`, `Family`, `assertHasOutcome`, `.Evaluate`, `RatioThresholds`, `addoncheck_controller.go`, `.Evaluate`, `MustEngine`?**
   _High betweenness centrality (0.120) - this node is a cross-community bridge._
 - **Why does `New()` connect `New` to `.Run`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.Name`, `.DeepCopy`, `observeCheck`, `.DeepCopy`, `quorum-ratio-rollups/cmd/probe/main_test.go`, `.detectAndGateVersion`, `.Register`, `.Run`, `fakeClientFactory`, `Init`, `newScheme`, `.DeepCopyObject`, `.DeepCopy`, `.DeepCopy`, `.DeepCopyInto`, `join`, `TestAdapterClient`, `Object`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`?**
   _High betweenness centrality (0.096) - this node is a cross-community bridge._
-- **Why does `Family` connect `Family` to `EvalContext`, `.Name`, `TargetRef`, `validateAddonCheckPolicy`, `.detectAndGateVersion`, `internal/adapter/declarative/field_test.go`, `NewMetricsServerEngine`, `runProjection`, `NewExternalDNSEngine`, `TestExternalSecrets_HealthyAndEmptySyncSkipped`, `CheckResult`, `ratioRollupReportChecks`, `internal/adapter/certmanager/adapter_test.go`, `FamilyDefinition`, `FamilyPolicy`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `adapter/adapter.go`, `.Run`, `deploymentInNamespace`, `assertHasOutcome`, `kedaHealthyObjects`, `RatioThresholds`, `addoncheck_controller.go`, `runArgoCD`, `podInNamespace`, `New`, `Capabilities`, `MustEngine`?**
+- **Why does `Family` connect `Family` to `EvalContext`, `.Name`, `validateAddonCheckPolicy`, `.detectAndGateVersion`, `internal/adapter/declarative/field_test.go`, `NewMetricsServerEngine`, `runProjection`, `NewExternalDNSEngine`, `TestExternalSecrets_HealthyAndEmptySyncSkipped`, `CheckResult`, `ratioRollupReportChecks`, `internal/adapter/certmanager/adapter_test.go`, `FamilyDefinition`, `FamilyPolicy`, `.checkMetricsEndpoint`, `newFakeClient`, `assertHasDetail`, `adapter/adapter.go`, `.Run`, `deploymentInNamespace`, `assertHasOutcome`, `kedaHealthyObjects`, `RatioThresholds`, `addoncheck_controller.go`, `runArgoCD`, `podInNamespace`, `New`, `Capabilities`, `MustEngine`?**
   _High betweenness centrality (0.081) - this node is a cross-community bridge._
 - **Are the 108 inferred relationships involving `assertHasOutcome()` (e.g. with `TestAnnotationStaleness_NamedLock()` and `TestAnnotationStaleness_NodeList()`) actually correct?**
   _`assertHasOutcome()` has 108 INFERRED edges - model-reasoned connections that need verification._
