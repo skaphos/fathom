@@ -61,7 +61,7 @@ func TestObserveCheckOneHotInvariant(t *testing.T) {
 	CheckLastRunTimestamp.Reset()
 
 	now := time.Now()
-	ObserveCheck("AddonCheck", "default", "cm", "Fail", now)
+	ObserveCheck("AddonCheck", "default", "cm", "Fail", now, 0)
 
 	oneHot := gatherOneHot(t, "AddonCheck", "cm", "default")
 	if len(oneHot) != len(checkResultValues) {
@@ -95,7 +95,7 @@ func TestObserveCheckSentinels(t *testing.T) {
 	CheckLastRunTimestamp.Reset()
 
 	// Empty result and zero time are the discovery sentinels: Unknown / 0.
-	ObserveCheck("HealthCheck", "default", "fresh", "", time.Time{})
+	ObserveCheck("HealthCheck", "default", "fresh", "", time.Time{}, 0)
 
 	oneHot := gatherOneHot(t, "HealthCheck", "fresh", "default")
 	if oneHot["Unknown"] != 1 {
@@ -106,7 +106,7 @@ func TestObserveCheckSentinels(t *testing.T) {
 	}
 
 	// An unrecognized value must not mint a new label value.
-	ObserveCheck("HealthCheck", "default", "fresh", "Bogus", time.Time{})
+	ObserveCheck("HealthCheck", "default", "fresh", "Bogus", time.Time{}, 0)
 	oneHot = gatherOneHot(t, "HealthCheck", "fresh", "default")
 	if _, ok := oneHot["Bogus"]; ok {
 		t.Errorf("unrecognized result minted a series: %v", oneHot)
@@ -119,8 +119,8 @@ func TestObserveCheckSentinels(t *testing.T) {
 func TestObserveCheckFlipsResult(t *testing.T) {
 	CheckResult.Reset()
 
-	ObserveCheck("AddonCheck", "default", "flip", "Pass", time.Now())
-	ObserveCheck("AddonCheck", "default", "flip", "Fail", time.Now())
+	ObserveCheck("AddonCheck", "default", "flip", "Pass", time.Now(), 0)
+	ObserveCheck("AddonCheck", "default", "flip", "Fail", time.Now(), 0)
 
 	oneHot := gatherOneHot(t, "AddonCheck", "flip", "default")
 	if oneHot["Fail"] != 1 || oneHot["Pass"] != 0 {
@@ -132,8 +132,8 @@ func TestDeleteCheckSeries(t *testing.T) {
 	CheckResult.Reset()
 	CheckLastRunTimestamp.Reset()
 
-	ObserveCheck("ClusterHealth", "", "platform", "Pass", time.Now())
-	ObserveCheck("AddonCheck", "default", "keep", "Pass", time.Now())
+	ObserveCheck("ClusterHealth", "", "platform", "Pass", time.Now(), 0)
+	ObserveCheck("AddonCheck", "default", "keep", "Pass", time.Now(), 0)
 	DeleteCheckSeries("ClusterHealth", "", "platform")
 
 	if got := gatherOneHot(t, "ClusterHealth", "platform", ""); len(got) != 0 {
@@ -320,4 +320,51 @@ func TestCheckResultValuesMatchAPIVocabulary(t *testing.T) {
 // collectors register into via init().
 func ctrlRegistryGather() ([]*dto.MetricFamily, error) {
 	return ctrlmetrics.Registry.Gather()
+}
+
+// TestCheckIntervalSeries pins the cadence gauge's contract (skaphos/fathom#277).
+//
+// Staleness is only meaningful relative to cadence, so the gauge exists to be
+// joined against the last-run timestamp. Two properties matter: an unresolvable
+// cadence must leave the series ABSENT rather than zero — zero would make the
+// check read as permanently overdue in "age > 3 * interval" — and a deleted
+// check must not leave the cadence behind asserting a schedule for a resource
+// that no longer exists.
+func TestCheckIntervalSeries(t *testing.T) {
+	CheckResult.Reset()
+	CheckLastRunTimestamp.Reset()
+	CheckInterval.Reset()
+
+	ObserveCheck("AddonCheck", "default", "paced", "Pass", time.Now(), 5*time.Minute)
+
+	series := gatherCheckSeries(t, "fathom_check_interval_seconds")
+	got, ok := series["AddonCheck|paced|default|"]
+	if !ok {
+		t.Fatalf("expected a cadence series for the check, got %v", series)
+	}
+	if got != 300 {
+		t.Errorf("cadence = %v seconds, want 300", got)
+	}
+
+	t.Run("an unresolvable cadence leaves the series absent", func(t *testing.T) {
+		ObserveCheck("HealthCheck", "default", "no-cadence", "Pass", time.Now(), 0)
+
+		series := gatherCheckSeries(t, "fathom_check_interval_seconds")
+		if _, ok := series["HealthCheck|no-cadence|default|"]; ok {
+			t.Error("a zero cadence must not publish a series; absent and zero mean different things to a cadence-relative rule")
+		}
+	})
+
+	t.Run("deleting a check drops its cadence series too", func(t *testing.T) {
+		ObserveCheck("AddonCheck", "default", "doomed", "Pass", time.Now(), time.Hour)
+		DeleteCheckSeries("AddonCheck", "default", "doomed")
+
+		series := gatherCheckSeries(t, "fathom_check_interval_seconds")
+		if _, ok := series["AddonCheck|doomed|default|"]; ok {
+			t.Error("deleted check still asserts a cadence")
+		}
+		if _, ok := series["AddonCheck|paced|default|"]; !ok {
+			t.Error("unrelated check lost its cadence series")
+		}
+	})
 }

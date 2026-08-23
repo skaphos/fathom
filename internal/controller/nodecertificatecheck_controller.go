@@ -195,7 +195,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		observeCheck(r.Recorder, &check, "NodeCertificateCheck",
 			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
-			check.Status.LastRunTime, err)
+			check.Status.LastRunTime, nodeCertInterval(&check), err)
 	}()
 	check.Status.ObservedGeneration = check.Generation
 	accepted := metav1.Condition{

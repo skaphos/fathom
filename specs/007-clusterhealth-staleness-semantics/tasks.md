@@ -38,11 +38,11 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 **⚠️ Blocks US2 and US3 only.**
 
-- [ ] T003 Add the `fathom_check_interval_seconds` gauge (labels `kind`, `name`, `namespace`) in `internal/metrics/metrics.go` per [contracts/metrics.md](./contracts/metrics.md)
-- [ ] T004 Extend `metrics.ObserveCheck` in `internal/metrics/metrics.go` to accept and set the effective cadence, leaving the series unset when the cadence is unresolvable
-- [ ] T005 Drop the new gauge in `metrics.DeleteCheckSeries` in `internal/metrics/metrics.go` so a deleted check leaves no orphaned cadence series (research R2)
-- [ ] T006 Extend `observeCheck` in `internal/controller/observe.go` to take the effective cadence and pass it through to `metrics.ObserveCheck`
-- [ ] T007 [P] Add unit coverage for the new gauge's set/delete lifecycle in `internal/metrics/check_metrics_test.go`
+- [X] T003 Add the `fathom_check_interval_seconds` gauge (labels `kind`, `name`, `namespace`) in `internal/metrics/metrics.go` per [contracts/metrics.md](./contracts/metrics.md)
+- [X] T004 Extend `metrics.ObserveCheck` in `internal/metrics/metrics.go` to accept and set the effective cadence, leaving the series unset when the cadence is unresolvable
+- [X] T005 Drop the new gauge in `metrics.DeleteCheckSeries` in `internal/metrics/metrics.go` so a deleted check leaves no orphaned cadence series (research R2)
+- [X] T006 Extend `observeCheck` in `internal/controller/observe.go` to take the effective cadence and pass it through to `metrics.ObserveCheck`
+- [X] T007 [P] Add unit coverage for the new gauge's set/delete lifecycle in `internal/metrics/check_metrics_test.go`
 
 **Checkpoint**: The metrics seam accepts a cadence; no controller publishes one yet.
 
@@ -83,17 +83,17 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T017 [P] [US2] Test each kind publishes its effective cadence including per-resource override and `clampCadence` floor (FR-006), in `internal/controller/check_observability_test.go`
-- [ ] T018 [P] [US2] Test a `HealthCheck` publishes the cadence of the check named by `CheckRef`, and publishes nothing (without failing the reconcile) for an unresolvable kind, in `internal/controller/healthcheck_controller_test.go`
-- [ ] T019 [P] [US2] Test the aggregate publishes the **maximum** child cadence, and that a mixed-cadence aggregate on schedule reports no staleness (SC-002), in `internal/controller/clusterhealth_controller_test.go`
+- [X] T017 [P] [US2] Test each kind publishes its effective cadence including per-resource override and `clampCadence` floor (FR-006), in `internal/controller/check_observability_test.go`
+- [X] T018 [P] [US2] Test a `HealthCheck` publishes the cadence of the check named by `CheckRef`, and publishes nothing (without failing the reconcile) for an unresolvable kind, in `internal/controller/healthcheck_controller_test.go`
+- [X] T019 [P] [US2] Test the aggregate publishes the **maximum** child cadence, and that a mixed-cadence aggregate on schedule reports no staleness (SC-002), in `internal/controller/clusterhealth_controller_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Pass `addonCheckInterval(&check)` to `observeCheck` in `internal/controller/addoncheck_controller.go`
-- [ ] T021 [P] [US2] Pass `dnsCheckInterval(&check)` to `observeCheck` in `internal/controller/dnscheck_controller.go`
-- [ ] T022 [P] [US2] Pass `nodeCertInterval(&check)` to `observeCheck` in `internal/controller/nodecertificatecheck_controller.go`
-- [ ] T023 [US2] Resolve the source check's effective cadence via `Spec.CheckRef` and pass it to `observeCheck` in `internal/controller/healthcheck_controller.go`, degrading to no cadence for an unresolvable kind (research R4; forward-compatible with #267)
-- [ ] T024 [US2] Compute the aggregate's effective cadence as the maximum across selected children and pass it to `observeCheck` in `internal/controller/clusterhealth_controller.go`
+- [X] T020 [P] [US2] Pass `addonCheckInterval(&check)` to `observeCheck` in `internal/controller/addoncheck_controller.go`
+- [X] T021 [P] [US2] Pass `dnsCheckInterval(&check)` to `observeCheck` in `internal/controller/dnscheck_controller.go`
+- [X] T022 [P] [US2] Pass `nodeCertInterval(&check)` to `observeCheck` in `internal/controller/nodecertificatecheck_controller.go`
+- [X] T023 [US2] Resolve the source check's effective cadence via `Spec.CheckRef` and pass it to `observeCheck` in `internal/controller/healthcheck_controller.go`, degrading to no cadence for an unresolvable kind (research R4; forward-compatible with #267)
+- [X] T024 [US2] Compute the aggregate's effective cadence as the maximum across selected children and pass it to `observeCheck` in `internal/controller/clusterhealth_controller.go`
 
 **Checkpoint**: Every kind that can determine a cadence publishes one; US1 and US2 both work.
 

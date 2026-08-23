@@ -95,6 +95,10 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	before := ch.Status.DeepCopy()
+	// aggregateInterval is the slowest child's cadence — see aggregate. It is
+	// derived per reconcile rather than stored, because it is a function of the
+	// children and would go stale in status the moment one of them changed.
+	var aggregateInterval time.Duration
 	// ObservedAt is the stalest input observation across children (see
 	// aggregate), so the staleness gauge follows the evidence chain: a stale
 	// child — or a selector matching nothing, or a child never evaluated
@@ -105,7 +109,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		observeCheck(r.Recorder, &ch, "ClusterHealth",
 			before.Result, ch.Status.Result,
 			before.Conditions, ch.Status.Conditions,
-			ch.Status.ObservedAt, err)
+			ch.Status.ObservedAt, aggregateInterval, err)
 	}()
 	ch.Status.ObservedGeneration = ch.Generation
 
@@ -139,7 +143,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				Message:            listErr.Error(),
 			})
 		} else {
-			r.aggregate(&ch, hcs)
+			aggregateInterval = r.aggregate(&ch, hcs)
 		}
 	}
 
@@ -213,7 +217,11 @@ func namespaceScope(namespace string) string {
 // the latest input freshness across children (not wall-clock — that would
 // defeat no-op idempotency, and a "when did inputs last move" timestamp is
 // what dashboards actually want).
-func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) {
+// aggregate folds the selected HealthChecks into the roll-up status and returns
+// the aggregate's effective cadence for publication as a metric. The cadence is
+// derived rather than stored: it is a function of the children and would go
+// stale in status the moment one of them changed.
+func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) time.Duration {
 	ch.Status.MatchedCount = int32(len(hcs))
 
 	// A selector matching nothing is not a healthy verdict. Report Unknown with
@@ -231,7 +239,9 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			Reason:             "NoMatches",
 			Message:            "No HealthChecks match the selector.",
 		})
-		return
+		// No children, so no cadence to report — the series stays unset rather
+		// than claiming an aggregate runs at zero interval.
+		return 0
 	}
 
 	sort.Slice(hcs, func(i, j int) bool {
@@ -288,6 +298,19 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		}
 	}
 
+	// The aggregate's own cadence is the SLOWEST of its children: a roll-up can
+	// only be as current as its least frequently refreshed contributor. Taking
+	// the fastest instead would mark every mixed-cadence aggregate permanently
+	// overdue — a healthy hourly child inside a five-minute aggregate would
+	// never look current, which is the false positive this feature exists to
+	// avoid. Children that cannot resolve a cadence simply do not contribute.
+	slowestChild := time.Duration(0)
+	for i := range hcs {
+		if in := hcs[i].Status.SourceInterval; in != nil && in.Duration > slowestChild {
+			slowestChild = in.Duration
+		}
+	}
+
 	// coerceEmptyToUnknown: a selected child with no verdict yet — never
 	// reconciled, or its mirrored result cleared when the source was deleted —
 	// degrades the roll-up to Unknown instead of vanishing. A live Fail sibling
@@ -305,6 +328,7 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		Reason:             "Aggregated",
 		Message:            "ClusterHealth aggregated the selected HealthChecks.",
 	})
+	return slowestChild
 }
 
 func clearClusterHealthAggregateStatus(ch *fathomv1alpha1.ClusterHealth) {

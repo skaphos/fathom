@@ -57,16 +57,21 @@ const (
 // to fire a false transition. A nil recorder disables events only; the gauge
 // mirror always runs. Recording is fire-and-forget: it can neither fail nor
 // block the reconcile.
+//
+// interval is the check's effective cadence, published so adopters can alert on
+// staleness relative to how often a check is meant to run rather than against a
+// constant that cannot suit every kind (#277). Pass 0 where no cadence can be
+// resolved; the series is then left unset rather than claiming zero.
 func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
 	previousResult, result fathomv1alpha1.HealthReportResult,
 	previousConditions, conditions []metav1.Condition,
-	lastRun *metav1.Time, reconcileErr error,
+	lastRun *metav1.Time, interval time.Duration, reconcileErr error,
 ) {
-	var freshness time.Time
+	var observedAt time.Time
 	if lastRun != nil {
-		freshness = lastRun.Time
+		observedAt = lastRun.Time
 	}
-	metrics.ObserveCheck(kind, obj.GetNamespace(), obj.GetName(), string(result), freshness)
+	metrics.ObserveCheck(kind, obj.GetNamespace(), obj.GetName(), string(result), observedAt, interval)
 
 	if recorder == nil {
 		return

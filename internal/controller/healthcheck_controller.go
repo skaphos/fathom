@@ -97,14 +97,23 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	before := hc.Status.DeepCopy()
 	// SourceObservedAt carries the mirrored target's own run time, so the
-	// staleness gauge tracks the freshness of the evidence behind this wrapper:
+	// staleness gauge tracks the staleness of the evidence behind this wrapper:
 	// a paused or wedged target freezes it, which is exactly when the wrapper's
 	// verdict stops meaning anything.
+	//
+	// targetInterval is the wrapped check's cadence, resolved during mirroring
+	// so it costs no extra API read. A HealthCheck has no cadence of its own,
+	// but neither is it an opaque mirror: checkRef always names a Fathom-native
+	// check whose cadence the operator owns. Publishing it is what lets a
+	// ClusterHealth be cadence-aware at all, because aggregates select
+	// HealthChecks rather than the underlying checks (#277). It stays zero for a
+	// kind this build cannot resolve, which leaves the series unset.
+	var targetInterval time.Duration
 	defer func() {
 		observeCheck(r.Recorder, &hc, "HealthCheck",
 			before.Result, hc.Status.Result,
 			before.Conditions, hc.Status.Conditions,
-			hc.Status.SourceObservedAt, err)
+			hc.Status.SourceObservedAt, targetInterval, err)
 	}()
 	hc.Status.ObservedGeneration = hc.Generation
 
@@ -142,7 +151,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            "HealthCheck is paused; status mirroring is suspended.",
 		})
 	} else {
-		mirrorErr = r.mirrorTarget(ctx, &hc)
+		targetInterval, mirrorErr = r.mirrorTarget(ctx, &hc)
 	}
 
 	if !equality.Semantic.DeepEqual(before, &hc.Status) {
@@ -163,7 +172,12 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // ClusterHealth roll-up as Unknown — and is returned as an error so the caller
 // requeues and re-attempts the mirror. The only supported target kind in v0.1
 // is AddonCheck.
-func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) error {
+//
+// It also returns the target's effective cadence, resolved from the object this
+// function already fetched so it costs no extra API read. Zero means no cadence
+// could be resolved — an unsupported kind, a missing target, or a lookup
+// failure — which leaves the cadence series unset rather than asserting zero.
+func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) (time.Duration, error) {
 	if hc.Spec.CheckRef.Kind != healthCheckTargetKindAddonCheck {
 		clearMirroredHealthCheckStatus(hc)
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
@@ -173,7 +187,10 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 			Reason:             "UnsupportedKind",
 			Message:            "checkRef.kind " + hc.Spec.CheckRef.Kind + " is not supported by this build of Fathom.",
 		})
-		return nil
+		// No cadence is knowable for a kind this build cannot resolve. Returning
+		// zero leaves the series unset, so the check simply drops out of any
+		// cadence-relative rule instead of reading as permanently overdue.
+		return 0, nil
 	}
 
 	namespace := hc.Spec.CheckRef.Namespace
@@ -191,7 +208,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 			Reason:             "TargetNotFound",
 			Message:            err.Error(),
 		})
-		return nil
+		return 0, nil
 	}
 	if err != nil {
 		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
@@ -201,10 +218,12 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 			Reason:             "TargetLookupFailed",
 			Message:            err.Error(),
 		})
-		return err
+		return 0, err
 	}
 
+	interval := addonCheckInterval(&target)
 	hc.Status.Result = fathomv1alpha1.HealthReportResult(target.Status.LastResult)
+	hc.Status.SourceInterval = &metav1.Duration{Duration: interval}
 	hc.Status.SourceObservedAt = target.Status.LastRunTime
 	hc.Status.LastReportName = target.Status.LastReportName
 	hc.Status.Summary = summarizeFromConditions(target.Status.Conditions)
@@ -216,11 +235,12 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 		Reason:             "TargetMirrored",
 		Message:            "HealthCheck mirrored the referenced check's status.",
 	})
-	return nil
+	return interval, nil
 }
 
 func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
 	hc.Status.Result = ""
+	hc.Status.SourceInterval = nil
 	hc.Status.SourceObservedAt = nil
 	hc.Status.LastReportName = ""
 	hc.Status.Summary = ""

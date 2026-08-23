@@ -88,6 +88,29 @@ var (
 		},
 		[]string{"kind", "name", "namespace"},
 	)
+
+	// CheckInterval publishes the cadence a check is currently expected to run
+	// at, so staleness can be expressed relative to that cadence instead of a
+	// hardcoded constant (#277).
+	//
+	// Without it a single threshold has to serve every kind, and there is no
+	// value that works: 900s suits a 5m AddonCheck but fires continuously
+	// against a 1h NodeCertificateCheck. Labels deliberately match
+	// CheckLastRunTimestamp exactly so the two join with no relabeling:
+	//
+	//	time() - fathom_check_last_run_timestamp_seconds
+	//	  > 3 * fathom_check_interval_seconds
+	//
+	// Left unset — not zero — for a check whose cadence cannot be resolved, so
+	// such a check drops out of that join rather than appearing infinitely
+	// overdue.
+	CheckInterval = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_interval_seconds",
+			Help: "Cadence a check is currently expected to run at, after per-resource override and floor clamping. Absent when the cadence cannot be resolved.",
+		},
+		[]string{"kind", "name", "namespace"},
+	)
 )
 
 // DNSCheck publishes one further gauge: the check-level result above says a
@@ -153,6 +176,7 @@ func init() {
 		AdapterRegistered,
 		CheckResult,
 		CheckLastRunTimestamp,
+		CheckInterval,
 		DNSCheckTargetResult,
 		NodeCertificateExpiryDays,
 	)
@@ -163,7 +187,12 @@ func init() {
 // unrecognized result is coerced to "Unknown" (the sentinel for "not yet
 // evaluated"), and a zero lastRun becomes 0 ("never ran"). Idempotent —
 // reconcilers call it on every pass, whatever the exit path.
-func ObserveCheck(kind, namespace, name, result string, lastRun time.Time) {
+// interval is the check's effective cadence. A non-positive value means the
+// cadence could not be resolved — for example a HealthCheck wrapping a kind the
+// operator cannot yet look up — and leaves the series unset rather than
+// asserting a cadence of zero, which would make the check read as permanently
+// overdue in any cadence-relative rule (#277).
+func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, interval time.Duration) {
 	if !slices.Contains(checkResultValues, result) {
 		result = "Unknown"
 	}
@@ -179,6 +208,9 @@ func ObserveCheck(kind, namespace, name, result string, lastRun time.Time) {
 		ts = float64(lastRun.Unix())
 	}
 	CheckLastRunTimestamp.WithLabelValues(kind, name, namespace).Set(ts)
+	if interval > 0 {
+		CheckInterval.WithLabelValues(kind, name, namespace).Set(interval.Seconds())
+	}
 }
 
 // DeleteCheckSeries removes every series ObserveCheck created for a check.
@@ -189,6 +221,7 @@ func DeleteCheckSeries(kind, namespace, name string) {
 	labels := prometheus.Labels{"kind": kind, "name": name, "namespace": namespace}
 	CheckResult.DeletePartialMatch(labels)
 	CheckLastRunTimestamp.DeletePartialMatch(labels)
+	CheckInterval.DeletePartialMatch(labels)
 }
 
 // ObserveDNSTarget mirrors one (target, vantage point) pair's outcome into the

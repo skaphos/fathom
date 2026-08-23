@@ -83,6 +83,18 @@ type HealthCheckStatus struct {
 	// +kubebuilder:validation:MaxLength=1024
 	Summary string `json:"summary,omitempty"`
 
+	// SourceInterval is the cadence the referenced check is expected to run at,
+	// after its own defaults and floor clamping. It is a fact about the wrapped
+	// check, not a judgement about this one: it is what lets a ClusterHealth
+	// aggregate judge staleness relative to cadence, since aggregates select
+	// HealthChecks and never see the underlying checks (#277).
+	//
+	// Empty when the cadence cannot be resolved — an unsupported checkRef kind,
+	// a missing target, or a lookup failure — so consumers can tell "runs hourly"
+	// from "cadence unknown" rather than reading an absent value as zero.
+	// +optional
+	SourceInterval *metav1.Duration `json:"sourceInterval,omitempty"`
+
 	// SourceObservedAt is when the referenced check last completed.
 	// +optional
 	SourceObservedAt *metav1.Time `json:"sourceObservedAt,omitempty"`

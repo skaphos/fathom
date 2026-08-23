@@ -604,6 +604,11 @@ func (in *HealthCheckStatus) DeepCopyInto(out *HealthCheckStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.SourceInterval != nil {
+		in, out := &in.SourceInterval, &out.SourceInterval
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.SourceObservedAt != nil {
 		in, out := &in.SourceObservedAt, &out.SourceObservedAt
 		*out = (*in).DeepCopy()

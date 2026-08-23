@@ -178,7 +178,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		observeCheck(r.Recorder, &check, "AddonCheck",
 			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
-			check.Status.LastRunTime, err)
+			check.Status.LastRunTime, addonCheckInterval(&check), err)
 	}()
 	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
