@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -33,28 +33,45 @@
 
 **Iteration 1 (2026-08-23)** — two issues found and fixed:
 
-1. *Implementation detail leak*: the first draft framed the requirements around
-   the three candidate directions named in issue #277 (add a stalest-evidence
-   field / count overdue children / expose interval as a metric). Those are
-   mechanisms, not outcomes. Rewritten as outcome requirements (FR-001, FR-003,
-   FR-006) so `/speckit-plan` selects the mechanism rather than inheriting it.
-2. *Unverifiable success criteria*: an early SC referenced the specific status
-   field name. Replaced with SC-001/SC-004, which are stated from the operator's
-   point of view and verifiable without knowing the field layout.
+1. *Implementation detail leak*: the first draft framed requirements around the
+   three candidate directions named in issue #277. Those are mechanisms, not
+   outcomes. Rewritten as outcome requirements so planning selects the mechanism.
+2. *Unverifiable success criterion*: an early SC referenced a specific status
+   field name. Replaced with operator-perspective criteria.
 
-**Outstanding**: two [NEEDS CLARIFICATION] markers remain (FR-013, FR-014). Both
-are genuine scope decisions with materially different outcomes and no safe
-default:
+**Iteration 2 (2026-08-23)** — both open clarifications resolved into scope
+decisions D1 and D2, recorded in the spec:
 
-- **FR-013** decides whether this feature touches the *verdict* or only the
-  *freshness signal*. That is the difference between an additive change and a
-  change in what `ClusterHealth.Status.Result` means to every existing consumer.
-- **FR-014** sets the blast radius: aggregate-only, or every check kind. This
-  materially changes the size of the work and how much of the CRD surface is
-  frozen by #149.
+- **D1 (was FR-013)**: staleness is a **signal only**; `Status.Result` is never
+  modified. Driven by three findings in the code: `Unknown` (severity 4) ranks
+  *below* `Fail` (5), so degrading a stale `Fail` would silence the shipped
+  `result=~"Fail|Error"` alert; the aggregate reconciler never requeues on a
+  timer, so a frozen child produces no event to trigger a degrade; and a
+  time-dependent verdict makes `Result` correct only at write time.
+- **D1 corollary — a spec correction**: the same decaying-value argument applies
+  to a computed staleness judgment in status. The previous FR-003 ("expose how
+  many children are overdue") was therefore **wrong** and has been rewritten to
+  require non-decaying evidence only. This reverses direction (2) as framed in
+  the issue.
+- **D2 (was FR-014)**: scope follows the cadence-ownership split found in the
+  code, not the issue's "aggregate vs all kinds" framing. `AddonCheck`,
+  `DNSCheck`, and `NodeCertificateCheck` own a `spec.interval`; `HealthCheck` and
+  `ClusterHealth` do not. Cadence is published for the three; the aggregate is
+  fixed at its derivation. No kind gains a staleness status field (FR-013).
 
-Both must be resolved via `/speckit-clarify` (or answered directly) before
-`/speckit-plan`. The remaining checklist items pass.
+**Consequence worth re-checking at plan time**: the resolved scope is expected to
+add **zero CRD fields**, which removes this work from the #149 `v1alpha1` → `v1`
+freeze critical path (SC-008). If planning finds a new field unavoidable, that
+assumption inverts and the work becomes freeze-blocking. This is flagged in
+Dependencies and Constraints as the highest-value item to verify first.
+
+**New finding folded in during iteration 2**: the defect also reaches the
+exported gauge, not just status — `Status.ObservedAt` is fed directly into
+`fathom_check_last_run_timestamp_seconds` beneath a comment asserting the
+guarantee that fails. Captured as FR-009 and US1 scenario 2. This raised the
+count of mutually inconsistent descriptions from three to four (FR-010).
+
+All checklist items now pass. Ready for `/speckit-plan`.
 
 ## Notes
 
