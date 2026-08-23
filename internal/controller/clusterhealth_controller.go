@@ -95,9 +95,12 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	before := ch.Status.DeepCopy()
-	// ObservedAt is the latest input freshness across children (see aggregate),
-	// so the staleness gauge follows the evidence chain: stale children — or a
-	// selector matching nothing (ObservedAt nil → 0) — read as a stale roll-up.
+	// ObservedAt is the stalest input observation across children (see
+	// aggregate), so the staleness gauge follows the evidence chain: a stale
+	// child — or a selector matching nothing, or a child never evaluated
+	// (ObservedAt nil → the 0 never-ran sentinel) — reads as a stale roll-up.
+	// Status and gauge are fed from the same field precisely so the two can
+	// never disagree about how stale the aggregate is (#277).
 	defer func() {
 		observeCheck(r.Recorder, &ch, "ClusterHealth",
 			before.Result, ch.Status.Result,
@@ -238,9 +241,23 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		return hcs[i].Name < hcs[j].Name
 	})
 
+	// Staleness is the STALEST contributing observation, never the newest
+	// (#277). The verdict folds worst-of, so publishing the *freshest* input
+	// alongside it let a single live sibling mask a frozen child: the aggregate
+	// kept promoting that child's stale Fail while reporting itself perfectly
+	// current, which disarms every staleness backstop at the layer operators
+	// watch most. Taking the stalest keeps the two folds telling the same story.
+	//
+	// This value is deliberately a fact rather than a judgement. It never needs
+	// recomputing once written, which is why no timer requeue is required — a
+	// stored "is overdue" verdict would go wrong between reconciles precisely
+	// when every child is frozen and nothing re-enqueues the aggregate.
+	now := metav1.Now()
+	var stalest *metav1.Time
+	unobservedChild := false
+
 	ch.Status.Children = make([]fathomv1alpha1.ClusterHealthChildSummary, 0, len(hcs))
 	results := make([]fathomv1alpha1.HealthReportResult, 0, len(hcs))
-	var latest *metav1.Time
 	for i := range hcs {
 		hc := &hcs[i]
 		// The child summary keeps the raw child verdict, including empty; only
@@ -253,8 +270,21 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			ObservedAt: hc.Status.SourceObservedAt,
 		})
 		results = append(results, hc.Status.Result)
-		if hc.Status.SourceObservedAt != nil && (latest == nil || hc.Status.SourceObservedAt.After(latest.Time)) {
-			latest = hc.Status.SourceObservedAt
+
+		if hc.Status.SourceObservedAt == nil {
+			// A selected child that has never been evaluated is the strongest
+			// staleness signal there is, so it outranks every timestamp.
+			unobservedChild = true
+			continue
+		}
+		observed := *hc.Status.SourceObservedAt
+		if observed.After(now.Time) {
+			// A child clock running fast must not let the aggregate claim to be
+			// more current than the present moment.
+			observed = now
+		}
+		if stalest == nil || observed.Before(stalest) {
+			stalest = &observed
 		}
 	}
 
@@ -263,7 +293,10 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	// degrades the roll-up to Unknown instead of vanishing. A live Fail sibling
 	// still wins, because Fail outranks Unknown (#161).
 	ch.Status.Result = fathomv1alpha1.WorstResult(results, true)
-	ch.Status.ObservedAt = latest
+	if unobservedChild {
+		stalest = nil
+	}
+	ch.Status.ObservedAt = stalest
 
 	apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 		Type:               clusterHealthConditionReady,

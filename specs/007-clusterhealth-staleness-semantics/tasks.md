@@ -25,8 +25,8 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 **Purpose**: No project initialization is needed — this is a change to an existing operator with no new dependencies or packages. Only baseline verification.
 
-- [ ] T001 Confirm a clean baseline: run `go -C tools tool task ci` and record that it passes before any change
-- [ ] T002 [P] Capture the current aggregation behavior for reference in `internal/controller/clusterhealth_controller.go` (the `latest`/newest fold at the child loop) and the gauge feed at its `observeCheck` deferral
+- [X] T001 Confirm a clean baseline: run `go -C tools tool task ci` and record that it passes before any change
+- [X] T002 [P] Capture the current aggregation behavior for reference in `internal/controller/clusterhealth_controller.go` (the `latest`/newest fold at the child loop) and the gauge feed at its `observeCheck` deferral
 
 **Checkpoint**: Baseline green; the code paths to be changed are identified.
 
@@ -56,18 +56,18 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 ### Tests for User Story 1 ⚠️ Write first; they MUST fail before implementation
 
-- [ ] T008 [P] [US1] Regression test (SC-005): aggregate with one live child and one frozen at `Fail` asserts `status.observedAt` equals the frozen child's observation, in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T009 [P] [US1] Test that `status.result` is byte-identical to the pre-change worst-of fold for the same inputs (SC-006), in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T010 [P] [US1] Test that the exported gauge agrees with `status.observedAt` and cannot disagree (FR-009), in `internal/controller/check_observability_test.go`
-- [ ] T011 [P] [US1] Edge-case tests in `internal/controller/clusterhealth_controller_test.go`: a never-observed child yields nil `observedAt`; a future-dated child never reads as more current than now; every child frozen still reports the stalest; the `NoMatches` path is unchanged
+- [X] T008 [P] [US1] Regression test (SC-005): aggregate with one live child and one frozen at `Fail` asserts `status.observedAt` equals the frozen child's observation, in `internal/controller/clusterhealth_controller_test.go`
+- [X] T009 [P] [US1] Test that `status.result` is byte-identical to the pre-change worst-of fold for the same inputs (SC-006), in `internal/controller/clusterhealth_controller_test.go`
+- [X] T010 [P] [US1] Test that the exported gauge agrees with `status.observedAt` and cannot disagree (FR-009), in `internal/controller/check_observability_test.go`
+- [X] T011 [P] [US1] Edge-case tests in `internal/controller/clusterhealth_controller_test.go`: a never-observed child yields nil `observedAt`; a future-dated child never reads as more current than now; every child frozen still reports the stalest; the `NoMatches` path is unchanged
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Invert the child fold from newest to stalest in `internal/controller/clusterhealth_controller.go`, clamping future timestamps and letting a never-observed child yield nil (per [data-model.md](./data-model.md) derivation table)
-- [ ] T013 [US1] Correct the gauge-emission comment above the `observeCheck` deferral in `internal/controller/clusterhealth_controller.go` — it currently asserts the guarantee that failed
-- [ ] T014 [P] [US1] Correct the `ObservedAt` godoc in `api/v1alpha1/clusterhealth_types.go` to describe stalest-contributing-observation, in **staleness** framing per D3 (it currently claims "when the aggregator last refreshed")
-- [ ] T015 [US1] Regenerate the API reference with `go -C tools tool task docs:api-ref` (generated — never hand-edit)
-- [ ] T016 [P] [US1] Correct `docs/guides/monitoring.md`, replacing the false "freshest of its children" guarantee with staleness framing (FR-010, D3)
+- [X] T012 [US1] Invert the child fold from newest to stalest in `internal/controller/clusterhealth_controller.go`, clamping future timestamps and letting a never-observed child yield nil (per [data-model.md](./data-model.md) derivation table)
+- [X] T013 [US1] Correct the gauge-emission comment above the `observeCheck` deferral in `internal/controller/clusterhealth_controller.go` — it currently asserts the guarantee that failed
+- [X] T014 [P] [US1] Correct the `ObservedAt` godoc in `api/v1alpha1/clusterhealth_types.go` to describe stalest-contributing-observation, in **staleness** framing per D3 (it currently claims "when the aggregator last refreshed")
+- [X] T015 [US1] Regenerate the API reference with `go -C tools tool task docs:api-ref` (generated — never hand-edit)
+- [X] T016 [P] [US1] Correct `docs/guides/monitoring.md`, replacing the false "freshest of its children" guarantee with staleness framing (FR-010, D3)
 
 **Checkpoint**: The reported defect is fixed and shippable. No schema change, no #149 deadline. **This is the MVP.**
 

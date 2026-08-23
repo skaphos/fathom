@@ -92,10 +92,17 @@ The check gauges cover all four check kinds (`AddonCheck`, `HealthCheck`,
 its `namespace` label is empty). Series exist from the moment the operator
 first observes a check — reporting `result="Unknown"` and last-run `0` until
 the first evaluation completes — and are removed when the check is deleted.
-For the wrapper kinds the last-run timestamp follows the freshness of the
+For the wrapper kinds the last-run timestamp follows the staleness of the
 evidence behind the verdict: a `HealthCheck` carries its mirrored target's
-last run time, and a `ClusterHealth` the freshest of its children — so a
+last run time, and a `ClusterHealth` the **stalest** of its children — so a
 stale source reads as a stale wrapper, which is what you want to alert on.
+Taking the stalest is what makes that guarantee hold: an aggregate folds the
+*worst* verdict across its children, so if it published the freshest
+observation instead, one healthy child would make a frozen sibling's `Fail`
+look perfectly current and no staleness alert would ever fire (#277). A
+`ClusterHealth` whose selector matches a check that has never been evaluated
+reports last-run `0`, because an unevaluated child is the strongest staleness
+signal there is.
 Label cardinality is bounded by design: one series set per check resource,
 and never any free-text label.
 
