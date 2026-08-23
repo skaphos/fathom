@@ -11,14 +11,14 @@
 ## Problem
 
 `ClusterHealth` is the headline "one verdict for the cluster" resource. Its
-freshness signal is currently the **newest** child's observation time, while its
+staleness signal is currently the **newest** child's observation time, while its
 verdict is the **worst** of all children. Those two folds disagree, and the
 disagreement is silent.
 
 For an aggregate with one live child and one frozen child:
 
 - the frozen child's stale `Fail` still propagates into the aggregate verdict;
-- but the aggregate reports itself perfectly fresh, because a live sibling
+- but the aggregate reports zero staleness, because a live sibling
   supplies the newest timestamp.
 
 The documented mechanism for catching "the last recorded result can no longer be
@@ -60,7 +60,7 @@ Taking the **oldest** child unconditionally would fix the masking but break a
 different case: check cadences differ by more than 10×
 (`defaultAddonCheckInterval` 5m vs `defaultNodeCertInterval` 1h). A
 slow-but-healthy hourly child would drag every aggregate containing it into
-permanent staleness. Freshness must be judged against each check's **own**
+permanent staleness. Staleness must be judged against each check's **own**
 cadence, not a single global threshold.
 
 ### The cadence gap is already causing a second, live problem
@@ -79,7 +79,7 @@ because the cadence is not published. Same root gap, seen from the metrics side.
 
 ## Scope Decisions
 
-Two questions were resolved before planning; they are recorded here because they
+Three decisions were made before planning; they are recorded here because they
 bound everything below.
 
 ### D1 — Staleness is a signal, never a verdict change
@@ -116,7 +116,7 @@ belongs to the alerting engine, which is the only component that re-evaluates
 
 Check kinds partition by whether they own a cadence:
 
-| Kind | Has `spec.interval` | Freshness derives from |
+| Kind | Has `spec.interval` | Staleness judged against |
 | --- | --- | --- |
 | `AddonCheck` | yes | its own cadence |
 | `DNSCheck` | yes | its own cadence |
@@ -129,7 +129,7 @@ Therefore:
 
 - The three self-scheduling kinds publish their **effective interval** so
   staleness can be expressed relative to cadence.
-- The aggregate is fixed by correcting how its freshness is **derived** from its
+- The aggregate is fixed by correcting how its staleness signal is **derived** from its
   children, not by giving it a cadence it does not have.
 - No check kind gains a staleness field in its own status (see D1 corollary).
 
@@ -147,13 +147,33 @@ versioning standard.
 Metrics are not CRD schema and remain unfrozen by that promotion, so the cadence
 half of this work (FR-006) carries no freeze deadline.
 
+### D3 — "Staleness" is the canonical term; "freshness" is not used
+
+The signal is named and described in terms of **staleness** throughout: the
+canonical noun is the **staleness signal**, and the value backing it is the
+**stalest contributing observation**.
+
+Rationale: health is a risk surface. The operator's question is never "how fresh
+is this?" — it is "how stale is this, and can I still trust it?" Framing the
+signal positively inverts the thing being watched for and reads as reassurance
+where a warning belongs. It is also the framing every consumer already uses: the
+alert is `FathomCheckStale`, and the guarantee the docs promise is that "a stale
+source reads as a stale wrapper".
+
+This applies to the shipped artifacts as well as this document — the CRD godoc,
+the gauge-emission comment, and the monitoring guide adopt the same term when
+FR-010 brings them into agreement. The word "freshness" is never used as a term
+in this spec — it survives only inside verbatim quotations of the current,
+incorrect text, and in this decision where the word itself is the subject.
+
 ## Clarifications
 
 ### Session 2026-08-23
 
 - Q: Should the overdue allowance be a fixed multiplier, or operator-tunable? → A: Configurable via the existing cobra/viper options, defaulting to 3× the check's cadence.
-- Q: How should the redefinition of the existing freshness field be classified and communicated? → A: As a breaking change (`BREAKING CHANGE` footer) plus an ADR recording the semantic redefinition.
+- Q: How should the redefinition of the existing staleness field be classified and communicated? → A: As a breaking change (`BREAKING CHANGE` footer) plus an ADR recording the semantic redefinition.
 - Q: Should the aggregate's child-summary list be bounded, or is its unbounded size out of scope? → A: Bound it with `MaxItems`, paired with defined overflow behavior so the cap cannot wedge reconciliation.
+- Q: Is "freshness" or "staleness" the canonical term for the signal? → A: Staleness. Health is a risk surface — the operator asks how stale the signal is, not how fresh (D3).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -166,12 +186,12 @@ terminal state. Its recorded verdict freezes at `Fail`. Another contributing
 check keeps running normally.
 
 Today the aggregate promotes `Fail` indefinitely while reporting itself fully
-fresh — in status *and* in the gauge — so the operator's staleness alert never
+showing zero staleness — in status *and* in the gauge — so the operator's staleness alert never
 fires and nothing contradicts the frozen verdict. They cannot tell "this is
 genuinely failing right now" from "this froze at `Fail` an hour ago and nobody
 knows".
 
-After this change the aggregate's freshness reflects the **stalest** contributing
+After this change the aggregate's staleness signal reflects the **stalest** contributing
 evidence, so the operator can distinguish a live failure from a frozen one.
 
 **Why this priority**: This is the reported defect, it affects the most prominent
@@ -180,19 +200,19 @@ catch untrustworthy results.
 
 **Independent Test**: Create a `ClusterHealth` selecting two `HealthCheck`
 children; hold one child's observation time frozen while the other advances;
-assert both the aggregate's status freshness and its exported gauge reflect the
+assert both the aggregate's status staleness signal and its exported gauge reflect the
 frozen child. Delivers the core value on its own.
 
 **Acceptance Scenarios**:
 
 1. **Given** an aggregate with one live child and one child frozen at `Fail`,
-   **When** the aggregate is reconciled, **Then** its reported freshness MUST
+   **When** the aggregate is reconciled, **Then** its reported staleness signal MUST
    reflect the frozen child, not the live one.
 2. **Given** the same aggregate, **When** its exported staleness gauge is read,
    **Then** the gauge MUST agree with the status rather than reporting the
-   aggregate as fresh.
+   aggregate as current.
 3. **Given** an aggregate whose children are all current, **When** it is
-   reconciled, **Then** it MUST report as fresh.
+   reconciled, **Then** it MUST report no staleness.
 4. **Given** an aggregate containing a frozen child, **When** it is reconciled,
    **Then** its `Status.Result` MUST be exactly what the unchanged worst-of fold
    produces — staleness MUST NOT alter the verdict.
@@ -263,15 +283,15 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   of already reporting not-ready. Today that path yields a nil observation time,
   which the gauge already renders as the 0 sentinel — that behavior is preserved.
 - **Every child is frozen.** The aggregate reports the stalest evidence; it must
-  not fall back to "fresh" through an empty-set default.
+  not fall back to "no staleness" through an empty-set default.
 - **Clock skew / future timestamps.** A child reporting an observation time in
-  the future must not make an aggregate look fresh indefinitely.
+  the future must not let an aggregate understate its staleness indefinitely.
 - **A child's cadence changes.** Staleness must follow the child's current
   effective cadence, including a runtime-clamped one (`clampCadence`), not a
   value captured earlier.
 - **A large aggregate.** Per-child evaluation must stay bounded and introduce no
   additional per-child API reads.
-- **An aggregate exceeding the child-list cap.** The verdict and freshness signal
+- **An aggregate exceeding the child-list cap.** The verdict and staleness signal
   must still be computed from every selected child; only the published per-child
   detail is truncated, and the truncation must be visible (FR-017, FR-018).
 - **An aggregate stored before the cap existed.** A pre-existing object holding
@@ -282,7 +302,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 
 ### Functional Requirements
 
-- **FR-001**: The aggregate's freshness MUST be derived from the **stalest**
+- **FR-001**: The aggregate's staleness signal MUST be derived from the **stalest**
   contributing child, so a frozen child cannot be masked by a live sibling.
 - **FR-002**: Staleness MUST be judged against each check's **own** effective
   cadence, never a single global threshold shared across cadences.
@@ -293,7 +313,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **FR-004**: A contributing child that has never produced an observation MUST
   be treated as the strongest staleness signal.
 - **FR-005**: An observation time in the future MUST NOT make a child appear
-  fresher than the present moment.
+  less stale than the present moment.
 - **FR-006**: Each self-scheduling check kind (`AddonCheck`, `DNSCheck`,
   `NodeCertificateCheck`) MUST publish its effective cadence so consumers can
   express staleness relative to it. The published value MUST reflect the cadence
@@ -303,15 +323,17 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **FR-008**: The aggregate MUST continue to derive exclusively from
   `HealthCheck.status` and MUST NOT read `HealthReport` history.
 - **FR-009**: The exported staleness gauge for the aggregate MUST agree with the
-  aggregate's status freshness — the two MUST NOT be able to disagree.
-- **FR-010**: All four descriptions of the aggregate's freshness field (the
+  aggregate's status staleness signal — the two MUST NOT be able to disagree.
+- **FR-010**: All four descriptions of the aggregate's staleness field (the
   aggregation code, the gauge-emission comment, the CRD godoc, and
   `docs/guides/monitoring.md`) MUST be brought into agreement with the
-  implemented behavior.
+  implemented behavior, and MUST describe it in **staleness** terms per D3 —
+  agreeing on the wrong framing would satisfy the letter of this requirement and
+  miss its point.
 - **FR-011**: The shipped sample alerting rules MUST be updated so a single
   staleness rule is correct across differing cadences, removing the hardcoded
   per-kind constant.
-- **FR-012**: Redefining the aggregate's existing freshness field MUST be
+- **FR-012**: Redefining the aggregate's existing staleness field MUST be
   released as a **breaking change** (a `BREAKING CHANGE` footer on the landing
   commit), and MUST be recorded in an **ADR** capturing the semantic
   redefinition and why the alternative — adding a parallel field — was rejected.
@@ -332,7 +354,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   object without limit.
 - **FR-017**: Exceeding that maximum MUST NOT fail the status write or wedge
   reconciliation. When the selected population exceeds the cap, the aggregate
-  MUST still publish a verdict and a freshness signal derived from **all**
+  MUST still publish a verdict and a staleness signal derived from **all**
   selected children, and MUST truncate only the per-child detail list.
 - **FR-018**: When the per-child list is truncated, the aggregate MUST make the
   truncation observable — the full selected count MUST remain readable, so an
@@ -345,8 +367,8 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 ### Key Entities
 
 - **Aggregate health record**: the cluster-level roll-up. Carries a verdict, a
-  freshness timestamp, and a per-child summary. This feature changes how the
-  freshness timestamp is derived; it adds no fields.
+  staleness timestamp, and a per-child summary. This feature changes how the
+  staleness timestamp is derived; it adds no fields.
 - **Contributing child summary**: the per-child entry the aggregate already
   publishes (identity, verdict, summary, observation time). Its content is
   unchanged; the list gains a maximum size and a defined truncation rule.
@@ -369,7 +391,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **SC-003**: A single staleness alerting expression is correct for every
   self-scheduling check kind, with no per-kind threshold constants left in the
   shipped rules.
-- **SC-004**: All four statements describing the aggregate's freshness agree with
+- **SC-004**: All four statements describing the aggregate's staleness signal agree with
   its implemented behavior.
 - **SC-005**: A regression test reproduces the reported failure — two
   contributors, one live and one frozen at `Fail` — and fails against the
@@ -379,10 +401,10 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **SC-007**: Reconciliation cost for an aggregate stays proportional to its
   number of contributors, with no additional per-child API reads.
 - **SC-008**: An aggregate whose selector matches a population larger than the
-  child-list cap still reports a correct verdict and a correct freshness signal,
+  child-list cap still reports a correct verdict and a correct staleness signal,
   and its status write succeeds — the cap never wedges reconciliation.
 - **SC-009**: An operator upgrading across this change can discover the altered
-  meaning of the freshness field from the release notes alone, without reading
+  meaning of the staleness field from the release notes alone, without reading
   the diff — verified by the presence of the breaking-change marker and the ADR.
 
 ## Assumptions
@@ -396,7 +418,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **Effective cadence is already computable.** Per-kind interval defaults and the
   `clampCadence` backstop exist in `internal/controller`; this feature surfaces
   the resulting value rather than introducing new scheduling behavior.
-- **Freshness is expressed as a timestamp**, consistent with how it is
+- **Staleness is expressed as a timestamp**, consistent with how it is
   represented today, rather than as a duration that would decay in stored status.
 - **This feature does not change when checks run** — only what is reported about
   how current their results are.
@@ -427,7 +449,7 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   justification, rather than being worked around.
 - **Objects already exceeding the cap must keep reconciling.** Aggregates stored
   before the constraint existed may hold more children than the new maximum;
-  FR-017 exists so those objects continue to publish a verdict and freshness
+  FR-017 exists so those objects continue to publish a verdict and a staleness signal
   rather than failing validation on their next status write.
 - **e2e is required.** This touches `internal/controller/*`, which per
   `AGENTS.md` mandates an e2e run before the PR is ready.

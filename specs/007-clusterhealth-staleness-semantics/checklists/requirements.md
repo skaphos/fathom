@@ -111,7 +111,28 @@ property iteration 2 relied on. Bounding `Children[]` is a schema change, so:
 SC-008 was reused for the new anti-wedging outcome, and new edge cases cover both
 over-cap aggregates and pre-existing over-cap objects.
 
-Ready for `/speckit-plan`.
+**Iteration 4 (2026-08-23)** — Terminology & Consistency, the one category left
+Outstanding after the sweep, is now **Resolved** as decision D3.
+
+"Staleness" is canonical; "freshness" is not used. The reasoning is semantic, not
+stylistic: health is a risk surface, so the operator's question is "how stale is
+this, can I still trust it?" — never "how fresh is this?". The positive framing
+inverts the thing being watched for and reads as reassurance where a warning
+belongs. It also matches what every consumer already uses: the alert is named
+`FathomCheckStale`, and the documented guarantee is "a stale source reads as a
+stale wrapper".
+
+Normalized across the whole spec — the canonical noun is **staleness signal**,
+backed by the **stalest contributing observation**. "Freshness" survives at
+exactly three lines, all verbatim quotations of the current incorrect godoc,
+gauge comment, and monitoring guide, which must stay unaltered because they are
+the evidence for FR-010.
+
+FR-010 was tightened as a consequence: bringing the four descriptions into
+agreement is not sufficient if they agree on the *wrong framing*, so it now
+requires them to describe the signal in staleness terms.
+
+All ten taxonomy categories are now Clear or Resolved. Ready for `/speckit-plan`.
 
 ## Notes
 
