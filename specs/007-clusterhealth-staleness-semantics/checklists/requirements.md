@@ -71,7 +71,47 @@ exported gauge, not just status — `Status.ObservedAt` is fed directly into
 guarantee that fails. Captured as FR-009 and US1 scenario 2. This raised the
 count of mutually inconsistent descriptions from three to four (FR-010).
 
-All checklist items now pass. Ready for `/speckit-plan`.
+All checklist items now pass.
+
+**Iteration 3 (2026-08-23)** — `/speckit-clarify` taxonomy sweep. Seven of ten
+categories scanned Clear; three were Partial and all three were resolved:
+
+- **Non-Functional / Misc** — the 3× overdue allowance was an unconfirmed
+  assumption that FR-014, SC-002 and SC-003 all depended on. Resolved: it becomes
+  **operator-configurable, defaulting to 3×** (FR-014, FR-015), routed through the
+  existing configuration model. Rationale mirrors D1 — drift tolerance is adopter
+  policy, so Fathom publishes a default rather than fixing the value.
+- **Integration & Versioning** — the spec required the redefinition to be "called
+  out" without saying how. Resolved: **`BREAKING CHANGE` footer plus an ADR**
+  (FR-012, SC-009). This was the highest-value question of the sweep: the field
+  keeps its name, type and optionality, so the schema-compatibility gate cannot
+  detect the change. The release marker and ADR are compensating controls for an
+  otherwise silent break.
+- **Domain / Scalability** — `Children[]` carries no `MaxItems` while the
+  selector fields cap at 50, so the status list is unbounded. Resolved: **bound
+  it**, paired with mandatory overflow behavior (FR-016 through FR-019).
+
+**Scope reversal recorded in this iteration.** The scalability answer inverts a
+property iteration 2 relied on. Bounding `Children[]` is a schema change, so:
+
+- the former SC-008 ("adds zero CRD fields → off the #149 critical path") is
+  **withdrawn**; the work is now **on** the freeze critical path, and D2's
+  schema-consequence paragraph and Dependencies were corrected to match;
+- narrowing a previously unbounded list will be reported as an incompatible
+  change by the CRD compatibility gate, so it needs a sanctioned allowlist entry
+  rather than a workaround;
+- a bare cap on a *status* list would fail the status write for aggregates
+  legitimately exceeding it — wedging reconciliation for the largest and most
+  important aggregates, and breaking objects stored before the cap existed.
+  FR-017 through FR-019 exist to prevent that: the verdict and freshness are
+  still computed from **all** children, only the per-child detail truncates, the
+  truncation is observable, and it is ordered to keep the worst and stalest
+  children rather than an arbitrary slice.
+
+SC-008 was reused for the new anti-wedging outcome, and new edge cases cover both
+over-cap aggregates and pre-existing over-cap objects.
+
+Ready for `/speckit-plan`.
 
 ## Notes
 

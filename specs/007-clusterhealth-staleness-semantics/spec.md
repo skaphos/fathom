@@ -136,10 +136,24 @@ Therefore:
 `HealthCheck` is explicitly out of scope: it mirrors an external source whose
 cadence Fathom does not know, so no meaningful cadence can be published for it.
 
-**Consequence for CRD schema**: this feature is expected to add **no new CRD
-fields**, which takes it off the critical path of
-[#149](https://github.com/skaphos/fathom/issues/149) (the `v1alpha1` → `v1`
-freeze). Metrics are not CRD schema and are not frozen by that promotion.
+**Consequence for CRD schema**: this feature adds **no new CRD fields**. It does,
+however, add a size constraint to an existing status list (FR-016, resolved in
+Clarifications), which *is* a schema change. That places the work **on** the
+critical path of [#149](https://github.com/skaphos/fathom/issues/149) (the
+`v1alpha1` → `v1` freeze): the constraint must land before the freeze, because
+tightening validation on a GA version afterwards is forbidden by the CRD
+versioning standard.
+
+Metrics are not CRD schema and remain unfrozen by that promotion, so the cadence
+half of this work (FR-006) carries no freeze deadline.
+
+## Clarifications
+
+### Session 2026-08-23
+
+- Q: Should the overdue allowance be a fixed multiplier, or operator-tunable? → A: Configurable via the existing cobra/viper options, defaulting to 3× the check's cadence.
+- Q: How should the redefinition of the existing freshness field be classified and communicated? → A: As a breaking change (`BREAKING CHANGE` footer) plus an ADR recording the semantic redefinition.
+- Q: Should the aggregate's child-summary list be bounded, or is its unbounded size out of scope? → A: Bound it with `MaxItems`, paired with defined overflow behavior so the cap cannot wedge reconciliation.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -257,6 +271,12 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   value captured earlier.
 - **A large aggregate.** Per-child evaluation must stay bounded and introduce no
   additional per-child API reads.
+- **An aggregate exceeding the child-list cap.** The verdict and freshness signal
+  must still be computed from every selected child; only the published per-child
+  detail is truncated, and the truncation must be visible (FR-017, FR-018).
+- **An aggregate stored before the cap existed.** A pre-existing object holding
+  more children than the new maximum must keep reconciling rather than failing
+  validation on its next status write.
 
 ## Requirements *(mandatory)*
 
@@ -291,13 +311,36 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **FR-011**: The shipped sample alerting rules MUST be updated so a single
   staleness rule is correct across differing cadences, removing the hardcoded
   per-kind constant.
-- **FR-012**: Redefining the aggregate's existing freshness field MUST be called
-  out for operators — it changes the value consumers read, even though it aligns
-  the field with the guarantee already documented for it.
+- **FR-012**: Redefining the aggregate's existing freshness field MUST be
+  released as a **breaking change** (a `BREAKING CHANGE` footer on the landing
+  commit), and MUST be recorded in an **ADR** capturing the semantic
+  redefinition and why the alternative — adding a parallel field — was rejected.
+  Rationale: the field keeps its name and type, so the schema-compatibility gate
+  cannot detect the change; the release signal and the ADR are the only warnings
+  a consumer receives.
 - **FR-013**: No check kind may gain a staleness field in its own status.
 - **FR-014**: The overdue allowance (how far past its cadence a check may drift
-  before counting as overdue) MUST be consistent across kinds and stated in
-  operator-facing documentation.
+  before counting as overdue) MUST be operator-configurable cluster-wide,
+  defaulting to **3× the check's cadence**, and MUST be stated in
+  operator-facing documentation. It MUST apply consistently across kinds — it is
+  a single cluster-wide tolerance, not a per-kind or per-resource value.
+- **FR-015**: The overdue allowance MUST be configured through the existing
+  configuration model, so the flag, `FATHOM_*` environment variable, config-file
+  key, and default stay in sync. It MUST NOT introduce a CRD field.
+- **FR-016**: The aggregate's child-summary list MUST carry an explicit maximum
+  size, so a selector matching an unbounded population cannot grow the stored
+  object without limit.
+- **FR-017**: Exceeding that maximum MUST NOT fail the status write or wedge
+  reconciliation. When the selected population exceeds the cap, the aggregate
+  MUST still publish a verdict and a freshness signal derived from **all**
+  selected children, and MUST truncate only the per-child detail list.
+- **FR-018**: When the per-child list is truncated, the aggregate MUST make the
+  truncation observable — the full selected count MUST remain readable, so an
+  operator can tell "50 children, all shown" from "500 children, 50 shown".
+- **FR-019**: Truncation MUST be deterministic and MUST prioritize the children
+  an operator needs most — those contributing the worst verdict and the stalest
+  evidence — rather than truncating on an arbitrary boundary that could hide the
+  failing child.
 
 ### Key Entities
 
@@ -305,8 +348,8 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   freshness timestamp, and a per-child summary. This feature changes how the
   freshness timestamp is derived; it adds no fields.
 - **Contributing child summary**: the per-child entry the aggregate already
-  publishes (identity, verdict, summary, observation time) — already sufficient
-  raw evidence, retained unchanged.
+  publishes (identity, verdict, summary, observation time). Its content is
+  unchanged; the list gains a maximum size and a defined truncation rule.
 - **Effective cadence**: the interval a check actually runs at, after defaults
   and runtime clamping. Currently internal; this feature publishes it for
   self-scheduling kinds.
@@ -335,15 +378,21 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   input, confirming staleness never altered it.
 - **SC-007**: Reconciliation cost for an aggregate stays proportional to its
   number of contributors, with no additional per-child API reads.
-- **SC-008**: The feature adds zero new CRD fields, so it imposes no schema
-  obligation on the `v1alpha1` → `v1` promotion.
+- **SC-008**: An aggregate whose selector matches a population larger than the
+  child-list cap still reports a correct verdict and a correct freshness signal,
+  and its status write succeeds — the cap never wedges reconciliation.
+- **SC-009**: An operator upgrading across this change can discover the altered
+  meaning of the freshness field from the release notes alone, without reading
+  the diff — verified by the presence of the breaking-change marker and the ADR.
 
 ## Assumptions
 
-- **Overdue allowance defaults to 3× a check's cadence.** This matches the factor
-  the shipped rule already uses (900s against a 5m interval) and the reasoning
-  documented beside it, preserving existing behavior at the default cadence. To
-  be confirmed at plan time.
+- **Overdue allowance defaults to 3× a check's cadence** and is operator-tunable
+  (resolved in Clarifications). The default matches the factor the shipped rule
+  already uses (900s against a 5m interval) and the reasoning documented beside
+  it, so existing behavior at the default cadence is preserved. Making it tunable
+  rather than fixed follows the same principle as D1: how much drift is
+  acceptable is adopter policy, not something Fathom should decide for them.
 - **Effective cadence is already computable.** Per-kind interval defaults and the
   `clampCadence` backstop exist in `internal/controller`; this feature surfaces
   the resulting value rather than introducing new scheduling behavior.
@@ -364,15 +413,33 @@ cadence-relative alerting expression identifies only the genuinely overdue check
 - **Constitution — bounded, idempotent reconciliation**: per-child staleness
   evaluation must not introduce unbounded work, and this feature must not add
   timer-based requeue to the aggregate (see D1).
-- **Not on the #149 critical path.** Because the feature is expected to add no
-  CRD fields, it does not have to land before the `v1alpha1` → `v1` freeze. If
-  planning discovers a new field is unavoidable, that assumption inverts and the
-  work becomes freeze-blocking — this is the single most important thing to
-  re-check at plan time.
+- **Constitution — configuration model**: the overdue allowance (FR-015) enters
+  through the established precedence chain (flag → `FATHOM_*` env var → config
+  file → default) by extending the options table, so all four stay in sync.
+- **On the #149 critical path.** The child-list size constraint (FR-016) is a
+  schema change and must land before the `v1alpha1` → `v1` freeze; tightening
+  validation on a GA version afterwards is forbidden. This is the single most
+  important scheduling constraint on the work.
+- **The size constraint narrows an existing field, so the CRD compatibility gate
+  will flag it.** Adding a maximum to a previously unbounded list shrinks the set
+  of accepted objects, which the gate reports as an incompatible change. It
+  therefore needs a sanctioned entry in the compatibility allowlist carrying the
+  justification, rather than being worked around.
+- **Objects already exceeding the cap must keep reconciling.** Aggregates stored
+  before the constraint existed may hold more children than the new maximum;
+  FR-017 exists so those objects continue to publish a verdict and freshness
+  rather than failing validation on their next status write.
 - **e2e is required.** This touches `internal/controller/*`, which per
   `AGENTS.md` mandates an e2e run before the PR is ready.
 - **Generated artifacts are drift-gated.** `docs/reference/api.md` is generated;
   godoc changes must be regenerated via the documented task, never hand-edited.
+- **No automated gate covers this change.** The CRD schema-compatibility check
+  diffs schemas; the redefined field keeps its name, type, and optionality, so
+  the check passes regardless. The breaking-change marker and the ADR (FR-012)
+  are deliberate compensating controls, not ceremony.
+- **Release mechanics**: the repository bumps the minor version for breaking
+  changes while below 1.0, so the `BREAKING CHANGE` footer lands this as a minor
+  release rather than forcing a major — the same milestone this work targets.
 - **Alert rules are build-validated.** Changes to the shipped rules must keep
   `task verify-alert-rules` passing.
 - **Related work**:
