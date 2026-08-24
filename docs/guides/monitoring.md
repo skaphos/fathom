@@ -104,6 +104,14 @@ look perfectly current and no staleness alert would ever fire (#277). A
 `ClusterHealth` whose selector matches a check that has never been evaluated
 reports last-run `0`, because an unevaluated child is the strongest staleness
 signal there is.
+`status.children` on a `ClusterHealth` is capped at 100 entries. The cap bounds
+only what the aggregate *reports*: `result` and `observedAt` are computed across
+every selected check before truncation, so a large aggregate stays correct and
+its status write never fails. `matchedCount` remains the full pre-truncation
+total, so `matchedCount > len(children)` is how you detect truncation.
+Truncation keeps the entries you need — worst verdict first, then stalest — so
+the failing or frozen child that explains the roll-up is never the one dropped.
+
 A `ClusterHealth`'s published interval is the **slowest** of its contributing
 checks, because a roll-up can only be as current as its least frequently
 refreshed contributor. Together with the stalest-observation rule above, that is

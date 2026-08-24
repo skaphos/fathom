@@ -25,3 +25,14 @@ const (
 	// above one second remain legal.
 	MinCheckTimeout = time.Second
 )
+
+// MaxClusterHealthChildren caps ClusterHealthStatus.Children. It mirrors the
+// MaxItems marker on that field, and a test asserts the two stay in step.
+//
+// The list was previously unbounded, so a selector matching a large population
+// grew the stored object without limit. The cap bounds only what is *reported*:
+// the verdict and the staleness signal are computed across every selected check
+// before truncation, so a large aggregate stays correct — it simply stops
+// enumerating every contributor. MatchedCount remains the full total, which is
+// what makes truncation detectable.
+const MaxClusterHealthChildren = 100

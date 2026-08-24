@@ -121,10 +121,23 @@ type ClusterHealthStatus struct {
 	MatchedCount int32 `json:"matchedCount,omitempty"`
 
 	// Children summarizes each selected HealthCheck's contribution.
+	//
+	// Capped at MaxClusterHealthChildren so a selector matching a large
+	// population cannot grow the stored object without bound. When the selection
+	// exceeds the cap the list is truncated, but Result and ObservedAt are still
+	// computed from EVERY selected check — the cap limits what is reported, never
+	// what is measured. MatchedCount stays the full pre-truncation total, so
+	// matchedCount > len(children) is how a consumer detects truncation.
+	//
+	// Truncation keeps the entries an operator actually needs: worst verdict
+	// first, then stalest, then namespace/name for determinism. An arbitrary
+	// alphabetical cut could otherwise hide the single failing or frozen child
+	// that explains the roll-up.
 	// +optional
 	// +listType=map
 	// +listMapKey=namespace
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
 	Children []ClusterHealthChildSummary `json:"children,omitempty"`
 
 	// ObservedAt is the stalest observation backing this aggregate: the oldest

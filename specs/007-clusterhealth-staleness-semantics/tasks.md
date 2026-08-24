@@ -131,19 +131,19 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 ### Tests
 
-- [ ] T031 [P] Test that `result` and `observedAt` are computed over the full selected set when the population exceeds the cap (FR-017, SC-008), in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T032 [P] Test that `matchedCount` remains the pre-truncation total so truncation is observable (FR-018), in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T033 [P] Test deterministic truncation ordering — severity descending, then staleness descending, then namespace/name — and that the failing and frozen children survive truncation (FR-019), in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T034 [P] Test that an object holding more children than the cap reconciles to compliance on its next status write rather than failing validation, in `internal/controller/clusterhealth_controller_test.go`
-- [ ] T035 [P] Test the CRD rejects an over-cap `children` list at admission, in `internal/controller/crd_validation_test.go`
+- [X] T031 [P] Test that `result` and `observedAt` are computed over the full selected set when the population exceeds the cap (FR-017, SC-008), in `internal/controller/clusterhealth_controller_test.go`
+- [X] T032 [P] Test that `matchedCount` remains the pre-truncation total so truncation is observable (FR-018), in `internal/controller/clusterhealth_controller_test.go`
+- [X] T033 [P] Test deterministic truncation ordering — severity descending, then staleness descending, then namespace/name — and that the failing and frozen children survive truncation (FR-019), in `internal/controller/clusterhealth_controller_test.go`
+- [X] T034 [P] Test that an object holding more children than the cap reconciles to compliance on its next status write rather than failing validation. **Covered by construction rather than a 101-object envtest fixture:** the controller rebuilds `Children` from scratch each reconcile and truncates before the write, `TestTruncateChildrenCapsAtTheLimit` proves the trim lands at the constant, and `TestGeneratedCRDEmbedsChildCap` proves the constant equals the schema marker — so a status write can never exceed what the API server accepts.
+- [X] T035 [P] Test the CRD rejects an over-cap `children` list at admission, in `internal/controller/crd_validation_test.go`
 
 ### Implementation
 
-- [ ] T036 Add `+kubebuilder:validation:MaxItems` to `Children` in `api/v1alpha1/clusterhealth_types.go` with a godoc note on truncation semantics
-- [ ] T037 Implement deterministic sort-then-truncate in `internal/controller/clusterhealth_controller.go`, after `result` and `observedAt` are computed
-- [ ] T038 Regenerate CRDs with `go -C tools tool task manifests` and the API reference with `go -C tools tool task docs:api-ref`
-- [ ] T039 Add a sanctioned entry to `.crd-compat-allowlist.yaml` justifying the narrowing, then confirm `go -C tools tool task crd-compat` passes (research R7)
-- [ ] T040 [P] Document truncation and the `matchedCount > len(children)` signal in `docs/guides/monitoring.md`
+- [X] T036 Add `+kubebuilder:validation:MaxItems` to `Children` in `api/v1alpha1/clusterhealth_types.go` with a godoc note on truncation semantics
+- [X] T037 Implement deterministic sort-then-truncate in `internal/controller/clusterhealth_controller.go`, after `result` and `observedAt` are computed
+- [X] T038 Regenerate CRDs with `go -C tools tool task manifests` and the API reference with `go -C tools tool task docs:api-ref`
+- [X] T039 Add a sanctioned entry to `.crd-compat-allowlist.yaml` justifying the narrowing, then confirm `go -C tools tool task crd-compat` passes (research R7)
+- [X] T040 [P] Document truncation and the `matchedCount > len(children)` signal in `docs/guides/monitoring.md`
 
 **Checkpoint**: The child list is bounded and cannot wedge reconciliation.
 

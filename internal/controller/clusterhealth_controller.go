@@ -321,6 +321,16 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	}
 	ch.Status.ObservedAt = stalest
 
+	// Truncation happens LAST, after the verdict and the staleness signal are
+	// already folded across every selected check. The cap bounds what the
+	// aggregate reports, never what it measures, so a large selection still
+	// produces a correct roll-up — and the status write cannot fail validation
+	// and wedge reconciliation for exactly the biggest aggregates.
+	//
+	// MatchedCount is deliberately left at the full total: it is the only way a
+	// consumer can tell "50 children, all shown" from "500 children, 50 shown".
+	truncateChildren(ch)
+
 	apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 		Type:               clusterHealthConditionReady,
 		Status:             metav1.ConditionTrue,
@@ -472,4 +482,43 @@ func clusterHealthCoversNamespace(ch *fathomv1alpha1.ClusterHealth, namespace st
 		return !slices.Contains(ch.Spec.ExcludedNamespaces, namespace)
 	}
 	return true
+}
+
+// truncateChildren caps ch.Status.Children, keeping the entries an operator
+// needs rather than an arbitrary slice.
+//
+// The children are already sorted by namespace/name for stable output. When the
+// selection exceeds the cap that ordering becomes actively harmful: an
+// alphabetical cut can drop the one failing or frozen child that explains the
+// roll-up, leaving a status that reports Fail while showing a hundred passing
+// contributors. So the retained window is re-ranked worst-verdict first, then
+// stalest, and only then by name — the sort is stable, so equal-ranked children
+// keep their namespace/name order.
+//
+// Callers must invoke this only after Result and ObservedAt are computed; the
+// cap must never influence either.
+func truncateChildren(ch *fathomv1alpha1.ClusterHealth) {
+	if len(ch.Status.Children) <= fathomv1alpha1.MaxClusterHealthChildren {
+		return
+	}
+
+	sort.SliceStable(ch.Status.Children, func(i, j int) bool {
+		a, b := ch.Status.Children[i], ch.Status.Children[j]
+		if sa, sb := a.Result.Severity(), b.Result.Severity(); sa != sb {
+			return sa > sb
+		}
+		// A child that has never been observed is maximally stale, so it sorts
+		// ahead of any timestamp.
+		switch {
+		case a.ObservedAt == nil && b.ObservedAt != nil:
+			return true
+		case a.ObservedAt != nil && b.ObservedAt == nil:
+			return false
+		case a.ObservedAt != nil && b.ObservedAt != nil && !a.ObservedAt.Equal(b.ObservedAt):
+			return a.ObservedAt.Before(b.ObservedAt)
+		}
+		return false
+	})
+
+	ch.Status.Children = ch.Status.Children[:fathomv1alpha1.MaxClusterHealthChildren]
 }

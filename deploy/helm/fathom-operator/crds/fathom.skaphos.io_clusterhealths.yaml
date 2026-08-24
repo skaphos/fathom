@@ -157,7 +157,20 @@ spec:
             description: ClusterHealthStatus defines the observed state of ClusterHealth.
             properties:
               children:
-                description: Children summarizes each selected HealthCheck's contribution.
+                description: |-
+                  Children summarizes each selected HealthCheck's contribution.
+
+                  Capped at MaxClusterHealthChildren so a selector matching a large
+                  population cannot grow the stored object without bound. When the selection
+                  exceeds the cap the list is truncated, but Result and ObservedAt are still
+                  computed from EVERY selected check — the cap limits what is reported, never
+                  what is measured. MatchedCount stays the full pre-truncation total, so
+                  matchedCount > len(children) is how a consumer detects truncation.
+
+                  Truncation keeps the entries an operator actually needs: worst verdict
+                  first, then stalest, then namespace/name for determinism. An arbitrary
+                  alphabetical cut could otherwise hide the single failing or frozen child
+                  that explains the roll-up.
                 items:
                   description: |-
                     ClusterHealthChildSummary records one HealthCheck's contribution to the
@@ -199,6 +212,7 @@ spec:
                   - name
                   - namespace
                   type: object
+                maxItems: 100
                 type: array
                 x-kubernetes-list-map-keys:
                 - namespace

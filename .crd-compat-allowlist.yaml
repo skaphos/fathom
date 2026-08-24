@@ -57,3 +57,8 @@
   path: ^.spec.paths.items
   reason: path entries bounded to 512 chars in post-v0.4.1 node-agent hardening (predates this gate)
   issue: https://github.com/skaphos/fathom/issues/152
+
+- crd: clusterhealths.fathom.skaphos.io
+  path: ^.status.children
+  reason: status.children capped at 100 items; previously unbounded, so one selector could grow the stored object without limit. The controller truncates worst-verdict-then-stalest first and computes result/observedAt across every selected check before truncating, so the cap bounds what is reported, never what is measured, and cannot fail a status write. Sanctioned v1alpha1 churn.
+  issue: https://github.com/skaphos/fathom/issues/277
