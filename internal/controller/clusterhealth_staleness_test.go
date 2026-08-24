@@ -99,7 +99,7 @@ var _ = Describe("ClusterHealth staleness", func() {
 
 		By("publishing the STALEST observation so the Fail cannot look fresh")
 		Expect(got.Status.ObservedAt).NotTo(BeNil())
-		Expect(got.Status.ObservedAt.Time.Unix()).To(Equal(frozen.Time.Unix()),
+		Expect(got.Status.ObservedAt.Unix()).To(Equal(frozen.Unix()),
 			"the aggregate must not report the live sibling's timestamp; that is what masked the frozen child")
 	})
 
@@ -146,9 +146,9 @@ var _ = Describe("ClusterHealth staleness", func() {
 
 		value, ok := lastRunGaugeValue(GinkgoTB(), "ClusterHealth", "ch-staleness-gauge", "")
 		Expect(ok).To(BeTrue(), "expected a last-run series for the aggregate")
-		Expect(int64(value)).To(Equal(got.Status.ObservedAt.Time.Unix()),
+		Expect(int64(value)).To(Equal(got.Status.ObservedAt.Unix()),
 			"the gauge and the status must not be able to disagree")
-		Expect(int64(value)).To(Equal(frozen.Time.Unix()))
+		Expect(int64(value)).To(Equal(frozen.Unix()))
 	})
 
 	// T011 — edge cases from the spec.
@@ -196,7 +196,7 @@ var _ = Describe("ClusterHealth staleness", func() {
 
 		Expect(got.Status.ObservedAt).NotTo(BeNil(),
 			"an all-frozen aggregate must not fall back to fresh through an empty-set default")
-		Expect(got.Status.ObservedAt.Time.Unix()).To(Equal(older.Time.Unix()))
+		Expect(got.Status.ObservedAt.Unix()).To(Equal(older.Unix()))
 	})
 
 	It("leaves the NoMatches path unchanged", func() {

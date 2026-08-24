@@ -211,16 +211,16 @@ func namespaceScope(namespace string) string {
 	return fmt.Sprintf("namespace %q", namespace)
 }
 
-// aggregate populates ch.Status from the selected HealthChecks. It computes
-// the worst-case Result via fathomv1alpha1.WorstResult, builds a deterministic
-// Children summary (sorted by namespace, then name), and sets ObservedAt to
-// the latest input freshness across children (not wall-clock — that would
-// defeat no-op idempotency, and a "when did inputs last move" timestamp is
-// what dashboards actually want).
-// aggregate folds the selected HealthChecks into the roll-up status and returns
-// the aggregate's effective cadence for publication as a metric. The cadence is
-// derived rather than stored: it is a function of the children and would go
-// stale in status the moment one of them changed.
+// aggregate populates ch.Status from the selected HealthChecks. It computes the
+// worst-case Result via fathomv1alpha1.WorstResult, builds a deterministic
+// Children summary (sorted by namespace, then name, then capped), and sets
+// ObservedAt to the STALEST input observation across children — an input
+// timestamp rather than wall-clock, which both preserves no-op idempotency and
+// keeps the value a fact that never needs recomputing.
+//
+// It returns the aggregate's effective cadence for publication as a metric. The
+// cadence is derived rather than stored: it is a function of the children and
+// would go stale in status the moment one of them changed.
 func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) time.Duration {
 	ch.Status.MatchedCount = int32(len(hcs))
 

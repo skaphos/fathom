@@ -151,12 +151,12 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 ## Phase 7: Release Framing & Polish
 
-- [ ] T041 [P] Write `docs/adr/0005-clusterhealth-staleness-semantics.md` recording the semantic redefinition, D1's reasoning, and why a parallel field was rejected (FR-012)
-- [ ] T042 [P] Normalize any remaining "freshness" wording to staleness across touched code comments and docs (D3)
-- [ ] T043 Verify all four descriptions of the field agree **and** use staleness framing (FR-010, SC-004): aggregation code, gauge comment, CRD godoc, monitoring guide
-- [ ] T044 Run `go -C tools tool task verify-generated` and confirm no generated artifact is stale
-- [ ] T045 Run `go -C tools tool task ci` (lint, test, staticcheck, vuln, build)
-- [ ] T046 Add the e2e scenario asserting aggregate staleness against a real cluster in `test/e2e/clusterhealth_staleness_test.go`
+- [X] T041 [P] Write `docs/adr/0005-clusterhealth-staleness-semantics.md` recording the semantic redefinition, D1's reasoning, and why a parallel field was rejected (FR-012)
+- [X] T042 [P] Normalize any remaining "freshness" wording to staleness across touched code comments and docs (D3)
+- [X] T043 Verify all four descriptions of the field agree **and** use staleness framing (FR-010, SC-004): aggregation code, gauge comment, CRD godoc, monitoring guide
+- [X] T044 Run `go -C tools tool task verify-generated` and confirm no generated artifact is stale
+- [X] T045 Run `go -C tools tool task ci` (lint, test, staticcheck, vuln, build)
+- [X] T046 Add the e2e scenario asserting aggregate staleness against a real cluster in `test/e2e/clusterhealth_staleness_test.go`
 - [ ] T047 Run `go -C tools tool task test-e2e` — **required**, this touches `internal/controller/*`. Revert the `config/manager/kustomization.yaml` churn it leaves behind rather than committing it
 - [ ] T048 Walk every scenario in [quickstart.md](./quickstart.md) and confirm the expected outcomes
 - [ ] T049 Land the change with a `BREAKING CHANGE` footer on the commit (FR-012, SC-009)

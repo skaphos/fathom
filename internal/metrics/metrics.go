@@ -60,7 +60,7 @@ var (
 	)
 )
 
-// Check metrics express the current verdict and freshness of every check
+// Check metrics express the current verdict and staleness of every check
 // resource the operator reconciles (AddonCheck, HealthCheck, ClusterHealth,
 // NodeCertificateCheck), so operators can alert on failing or stale checks
 // without bridging CRD status into their monitoring stack (skaphos/fathom#154).
@@ -77,10 +77,15 @@ var (
 		[]string{"kind", "name", "namespace", "result"},
 	)
 
-	// CheckLastRunTimestamp is the unix time of the freshest completed
-	// evaluation backing the check's current result, 0 until the first
-	// evaluation completes — so one "time() - metric > N" rule catches
-	// never-ran and stopped-running checks alike.
+	// CheckLastRunTimestamp is the unix time of the evaluation backing the
+	// check's current result, 0 until the first evaluation completes — so one
+	// "time() - metric > N" rule catches never-ran and stopped-running checks
+	// alike.
+	//
+	// For the wrapper kinds it follows the evidence chain rather than this
+	// object's own reconcile: a HealthCheck carries its mirrored target's run
+	// time, and a ClusterHealth the STALEST of its children, so a stale
+	// contributor cannot hide behind a live sibling (#277).
 	CheckLastRunTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "fathom_check_last_run_timestamp_seconds",
