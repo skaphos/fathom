@@ -109,15 +109,15 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T025 [US3] Assert no hardcoded staleness threshold remains in the shipped rules (SC-003) — extend the alert-rule validation covered by `go -C tools tool task verify-alert-rules`
+- [X] T025 [US3] Assert no hardcoded staleness threshold remains in the shipped rules (SC-003) — extend the alert-rule validation covered by `go -C tools tool task verify-alert-rules`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Rewrite the staleness rule in `config/components/prometheus-rule/` to `time() - fathom_check_last_run_timestamp_seconds > <multiplier> * fathom_check_interval_seconds`, removing the `> 900` constant and its "tune to yours" caveat
-- [ ] T027 [P] [US3] Add the overdue multiplier as a chart value (default 3) in `deploy/helm/fathom-operator/` and wire it into the rendered rule — **not** an operator flag (research R5)
-- [ ] T028 [P] [US3] Document the multiplier, its default, and the never-ran `0` sentinel behavior in `docs/guides/monitoring.md` (FR-014)
-- [ ] T029 [US3] Document that a check with an unresolvable cadence is not covered by this rule, in `docs/guides/monitoring.md`
-- [ ] T030 [US3] Run `go -C tools tool task verify-alert-rules` and confirm the rendered components still build
+- [X] T026 [US3] Rewrite the staleness rule in `config/components/prometheus-rule/` to `time() - fathom_check_last_run_timestamp_seconds > <multiplier> * fathom_check_interval_seconds`, removing the `> 900` constant and its "tune to yours" caveat
+- [X] T027 [P] [US3] ~~Add the overdue multiplier as a chart value~~ **Adjusted — no valid target.** The Helm chart ships a `ServiceMonitor` but **no** `PrometheusRule`, so there is no chart-rendered rule to parameterize; research R5 assumed there was. Adding a `PrometheusRule` template to the chart would be scope expansion beyond this feature. The multiplier lives in the kustomize component as a documented, editable constant (T026) and is explained in the guide (T028). Filed as a follow-up rather than done silently.
+- [X] T028 [P] [US3] Document the multiplier, its default, and the never-ran `0` sentinel behavior in `docs/guides/monitoring.md` (FR-014)
+- [X] T029 [US3] Document that a check with an unresolvable cadence is not covered by this rule, in `docs/guides/monitoring.md`
+- [X] T030 [US3] Run `go -C tools tool task verify-alert-rules` and confirm the rendered components still build
 
 **Checkpoint**: All three user stories functional. Nothing so far has touched CRD schema.
 

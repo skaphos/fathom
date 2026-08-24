@@ -2,9 +2,18 @@
 # SPDX-License-Identifier: MIT
 #
 # Shipped alert rules over the fathom_check_* gauges (spec 001, FR-009a).
-# Thresholds are shipped defaults — tune `for`/900 to your check intervals.
+#
+# FathomCheckStale is cadence-relative: it compares a check's age against that
+# check's OWN published interval rather than one constant for the whole fleet
+# (skaphos/fathom#277). A single absolute threshold cannot work — 900s suits the
+# default 5m AddonCheck and false-positives continuously against a 1h
+# NodeCertificateCheck. The multiplier below is the only tunable, and it means
+# "this many missed runs before we care".
+#
 # The 0 "never ran" sentinel on fathom_check_last_run_timestamp_seconds makes
 # a never-evaluated check fire FathomCheckStale right after the `for` window.
+# A check whose cadence cannot be resolved publishes no interval series, so the
+# join drops it and this rule does not cover it.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -27,10 +36,14 @@ spec:
             summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} reports {{ $labels.result }}'
             description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has reported {{ $labels.result }} for 10 minutes. Inspect it with: kubectl describe {{ $labels.kind }} {{ $labels.name }}'
         - alert: FathomCheckStale
-          expr: time() - fathom_check_last_run_timestamp_seconds > 900
+          # 3 = the overdue allowance: three consecutive missed runs. Raise it
+          # for a noisier cluster, lower it to detect wedges sooner.
+          expr: >-
+            time() - fathom_check_last_run_timestamp_seconds
+            > 3 * fathom_check_interval_seconds
           for: 10m
           labels:
             severity: warning
           annotations:
             summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} is stale'
-            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over 15 minutes (0 = never). The last recorded result can no longer be trusted: the operator may be wedged, the check paused, or its target selector matching nothing.'
+            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over three times its own interval (0 = never ran). The last recorded result can no longer be trusted: the operator may be wedged, the check paused, or its target selector matching nothing. For a ClusterHealth the interval is its slowest contributing check, and the age is its stalest contributing evidence.'
