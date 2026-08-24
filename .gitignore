@@ -48,7 +48,11 @@ dist/
 .windsurf/
 .continue/
 .aider*
-.agents/
+# Codex integration skills are shared project tooling. Keep other agent state
+# local, matching the tracked-skill policy above for Claude.
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 
 # OS
 .DS_Store
