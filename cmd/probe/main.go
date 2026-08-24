@@ -248,8 +248,9 @@ func lookupIPs(ctx context.Context, network, target string) ([]string, error) {
 // The cost is that a relative subject no longer resolves through the search
 // list for CNAME assertions. That is the safer reading for a health check: one
 // whose meaning depends on the ambient search list of whichever namespace the
-// probe happens to run in is not a stable assertion, and admission requires a
-// fully-qualified subject for this record type.
+// probe happens to run in is not a stable assertion. A CNAME subject is
+// therefore expected to be written fully qualified; admission does not enforce
+// that yet, so a relative one fails as unresolvable rather than as a spec error.
 func lookupCNAME(ctx context.Context, target string) ([]string, error) {
 	absolute := absoluteDNSName(target)
 	cname, err := net.DefaultResolver.LookupCNAME(ctx, absolute)
