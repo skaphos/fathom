@@ -504,7 +504,7 @@ func truncateChildren(ch *fathomv1alpha1.ClusterHealth) {
 
 	sort.SliceStable(ch.Status.Children, func(i, j int) bool {
 		a, b := ch.Status.Children[i], ch.Status.Children[j]
-		if sa, sb := a.Result.Severity(), b.Result.Severity(); sa != sb {
+		if sa, sb := rankSeverity(a.Result), rankSeverity(b.Result); sa != sb {
 			return sa > sb
 		}
 		// A child that has never been observed is maximally stale, so it sorts
@@ -521,4 +521,22 @@ func truncateChildren(ch *fathomv1alpha1.ClusterHealth) {
 	})
 
 	ch.Status.Children = ch.Status.Children[:fathomv1alpha1.MaxClusterHealthChildren]
+}
+
+// rankSeverity ranks a child summary's verdict for truncation, coercing an
+// empty verdict to Unknown exactly as the roll-up fold does.
+//
+// The raw child summary deliberately preserves an empty verdict, and
+// Severity() ranks empty at 0 — below Pass. Ranking on it directly would make a
+// never-reconciled child the FIRST entry truncated away, which inverts the
+// whole point of ordered truncation: a child that has never produced a verdict
+// is the strongest staleness signal an aggregate has, and is precisely the
+// entry an operator needs to see. Coercing to Unknown puts it above the healthy
+// majority and below a live Fail, matching how the verdict fold already treats
+// it (#161, #277).
+func rankSeverity(r fathomv1alpha1.HealthReportResult) int {
+	if r == "" {
+		return fathomv1alpha1.HealthReportResultUnknown.Severity()
+	}
+	return r.Severity()
 }

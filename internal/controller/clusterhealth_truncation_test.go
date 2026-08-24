@@ -166,3 +166,44 @@ func TestTruncateChildrenIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// A HealthCheck that has never reconciled carries an EMPTY verdict and no
+// observation. Empty ranks Severity()=0 — below Pass — so ranking on the raw
+// value made it the FIRST entry truncated away, inverting the whole point of
+// ordered truncation: the child with no verdict at all is the strongest
+// staleness signal an aggregate has. Found by adversarial review of #277; the
+// original test masked it by giving the never-observed child a Pass verdict.
+func TestTruncateChildrenKeepsTheNeverReconciledChild(t *testing.T) {
+	ch := &fathomv1alpha1.ClusterHealth{}
+	now := metav1.Now()
+	for i := 0; i < fathomv1alpha1.MaxClusterHealthChildren+40; i++ {
+		ch.Status.Children = append(ch.Status.Children,
+			childAt(fmt.Sprintf("healthy-%03d", i), fathomv1alpha1.HealthReportResultPass, &now))
+	}
+	// The real shape of a never-reconciled child, named to sort last.
+	ch.Status.Children = append(ch.Status.Children,
+		childAt("zzz-never-reconciled", "", nil))
+
+	truncateChildren(ch)
+
+	for _, c := range ch.Status.Children {
+		if c.Name == "zzz-never-reconciled" {
+			return
+		}
+	}
+	t.Fatal("the never-reconciled child was truncated away; an empty verdict must rank as Unknown, " +
+		"not below Pass, or the one child that explains a stale roll-up is the first one dropped")
+}
+
+// An empty verdict must rank exactly where the roll-up fold already puts it.
+func TestRankSeverityCoercesEmptyToUnknown(t *testing.T) {
+	if got, want := rankSeverity(""), fathomv1alpha1.HealthReportResultUnknown.Severity(); got != want {
+		t.Errorf("rankSeverity(\"\") = %d, want %d (Unknown)", got, want)
+	}
+	if rankSeverity("") <= rankSeverity(fathomv1alpha1.HealthReportResultPass) {
+		t.Error("an unevaluated child must outrank a passing one for truncation")
+	}
+	if rankSeverity("") >= rankSeverity(fathomv1alpha1.HealthReportResultFail) {
+		t.Error("a live Fail must still outrank an unevaluated child")
+	}
+}

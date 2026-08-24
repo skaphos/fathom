@@ -117,8 +117,11 @@ checks, because a roll-up can only be as current as its least frequently
 refreshed contributor. Together with the stalest-observation rule above, that is
 what lets one alert cover a mixed-cadence aggregate without false positives: a
 healthy hourly child no longer drags a five-minute aggregate into permanent
-staleness. Checks whose cadence cannot be resolved publish no interval series
-and are therefore not covered by the cadence-relative rule.
+staleness. Checks whose cadence cannot be resolved publish no interval series, so the
+vector join in the first clause drops them — which is why the shipped rule
+carries a second `== 0` clause. Without it a `ClusterHealth` whose selector
+matches nothing would silently stop alerting, and a typo'd selector is exactly
+the mistake that rule exists to catch.
 
 Label cardinality is bounded by design: one series set per check resource,
 and never any free-text label.
@@ -276,8 +279,9 @@ groups:
         # makes a check that never executed fire this alert too, with no
         # absent() gymnastics.
         expr: >-
-          time() - fathom_check_last_run_timestamp_seconds
-          > 3 * fathom_check_interval_seconds
+          (time() - fathom_check_last_run_timestamp_seconds
+          > 3 * fathom_check_interval_seconds)
+          or (fathom_check_last_run_timestamp_seconds == 0)
         for: 10m
         labels:
           severity: warning

@@ -76,3 +76,29 @@ func TestDocumentedStalenessRuleMatchesShipped(t *testing.T) {
 		t.Errorf("monitoring guide still shows an absolute staleness threshold (%q)", loc)
 	}
 }
+
+// The cadence-relative clause alone silently loses coverage, so the shipped
+// rule must keep its never-ran clause (found by adversarial review of #277).
+//
+// A check with no resolvable cadence publishes no interval series, so the vector
+// join in the first clause drops it entirely. That set includes a ClusterHealth
+// whose selector matches nothing — a typo'd selector, which is exactly the
+// operator error the staleness alert exists to catch, and which the previous
+// absolute-threshold rule did catch via the 0 sentinel. Removing the second
+// clause would reintroduce that blind spot with no visible failure.
+func TestStalenessRuleStillCatchesNeverRan(t *testing.T) {
+	for _, f := range []struct{ label, path string }{
+		{"shipped rule", filepath.Join("..", "config", "components", "prometheus-rule", "prometheusrule.yaml")},
+		{"monitoring guide", filepath.Join("..", "docs", "guides", "monitoring.md")},
+	} {
+		raw, err := os.ReadFile(f.path)
+		if err != nil {
+			t.Fatalf("read %s: %v", f.label, err)
+		}
+		flat := strings.Join(strings.Fields(string(raw)), " ")
+		if !strings.Contains(flat, "fathom_check_last_run_timestamp_seconds == 0") {
+			t.Errorf("%s lost its never-ran clause; a check with no resolvable cadence "+
+				"(including a ClusterHealth matching nothing) would drop out of the join and never alert", f.label)
+		}
+	}
+}

@@ -12,8 +12,11 @@
 #
 # The 0 "never ran" sentinel on fathom_check_last_run_timestamp_seconds makes
 # a never-evaluated check fire FathomCheckStale right after the `for` window.
-# A check whose cadence cannot be resolved publishes no interval series, so the
-# join drops it and this rule does not cover it.
+# The second clause is not redundant. A check with no resolvable cadence
+# publishes no interval series, so the vector join drops it entirely — and that
+# set includes a ClusterHealth whose selector matches nothing, which is a plain
+# operator error (a typo'd selector) that MUST still alert. The 0 sentinel
+# catches those regardless of cadence.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -39,8 +42,9 @@ spec:
           # 3 = the overdue allowance: three consecutive missed runs. Raise it
           # for a noisier cluster, lower it to detect wedges sooner.
           expr: >-
-            time() - fathom_check_last_run_timestamp_seconds
-            > 3 * fathom_check_interval_seconds
+            (time() - fathom_check_last_run_timestamp_seconds
+            > 3 * fathom_check_interval_seconds)
+            or (fathom_check_last_run_timestamp_seconds == 0)
           for: 10m
           labels:
             severity: warning

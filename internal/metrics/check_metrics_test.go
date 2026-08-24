@@ -368,3 +368,36 @@ func TestCheckIntervalSeries(t *testing.T) {
 		}
 	})
 }
+
+// TestCheckIntervalWithdrawnWhenUnresolvable pins a defect found by adversarial
+// review of #277.
+//
+// A cadence can stop being resolvable: a wrapper's target is deleted, or the
+// check is paused. The first implementation only ever Set the gauge, so the last
+// known cadence stayed published — and the staleness rule kept joining against a
+// schedule that no longer applied, silently preserving alert coverage the check
+// should have lost. Absent and stale are very different to a vector join.
+func TestCheckIntervalWithdrawnWhenUnresolvable(t *testing.T) {
+	CheckResult.Reset()
+	CheckLastRunTimestamp.Reset()
+	CheckInterval.Reset()
+
+	ObserveCheck("HealthCheck", "default", "wrapper", "Pass", time.Now(), 5*time.Minute)
+	if got := gatherCheckSeries(t, "fathom_check_interval_seconds")["HealthCheck|wrapper|default|"]; got != 300 {
+		t.Fatalf("setup: cadence = %v, want 300", got)
+	}
+
+	// Target deleted or check paused: the cadence is no longer knowable.
+	ObserveCheck("HealthCheck", "default", "wrapper", "Pass", time.Now(), 0)
+
+	if got, ok := gatherCheckSeries(t, "fathom_check_interval_seconds")["HealthCheck|wrapper|default|"]; ok {
+		t.Errorf("cadence series survives at %v after becoming unresolvable; "+
+			"a stale cadence is worse than none, because the rule keeps trusting it", got)
+	}
+
+	// Recovering must republish it.
+	ObserveCheck("HealthCheck", "default", "wrapper", "Pass", time.Now(), 10*time.Minute)
+	if got := gatherCheckSeries(t, "fathom_check_interval_seconds")["HealthCheck|wrapper|default|"]; got != 600 {
+		t.Errorf("cadence = %v after recovery, want 600", got)
+	}
+}
