@@ -200,16 +200,12 @@ func TestRunDNSRecordKinds(t *testing.T) {
 // ever written — a check that cannot fail, which is worse than no check
 // because it reads as coverage.
 //
-// localhost has no CNAME record, so this is deterministic from /etc/hosts.
+// localhost has no CNAME record. Querying it absolutely makes that verdict
+// independent of the host's search list, so this asserts unconditionally rather
+// than skipping when the environment does not reproduce the trap.
 func TestRunDNSCNAMEWithNoRecordDoesNotPass(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
-	// Confirm the trap is real in this environment before asserting we avoid it.
-	cname, err := net.DefaultResolver.LookupCNAME(ctx, "localhost")
-	if err != nil || cname == "" {
-		t.Skipf("resolver does not exhibit the LookupCNAME no-record behaviour here (cname=%q err=%v)", cname, err)
-	}
 
 	got := captureResult(t, func() {
 		if err := runDNS(ctx, dnsQuery{Target: "localhost", RecordType: recordCNAME}); err != nil {
@@ -218,6 +214,86 @@ func TestRunDNSCNAMEWithNoRecordDoesNotPass(t *testing.T) {
 	})
 	if got.Outcome != "Fail" {
 		t.Fatalf("Outcome = %q, want Fail — a subject with no CNAME record must not pass a CNAME check", got.Outcome)
+	}
+}
+
+// TestLookupCNAMEIgnoresTheSearchList is the regression guard for the
+// search-expansion false Pass.
+//
+// Before the fix lookupCNAME queried the subject as written, so a resolver
+// carrying a search list answered a no-CNAME subject with the expanded name
+// ("localhost" -> "localhost.attlocal.net."). That differs from the subject, so
+// it was reported as a genuine CNAME and the check passed on a name that has no
+// CNAME record at all. Any machine with a search domain reproduces it, and a
+// pod always has one.
+//
+// Asserting through lookupCNAME rather than runDNS keeps the failure legible:
+// this is about the answers the lookup yields, not how an outcome is worded.
+func TestLookupCNAMEIgnoresTheSearchList(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Establish that this host would expand a relative query. Where it would
+	// not, the regression cannot reproduce and the assertion below is merely
+	// redundant rather than wrong, so the check is reported, not enforced.
+	if expanded, err := net.DefaultResolver.LookupCNAME(ctx, "localhost"); err == nil &&
+		!sameDNSName(expanded, "localhost") {
+		t.Logf("host expands relative queries (localhost -> %q); regression is live here", expanded)
+	}
+
+	answers, err := lookupCNAME(ctx, "localhost")
+	if err != nil {
+		t.Fatalf("lookupCNAME(localhost) returned an error: %v", err)
+	}
+	if len(answers) != 0 {
+		t.Fatalf("lookupCNAME(localhost) = %q, want no answers — localhost has no CNAME "+
+			"record, and a search-expanded name is not one", answers)
+	}
+}
+
+// TestLookupCNAMEReportsARealCNAME is the other half of the guard: suppressing
+// the search-expansion answer must not suppress a real one. The shape that
+// matters is a CNAME that keeps the leaf label and changes the parent domain,
+// because that is indistinguishable from search expansion by string comparison
+// alone and is what any regionalised service name looks like.
+func TestLookupCNAMEReportsARealCNAME(t *testing.T) {
+	t.Parallel()
+
+	const subject = "www.github.com"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	answers, err := lookupCNAME(ctx, subject)
+	if err != nil {
+		t.Skipf("%s is not resolvable here: %v", subject, err)
+	}
+	if len(answers) != 1 {
+		t.Fatalf("lookupCNAME(%s) = %q, want exactly one canonical name", subject, answers)
+	}
+	if sameDNSName(answers[0], subject) {
+		t.Fatalf("lookupCNAME(%s) = %q, want a name distinct from the subject", subject, answers[0])
+	}
+}
+
+func TestAbsoluteDNSName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "relative name gains a root label", in: "argocd.dev.sdp.devaag.com", want: "argocd.dev.sdp.devaag.com."},
+		{name: "absolute name is unchanged", in: "argocd.dev.sdp.devaag.com.", want: "argocd.dev.sdp.devaag.com."},
+		{name: "single label gains a root label", in: "localhost", want: "localhost."},
+		{name: "empty stays empty for the caller to reject", in: "", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := absoluteDNSName(tc.in); got != tc.want {
+				t.Fatalf("absoluteDNSName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
