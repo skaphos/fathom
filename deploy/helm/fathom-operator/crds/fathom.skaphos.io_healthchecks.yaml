@@ -68,10 +68,12 @@ spec:
                     description: |-
                       APIVersion of the target check resource. When empty, defaults to
                       fathom.skaphos.io/v1alpha1.
+                    maxLength: 317
                     type: string
                   kind:
-                    description: Kind of the target check resource (e.g., AddonCheck,
-                      DNSCheck).
+                    description: |-
+                      Kind of the target check resource: AddonCheck, DNSCheck, or
+                      NodeCertificateCheck.
                     maxLength: 63
                     minLength: 1
                     type: string
