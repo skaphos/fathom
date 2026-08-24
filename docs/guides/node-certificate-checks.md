@@ -211,10 +211,10 @@ kubectl -n fathom-system get healthreport \
   -l 'fathom.skaphos.io/source-kind=NodeCertificateCheck,fathom.skaphos.io/source-name=node-certificates'
 ```
 
-> `NodeCertificateCheck` reports its own status and history directly. In this
-> build it is **not** wrapped by `HealthCheck`/`ClusterHealth`, so read it
-> directly (or via its Prometheus gauge) rather than expecting it in a
-> `ClusterHealth` roll-up.
+> `NodeCertificateCheck` reports its own status and history directly. To include
+> that verdict in a cluster roll-up, create a `HealthCheck` whose
+> `spec.checkRef.kind` is `NodeCertificateCheck`, then select the wrapper from a
+> `ClusterHealth`.
 
 ## The node-agent image
 

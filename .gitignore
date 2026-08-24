@@ -61,6 +61,15 @@ Thumbs.db
 # Local junk
 .cache/
 .gocache
+*.tmp
+
+# Local Kubernetes credentials and secrets
+*.secret.yaml
+secrets/
+.kube/
+kubeconfig*
+*.key
+*.crt
 
 # Design docs (local-only)
 DESIGN.md

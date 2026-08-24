@@ -24,6 +24,8 @@ Fathom **validates** existing add-ons; it does not install or manage them.
 - **Node certificates** — a hardened node-agent DaemonSet scans on-disk X.509
   certificates on every node and warns before an expiring cert can take the
   cluster down.
+- **DNS resolution** — short-lived hardened probe Pods verify that names resolve
+  (or deliberately do not) through cluster, node, or explicit resolvers.
 - **One cluster-wide verdict** — per-check results roll up through
   `HealthCheck` into a cluster-scoped `ClusterHealth` object, with immutable
   `HealthReport` run history for auditing and trend analysis.
@@ -68,11 +70,13 @@ spec:
         failDays: "7"
 ```
 
-To turn a check into a cluster-wide signal, wrap it in a `HealthCheck` and
-select it from a `ClusterHealth`. See
+To turn an `AddonCheck`, `DNSCheck`, or `NodeCertificateCheck` into a
+cluster-wide signal, wrap it in a `HealthCheck` and select it from a
+`ClusterHealth`. See
 [Add-on checks](docs/guides/addon-checks.md) for every adapter, its check
-families, and thresholds, and [Concepts](docs/guides/concepts.md) for how the
-`AddonCheck → HealthCheck → ClusterHealth` chain fits together.
+families, and thresholds, [DNS checks](docs/guides/dns-checks.md) for DNS
+authoring and troubleshooting, and [Concepts](docs/guides/concepts.md) for how
+the specialized-check → `HealthCheck` → `ClusterHealth` chain fits together.
 
 ## Documentation
 
@@ -86,6 +90,8 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Add-on checks](docs/guides/addon-checks.md) — configure checks for
   cert-manager, CoreDNS, External Secrets, Cilium, external-dns, metrics-server,
   kube-state-metrics, Envoy Gateway, istio, and more.
+- [DNS checks](docs/guides/dns-checks.md) — author DNS expectations, choose a
+  resolver, aggregate the verdict, and diagnose failures.
 - [Node certificate checks](docs/guides/node-certificate-checks.md) — scan
   on-disk certificates on every node.
 - [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing,
@@ -97,8 +103,8 @@ Full documentation lives in [`docs/`](docs/README.md).
 **Reference and internals:**
 
 - [Architecture](docs/architecture.md) — CRD model, the
-  AddonCheck → HealthCheck → ClusterHealth aggregation chain, reconcilers,
-  adapter contract, probe-pod model.
+  specialized-check → HealthCheck → ClusterHealth aggregation chain,
+  reconcilers, adapter contract, probe-pod model.
 - [API reference](docs/reference/api.md) — generated CRD reference for
   `fathom.skaphos.io/v1alpha1`.
 - [Status and conditions](docs/reference/status-conditions.md) — operational
@@ -217,7 +223,9 @@ spec:
 Sizing matters once a check covers many names: `spec.timeout` bounds the *whole
 run*, and pairs are evaluated in bounded batches. See
 [DNSCheck fan-out](docs/reference/configuration.md#dnscheck-fan-out) for measured
-per-batch costs and the resulting timeout guidance.
+per-batch costs and the resulting timeout guidance. For complete authoring,
+resolver, aggregation, evidence, and troubleshooting examples, see the
+[DNS checks guide](docs/guides/dns-checks.md).
 
 ## Node certificate checks
 

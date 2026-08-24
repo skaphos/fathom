@@ -11,8 +11,17 @@ delivered by the feature.
 ## Prerequisites
 
 - Go and repository tools available through the pinned task wrappers.
-- For e2e: Docker daemon, Kind, Helm, and Helmfile available on `PATH`.
+- For e2e: a Docker-compatible container engine, Kind, Helm, and Helmfile
+  available on `PATH`.
 - A clean working tree except for the feature changes being validated.
+
+Local validation note (2026-08-24): Podman 6.0.2 is exposed as `docker`, and
+the core suite passed with 41 specs using
+`E2E_IMG=docker.io/library/fathom-operator:e2e`. The mandatory full-stack run
+was attempted, but the local Podman VM's 3.725 GiB allocation was exhausted
+after installing the addon stack; the Kubernetes API connection dropped during
+operator deployment, before the specs began. T033 remains pending for CI or a
+larger Podman VM.
 
 ## 1. Verify generated contracts
 

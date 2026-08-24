@@ -311,7 +311,7 @@ var _ = Describe("HealthCheck Controller", func() {
 
 	It("rejects unsupported CheckRef.Kind values", func() {
 		createHealthCheck("hc-unsupported", fathomv1alpha1.HealthCheckSpec{
-			CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "DNSCheck", Name: "future-kind"},
+			CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "ReachabilityCheck", Name: "future-kind"},
 		})
 
 		_, err := newReconciler().Reconcile(ctx, reconcile.Request{

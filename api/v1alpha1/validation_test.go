@@ -188,3 +188,39 @@ func TestGeneratedCRDEmbedsChildCap(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedHealthCheckTargetAPIVersionContract(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "config", "crd", "bases", "fathom.skaphos.io_healthchecks.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated CRD: %v", err)
+	}
+	var crd apiextensionsv1.CustomResourceDefinition
+	if err := yaml.Unmarshal(raw, &crd); err != nil {
+		t.Fatalf("decode CRD: %v", err)
+	}
+	if len(crd.Spec.Versions) != 1 {
+		t.Fatalf("expected one version, got %d", len(crd.Spec.Versions))
+	}
+	spec := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"]
+	checkRef := spec.Properties["checkRef"]
+	apiVersion := checkRef.Properties["apiVersion"]
+	if apiVersion.MaxLength == nil || *apiVersion.MaxLength != 317 {
+		t.Fatalf("checkRef.apiVersion maxLength = %v, want 317", apiVersion.MaxLength)
+	}
+	if len(apiVersion.Enum) != 0 {
+		t.Fatalf("checkRef.apiVersion must remain migration-safe, got enum %v", apiVersion.Enum)
+	}
+
+	foundImmutable := false
+	for _, validation := range checkRef.XValidations {
+		if validation.Rule == "self == oldSelf" && validation.Message == "checkRef is immutable" {
+			foundImmutable = true
+		}
+	}
+	if !foundImmutable {
+		t.Fatalf("checkRef immutability validation changed: %v", checkRef.XValidations)
+	}
+}

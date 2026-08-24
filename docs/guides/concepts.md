@@ -121,20 +121,20 @@ Two consequences worth internalizing:
 Status moves in one direction, from sensor to verdict:
 
 ```
-        runs                       mirror                      aggregate
-AddonCheck.status  ───────────▶  HealthCheck.status  ───────────▶  ClusterHealth.status
-   (lastResult)                  (uniform shape)                  (worst-case over
-        │                                                          its HealthChecks)
-        └── creates ──▶ HealthReport (history; never read by the roll-up)
+AddonCheck.status ───────────┐
+DNSCheck.status ─────────────┼──▶ HealthCheck.status ───▶ ClusterHealth.status
+NodeCertificateCheck.status ─┘    (uniform shape)          (worst-case roll-up)
+              │
+              └── creates HealthReport history (never read by the roll-up)
 ```
 
-The roll-up is event-driven: when an `AddonCheck`'s status changes, the
-`HealthCheck` wrapping it re-mirrors, and the `ClusterHealth` aggregating that
-`HealthCheck` re-aggregates. You don't trigger any of this manually.
-
-`NodeCertificateCheck` is slightly different: it reports its own status and
-history directly (it is not wrapped by `HealthCheck` in this build), and it
-*does* re-run on a timer. See its [guide](node-certificate-checks.md).
+The roll-up is event-driven: when an `AddonCheck`, `DNSCheck`, or
+`NodeCertificateCheck` status changes, the exact `HealthCheck` wrappers that
+reference it re-mirror, and selecting `ClusterHealth` objects re-aggregate.
+Each specialized check still reports its own status and history directly; the
+wrapper adds a uniform aggregation boundary. See the
+[DNS guide](dns-checks.md) and
+[node-certificate guide](node-certificate-checks.md).
 
 ## Where work actually runs
 

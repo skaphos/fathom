@@ -28,7 +28,7 @@ phases map directly to the four independently testable user stories.
 **Purpose**: Establish the existing AddonCheck wrapper and generated-contract
 baseline before refactoring shared behavior.
 
-- [ ] T001 Run the existing HealthCheck envtest and generated-artifact baseline with `go -C tools tool task test` and `go -C tools tool task lint`, recording any pre-existing failure that affects `internal/controller/healthcheck_controller_test.go` or `api/v1alpha1/healthcheck_types.go` in `specs/008-dnscheck-completion/quickstart.md`
+- [X] T001 Run the existing HealthCheck envtest and generated-artifact baseline with `go -C tools tool task test` and `go -C tools tool task lint`, recording any pre-existing failure that affects `internal/controller/healthcheck_controller_test.go` or `api/v1alpha1/healthcheck_types.go` in `specs/008-dnscheck-completion/quickstart.md`
 
 ---
 
@@ -40,11 +40,11 @@ existing AddonCheck contract. This phase blocks every user story.
 **⚠️ CRITICAL**: No user-story implementation begins until the AddonCheck path
 passes through the shared infrastructure without behavior changes.
 
-- [ ] T002 Add failing AddonCheck compatibility tests for normalized identity, snapshot replacement, empty API-version defaulting, cadence, summary truncation, and semantic no-op reconciliation in `internal/controller/healthcheck_target_handlers_test.go`
-- [ ] T003 Add API-version defaulting, normalized handler lookup, private target identity, normalized snapshot, handler descriptor/registry, and typed AddonCheck handler in `internal/controller/healthcheck_controller.go`
-- [ ] T004 Add failing shared watch-mapper tests for exact AddonCheck kind, effective namespace, and name matching in `internal/controller/healthcheck_watch_test.go`
-- [ ] T005 Refactor `SetupWithManager` and AddonCheck event mapping onto the handler registry and shared exact-reference mapper in `internal/controller/healthcheck_controller.go`
-- [ ] T006 Run the focused AddonCheck compatibility and watch tests through `go -C tools tool task test`, fixing only regressions attributable to `internal/controller/healthcheck_controller.go`, `internal/controller/healthcheck_target_handlers_test.go`, and `internal/controller/healthcheck_watch_test.go`
+- [X] T002 Add failing AddonCheck compatibility tests for normalized identity, snapshot replacement, empty API-version defaulting, cadence, summary truncation, and semantic no-op reconciliation in `internal/controller/healthcheck_target_handlers_test.go`
+- [X] T003 Add API-version defaulting, normalized handler lookup, private target identity, normalized snapshot, handler descriptor/registry, and typed AddonCheck handler in `internal/controller/healthcheck_controller.go`
+- [X] T004 Add failing shared watch-mapper tests for exact AddonCheck kind, effective namespace, and name matching in `internal/controller/healthcheck_watch_test.go`
+- [X] T005 Refactor `SetupWithManager` and AddonCheck event mapping onto the handler registry and shared exact-reference mapper in `internal/controller/healthcheck_controller.go`
+- [X] T006 Run the focused AddonCheck compatibility and watch tests through `go -C tools tool task test`, fixing only regressions attributable to `internal/controller/healthcheck_controller.go`, `internal/controller/healthcheck_target_handlers_test.go`, and `internal/controller/healthcheck_watch_test.go`
 
 **Checkpoint**: Existing AddonCheck wrappers behave identically through the
 new handler and watch infrastructure.
@@ -63,15 +63,15 @@ history.
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Add failing DNSCheck projection tests covering empty and explicit-current API versions, default and explicit namespaces, result, observed time, report name, bounded Ready summary, and effective DNS cadence in `internal/controller/healthcheck_target_handlers_test.go`
-- [ ] T008 [P] [US1] Add failing exact DNSCheck source-event enqueue tests in `internal/controller/healthcheck_watch_test.go`
-- [ ] T009 [P] [US1] Add the failing real-cluster Pass-to-Fail DNSCheck → HealthCheck → ClusterHealth scenario, asserting HealthCheck result, bounded summary, source observation time, report name, matching ClusterHealth child result/summary/observed time, and unchanged-verdict HealthReport count in `test/e2e/dnscheck_aggregation_test.go`
+- [X] T007 [P] [US1] Add failing DNSCheck projection tests covering empty and explicit-current API versions, default and explicit namespaces, result, observed time, report name, bounded Ready summary, and effective DNS cadence in `internal/controller/healthcheck_target_handlers_test.go`
+- [X] T008 [P] [US1] Add failing exact DNSCheck source-event enqueue tests in `internal/controller/healthcheck_watch_test.go`
+- [X] T009 [P] [US1] Add the failing real-cluster Pass-to-Fail DNSCheck → HealthCheck → ClusterHealth scenario, asserting HealthCheck result, bounded summary, source observation time, report name, matching ClusterHealth child result/summary/observed time, and unchanged-verdict HealthReport count in `test/e2e/dnscheck_aggregation_test.go`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement the typed DNSCheck target handler using `dnsCheckInterval` and register its typed watch in `internal/controller/healthcheck_controller.go`
-- [ ] T011 [US1] Run the focused unit/envtest coverage for `internal/controller/healthcheck_target_handlers_test.go` and `internal/controller/healthcheck_watch_test.go` with `go -C tools tool task test`
-- [ ] T012 [US1] Run the core-tier e2e slice containing `test/e2e/dnscheck_aggregation_test.go` with `go -C tools tool task test-e2e E2E_ADDONS=core`, preserving the existing DNS resolution, restricted-policy, and lifecycle scenarios under `test/e2e/`
+- [X] T010 [US1] Implement the typed DNSCheck target handler using `dnsCheckInterval` and register its typed watch in `internal/controller/healthcheck_controller.go`
+- [X] T011 [US1] Run the focused unit/envtest coverage for `internal/controller/healthcheck_target_handlers_test.go` and `internal/controller/healthcheck_watch_test.go` with `go -C tools tool task test`
+- [X] T012 [US1] Run the core-tier e2e slice containing `test/e2e/dnscheck_aggregation_test.go` with `go -C tools tool task test-e2e E2E_ADDONS=core`, preserving the existing DNS resolution, restricted-policy, and lifecycle scenarios under `test/e2e/`
 
 **Checkpoint**: DNSCheck is independently composable through ClusterHealth and
 the real-cluster transition is proven.
@@ -90,17 +90,17 @@ phantom kind.
 
 ### Tests for User Story 2
 
-- [ ] T013 [P] [US2] Add failing API marker/contract tests for the 317-character `apiVersion` bound, preserved checkRef immutability, and absence of a one-version enum in `api/v1alpha1/validation_test.go`
-- [ ] T014 [P] [US2] Add failing NodeCertificateCheck projection tests for result, observed time, report name, Ready summary, defaulted/clamped cadence, and an empty source status in `internal/controller/healthcheck_target_handlers_test.go`
-- [ ] T015 [P] [US2] Add failing exact NodeCertificateCheck source-event enqueue tests in `internal/controller/healthcheck_watch_test.go`
+- [X] T013 [P] [US2] Add failing API marker/contract tests for the 317-character `apiVersion` bound, preserved checkRef immutability, and absence of a one-version enum in `api/v1alpha1/validation_test.go`
+- [X] T014 [P] [US2] Add failing NodeCertificateCheck projection tests for result, observed time, report name, Ready summary, defaulted/clamped cadence, and an empty source status in `internal/controller/healthcheck_target_handlers_test.go`
+- [X] T015 [P] [US2] Add failing exact NodeCertificateCheck source-event enqueue tests in `internal/controller/healthcheck_watch_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Correct `CheckTargetRef` supported-kind documentation and add `MaxLength=317` to `APIVersion` without adding an enum in `api/v1alpha1/healthcheck_types.go`
-- [ ] T017 [US2] Implement the typed NodeCertificateCheck target handler using `nodeCertInterval` and register its typed watch in `internal/controller/healthcheck_controller.go`
-- [ ] T018 [US2] Add controller-local read-only RBAC markers for DNSCheck and NodeCertificateCheck in `internal/controller/healthcheck_controller.go`
-- [ ] T019 [US2] Regenerate CRDs, RBAC, deepcopy output, and the API reference with `go -C tools tool task manifests`, `go -C tools tool task generate`, and `go -C tools tool task docs:api-ref`, reviewing `config/crd/bases/fathom.skaphos.io_healthchecks.yaml`, `config/rbac/role.yaml`, `api/v1alpha1/zz_generated.deepcopy.go`, and `docs/reference/api.md` for exact contract and no net permission expansion
-- [ ] T020 [US2] Run the three-kind projection/watch and API validation coverage with `go -C tools tool task test` against `api/v1alpha1/validation_test.go`, `internal/controller/healthcheck_target_handlers_test.go`, and `internal/controller/healthcheck_watch_test.go`
+- [X] T016 [US2] Correct `CheckTargetRef` supported-kind documentation and add `MaxLength=317` to `APIVersion` without adding an enum in `api/v1alpha1/healthcheck_types.go`
+- [X] T017 [US2] Implement the typed NodeCertificateCheck target handler using `nodeCertInterval` and register its typed watch in `internal/controller/healthcheck_controller.go`
+- [X] T018 [US2] Add controller-local read-only RBAC markers for DNSCheck and NodeCertificateCheck in `internal/controller/healthcheck_controller.go`
+- [X] T019 [US2] Regenerate CRDs, RBAC, deepcopy output, and the API reference with `go -C tools tool task manifests`, `go -C tools tool task generate`, and `go -C tools tool task docs:api-ref`, reviewing `config/crd/bases/fathom.skaphos.io_healthchecks.yaml`, `config/rbac/role.yaml`, `api/v1alpha1/zz_generated.deepcopy.go`, and `docs/reference/api.md` for exact contract and no net permission expansion
+- [X] T020 [US2] Run the three-kind projection/watch and API validation coverage with `go -C tools tool task test` against `api/v1alpha1/validation_test.go`, `internal/controller/healthcheck_target_handlers_test.go`, and `internal/controller/healthcheck_watch_test.go`
 
 **Checkpoint**: Every advertised kind has one typed handler, watch, and direct
 test; generated contracts no longer claim nonexistent kinds.
@@ -119,14 +119,14 @@ matching.
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Add failing table-driven reconciliation tests for `UnsupportedAPIVersion`, `UnsupportedKind`, `TargetNotFound`, and `TargetLookupFailed` across applicable target handlers in `internal/controller/healthcheck_target_handlers_test.go`
-- [ ] T022 [P] [US3] Add failing watch tests proving API-version, kind, namespace, and name mismatches do not enqueue and source deletion does enqueue exact references in `internal/controller/healthcheck_watch_test.go`
+- [X] T021 [P] [US3] Add failing table-driven reconciliation tests for `UnsupportedAPIVersion`, `UnsupportedKind`, `TargetNotFound`, and `TargetLookupFailed` across applicable target handlers in `internal/controller/healthcheck_target_handlers_test.go`
+- [X] T022 [P] [US3] Add failing watch tests proving API-version, kind, namespace, and name mismatches do not enqueue and source deletion does enqueue exact references in `internal/controller/healthcheck_watch_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Implement unsupported API-version/kind rejection and shared terminal-versus-transient snapshot behavior with bounded Ready messages in `internal/controller/healthcheck_controller.go`
-- [ ] T024 [US3] Update status-reason documentation for unsupported API version/kind, missing targets, and transient lookup failures in `docs/reference/status-conditions.md`
-- [ ] T025 [US3] Run the invalid-reference and watch-isolation coverage with `go -C tools tool task test`, verifying `internal/controller/healthcheck_target_handlers_test.go` and `internal/controller/healthcheck_watch_test.go` pass without weakening existing tests in `internal/controller/healthcheck_controller_test.go`
+- [X] T023 [US3] Implement unsupported API-version/kind rejection and shared terminal-versus-transient snapshot behavior with bounded Ready messages in `internal/controller/healthcheck_controller.go`
+- [X] T024 [US3] Update status-reason documentation for unsupported API version/kind, missing targets, and transient lookup failures in `docs/reference/status-conditions.md`
+- [X] T025 [US3] Run the invalid-reference and watch-isolation coverage with `go -C tools tool task test`, verifying `internal/controller/healthcheck_target_handlers_test.go` and `internal/controller/healthcheck_watch_test.go` pass without weakening existing tests in `internal/controller/healthcheck_controller_test.go`
 
 **Checkpoint**: Every reference failure has deterministic, observable, and
 safe snapshot semantics.
@@ -144,11 +144,11 @@ through HealthCheck and ClusterHealth without consulting source code.
 
 ### Documentation for User Story 4
 
-- [ ] T026 [US4] Write copyable DNSCheck, HealthCheck, and ClusterHealth manifests plus resolver selection, positive/absence expectations, evidence interpretation, and troubleshooting in `docs/guides/dns-checks.md`
-- [ ] T027 [P] [US4] Add DNSCheck guide navigation and concise use-case wording in `docs/guides/README.md`
-- [ ] T028 [P] [US4] Update the wrapper/aggregation flow and supported-kind description, linking the DNS guide, in `docs/architecture.md`
-- [ ] T029 [P] [US4] Replace AddonCheck-only aggregation wording with the specialized-check → HealthCheck → ClusterHealth contract and add the DNS guide to user navigation in `README.md`
-- [ ] T030 [US4] Validate every documented field against generated `docs/reference/api.md` and every troubleshooting reason against `docs/reference/status-conditions.md`, correcting only `docs/guides/dns-checks.md` when examples drift
+- [X] T026 [US4] Write copyable DNSCheck, HealthCheck, and ClusterHealth manifests plus resolver selection, positive/absence expectations, evidence interpretation, and troubleshooting in `docs/guides/dns-checks.md`
+- [X] T027 [P] [US4] Add DNSCheck guide navigation and concise use-case wording in `docs/guides/README.md`
+- [X] T028 [P] [US4] Update the wrapper/aggregation flow and supported-kind description, linking the DNS guide, in `docs/architecture.md`
+- [X] T029 [P] [US4] Replace AddonCheck-only aggregation wording with the specialized-check → HealthCheck → ClusterHealth contract and add the DNS guide to user navigation in `README.md`
+- [X] T030 [US4] Validate every documented field against generated `docs/reference/api.md` and every troubleshooting reason against `docs/reference/status-conditions.md`, correcting only `docs/guides/dns-checks.md` when examples drift
 
 **Checkpoint**: The guide independently supports authoring and diagnosis of the
 complete DNS aggregation chain.
@@ -160,10 +160,10 @@ complete DNS aggregation chain.
 **Purpose**: Regenerate all contracts, run the full quality/e2e gates, and
 leave the knowledge graph consistent with the implementation.
 
-- [ ] T031 Run formatting and deterministic generation with `go -C tools tool task fmt`, `go -C tools tool task docs:api-ref`, and `go -C tools tool task lint`, then verify no second-run drift in `api/v1alpha1/zz_generated.deepcopy.go`, `config/crd/bases/`, `config/rbac/`, and `docs/reference/api.md`
-- [ ] T032 Run `go -C tools tool task test`, `go -C tools tool task vet`, `go -C tools tool task staticcheck`, and `go -C tools tool task vuln`, resolving feature regressions in `api/v1alpha1/`, `internal/controller/`, and `test/e2e/`
+- [x] T031 Run formatting and deterministic generation with `go -C tools tool task fmt`, `go -C tools tool task docs:api-ref`, and `go -C tools tool task lint`, then verify no second-run drift in `api/v1alpha1/zz_generated.deepcopy.go`, `config/crd/bases/`, `config/rbac/`, and `docs/reference/api.md`
+- [x] T032 Run `go -C tools tool task test`, `go -C tools tool task vet`, `go -C tools tool task staticcheck`, and `go -C tools tool task vuln`, resolving feature regressions in `api/v1alpha1/`, `internal/controller/`, and `test/e2e/`
 - [ ] T033 Run the mandatory full-stack `go -C tools tool task test-e2e` suite for shared controller/watch changes, recording any unavailable Kind/Docker/Helm/Helmfile prerequisite in `specs/008-dnscheck-completion/quickstart.md`
-- [ ] T034 Run `reuse --no-multiprocessing lint`, `git diff --check`, and `graphify update .`, then review updated `graphify-out/` artifacts for only relationships caused by `api/v1alpha1/healthcheck_types.go`, `internal/controller/healthcheck_controller.go`, tests, and documentation
+- [x] T034 Run `reuse --no-multiprocessing lint`, `git diff --check`, and `graphify update .`, then review updated `graphify-out/` artifacts for only relationships caused by `api/v1alpha1/healthcheck_types.go`, `internal/controller/healthcheck_controller.go`, tests, and documentation
 
 ---
 

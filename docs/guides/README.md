@@ -22,6 +22,7 @@ for the generated, field-level CRD reference see
 | Guide | Read it to… |
 | --- | --- |
 | [Add-on checks](addon-checks.md) | Configure `AddonCheck`s for the sixteen built-in adapters — families, thresholds, roll-up, troubleshooting. |
+| [DNS checks](dns-checks.md) | Verify positive and required-absence DNS expectations from cluster, node, or explicit resolvers and include the verdict in `ClusterHealth`. |
 | [Node certificate checks](node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before it causes an outage. |
 | [Monitoring & alerting](monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and deployment gates. |
 

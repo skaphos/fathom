@@ -129,9 +129,9 @@ _Appears in:_
 
 
 
-CheckTargetRef references a specialized check resource (AddonCheck,
-DNSCheck, NodeHealthCheck, NodeCertificateCheck, ReachabilityCheck) whose
-status a HealthCheck mirrors and surfaces for ClusterHealth aggregation.
+CheckTargetRef references a supported specialized check resource
+(AddonCheck, DNSCheck, or NodeCertificateCheck) whose status a HealthCheck
+mirrors and surfaces for ClusterHealth aggregation.
 
 
 
@@ -140,8 +140,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | APIVersion of the target check resource. When empty, defaults to<br />fathom.skaphos.io/v1alpha1. |  | Optional: \{\} <br /> |
-| `kind` _string_ | Kind of the target check resource (e.g., AddonCheck, DNSCheck). |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `apiVersion` _string_ | APIVersion of the target check resource. When empty, defaults to<br />fathom.skaphos.io/v1alpha1. |  | MaxLength: 317 <br />Optional: \{\} <br /> |
+| `kind` _string_ | Kind of the target check resource: AddonCheck, DNSCheck, or<br />NodeCertificateCheck. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
 | `name` _string_ | Name of the target check resource. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
 | `namespace` _string_ | Namespace of the target check resource. When empty, the HealthCheck's<br />own namespace is used. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 
