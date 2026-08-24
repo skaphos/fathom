@@ -53,6 +53,7 @@ metadata:
 spec:
   addonType: coredns
   interval: 30m
+  paused: true
 ---
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: HealthCheck
@@ -136,41 +137,36 @@ spec:
 		}).Should(Succeed())
 	})
 
-	It("never reports the aggregate as more current than its stalest contributor", func() {
-		// Whatever the children's individual observations, the roll-up must not
-		// claim an observation newer than the oldest of them. Comparing against
-		// the live wrapper is the sharp end: under the old newest-wins fold the
-		// aggregate would have taken exactly that value.
+	It("reports no aggregate observation when one contributor has never run", func() {
+		// The paused source deterministically never runs, while its live sibling
+		// does. The old newest-wins fold would publish the live timestamp; the
+		// stalest-wins contract must publish no timestamp at all.
 		Eventually(func(g Gomega) {
-			agg, err := utils.Run(exec.Command("kubectl", "get", "clusterhealth", aggregate,
-				"-o", "jsonpath={.status.observedAt}"))
+			stale, err := utils.Run(exec.Command("kubectl", "get", "healthcheck", staleWrap,
+				"-n", ns, "-o", "jsonpath={.status.sourceObservedAt}"))
 			g.Expect(err).NotTo(HaveOccurred())
 			live, err := utils.Run(exec.Command("kubectl", "get", "healthcheck", liveWrap,
 				"-n", ns, "-o", "jsonpath={.status.sourceObservedAt}"))
 			g.Expect(err).NotTo(HaveOccurred())
-
-			aggAt := strings.TrimSpace(agg)
-			liveAt := strings.TrimSpace(live)
-			if aggAt == "" || liveAt == "" {
-				// An empty aggregate observation means a contributor has never been
-				// evaluated, which is itself the strongest staleness signal — and is
-				// exactly the state the old fold would have masked.
-				return
-			}
-			// RFC3339 timestamps sort lexicographically, so string comparison is
-			// sufficient and avoids parsing in the assertion.
-			g.Expect(aggAt <= liveAt).To(BeTrue(),
-				"aggregate observedAt %q is newer than the live child %q; the stalest contributor must win", aggAt, liveAt)
+			g.Expect(strings.TrimSpace(stale)).To(BeEmpty())
+			g.Expect(strings.TrimSpace(live)).NotTo(BeEmpty())
 		}).Should(Succeed())
+
+		assertAggregateUnobserved := func(g Gomega) {
+			agg, err := utils.Run(exec.Command("kubectl", "get", "clusterhealth", aggregate,
+				"-o", "jsonpath={.status.observedAt}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(strings.TrimSpace(agg)).To(BeEmpty(),
+				"a live sibling must not mask a never-observed contributor")
+		}
+		Eventually(assertAggregateUnobserved).Should(Succeed())
+		Consistently(assertAggregateUnobserved).Should(Succeed())
 	})
 
 	It("serves the cadence gauge the shipped staleness rule joins against", func() {
-		Eventually(func(g Gomega) {
-			out, err := utils.Run(exec.Command("kubectl", "get", "clusterhealth", aggregate,
-				"-o", "jsonpath={.status.children[*].name}"))
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(ContainSubstring(staleWrap))
-			g.Expect(out).To(ContainSubstring(liveWrap))
-		}).Should(Succeed())
+		metricsOutput := scrapeOperatorMetrics("curl-metrics-clusterhealth-staleness")
+		Expect(metricsOutput).To(ContainSubstring(
+			`fathom_check_interval_seconds{kind="ClusterHealth",name="` + aggregate + `",namespace=""} 1800`,
+		))
 	})
 })

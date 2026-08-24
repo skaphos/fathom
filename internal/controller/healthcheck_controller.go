@@ -108,7 +108,14 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// ClusterHealth be cadence-aware at all, because aggregates select
 	// HealthChecks rather than the underlying checks (#277). It stays zero for a
 	// kind this build cannot resolve, which leaves the series unset.
+	// Start from the last-good mirrored cadence for paths that deliberately
+	// preserve the mirrored snapshot (paused and transient lookup failures).
+	// Dropping only the interval metric while retaining a non-zero timestamp
+	// removes the wrapper from the cadence-relative staleness rule.
 	var targetInterval time.Duration
+	if hc.Status.SourceInterval != nil {
+		targetInterval = hc.Status.SourceInterval.Duration
+	}
 	defer func() {
 		observeCheck(r.Recorder, &hc, "HealthCheck",
 			before.Result, hc.Status.Result,
@@ -151,7 +158,11 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            "HealthCheck is paused; status mirroring is suspended.",
 		})
 	} else {
-		targetInterval, mirrorErr = r.mirrorTarget(ctx, &hc)
+		var resolvedInterval time.Duration
+		resolvedInterval, mirrorErr = r.mirrorTarget(ctx, &hc)
+		if mirrorErr == nil || resolvedInterval > 0 {
+			targetInterval = resolvedInterval
+		}
 	}
 
 	if !equality.Semantic.DeepEqual(before, &hc.Status) {

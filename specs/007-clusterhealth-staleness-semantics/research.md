@@ -139,10 +139,11 @@ time() - fathom_check_last_run_timestamp_seconds
   > <multiplier> * fathom_check_interval_seconds
 ```
 
-**Decision**: the multiplier is a **packaging** value, not runtime config. It lives
-where the shipped rules are rendered — the Helm chart value and the kustomize
-`prometheus-rule` component — defaulting to 3. Adopters override it there, or
-write their own rule.
+**Decision**: the multiplier is **alerting policy**, not runtime config. It is a
+documented editable constant in the shipped kustomize `prometheus-rule`
+component, defaulting to 3. The Helm chart currently renders no `PrometheusRule`,
+so it has no equivalent configuration boundary; adopters either edit the
+component rule or write their own rule.
 
 **Consequence**: FR-015 as written should be struck. No new operator flag, no
 `Options` change, no `bindings()` row. This *reduces* scope.

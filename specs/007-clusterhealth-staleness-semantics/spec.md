@@ -357,18 +357,20 @@ cadence-relative alerting expression identifies only the genuinely overdue check
   a consumer receives.
 - **FR-013**: No check kind may gain a staleness field in its own status.
 - **FR-014**: The overdue allowance (how far past its cadence a check may drift
-  before counting as overdue) MUST be adopter-configurable, defaulting to **3× the
-  check's cadence**, and MUST be stated in operator-facing documentation. It MUST
-  apply consistently across kinds — it is a single cluster-wide tolerance, not a
-  per-kind or per-resource value.
-- **FR-015**: The overdue allowance MUST be settable where the shipped alerting
-  rules are rendered — the Helm chart value and the kustomize component —
-  defaulting to 3. It MUST NOT introduce a CRD field, and MUST NOT be an operator
-  runtime option. *(Corrected during Phase 0 research, [research.md](./research.md)
-  R5: an earlier draft placed it in the operator's cobra/viper options, but D1
-  establishes that the operator never evaluates staleness. The multiplier's only
-  consumer is the alert expression, so an operator flag would be read by nothing.
-  This correction reduces scope — no `Options` change and no `bindings()` row.)*
+  before counting as overdue) MUST be adopter-tunable in the shipped alert rule,
+  defaulting to **3× the check's cadence**, and MUST be stated in operator-facing
+  documentation. It MUST apply consistently across kinds — it is a single
+  cluster-wide tolerance, not a per-kind or per-resource value.
+- **FR-015**: The overdue allowance MUST live with the alerting policy that
+  consumes it: as a documented editable constant in the opt-in kustomize
+  `PrometheusRule`, defaulting to 3. It MUST NOT introduce a CRD field or operator
+  runtime option. The Helm chart does not ship a `PrometheusRule`, so it has no
+  corresponding value to expose in this feature. If chart-managed rules are
+  added later, their multiplier MUST be configurable at that rendering boundary.
+  *(Corrected during Phase 0 research, [research.md](./research.md) R5: an earlier
+  draft placed it in the operator's cobra/viper options, but D1 establishes that
+  the operator never evaluates staleness. The multiplier's only consumer is the
+  alert expression, so an operator flag would be read by nothing.)*
 - **FR-016**: The aggregate's child-summary list MUST carry an explicit maximum
   size, so a selector matching an unbounded population cannot grow the stored
   object without limit.

@@ -44,7 +44,7 @@ time() - fathom_check_last_run_timestamp_seconds
 
 | Aspect | Contract |
 | --- | --- |
-| Multiplier | Rendered into the shipped rules from a chart value / component setting, default **3**. Not operator runtime config (R5) |
+| Multiplier | Documented editable constant in the opt-in kustomize rule, default **3**. Not operator runtime config (R5). The Helm chart does not ship a `PrometheusRule`, so no chart value applies yet |
 | Correctness | One expression is correct for every cadence — no per-kind constants remain |
 | Never-ran | Still caught: the `0` sentinel makes the left side enormous |
 | Unresolvable cadence | The join drops the series; such a check is not alerted on by this rule, and this is documented rather than silently assumed |

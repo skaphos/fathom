@@ -216,8 +216,8 @@ func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, inter
 	if interval > 0 {
 		CheckInterval.WithLabelValues(kind, name, namespace).Set(interval.Seconds())
 	} else {
-		// A cadence can stop being resolvable — a wrapper's target is deleted, or
-		// the check is paused. Leaving the last known value behind would be worse
+		// A cadence can stop being resolvable — for example, a wrapper's target is
+		// deleted. Leaving the last known value behind would be worse
 		// than never publishing one: the staleness rule would keep joining against
 		// a cadence that no longer applies, so the check silently retains alert
 		// coverage it should have lost. Withdraw the series instead.

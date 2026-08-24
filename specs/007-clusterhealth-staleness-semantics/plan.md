@@ -103,7 +103,7 @@ config/
 ├── crd/bases/                          # regenerated
 └── components/prometheus-rule/         # cadence-relative staleness rule
 
-deploy/helm/fathom-operator/            # overdue multiplier value (R5)
+deploy/helm/fathom-operator/            # no rule template; no multiplier surface (R5)
 
 docs/
 ├── adr/0005-*.md                       # semantic redefinition ADR (FR-012)
@@ -144,7 +144,8 @@ the cadence lookup for `HealthCheck` via `CheckRef` (R4); drop the new series in
 ### Phase C — Shipped alerting rules
 
 Rewrite the staleness rule to be cadence-relative, removing the hardcoded 900s.
-Add the multiplier as a chart value / component setting, default 3 (R5). Keep
+Keep the multiplier as a documented editable component constant, default 3
+(R5); the chart has no PrometheusRule rendering boundary. Keep
 `task verify-alert-rules` passing.
 
 ### Phase D — Child-list bound

@@ -365,6 +365,12 @@ var _ = Describe("HealthCheck Controller", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}, hc)).To(Succeed())
 		Expect(hc.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass), "Result should be preserved while paused")
 		Expect(hc.Status.LastReportName).To(Equal("ac-paused-source-xyz"), "LastReportName should be preserved while paused")
+		Expect(hc.Status.SourceInterval).NotTo(BeNil())
+		interval, ok := gatherGaugeValue("fathom_check_interval_seconds", map[string]string{
+			"kind": "HealthCheck", "name": hc.Name, "namespace": hc.Namespace,
+		})
+		Expect(ok).To(BeTrue(), "a paused wrapper must retain cadence-relative stale-alert coverage")
+		Expect(interval).To(Equal(defaultAddonCheckInterval.Seconds()))
 		paused := apiMeta.FindStatusCondition(hc.Status.Conditions, healthCheckConditionPaused)
 		Expect(paused).NotTo(BeNil())
 		Expect(paused.Status).To(Equal(metav1.ConditionTrue))
