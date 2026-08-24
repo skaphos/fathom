@@ -160,10 +160,9 @@ If the local toolchain is missing required components (`kind`, `helm`, `helmfile
 - Avoid expanding scope beyond the requested change.
 - Match existing patterns (kubebuilder layout, ginkgo specs, task wiring) instead of inventing new ones.
 
-## graphify
+## Graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
+This project has a generated knowledge graph at `graphify-out/` with god nodes, community structure, and cross-file relationships. Treat the artifacts under `graphify-out/` as generated output (do not hand-edit or code-review them).
 When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
 Rules:
