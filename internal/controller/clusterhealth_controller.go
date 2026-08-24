@@ -95,14 +95,21 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	before := ch.Status.DeepCopy()
-	// ObservedAt is the latest input freshness across children (see aggregate),
-	// so the staleness gauge follows the evidence chain: stale children — or a
-	// selector matching nothing (ObservedAt nil → 0) — read as a stale roll-up.
+	// aggregateInterval is the slowest child's cadence — see aggregate. It is
+	// derived per reconcile rather than stored, because it is a function of the
+	// children and would go stale in status the moment one of them changed.
+	var aggregateInterval time.Duration
+	// ObservedAt is the stalest input observation across children (see
+	// aggregate), so the staleness gauge follows the evidence chain: a stale
+	// child — or a selector matching nothing, or a child never evaluated
+	// (ObservedAt nil → the 0 never-ran sentinel) — reads as a stale roll-up.
+	// Status and gauge are fed from the same field precisely so the two can
+	// never disagree about how stale the aggregate is (#277).
 	defer func() {
 		observeCheck(r.Recorder, &ch, "ClusterHealth",
 			before.Result, ch.Status.Result,
 			before.Conditions, ch.Status.Conditions,
-			ch.Status.ObservedAt, err)
+			ch.Status.ObservedAt, aggregateInterval, err)
 	}()
 	ch.Status.ObservedGeneration = ch.Generation
 
@@ -136,7 +143,7 @@ func (r *ClusterHealthReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				Message:            listErr.Error(),
 			})
 		} else {
-			r.aggregate(&ch, hcs)
+			aggregateInterval = r.aggregate(&ch, hcs)
 		}
 	}
 
@@ -204,13 +211,17 @@ func namespaceScope(namespace string) string {
 	return fmt.Sprintf("namespace %q", namespace)
 }
 
-// aggregate populates ch.Status from the selected HealthChecks. It computes
-// the worst-case Result via fathomv1alpha1.WorstResult, builds a deterministic
-// Children summary (sorted by namespace, then name), and sets ObservedAt to
-// the latest input freshness across children (not wall-clock — that would
-// defeat no-op idempotency, and a "when did inputs last move" timestamp is
-// what dashboards actually want).
-func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) {
+// aggregate populates ch.Status from the selected HealthChecks. It computes the
+// worst-case Result via fathomv1alpha1.WorstResult, builds a deterministic
+// Children summary (sorted by namespace, then name, then capped), and sets
+// ObservedAt to the STALEST input observation across children — an input
+// timestamp rather than wall-clock, which both preserves no-op idempotency and
+// keeps the value a fact that never needs recomputing.
+//
+// It returns the aggregate's effective cadence for publication as a metric. The
+// cadence is derived rather than stored: it is a function of the children and
+// would go stale in status the moment one of them changed.
+func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hcs []fathomv1alpha1.HealthCheck) time.Duration {
 	ch.Status.MatchedCount = int32(len(hcs))
 
 	// A selector matching nothing is not a healthy verdict. Report Unknown with
@@ -228,7 +239,9 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			Reason:             "NoMatches",
 			Message:            "No HealthChecks match the selector.",
 		})
-		return
+		// No children, so no cadence to report — the series stays unset rather
+		// than claiming an aggregate runs at zero interval.
+		return 0
 	}
 
 	sort.Slice(hcs, func(i, j int) bool {
@@ -238,9 +251,24 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		return hcs[i].Name < hcs[j].Name
 	})
 
+	// Staleness is the STALEST contributing observation, never the newest
+	// (#277). The verdict folds worst-of, so publishing the *freshest* input
+	// alongside it let a single live sibling mask a frozen child: the aggregate
+	// kept promoting that child's stale Fail while reporting itself perfectly
+	// current, which disarms every staleness backstop at the layer operators
+	// watch most. Taking the stalest keeps the two folds telling the same story.
+	//
+	// This value is deliberately a fact rather than a judgement. It never needs
+	// recomputing once written, which is why no timer requeue is required — a
+	// stored "is overdue" verdict would go wrong between reconciles precisely
+	// when every child is frozen and nothing re-enqueues the aggregate.
+	now := metav1.Now()
+	var stalest metav1.Time
+	haveObservedChild := false
+	unobservedChild := false
+
 	ch.Status.Children = make([]fathomv1alpha1.ClusterHealthChildSummary, 0, len(hcs))
 	results := make([]fathomv1alpha1.HealthReportResult, 0, len(hcs))
-	var latest *metav1.Time
 	for i := range hcs {
 		hc := &hcs[i]
 		// The child summary keeps the raw child verdict, including empty; only
@@ -253,8 +281,35 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			ObservedAt: hc.Status.SourceObservedAt,
 		})
 		results = append(results, hc.Status.Result)
-		if hc.Status.SourceObservedAt != nil && (latest == nil || hc.Status.SourceObservedAt.After(latest.Time)) {
-			latest = hc.Status.SourceObservedAt
+
+		if hc.Status.SourceObservedAt == nil {
+			// A selected child that has never been evaluated is the strongest
+			// staleness signal there is, so it outranks every timestamp.
+			unobservedChild = true
+			continue
+		}
+		observed := *hc.Status.SourceObservedAt
+		if observed.After(now.Time) {
+			// A child clock running fast must not let the aggregate claim to be
+			// more current than the present moment.
+			observed = now
+		}
+		if !haveObservedChild || observed.Time.Before(stalest.Time) {
+			stalest = observed
+			haveObservedChild = true
+		}
+	}
+
+	// The aggregate's own cadence is the SLOWEST of its children: a roll-up can
+	// only be as current as its least frequently refreshed contributor. Taking
+	// the fastest instead would mark every mixed-cadence aggregate permanently
+	// overdue — a healthy hourly child inside a five-minute aggregate would
+	// never look current, which is the false positive this feature exists to
+	// avoid. Children that cannot resolve a cadence simply do not contribute.
+	slowestChild := time.Duration(0)
+	for i := range hcs {
+		if in := hcs[i].Status.SourceInterval; in != nil && in.Duration > slowestChild {
+			slowestChild = in.Duration
 		}
 	}
 
@@ -263,7 +318,20 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	// degrades the roll-up to Unknown instead of vanishing. A live Fail sibling
 	// still wins, because Fail outranks Unknown (#161).
 	ch.Status.Result = fathomv1alpha1.WorstResult(results, true)
-	ch.Status.ObservedAt = latest
+	ch.Status.ObservedAt = nil
+	if !unobservedChild && haveObservedChild {
+		ch.Status.ObservedAt = &stalest
+	}
+
+	// Truncation happens LAST, after the verdict and the staleness signal are
+	// already folded across every selected check. The cap bounds what the
+	// aggregate reports, never what it measures, so a large selection still
+	// produces a correct roll-up — and the status write cannot fail validation
+	// and wedge reconciliation for exactly the biggest aggregates.
+	//
+	// MatchedCount is deliberately left at the full total: it is the only way a
+	// consumer can tell "50 children, all shown" from "500 children, 50 shown".
+	truncateChildren(ch)
 
 	apiMeta.SetStatusCondition(&ch.Status.Conditions, metav1.Condition{
 		Type:               clusterHealthConditionReady,
@@ -272,6 +340,7 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 		Reason:             "Aggregated",
 		Message:            "ClusterHealth aggregated the selected HealthChecks.",
 	})
+	return slowestChild
 }
 
 func clearClusterHealthAggregateStatus(ch *fathomv1alpha1.ClusterHealth) {
@@ -415,4 +484,61 @@ func clusterHealthCoversNamespace(ch *fathomv1alpha1.ClusterHealth, namespace st
 		return !slices.Contains(ch.Spec.ExcludedNamespaces, namespace)
 	}
 	return true
+}
+
+// truncateChildren caps ch.Status.Children, keeping the entries an operator
+// needs rather than an arbitrary slice.
+//
+// The children are already sorted by namespace/name for stable output. When the
+// selection exceeds the cap that ordering becomes actively harmful: an
+// alphabetical cut can drop the one failing or frozen child that explains the
+// roll-up, leaving a status that reports Fail while showing a hundred passing
+// contributors. So the retained window is re-ranked worst-verdict first, then
+// stalest, and only then by name — the sort is stable, so equal-ranked children
+// keep their namespace/name order.
+//
+// Callers must invoke this only after Result and ObservedAt are computed; the
+// cap must never influence either.
+func truncateChildren(ch *fathomv1alpha1.ClusterHealth) {
+	if len(ch.Status.Children) <= fathomv1alpha1.MaxClusterHealthChildren {
+		return
+	}
+
+	sort.SliceStable(ch.Status.Children, func(i, j int) bool {
+		a, b := ch.Status.Children[i], ch.Status.Children[j]
+		if sa, sb := rankSeverity(a.Result), rankSeverity(b.Result); sa != sb {
+			return sa > sb
+		}
+		// A child that has never been observed is maximally stale, so it sorts
+		// ahead of any timestamp.
+		switch {
+		case a.ObservedAt == nil && b.ObservedAt != nil:
+			return true
+		case a.ObservedAt != nil && b.ObservedAt == nil:
+			return false
+		case a.ObservedAt != nil && b.ObservedAt != nil && !a.ObservedAt.Equal(b.ObservedAt):
+			return a.ObservedAt.Before(b.ObservedAt)
+		}
+		return false
+	})
+
+	ch.Status.Children = ch.Status.Children[:fathomv1alpha1.MaxClusterHealthChildren]
+}
+
+// rankSeverity ranks a child summary's verdict for truncation, coercing an
+// empty verdict to Unknown exactly as the roll-up fold does.
+//
+// The raw child summary deliberately preserves an empty verdict, and
+// Severity() ranks empty at 0 — below Pass. Ranking on it directly would make a
+// never-reconciled child the FIRST entry truncated away, which inverts the
+// whole point of ordered truncation: a child that has never produced a verdict
+// is the strongest staleness signal an aggregate has, and is precisely the
+// entry an operator needs to see. Coercing to Unknown puts it above the healthy
+// majority and below a live Fail, matching how the verdict fold already treats
+// it (#161, #277).
+func rankSeverity(r fathomv1alpha1.HealthReportResult) int {
+	if r == "" {
+		return fathomv1alpha1.HealthReportResultUnknown.Severity()
+	}
+	return r.Severity()
 }

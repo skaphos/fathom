@@ -1,0 +1,139 @@
+# Specification Quality Checklist: Cadence-Aware Staleness Semantics for ClusterHealth
+
+**Purpose**: Validate specification completeness and quality before proceeding to planning
+**Created**: 2026-08-23
+**Feature**: [spec.md](../spec.md)
+
+## Content Quality
+
+- [x] No implementation details (languages, frameworks, APIs)
+- [x] Focused on user value and business needs
+- [x] Written for non-technical stakeholders
+- [x] All mandatory sections completed
+
+## Requirement Completeness
+
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous
+- [x] Success criteria are measurable
+- [x] Success criteria are technology-agnostic (no implementation details)
+- [x] All acceptance scenarios are defined
+- [x] Edge cases are identified
+- [x] Scope is clearly bounded
+- [x] Dependencies and assumptions identified
+
+## Feature Readiness
+
+- [x] All functional requirements have clear acceptance criteria
+- [x] User scenarios cover primary flows
+- [x] Feature meets measurable outcomes defined in Success Criteria
+- [x] No implementation details leak into specification
+
+## Validation Notes
+
+**Iteration 1 (2026-08-23)** — two issues found and fixed:
+
+1. *Implementation detail leak*: the first draft framed requirements around the
+   three candidate directions named in issue #277. Those are mechanisms, not
+   outcomes. Rewritten as outcome requirements so planning selects the mechanism.
+2. *Unverifiable success criterion*: an early SC referenced a specific status
+   field name. Replaced with operator-perspective criteria.
+
+**Iteration 2 (2026-08-23)** — both open clarifications resolved into scope
+decisions D1 and D2, recorded in the spec:
+
+- **D1 (was FR-013)**: staleness is a **signal only**; `Status.Result` is never
+  modified. Driven by three findings in the code: `Unknown` (severity 4) ranks
+  *below* `Fail` (5), so degrading a stale `Fail` would silence the shipped
+  `result=~"Fail|Error"` alert; the aggregate reconciler never requeues on a
+  timer, so a frozen child produces no event to trigger a degrade; and a
+  time-dependent verdict makes `Result` correct only at write time.
+- **D1 corollary — a spec correction**: the same decaying-value argument applies
+  to a computed staleness judgment in status. The previous FR-003 ("expose how
+  many children are overdue") was therefore **wrong** and has been rewritten to
+  require non-decaying evidence only. This reverses direction (2) as framed in
+  the issue.
+- **D2 (was FR-014)**: scope follows the cadence-ownership split found in the
+  code, not the issue's "aggregate vs all kinds" framing. `AddonCheck`,
+  `DNSCheck`, and `NodeCertificateCheck` own a `spec.interval`; `HealthCheck` and
+  `ClusterHealth` do not. Cadence is published for the three; the aggregate is
+  fixed at its derivation. No kind gains a staleness status field (FR-013).
+
+**Consequence worth re-checking at plan time**: the resolved scope is expected to
+add **zero CRD fields**, which removes this work from the #149 `v1alpha1` → `v1`
+freeze critical path (SC-008). If planning finds a new field unavoidable, that
+assumption inverts and the work becomes freeze-blocking. This is flagged in
+Dependencies and Constraints as the highest-value item to verify first.
+
+**New finding folded in during iteration 2**: the defect also reaches the
+exported gauge, not just status — `Status.ObservedAt` is fed directly into
+`fathom_check_last_run_timestamp_seconds` beneath a comment asserting the
+guarantee that fails. Captured as FR-009 and US1 scenario 2. This raised the
+count of mutually inconsistent descriptions from three to four (FR-010).
+
+All checklist items now pass.
+
+**Iteration 3 (2026-08-23)** — `/speckit-clarify` taxonomy sweep. Seven of ten
+categories scanned Clear; three were Partial and all three were resolved:
+
+- **Non-Functional / Misc** — the 3× overdue allowance was an unconfirmed
+  assumption that FR-014, SC-002 and SC-003 all depended on. Resolved: it becomes
+  **operator-configurable, defaulting to 3×** (FR-014, FR-015), routed through the
+  existing configuration model. Rationale mirrors D1 — drift tolerance is adopter
+  policy, so Fathom publishes a default rather than fixing the value.
+- **Integration & Versioning** — the spec required the redefinition to be "called
+  out" without saying how. Resolved: **`BREAKING CHANGE` footer plus an ADR**
+  (FR-012, SC-009). This was the highest-value question of the sweep: the field
+  keeps its name, type and optionality, so the schema-compatibility gate cannot
+  detect the change. The release marker and ADR are compensating controls for an
+  otherwise silent break.
+- **Domain / Scalability** — `Children[]` carries no `MaxItems` while the
+  selector fields cap at 50, so the status list is unbounded. Resolved: **bound
+  it**, paired with mandatory overflow behavior (FR-016 through FR-019).
+
+**Scope reversal recorded in this iteration.** The scalability answer inverts a
+property iteration 2 relied on. Bounding `Children[]` is a schema change, so:
+
+- the former SC-008 ("adds zero CRD fields → off the #149 critical path") is
+  **withdrawn**; the work is now **on** the freeze critical path, and D2's
+  schema-consequence paragraph and Dependencies were corrected to match;
+- narrowing a previously unbounded list will be reported as an incompatible
+  change by the CRD compatibility gate, so it needs a sanctioned allowlist entry
+  rather than a workaround;
+- a bare cap on a *status* list would fail the status write for aggregates
+  legitimately exceeding it — wedging reconciliation for the largest and most
+  important aggregates, and breaking objects stored before the cap existed.
+  FR-017 through FR-019 exist to prevent that: the verdict and freshness are
+  still computed from **all** children, only the per-child detail truncates, the
+  truncation is observable, and it is ordered to keep the worst and stalest
+  children rather than an arbitrary slice.
+
+SC-008 was reused for the new anti-wedging outcome, and new edge cases cover both
+over-cap aggregates and pre-existing over-cap objects.
+
+**Iteration 4 (2026-08-23)** — Terminology & Consistency, the one category left
+Outstanding after the sweep, is now **Resolved** as decision D3.
+
+"Staleness" is canonical; "freshness" is not used. The reasoning is semantic, not
+stylistic: health is a risk surface, so the operator's question is "how stale is
+this, can I still trust it?" — never "how fresh is this?". The positive framing
+inverts the thing being watched for and reads as reassurance where a warning
+belongs. It also matches what every consumer already uses: the alert is named
+`FathomCheckStale`, and the documented guarantee is "a stale source reads as a
+stale wrapper".
+
+Normalized across the whole spec — the canonical noun is **staleness signal**,
+backed by the **stalest contributing observation**. "Freshness" survives at
+exactly three lines, all verbatim quotations of the current incorrect godoc,
+gauge comment, and monitoring guide, which must stay unaltered because they are
+the evidence for FR-010.
+
+FR-010 was tightened as a consequence: bringing the four descriptions into
+agreement is not sufficient if they agree on the *wrong framing*, so it now
+requires them to describe the signal in staleness terms.
+
+All ten taxonomy categories are now Clear or Resolved. Ready for `/speckit-plan`.
+
+## Notes
+
+- Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`

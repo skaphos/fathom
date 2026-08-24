@@ -60,7 +60,7 @@ var (
 	)
 )
 
-// Check metrics express the current verdict and freshness of every check
+// Check metrics express the current verdict and staleness of every check
 // resource the operator reconciles (AddonCheck, HealthCheck, ClusterHealth,
 // NodeCertificateCheck), so operators can alert on failing or stale checks
 // without bridging CRD status into their monitoring stack (skaphos/fathom#154).
@@ -77,14 +77,42 @@ var (
 		[]string{"kind", "name", "namespace", "result"},
 	)
 
-	// CheckLastRunTimestamp is the unix time of the freshest completed
-	// evaluation backing the check's current result, 0 until the first
-	// evaluation completes — so one "time() - metric > N" rule catches
-	// never-ran and stopped-running checks alike.
+	// CheckLastRunTimestamp is the unix time of the evaluation backing the
+	// check's current result, 0 until the first evaluation completes — so one
+	// "time() - metric > N" rule catches never-ran and stopped-running checks
+	// alike.
+	//
+	// For the wrapper kinds it follows the evidence chain rather than this
+	// object's own reconcile: a HealthCheck carries its mirrored target's run
+	// time, and a ClusterHealth the STALEST of its children, so a stale
+	// contributor cannot hide behind a live sibling (#277).
 	CheckLastRunTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "fathom_check_last_run_timestamp_seconds",
 			Help: "Unix time of the most recent completed evaluation backing a check's current result (0 = never evaluated).",
+		},
+		[]string{"kind", "name", "namespace"},
+	)
+
+	// CheckInterval publishes the cadence a check is currently expected to run
+	// at, so staleness can be expressed relative to that cadence instead of a
+	// hardcoded constant (#277).
+	//
+	// Without it a single threshold has to serve every kind, and there is no
+	// value that works: 900s suits a 5m AddonCheck but fires continuously
+	// against a 1h NodeCertificateCheck. Labels deliberately match
+	// CheckLastRunTimestamp exactly so the two join with no relabeling:
+	//
+	//	time() - fathom_check_last_run_timestamp_seconds
+	//	  > 3 * fathom_check_interval_seconds
+	//
+	// Left unset — not zero — for a check whose cadence cannot be resolved, so
+	// such a check drops out of that join rather than appearing infinitely
+	// overdue.
+	CheckInterval = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_interval_seconds",
+			Help: "Cadence a check is currently expected to run at, after per-resource override and floor clamping. Absent when the cadence cannot be resolved.",
 		},
 		[]string{"kind", "name", "namespace"},
 	)
@@ -153,6 +181,7 @@ func init() {
 		AdapterRegistered,
 		CheckResult,
 		CheckLastRunTimestamp,
+		CheckInterval,
 		DNSCheckTargetResult,
 		NodeCertificateExpiryDays,
 	)
@@ -163,7 +192,12 @@ func init() {
 // unrecognized result is coerced to "Unknown" (the sentinel for "not yet
 // evaluated"), and a zero lastRun becomes 0 ("never ran"). Idempotent —
 // reconcilers call it on every pass, whatever the exit path.
-func ObserveCheck(kind, namespace, name, result string, lastRun time.Time) {
+// interval is the check's effective cadence. A non-positive value means the
+// cadence could not be resolved — for example a HealthCheck wrapping a kind the
+// operator cannot yet look up — and leaves the series unset rather than
+// asserting a cadence of zero, which would make the check read as permanently
+// overdue in any cadence-relative rule (#277).
+func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, interval time.Duration) {
 	if !slices.Contains(checkResultValues, result) {
 		result = "Unknown"
 	}
@@ -179,6 +213,16 @@ func ObserveCheck(kind, namespace, name, result string, lastRun time.Time) {
 		ts = float64(lastRun.Unix())
 	}
 	CheckLastRunTimestamp.WithLabelValues(kind, name, namespace).Set(ts)
+	if interval > 0 {
+		CheckInterval.WithLabelValues(kind, name, namespace).Set(interval.Seconds())
+	} else {
+		// A cadence can stop being resolvable — for example, a wrapper's target is
+		// deleted. Leaving the last known value behind would be worse
+		// than never publishing one: the staleness rule would keep joining against
+		// a cadence that no longer applies, so the check silently retains alert
+		// coverage it should have lost. Withdraw the series instead.
+		CheckInterval.DeleteLabelValues(kind, name, namespace)
+	}
 }
 
 // DeleteCheckSeries removes every series ObserveCheck created for a check.
@@ -189,6 +233,7 @@ func DeleteCheckSeries(kind, namespace, name string) {
 	labels := prometheus.Labels{"kind": kind, "name": name, "namespace": namespace}
 	CheckResult.DeletePartialMatch(labels)
 	CheckLastRunTimestamp.DeletePartialMatch(labels)
+	CheckInterval.DeletePartialMatch(labels)
 }
 
 // ObserveDNSTarget mirrors one (target, vantage point) pair's outcome into the

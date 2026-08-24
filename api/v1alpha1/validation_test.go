@@ -150,3 +150,41 @@ func specValidationRules(t *testing.T, crd *apiextensionsv1.CustomResourceDefini
 	}
 	return rules
 }
+
+// TestGeneratedCRDEmbedsChildCap pins the child-list cap against schema drift
+// (skaphos/fathom#277).
+//
+// Two values must agree: the MaxItems marker the API server enforces, and the
+// MaxClusterHealthChildren constant the controller trims to. If the constant
+// were ever the larger of the two, every aggregate above the marker would fail
+// its status write — wedging reconciliation for exactly the biggest and most
+// important aggregates, which is the failure this cap must never cause.
+func TestGeneratedCRDEmbedsChildCap(t *testing.T) {
+	path := filepath.Join("..", "..", "config", "crd", "bases", "fathom.skaphos.io_clusterhealths.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read generated CRD: %v", err)
+	}
+	var crd apiextensionsv1.CustomResourceDefinition
+	if err := yaml.Unmarshal(raw, &crd); err != nil {
+		t.Fatalf("decode CRD: %v", err)
+	}
+
+	for _, v := range crd.Spec.Versions {
+		status, ok := v.Schema.OpenAPIV3Schema.Properties["status"]
+		if !ok {
+			t.Fatalf("version %s has no status schema", v.Name)
+		}
+		children, ok := status.Properties["children"]
+		if !ok {
+			t.Fatalf("version %s has no status.children schema", v.Name)
+		}
+		if children.MaxItems == nil {
+			t.Fatalf("version %s: status.children has no MaxItems; an unbounded list lets one selector grow the stored object without limit", v.Name)
+		}
+		if got, want := *children.MaxItems, int64(fathomv1alpha1.MaxClusterHealthChildren); got != want {
+			t.Errorf("version %s: schema MaxItems = %d, controller cap = %d; the controller must never trim to more than the schema accepts",
+				v.Name, got, want)
+		}
+	}
+}

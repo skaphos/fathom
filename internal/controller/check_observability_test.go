@@ -98,7 +98,7 @@ func TestObserveCheckFirstResultTransitionsFromUnknown(t *testing.T) {
 	now := metav1.Now()
 
 	observeCheck(rec, testCheckObject("first"), "HealthCheck",
-		"", fathomv1alpha1.HealthReportResultPass, nil, nil, &now, nil)
+		"", fathomv1alpha1.HealthReportResultPass, nil, nil, &now, 0, nil)
 
 	events := drainEvents(rec)
 	if len(events) != 1 {
@@ -116,7 +116,7 @@ func TestObserveCheckDegradationIsWarning(t *testing.T) {
 	rec := events.NewFakeRecorder(10)
 
 	observeCheck(rec, testCheckObject("degrade"), "HealthCheck",
-		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultFail, nil, nil, nil, nil)
+		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultFail, nil, nil, nil, 0, nil)
 
 	events := drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning ResultChanged check result changed from Pass to Fail" {
@@ -130,7 +130,7 @@ func TestObserveCheckNoChangeIsSilent(t *testing.T) {
 	// A restart re-observation: previous result comes from status, so an
 	// unchanged result — even with a fresh reconciler process — emits nothing.
 	observeCheck(rec, testCheckObject("steady"), "HealthCheck",
-		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass, nil, nil, nil, nil)
+		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass, nil, nil, nil, 0, nil)
 
 	if events := drainEvents(rec); len(events) != 0 {
 		t.Errorf("no-change observation emitted events: %v", events)
@@ -143,7 +143,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 
 	// Newly failing: one Warning with the condition's reason.
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, nil, failing, nil, nil)
+		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, nil, failing, nil, 0, nil)
 	events := drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning AdapterRunFailed boom" {
 		t.Fatalf("unexpected events: %v", events)
@@ -151,7 +151,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 
 	// Same failure next reconcile: silent (single event per failure episode).
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, failing, nil, nil)
+		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, failing, nil, 0, nil)
 	if events := drainEvents(rec); len(events) != 0 {
 		t.Errorf("persistent failure re-emitted: %v", events)
 	}
@@ -159,7 +159,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 	// Reason change: a new episode, one new event.
 	probeFailing := []metav1.Condition{readyCondition(metav1.ConditionFalse, "ProbeLaunchFailed", "no image")}
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, probeFailing, nil, nil)
+		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, probeFailing, nil, 0, nil)
 	events = drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning ProbeLaunchFailed no image" {
 		t.Errorf("unexpected events: %v", events)
@@ -171,7 +171,7 @@ func TestObserveCheckReconcileError(t *testing.T) {
 
 	// A reconcile error with no Ready-failure transition gets the generic event.
 	observeCheck(rec, testCheckObject("rec-err"), "NodeCertificateCheck",
-		"", "", nil, nil, nil, errors.New("update conflict"))
+		"", "", nil, nil, nil, 0, errors.New("update conflict"))
 	events := drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning ReconcileError reconcile failed: update conflict" {
 		t.Fatalf("unexpected events: %v", events)
@@ -181,7 +181,7 @@ func TestObserveCheckReconcileError(t *testing.T) {
 	// reconcile, the generic event is suppressed — one event per cause.
 	failing := []metav1.Condition{readyCondition(metav1.ConditionFalse, "RBACProvisioningFailed", "denied")}
 	observeCheck(rec, testCheckObject("rec-err"), "NodeCertificateCheck",
-		"", "", nil, failing, nil, errors.New("denied"))
+		"", "", nil, failing, nil, 0, errors.New("denied"))
 	events = drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning RBACProvisioningFailed denied" {
 		t.Errorf("unexpected events: %v", events)
@@ -194,7 +194,7 @@ func TestObserveCheckNilRecorderStillMirrorsGauges(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 
 	observeCheck(nil, testCheckObject("no-rec"), "HealthCheck",
-		"", fathomv1alpha1.HealthReportResultWarn, nil, nil, &now, nil)
+		"", fathomv1alpha1.HealthReportResultWarn, nil, nil, &now, 0, nil)
 
 	if v, ok := checkGaugeValue(t, "HealthCheck", "no-rec", "default", "Warn"); !ok || v != 1 {
 		t.Errorf("gauge Warn = %v (found=%v), want 1", v, ok)

@@ -81,6 +81,7 @@ controller-runtime and Go metrics are exposed alongside them):
 | --- | --- | --- | --- |
 | `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
 | `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
+| `fathom_check_interval_seconds` | gauge | `kind`, `name`, `namespace` | The cadence a check is currently expected to run at, after per-resource override and floor clamping. Join it against the last-run timestamp to express staleness relative to cadence instead of a fixed threshold. **Absent** — not zero — when the cadence cannot be resolved. |
 | `fathom_dnscheck_target_result` | gauge | `namespace`, `check`, `name`, `record_type`, `resolver`, `result` | **`fathom_check_result` one level down**, for `DNSCheck` only: one-hot per (target, vantage point) pair, so you can alert on the single name that broke rather than on the check as a whole. See [Per-target DNS results](#per-target-dns-results) for the cardinality budget. |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
 | `fathom_reconcile_duration_seconds` | histogram | `kind` | Reconcile latency per kind. |
@@ -92,10 +93,36 @@ The check gauges cover all four check kinds (`AddonCheck`, `HealthCheck`,
 its `namespace` label is empty). Series exist from the moment the operator
 first observes a check — reporting `result="Unknown"` and last-run `0` until
 the first evaluation completes — and are removed when the check is deleted.
-For the wrapper kinds the last-run timestamp follows the freshness of the
+For the wrapper kinds the last-run timestamp follows the staleness of the
 evidence behind the verdict: a `HealthCheck` carries its mirrored target's
-last run time, and a `ClusterHealth` the freshest of its children — so a
+last run time, and a `ClusterHealth` the **stalest** of its children — so a
 stale source reads as a stale wrapper, which is what you want to alert on.
+Taking the stalest is what makes that guarantee hold: an aggregate folds the
+*worst* verdict across its children, so if it published the freshest
+observation instead, one healthy child would make a frozen sibling's `Fail`
+look perfectly current and no staleness alert would ever fire (#277). A
+`ClusterHealth` whose selector matches a check that has never been evaluated
+reports last-run `0`, because an unevaluated child is the strongest staleness
+signal there is.
+`status.children` on a `ClusterHealth` is capped at 100 entries. The cap bounds
+only what the aggregate *reports*: `result` and `observedAt` are computed across
+every selected check before truncation, so a large aggregate stays correct and
+its status write never fails. `matchedCount` remains the full pre-truncation
+total, so `matchedCount > len(children)` is how you detect truncation.
+Truncation keeps the entries you need — worst verdict first, then stalest — so
+the failing or frozen child that explains the roll-up is never the one dropped.
+
+A `ClusterHealth`'s published interval is the **slowest** of its contributing
+checks, because a roll-up can only be as current as its least frequently
+refreshed contributor. Together with the stalest-observation rule above, that is
+what lets one alert cover a mixed-cadence aggregate without false positives: a
+healthy hourly child no longer drags a five-minute aggregate into permanent
+staleness. Checks whose cadence cannot be resolved publish no interval series, so the
+vector join in the first clause drops them — which is why the shipped rule
+carries a second `== 0` clause. Without it a `ClusterHealth` whose selector
+matches nothing would silently stop alerting, and a typo'd selector is exactly
+the mistake that rule exists to catch.
+
 Label cardinality is bounded by design: one series set per check resource,
 and never any free-text label.
 
@@ -245,10 +272,16 @@ groups:
         annotations:
           summary: "Fathom check {{ $labels.kind }}/{{ $labels.name }} reports {{ $labels.result }}"
       - alert: FathomCheckStale
-        # 900s suits the default 5m AddonCheck interval (3× interval); tune to
-        # yours. The 0 "never ran" sentinel makes a check that never executed
-        # fire this alert too — no absent() gymnastics needed.
-        expr: time() - fathom_check_last_run_timestamp_seconds > 900
+        # Cadence-relative: each check is compared against its OWN published
+        # interval, so one rule is correct for a 1m DNSCheck and a 1h
+        # NodeCertificateCheck alike. The 3 is the overdue allowance — how many
+        # consecutive missed runs before we care. The 0 "never ran" sentinel
+        # makes a check that never executed fire this alert too, with no
+        # absent() gymnastics.
+        expr: >-
+          (time() - fathom_check_last_run_timestamp_seconds
+          > 3 * fathom_check_interval_seconds)
+          or (fathom_check_last_run_timestamp_seconds == 0)
         for: 10m
         labels:
           severity: warning

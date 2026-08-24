@@ -190,7 +190,7 @@ func TestObserveCheckEmitsCadenceClampedOncePerEpisode(t *testing.T) {
 
 	// Newly clamped → one Warning with the condition's message.
 	rec := events.NewFakeRecorder(10)
-	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", nil, clamped, nil, nil)
+	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", nil, clamped, nil, 0, nil)
 	got := drainEvents(rec)
 	if len(got) != 1 || got[0] != "Warning CadenceClamped "+msg {
 		t.Errorf("newly clamped: events = %v", got)
@@ -198,7 +198,7 @@ func TestObserveCheckEmitsCadenceClampedOncePerEpisode(t *testing.T) {
 
 	// Unchanged clamp on a later reconcile → silent.
 	rec = events.NewFakeRecorder(10)
-	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", clamped, clamped, nil, nil)
+	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", clamped, clamped, nil, 0, nil)
 	if got := drainEvents(rec); len(got) != 0 {
 		t.Errorf("persistent clamp should be silent, got %v", got)
 	}
@@ -206,7 +206,7 @@ func TestObserveCheckEmitsCadenceClampedOncePerEpisode(t *testing.T) {
 	// Clamp cleared (spec fixed past admission) → no clamp event.
 	rec = events.NewFakeRecorder(10)
 	fixed := []metav1.Condition{acceptedCondition("SpecAccepted", "AddonCheck specification has been accepted for reconciliation.")}
-	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", clamped, fixed, nil, nil)
+	observeCheck(rec, testCheckObject("clamp"), "AddonCheck", "", "", clamped, fixed, nil, 0, nil)
 	if got := drainEvents(rec); len(got) != 0 {
 		t.Errorf("cleared clamp should be silent, got %v", got)
 	}
