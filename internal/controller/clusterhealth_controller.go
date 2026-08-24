@@ -263,7 +263,8 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	// stored "is overdue" verdict would go wrong between reconciles precisely
 	// when every child is frozen and nothing re-enqueues the aggregate.
 	now := metav1.Now()
-	var stalest *metav1.Time
+	var stalest metav1.Time
+	haveObservedChild := false
 	unobservedChild := false
 
 	ch.Status.Children = make([]fathomv1alpha1.ClusterHealthChildSummary, 0, len(hcs))
@@ -293,8 +294,9 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 			// more current than the present moment.
 			observed = now
 		}
-		if stalest == nil || observed.Before(stalest) {
-			stalest = &observed
+		if !haveObservedChild || observed.Time.Before(stalest.Time) {
+			stalest = observed
+			haveObservedChild = true
 		}
 	}
 
@@ -316,10 +318,10 @@ func (r *ClusterHealthReconciler) aggregate(ch *fathomv1alpha1.ClusterHealth, hc
 	// degrades the roll-up to Unknown instead of vanishing. A live Fail sibling
 	// still wins, because Fail outranks Unknown (#161).
 	ch.Status.Result = fathomv1alpha1.WorstResult(results, true)
-	if unobservedChild {
-		stalest = nil
+	ch.Status.ObservedAt = nil
+	if !unobservedChild && haveObservedChild {
+		ch.Status.ObservedAt = &stalest
 	}
-	ch.Status.ObservedAt = stalest
 
 	// Truncation happens LAST, after the verdict and the staleness signal are
 	// already folded across every selected check. The cap bounds what the
