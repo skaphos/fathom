@@ -62,3 +62,8 @@
   path: ^.status.children
   reason: status.children capped at 100 items; previously unbounded, so one selector could grow the stored object without limit. The controller truncates worst-verdict-then-stalest first and computes result/observedAt across every selected check before truncating, so the cap bounds what is reported, never what is measured, and cannot fail a status write. Sanctioned v1alpha1 churn.
   issue: https://github.com/skaphos/fathom/issues/277
+
+- crd: healthchecks.fathom.skaphos.io
+  path: ^.spec.checkRef.apiVersion
+  reason: checkRef.apiVersion bounded to Kubernetes' 317-character API-version limit while remaining enum-free for migration safety; sanctioned v1alpha1 validation hardening.
+  issue: https://github.com/skaphos/fathom/issues/267
