@@ -157,9 +157,9 @@ description: "Task list for cadence-aware staleness semantics for ClusterHealth 
 - [X] T044 Run `go -C tools tool task verify-generated` and confirm no generated artifact is stale
 - [X] T045 Run `go -C tools tool task ci` (lint, test, staticcheck, vuln, build)
 - [X] T046 Add the e2e scenario asserting aggregate staleness against a real cluster in `test/e2e/clusterhealth_staleness_test.go`
-- [ ] T047 Run `go -C tools tool task test-e2e` — **required**, this touches `internal/controller/*`. Revert the `config/manager/kustomization.yaml` churn it leaves behind rather than committing it
-- [ ] T048 Walk every scenario in [quickstart.md](./quickstart.md) and confirm the expected outcomes
-- [ ] T049 Land the change with a `BREAKING CHANGE` footer on the commit (FR-012, SC-009)
+- [X] T047 Run `go -C tools tool task test-e2e` — **required**, this touches `internal/controller/*`. Revert the `config/manager/kustomization.yaml` churn it leaves behind rather than committing it
+- [X] T048 Walk every scenario in [quickstart.md](./quickstart.md) and confirm the expected outcomes
+- [X] T049 Land the change with a `BREAKING CHANGE` footer on the commit (FR-012, SC-009)
 
 ---
 
