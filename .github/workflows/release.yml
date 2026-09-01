@@ -272,7 +272,7 @@ jobs:
         run: mkdir -p dist/sbom
 
       - name: Generate SBOM for operator image
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.vars.outputs.img }}
           format: spdx-json
@@ -280,7 +280,7 @@ jobs:
           upload-artifact: false
 
       - name: Generate SBOM for probe image
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.vars.outputs.probe_img }}
           format: spdx-json
@@ -288,7 +288,7 @@ jobs:
           upload-artifact: false
 
       - name: Generate SBOM for node-agent image
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.vars.outputs.node_agent_img }}
           format: spdx-json
