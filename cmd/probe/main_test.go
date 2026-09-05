@@ -263,9 +263,23 @@ func TestLookupCNAMEReportsARealCNAME(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	answers, err := lookupCNAME(ctx, subject)
+	// The fixture is a third-party name whose DNS shape can change. Confirm
+	// with the raw resolver that it still carries a CNAME before asserting on
+	// lookupCNAME, so a fixture that stops being a CNAME reads as a skip naming
+	// the fixture rather than as a regression in the code under test. Querying
+	// the absolute name here keeps the pre-flight free of the search-list
+	// expansion this file is about.
+	canonical, err := net.DefaultResolver.LookupCNAME(ctx, absoluteDNSName(subject))
 	if err != nil {
 		t.Skipf("%s is not resolvable here: %v", subject, err)
+	}
+	if sameDNSName(canonical, subject) {
+		t.Skipf("%s no longer has a CNAME record (resolves to itself); pick another fixture", subject)
+	}
+
+	answers, err := lookupCNAME(ctx, subject)
+	if err != nil {
+		t.Fatalf("lookupCNAME(%s) returned an error after the resolver answered: %v", subject, err)
 	}
 	if len(answers) != 1 {
 		t.Fatalf("lookupCNAME(%s) = %q, want exactly one canonical name", subject, answers)
