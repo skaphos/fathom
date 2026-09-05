@@ -3,11 +3,11 @@
 #
 # Kind cluster config for Fathom end-to-end testing.
 #
-# Pinned node image matches the envtest Kubernetes version (1.36) declared in
+# Pinned node image matches the envtest Kubernetes version (1.37) declared in
 # Taskfile.yml so unit and e2e suites resolve API objects against the same
 # server version. Bump kindest/node and ENVTEST_K8S_VERSION in lockstep, and
 # pin the node image by the digest from the kind release notes — kind only
-# publishes specific patch tags per release (e.g. v1.36.1, never v1.36.0).
+# publishes specific patch tags per release (e.g. v1.37.0 for the 1.37 line).
 #
 # Single-node topology: every addon Fathom validates (CoreDNS, cert-manager,
 # external-secrets, Cilium) is happy on one node, and a single node keeps the
@@ -27,7 +27,7 @@ networking:
   disableDefaultCNI: true
 nodes:
   - role: control-plane
-    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
     # The CoreDNS adapter's dns_resolution check launches probe Pods inside the
     # cluster; Cilium provides their networking. No extraMounts, port-forwards,
     # or registry config needed for the current addon coverage.
