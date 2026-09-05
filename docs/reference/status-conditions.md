@@ -103,34 +103,36 @@ kubectl -n fathom-system annotate addoncheck cert-manager-system-health \
 
 ## HealthCheck
 
-`HealthCheck` is a projection layer. It mirrors one `AddonCheck` into a uniform
-status shape for `ClusterHealth`. `spec.checkRef` is immutable — retargeting a
-wrapper would silently repoint its mirrored status snapshot at a different
-check, so replace the wrapper instead.
+`HealthCheck` is a projection layer. It mirrors one `AddonCheck`, `DNSCheck`,
+or `NodeCertificateCheck` into a uniform status shape for `ClusterHealth`.
+`spec.checkRef` is immutable — retargeting a wrapper would silently repoint its
+mirrored status snapshot at a different check, so replace the wrapper instead.
 
 Status fields to start with:
 
-- `status.result` - mirrored `AddonCheck.status.lastResult`.
+- `status.result` - mirrored specialized-check `status.lastResult`.
 - `status.summary` - derived from the wrapped check's `Ready` condition.
-- `status.sourceObservedAt` - mirrored `AddonCheck.status.lastRunTime`.
-- `status.lastReportName` - mirrored `AddonCheck.status.lastReportName`.
+- `status.sourceObservedAt` - mirrored specialized-check `status.lastRunTime`.
+- `status.lastReportName` - mirrored specialized-check
+  `status.lastReportName`.
 
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The wrapper spec was accepted for reconciliation. | Continue to `Ready`. |
 | `Paused` | `False / RunEnabled` | Mirroring is enabled. | None. |
 | `Paused` | `True / Paused` | `spec.paused=true`; mirroring is suspended and the previous mirrored snapshot is preserved. | Unset `spec.paused` to resume. |
-| `Ready` | `True / TargetMirrored` | The referenced `AddonCheck` was read and mirrored. | Check `status.result` and `sourceObservedAt`. |
-| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not supported. This build supports `AddonCheck` only. Mirrored fields are cleared. | Replace the wrapper with one whose `checkRef.kind` is `AddonCheck` (`checkRef` is immutable). |
-| `Ready` | `False / TargetNotFound` | The referenced `AddonCheck` does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the ref is wrong (`checkRef` is immutable). |
-| `Ready` | `False / TargetLookupFailed` | Reading the target failed for another API error. Mirrored fields are cleared. | Check controller logs and RBAC. |
+| `Ready` | `True / TargetMirrored` | The referenced specialized check was read and mirrored. | Check `status.result` and `sourceObservedAt`. |
+| `Ready` | `False / UnsupportedAPIVersion` | A nonempty `spec.checkRef.apiVersion` is not the current `fathom.skaphos.io/v1alpha1` contract. Mirrored fields are cleared without reading a target. | Replace the immutable wrapper with the current API version, or omit `apiVersion` to use the current default. |
+| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not `AddonCheck`, `DNSCheck`, or `NodeCertificateCheck`. Mirrored fields are cleared. | Replace the immutable wrapper with one of the supported kinds. |
+| `Ready` | `False / TargetNotFound` | The referenced target does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the immutable reference is wrong. |
+| `Ready` | `False / TargetLookupFailed` | Reading a supported target failed with a transient API error. The last readable mirrored snapshot is preserved and the controller returns the error for retry. | Check controller logs, API-server availability, and RBAC; do not treat the retained snapshot as new evidence. |
 | `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
 
 Namespace contract: `ClusterHealth` is cluster-scoped and selects `HealthCheck`
 wrappers under the allowlist / denylist / open filter (`spec.namespaces`,
-`spec.excludedNamespaces`). A wrapper may mirror an `AddonCheck` in another
-namespace with `spec.checkRef.namespace`, so control who can create wrappers
-and how the aggregate filters namespaces.
+`spec.excludedNamespaces`). A wrapper may mirror a supported specialized check
+in another namespace with `spec.checkRef.namespace`, so control who can create
+wrappers and how the aggregate filters namespaces.
 
 ## ClusterHealth
 
@@ -162,7 +164,8 @@ available to aggregate.
 ## NodeCertificateCheck
 
 `NodeCertificateCheck` manages a node-agent DaemonSet and rolls fresh per-node
-reports into a `HealthReport`. It is not wrapped by `HealthCheck` in this build.
+reports into a `HealthReport`. A `HealthCheck` can project that status into
+`ClusterHealth`.
 
 Status fields to start with:
 

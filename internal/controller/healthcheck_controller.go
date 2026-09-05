@@ -8,6 +8,7 @@ package controller
 
 import (
 	"context"
+	"reflect"
 	"time"
 	"unicode/utf8"
 
@@ -38,8 +39,155 @@ const (
 	healthCheckConditionPaused   = "Paused"
 	healthCheckConditionReady    = "Ready"
 
-	healthCheckTargetKindAddonCheck = "AddonCheck"
+	healthCheckTargetKindAddonCheck           = "AddonCheck"
+	healthCheckTargetKindDNSCheck             = "DNSCheck"
+	healthCheckTargetKindNodeCertificateCheck = "NodeCertificateCheck"
+
+	healthCheckConditionMessageMaxLen = 1024
 )
+
+type healthCheckTargetIdentity struct {
+	APIVersion string
+	Kind       string
+	Namespace  string
+	Name       string
+}
+
+func normalizeHealthCheckTarget(hc *fathomv1alpha1.HealthCheck) healthCheckTargetIdentity {
+	apiVersion := hc.Spec.CheckRef.APIVersion
+	if apiVersion == "" {
+		apiVersion = fathomv1alpha1.GroupVersion.String()
+	}
+	namespace := hc.Spec.CheckRef.Namespace
+	if namespace == "" {
+		namespace = hc.Namespace
+	}
+	return healthCheckTargetIdentity{
+		APIVersion: apiVersion,
+		Kind:       hc.Spec.CheckRef.Kind,
+		Namespace:  namespace,
+		Name:       hc.Spec.CheckRef.Name,
+	}
+}
+
+type healthCheckTargetSnapshot struct {
+	Result           fathomv1alpha1.HealthReportResult
+	Summary          string
+	SourceObservedAt *metav1.Time
+	LastReportName   string
+	Interval         time.Duration
+}
+
+type healthCheckTargetReader func(
+	context.Context,
+	client.Client,
+	types.NamespacedName,
+) (healthCheckTargetSnapshot, error)
+
+type healthCheckTargetHandler struct {
+	APIVersion string
+	Kind       string
+	Object     client.Object
+	read       healthCheckTargetReader
+}
+
+type healthCheckTargetRegistry struct {
+	handlers []healthCheckTargetHandler
+}
+
+func newHealthCheckTargetRegistry() healthCheckTargetRegistry {
+	return healthCheckTargetRegistry{handlers: []healthCheckTargetHandler{
+		{
+			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			Kind:       healthCheckTargetKindAddonCheck,
+			Object:     &fathomv1alpha1.AddonCheck{},
+			read:       readAddonCheckTarget,
+		},
+		{
+			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			Kind:       healthCheckTargetKindDNSCheck,
+			Object:     &fathomv1alpha1.DNSCheck{},
+			read:       readDNSCheckTarget,
+		},
+		{
+			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			Kind:       healthCheckTargetKindNodeCertificateCheck,
+			Object:     &fathomv1alpha1.NodeCertificateCheck{},
+			read:       readNodeCertificateCheckTarget,
+		},
+	}}
+}
+
+func (r healthCheckTargetRegistry) lookup(apiVersion, kind string) (healthCheckTargetHandler, bool) {
+	for _, targetHandler := range r.handlers {
+		if targetHandler.APIVersion == apiVersion && targetHandler.Kind == kind {
+			return targetHandler, true
+		}
+	}
+	return healthCheckTargetHandler{}, false
+}
+
+func readAddonCheckTarget(
+	ctx context.Context,
+	cl client.Client,
+	key types.NamespacedName,
+) (healthCheckTargetSnapshot, error) {
+	var target fathomv1alpha1.AddonCheck
+	if err := cl.Get(ctx, key, &target); err != nil {
+		return healthCheckTargetSnapshot{}, err
+	}
+	return healthCheckTargetSnapshot{
+		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Summary:          summarizeFromConditions(target.Status.Conditions),
+		SourceObservedAt: target.Status.LastRunTime,
+		LastReportName:   target.Status.LastReportName,
+		Interval:         addonCheckInterval(&target),
+	}, nil
+}
+
+func readDNSCheckTarget(
+	ctx context.Context,
+	cl client.Client,
+	key types.NamespacedName,
+) (healthCheckTargetSnapshot, error) {
+	var target fathomv1alpha1.DNSCheck
+	if err := cl.Get(ctx, key, &target); err != nil {
+		return healthCheckTargetSnapshot{}, err
+	}
+	return healthCheckTargetSnapshot{
+		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Summary:          summarizeFromConditions(target.Status.Conditions),
+		SourceObservedAt: target.Status.LastRunTime,
+		LastReportName:   target.Status.LastReportName,
+		Interval:         dnsCheckInterval(&target),
+	}, nil
+}
+
+func readNodeCertificateCheckTarget(
+	ctx context.Context,
+	cl client.Client,
+	key types.NamespacedName,
+) (healthCheckTargetSnapshot, error) {
+	var target fathomv1alpha1.NodeCertificateCheck
+	if err := cl.Get(ctx, key, &target); err != nil {
+		return healthCheckTargetSnapshot{}, err
+	}
+	return healthCheckTargetSnapshot{
+		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Summary:          summarizeFromConditions(target.Status.Conditions),
+		SourceObservedAt: target.Status.LastRunTime,
+		LastReportName:   target.Status.LastReportName,
+		Interval:         nodeCertInterval(&target),
+	}, nil
+}
+
+func applyHealthCheckTargetSnapshot(hc *fathomv1alpha1.HealthCheck, snapshot healthCheckTargetSnapshot) {
+	hc.Status.Result = snapshot.Result
+	hc.Status.Summary = snapshot.Summary
+	hc.Status.SourceObservedAt = snapshot.SourceObservedAt
+	hc.Status.LastReportName = snapshot.LastReportName
+	hc.Status.SourceInterval = &metav1.Duration{Duration: snapshot.Interval}
+}
 
 // HealthCheckReconciler reconciles a HealthCheck object. It is a wrapper that
 // mirrors a referenced specialized check's status into a uniform shape per
@@ -62,6 +210,8 @@ type HealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=dnschecks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks,verbs=get;list;watch
 
 func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "healthcheck.reconcile", trace.WithAttributes(
@@ -181,63 +331,52 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // Ready=False condition. A transient target lookup failure instead preserves
 // the last-good mirrored fields — so a blip does not ripple into the
 // ClusterHealth roll-up as Unknown — and is returned as an error so the caller
-// requeues and re-attempts the mirror. The only supported target kind in v0.1
-// is AddonCheck.
+// requeues and re-attempts the mirror.
 //
 // It also returns the target's effective cadence, resolved from the object this
 // function already fetched so it costs no extra API read. Zero means no cadence
 // could be resolved — an unsupported kind, a missing target, or a lookup
 // failure — which leaves the cadence series unset rather than asserting zero.
 func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) (time.Duration, error) {
-	if hc.Spec.CheckRef.Kind != healthCheckTargetKindAddonCheck {
+	identity := normalizeHealthCheckTarget(hc)
+	if identity.APIVersion != fathomv1alpha1.GroupVersion.String() {
 		clearMirroredHealthCheckStatus(hc)
-		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               healthCheckConditionReady,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: hc.Generation,
-			Reason:             "UnsupportedKind",
-			Message:            "checkRef.kind " + hc.Spec.CheckRef.Kind + " is not supported by this build of Fathom.",
-		})
+		setHealthCheckTargetFailure(
+			hc,
+			"UnsupportedAPIVersion",
+			"checkRef.apiVersion "+identity.APIVersion+" is not supported; use "+fathomv1alpha1.GroupVersion.String()+" or omit apiVersion to select the current version.",
+		)
+		return 0, nil
+	}
+	targetHandler, ok := newHealthCheckTargetRegistry().lookup(identity.APIVersion, identity.Kind)
+	if !ok {
+		clearMirroredHealthCheckStatus(hc)
+		setHealthCheckTargetFailure(
+			hc,
+			"UnsupportedKind",
+			"checkRef.kind "+identity.Kind+" is not supported; supported kinds are AddonCheck, DNSCheck, and NodeCertificateCheck.",
+		)
 		// No cadence is knowable for a kind this build cannot resolve. Returning
 		// zero leaves the series unset, so the check simply drops out of any
 		// cadence-relative rule instead of reading as permanently overdue.
 		return 0, nil
 	}
 
-	namespace := hc.Spec.CheckRef.Namespace
-	if namespace == "" {
-		namespace = hc.Namespace
-	}
-	var target fathomv1alpha1.AddonCheck
-	err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hc.Spec.CheckRef.Name}, &target)
+	snapshot, err := targetHandler.read(ctx, r.Client, types.NamespacedName{
+		Namespace: identity.Namespace,
+		Name:      identity.Name,
+	})
 	if apierrors.IsNotFound(err) {
 		clearMirroredHealthCheckStatus(hc)
-		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               healthCheckConditionReady,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: hc.Generation,
-			Reason:             "TargetNotFound",
-			Message:            err.Error(),
-		})
+		setHealthCheckTargetFailure(hc, "TargetNotFound", err.Error())
 		return 0, nil
 	}
 	if err != nil {
-		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               healthCheckConditionReady,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: hc.Generation,
-			Reason:             "TargetLookupFailed",
-			Message:            err.Error(),
-		})
+		setHealthCheckTargetFailure(hc, "TargetLookupFailed", err.Error())
 		return 0, err
 	}
 
-	interval := addonCheckInterval(&target)
-	hc.Status.Result = fathomv1alpha1.HealthReportResult(target.Status.LastResult)
-	hc.Status.SourceInterval = &metav1.Duration{Duration: interval}
-	hc.Status.SourceObservedAt = target.Status.LastRunTime
-	hc.Status.LastReportName = target.Status.LastReportName
-	hc.Status.Summary = summarizeFromConditions(target.Status.Conditions)
+	applyHealthCheckTargetSnapshot(hc, snapshot)
 
 	apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
 		Type:               healthCheckConditionReady,
@@ -246,7 +385,17 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 		Reason:             "TargetMirrored",
 		Message:            "HealthCheck mirrored the referenced check's status.",
 	})
-	return interval, nil
+	return snapshot.Interval, nil
+}
+
+func setHealthCheckTargetFailure(hc *fathomv1alpha1.HealthCheck, reason, message string) {
+	apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+		Type:               healthCheckConditionReady,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: hc.Generation,
+		Reason:             reason,
+		Message:            truncateToRuneLimit(message, healthCheckConditionMessageMaxLen),
+	})
 }
 
 func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
@@ -283,35 +432,57 @@ func summarizeFromConditions(conds []metav1.Condition) string {
 const healthCheckSummaryMaxLen = 1024
 
 func truncateSummary(s string) string {
-	if utf8.RuneCountInString(s) <= healthCheckSummaryMaxLen {
+	return truncateToRuneLimit(s, healthCheckSummaryMaxLen)
+}
+
+func truncateToRuneLimit(s string, limit int) string {
+	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
 	// Reserve one rune for the ellipsis marker so the total stays within bound.
 	const ellipsis = "…"
 	runes := []rune(s)
-	return string(runes[:healthCheckSummaryMaxLen-1]) + ellipsis
+	return string(runes[:limit-1]) + ellipsis
 }
 
 // SetupWithManager sets up the controller with the Manager. It owns
-// HealthCheck and watches AddonCheck so a target's status change re-enqueues
-// every HealthCheck that wraps it.
+// HealthCheck and watches every registered target type so source status changes
+// re-enqueue the HealthChecks that wrap the exact source identity.
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.HealthCheck{}).
-		Named("healthcheck").
-		Watches(
-			&fathomv1alpha1.AddonCheck{},
-			handler.EnqueueRequestsFromMapFunc(r.healthChecksForAddonCheck),
+		Named("healthcheck")
+	for _, targetHandler := range newHealthCheckTargetRegistry().handlers {
+		controllerBuilder = controllerBuilder.Watches(
+			targetHandler.Object,
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				return r.healthChecksForTarget(ctx, obj, targetHandler)
+			}),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
-		).
-		Complete(r)
+		)
+	}
+	return controllerBuilder.Complete(r)
 }
 
 // healthChecksForAddonCheck returns the namespaced names of every HealthCheck
 // that references the given AddonCheck. Called from the watch map function.
 func (r *HealthCheckReconciler) healthChecksForAddonCheck(ctx context.Context, obj client.Object) []reconcile.Request {
-	addonCheck, ok := obj.(*fathomv1alpha1.AddonCheck)
+	targetHandler, ok := newHealthCheckTargetRegistry().lookup(
+		fathomv1alpha1.GroupVersion.String(),
+		healthCheckTargetKindAddonCheck,
+	)
 	if !ok {
+		return nil
+	}
+	return r.healthChecksForTarget(ctx, obj, targetHandler)
+}
+
+func (r *HealthCheckReconciler) healthChecksForTarget(
+	ctx context.Context,
+	obj client.Object,
+	targetHandler healthCheckTargetHandler,
+) []reconcile.Request {
+	if reflect.TypeOf(obj) != reflect.TypeOf(targetHandler.Object) {
 		return nil
 	}
 	var list fathomv1alpha1.HealthCheckList
@@ -320,17 +491,11 @@ func (r *HealthCheckReconciler) healthChecksForAddonCheck(ctx context.Context, o
 	}
 	var out []reconcile.Request
 	for _, hc := range list.Items {
-		if hc.Spec.CheckRef.Kind != healthCheckTargetKindAddonCheck {
-			continue
-		}
-		if hc.Spec.CheckRef.Name != addonCheck.Name {
-			continue
-		}
-		ns := hc.Spec.CheckRef.Namespace
-		if ns == "" {
-			ns = hc.Namespace
-		}
-		if ns != addonCheck.Namespace {
+		identity := normalizeHealthCheckTarget(&hc)
+		if identity.APIVersion != targetHandler.APIVersion ||
+			identity.Kind != targetHandler.Kind ||
+			identity.Namespace != obj.GetNamespace() ||
+			identity.Name != obj.GetName() {
 			continue
 		}
 		out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})

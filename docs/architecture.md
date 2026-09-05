@@ -53,7 +53,7 @@ section is the conceptual overview.
 | --- | --- | --- | --- |
 | `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
 | `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
-| `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. | Yes (via probe Pods) |
+| `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. See [DNS checks](guides/dns-checks.md). | Yes (via probe Pods) |
 | `HealthCheck` | `api/v1alpha1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
 | `ClusterHealth` | `api/v1alpha1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
 | `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
@@ -91,34 +91,30 @@ aggregation" (e.g. a `HealthCheck` not yet reconciled).
 Status flows in one direction:
 
 ```
-        adapter run                 mirror                   aggregate
-AddonCheck.status  ───────▶  HealthCheck.status  ───────▶  ClusterHealth.status
-   (LastResult)              (Result, Summary,             (worst-case Result
-                              SourceObservedAt)             over children)
-        │
-        └──creates──▶ HealthReport (immutable history; NOT read by the chain)
+AddonCheck.status ───────────┐
+DNSCheck.status ─────────────┼──▶ HealthCheck.status ───▶ ClusterHealth.status
+NodeCertificateCheck.status ─┘    (normalized snapshot)     (worst-case roll-up)
+              │
+              └── creates HealthReport history (not read by the chain)
 ```
 
 ASCII view of the reconcile flow:
 
 ```
-                         +-----------------------------+
-  user applies           |     AddonCheckReconciler    |
-  AddonCheck ───────────▶ | - resolve adapter (registry)|
-                         | - adapter.Run(ctx, Request) |
-                         | - create HealthReport        |───▶ HealthReport (history,
-                         | - prune to spec.historyLimit |      owner-ref'd to AddonCheck)
-                         | - write AddonCheck.status     |
-                         +--------------+--------------+
+                         +---------------------------------+
+  user applies           | specialized-check reconciler   |
+  specialized check ───▶ | - adapter, DNS probe, or agent |
+                         | - write status and history      |───▶ HealthReport history
+                         +----------------+----------------+
                                         │ status change
                           watch re-enqueues wrappers
                                         ▼
-                         +-----------------------------+
-                         |    HealthCheckReconciler    |
-                         | - Get referenced AddonCheck |
-                         | - mirror LastResult/etc into|
-                         |   HealthCheck.status         |
-                         +--------------+--------------+
+                         +---------------------------------+
+                         | HealthCheckReconciler           |
+                         | - typed Get of referenced check |
+                         | - normalize result/evidence     |
+                         |   into HealthCheck.status        |
+                         +----------------+----------------+
                                         │ status change
                           watch re-enqueues aggregates
                                         ▼
@@ -194,17 +190,22 @@ adapter level is forced to `Error`.
 `internal/controller/healthcheck_controller.go`
 
 - **Owns / produces:** `HealthCheck.status` only. It creates nothing.
-- **Watches:** `HealthCheck` (`For`) **and** `AddonCheck` (`Watches` with a
-  map function `healthChecksForAddonCheck`), so a target's status change
-  re-enqueues every `HealthCheck` that wraps it. A
+- **Watches:** `HealthCheck` (`For`) plus typed `AddonCheck`, `DNSCheck`, and
+  `NodeCertificateCheck` watches from the target-handler registry. A shared
+  mapper enqueues only wrappers whose normalized API version, kind, effective
+  namespace, and name exactly match the source. A
   `ResourceVersionChangedPredicate` filters no-op events.
 - **Behavior:** mirrors the referenced check's status into the uniform
   `HealthCheck.status` shape (`result`, `summary`, `sourceObservedAt`,
-  `lastReportName`). The only supported `checkRef.kind` in this build is
-  `AddonCheck`; any other kind yields `Ready=False / UnsupportedKind`. A missing
-  target yields `Ready=False / TargetNotFound`. `checkRef.namespace` may point
-  at an `AddonCheck` in another namespace; when it is omitted, the
-  `HealthCheck` namespace is used.
+  `lastReportName`, `sourceInterval`). An empty `checkRef.apiVersion` defaults
+  to `fathom.skaphos.io/v1alpha1`; other nonempty versions yield
+  `Ready=False / UnsupportedAPIVersion`. Supported kinds are `AddonCheck`,
+  `DNSCheck`, and `NodeCertificateCheck`; any other kind yields
+  `Ready=False / UnsupportedKind`. Missing targets clear the snapshot with
+  `TargetNotFound`; transient lookup failures preserve it with
+  `TargetLookupFailed` and return the error for retry. An omitted
+  `checkRef.namespace` uses the `HealthCheck` namespace; an explicit namespace
+  is honored.
 - **Paused:** when `spec.paused`, mirroring is suspended and the last snapshot
   is preserved (`Ready=False / Paused`).
 
@@ -445,9 +446,10 @@ layout is in [code-map.md](code-map.md).
 
 ## Known Limitations
 
-- **Single supported wrapper target.** `HealthCheck` only mirrors `AddonCheck`
-  in this build; other `checkRef.kind` values are rejected with
-  `Ready=False / UnsupportedKind`.
+- **Compiled-in wrapper targets.** `HealthCheck` supports the three specialized
+  resources in this release: `AddonCheck`, `DNSCheck`, and
+  `NodeCertificateCheck`. It is not a runtime target-plugin API; other kinds
+  are rejected with `Ready=False / UnsupportedKind`.
 - **Cluster-wide wrapper selection.** `ClusterHealth` is cluster-scoped and
   selects `HealthCheck`s under the allowlist / denylist / open namespace filter
   (`spec.namespaces`, `spec.excludedNamespaces`). A selected `HealthCheck` can
