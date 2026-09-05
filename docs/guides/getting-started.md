@@ -17,7 +17,7 @@ this guide top-to-bottom and pick up the model as you go.
 ## Prerequisites
 
 - A Kubernetes cluster you can reach with `kubectl`. Fathom is tested against
-  the Kubernetes version pinned in the repo's e2e fixtures (currently v1.36);
+  the Kubernetes version pinned in the repo's e2e fixtures (currently v1.37);
   recent releases are expected to work.
 - `kubectl` configured for that cluster's context.
 - [Helm](https://helm.sh/) v3.8+ (the operator ships as an OCI chart, which

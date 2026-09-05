@@ -39,7 +39,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `AddonCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[AddonCheckSpec](#addoncheckspec)_ |  |  |  |
 | `status` _[AddonCheckStatus](#addoncheckstatus)_ |  |  |  |
 
@@ -59,7 +59,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled gates execution of this family. | true | Optional: \{\} <br /> |
 | `namespaces` _string array_ | Namespaces narrows this family to resources in specific namespaces. Empty<br />means all namespaces the adapter can read. Each entry must be a valid<br />namespace name (DNS-1123 label); at most 64 entries. |  | MaxItems: 64 <br />items:MaxLength: 63 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
-| `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | LabelSelector narrows this family to resources matching the selector.<br />Selector structure and label syntax are validated at reconcile time and<br />reported through the Accepted condition (a CEL admission rule for the<br />structural checks exceeds the API server's per-CRD cost budget, because<br />the imported LabelSelector schema carries no size bounds the estimator<br />could use). |  | Optional: \{\} <br /> |
+| `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#labelselector-v1-meta)_ | LabelSelector narrows this family to resources matching the selector.<br />Selector structure and label syntax are validated at reconcile time and<br />reported through the Accepted condition (a CEL admission rule for the<br />structural checks exceeds the API server's per-CRD cost budget, because<br />the imported LabelSelector schema carries no size bounds the estimator<br />could use). |  | Optional: \{\} <br /> |
 | `thresholds` _object (keys:string, values:[ThresholdValue](#thresholdvalue))_ | Thresholds carries adapter-specific string knobs, such as warnDays or<br />failDays. Adapter documentation defines the supported keys; unknown keys<br />are never rejected at admission. Keys documented as numeric are<br />shape-checked at admission: warnDays and failDays must be 1-4 digit<br />integers, warnRatio and failRatio must be percentage-shaped — at most<br />three integer digits, up to two decimals, optional trailing '%'. The<br />0-100 range and cross-key semantics stay with the adapter and surface<br />via the Accepted condition. At most 16 keys. |  | MaxProperties: 16 <br />Optional: \{\} <br /> |
 
 
@@ -77,7 +77,7 @@ AddonCheckList contains a list of AddonCheck.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `AddonCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[AddonCheck](#addoncheck) array_ |  |  |  |
 
 
@@ -95,8 +95,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `addonType` _string_ | AddonType selects the adapter responsible for this check, such as<br />cert-manager, coredns, or external-secrets. |  | MinLength: 1 <br /> |
-| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which the adapter re-runs and the HealthReport<br />is refreshed. Defaults to 5m when unset. Must be at least 10s<br />(MinCheckInterval); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single adapter run. Must be at least 1s<br />(MinCheckTimeout); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the adapter re-runs and the HealthReport<br />is refreshed. Defaults to 5m when unset. Must be at least 10s<br />(MinCheckInterval); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single adapter run. Must be at least 1s<br />(MinCheckTimeout); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
 | `paused` _boolean_ | Paused prevents the controller from starting new adapter runs. |  | Optional: \{\} <br /> |
 | `policy` _object (keys:string, values:[AddonCheckFamilyPolicy](#addoncheckfamilypolicy))_ | Policy configures adapter-defined check families. A missing or empty policy<br />leaves family selection to the adapter defaults. Keys are adapter family<br />names: 1-63 lowercase alphanumerics with interior '-' or '_' (e.g.<br />system_health). Whether a well-formed key names a family the selected<br />adapter actually supports is judged at reconcile time via the Accepted<br />condition. |  | MaxProperties: 32 <br />Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this<br />AddonCheck. After each new HealthReport is created the controller<br />deletes the oldest reports until the total count is at or below this<br />limit. The minimum of 1 keeps Status.LastReportName referenceable. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
@@ -116,8 +116,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted and processed this<br />check specification. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when an adapter run last completed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted and processed this<br />check specification. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when an adapter run last completed. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the aggregate result from the most recent adapter run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `absent` _integer_ | Absent is the number of checks in the most recent run whose target was not<br />installed — the required-absent Fails and optional-absent Skips alike. It<br />makes "not installed" queryable and distinct from "unhealthy" (a Fail whose<br />target exists) and "disabled" (a Skipped family). Zero when every checked<br />target is present (SKA-526). |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected on the most<br />recent run (from the addon workload's app.kubernetes.io/version label, else<br />its container image tag). Empty when the adapter does not detect versions or<br />the version was undetectable — the run then proceeds best-effort (SKA-527). |  | Optional: \{\} <br /> |
@@ -164,7 +164,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `ClusterHealth` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[ClusterHealthSpec](#clusterhealthspec)_ |  |  |  |
 | `status` _[ClusterHealthStatus](#clusterhealthstatus)_ |  |  |  |
 
@@ -188,7 +188,7 @@ _Appears in:_
 | `name` _string_ | Name of the contributing HealthCheck. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result mirrors the contributing HealthCheck's Status.Result. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `summary` _string_ | Summary mirrors the contributing HealthCheck's Status.Summary. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt mirrors the contributing HealthCheck's<br />Status.SourceObservedAt, when present. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt mirrors the contributing HealthCheck's<br />Status.SourceObservedAt, when present. |  | Optional: \{\} <br /> |
 
 
 #### ClusterHealthList
@@ -205,7 +205,7 @@ ClusterHealthList contains a list of ClusterHealth.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `ClusterHealthList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[ClusterHealth](#clusterhealth) array_ |  |  |  |
 
 
@@ -238,7 +238,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches every HealthCheck in the namespace<br />scope defined by Namespaces / ExcludedNamespaces. |  | Optional: \{\} <br /> |
+| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#labelselector-v1-meta)_ | Selector selects the HealthChecks whose status this aggregate rolls up.<br />An empty or nil selector matches every HealthCheck in the namespace<br />scope defined by Namespaces / ExcludedNamespaces. |  | Optional: \{\} <br /> |
 | `namespaces` _string array_ | Namespaces is the allowlist of HealthCheck namespaces this aggregate<br />includes. When non-empty it is definitive: only listed namespaces are<br />considered and ExcludedNamespaces is ignored. Empty means "no allowlist"<br />(fall through to ExcludedNamespaces, then open). |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
 | `excludedNamespaces` _string array_ | ExcludedNamespaces is the denylist of HealthCheck namespaces this<br />aggregate skips. Applied only when Namespaces is empty. Empty (with<br />Namespaces also empty) means open — every namespace is in scope. |  | MaxItems: 50 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
 | `description` _string_ | Description is a human-readable purpose for this aggregate. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
@@ -258,11 +258,11 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize the controller's view of the aggregate. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize the controller's view of the aggregate. |  | Optional: \{\} <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result is the worst-case roll-up across the selected HealthChecks.<br />Unknown (with Ready=False, Reason=NoMatches) when no HealthChecks match<br />the selector; a selected child that has no verdict yet degrades the<br />roll-up to Unknown rather than being dropped, so a failure can never<br />silently vanish. Trust this value only when the Ready condition is True:<br />the InvalidSelector and ListFailed error paths leave it empty with<br />Ready=False. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `matchedCount` _integer_ | MatchedCount is the number of HealthChecks selected for this aggregate. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `children` _[ClusterHealthChildSummary](#clusterhealthchildsummary) array_ | Children summarizes each selected HealthCheck's contribution.<br />Capped at MaxClusterHealthChildren so a selector matching a large<br />population cannot grow the stored object without bound. When the selection<br />exceeds the cap the list is truncated, but Result and ObservedAt are still<br />computed from EVERY selected check — the cap limits what is reported, never<br />what is measured. MatchedCount stays the full pre-truncation total, so<br />matchedCount > len(children) is how a consumer detects truncation.<br />Truncation keeps the entries an operator actually needs: worst verdict<br />first, then stalest, then namespace/name for determinism. An arbitrary<br />alphabetical cut could otherwise hide the single failing or frozen child<br />that explains the roll-up. |  | MaxItems: 100 <br />Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt is the stalest observation backing this aggregate: the oldest<br />Status.SourceObservedAt across the selected HealthChecks. It answers "how<br />far back does my least-current evidence go", so a stale contributor makes<br />the whole roll-up read as stale even when a sibling is still running.<br />Empty when the aggregate matches nothing, or when any selected check has<br />never been evaluated — an unevaluated child is the strongest staleness<br />signal there is, and outranks every timestamp.<br />Alert on staleness relative to cadence rather than an absolute age; see<br />docs/guides/monitoring.md. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is the stalest observation backing this aggregate: the oldest<br />Status.SourceObservedAt across the selected HealthChecks. It answers "how<br />far back does my least-current evidence go", so a stale contributor makes<br />the whole roll-up read as stale even when a sibling is still running.<br />Empty when the aggregate matches nothing, or when any selected check has<br />never been evaluated — an unevaluated child is the strongest staleness<br />signal there is, and outranks every timestamp.<br />Alert on staleness relative to cadence rather than an absolute age; see<br />docs/guides/monitoring.md. |  | Optional: \{\} <br /> |
 
 
 #### DNSCheck
@@ -280,7 +280,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `DNSCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[DNSCheckSpec](#dnscheckspec)_ |  |  |  |
 | `status` _[DNSCheckStatus](#dnscheckstatus)_ |  |  |  |
 
@@ -299,7 +299,7 @@ DNSCheckList contains a list of DNSCheck.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `DNSCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[DNSCheck](#dnscheck) array_ |  |  |  |
 
 
@@ -328,8 +328,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `targets` _[DNSTarget](#dnstarget) array_ | Targets are the names this check asserts on. At least one is required —<br />a check with no targets would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
 | `resolvers` _[DNSResolver](#dnsresolver) array_ | Resolvers are the vantage points resolution is performed from. When<br />empty, the check resolves through cluster DNS from an implicit vantage<br />point named "cluster".<br />A target that names no vantage point is checked against every entry<br />here, so the number of evaluations a check performs is<br />len(targets without an override) * max(1, len(resolvers)), bounded at<br />48. The max(1, …) is not a rounding nicety: an empty list still means one<br />vantage point — the implicit "cluster" one — so a check that declares no<br />resolvers evaluates every target once, not zero times. |  | MaxItems: 3 <br />Optional: \{\} <br /> |
-| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which the check re-runs. Defaults to 1m when<br />unset. Must be at least 10s (MinCheckInterval). |  | Optional: \{\} <br /> |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single evaluation. Defaults to 10s when unset. Must be<br />at least 1s (MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the check re-runs. Defaults to 1m when<br />unset. Must be at least 10s (MinCheckInterval). |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single evaluation. Defaults to 10s when unset. Must be<br />at least 1s (MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
 
 
@@ -347,8 +347,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the check was last evaluated. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the check was last evaluated. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the folded verdict across every (target, vantage point)<br />pair from the most recent evaluation — the most severe pair outcome. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `summary` _string_ | Summary is a human-readable one-line outcome. When a failure stems from<br />an absent assertion, it says so, so a deliberate "this must not resolve"<br />failure is not triaged as a DNS outage. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport capturing the current result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
@@ -485,7 +485,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `HealthCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[HealthCheckSpec](#healthcheckspec)_ |  |  |  |
 | `status` _[HealthCheckStatus](#healthcheckstatus)_ |  |  |  |
 
@@ -504,7 +504,7 @@ HealthCheckList contains a list of HealthCheck.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `HealthCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[HealthCheck](#healthcheck) array_ |  |  |  |
 
 
@@ -546,11 +546,11 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize the controller's view of the wrapped check. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize the controller's view of the wrapped check. |  | Optional: \{\} <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result is the outcome surfaced from the referenced check's most recent run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `summary` _string_ | Summary is a human-readable one-line outcome description. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-| `sourceInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | SourceInterval is the cadence the referenced check is expected to run at,<br />after its own defaults and floor clamping. It is a fact about the wrapped<br />check, not a judgement about this one: it is what lets a ClusterHealth<br />aggregate judge staleness relative to cadence, since aggregates select<br />HealthChecks and never see the underlying checks (#277).<br />Empty when the cadence cannot be resolved — an unsupported checkRef kind,<br />a missing target, or a lookup failure — so consumers can tell "runs hourly"<br />from "cadence unknown" rather than reading an absent value as zero. |  | Optional: \{\} <br /> |
-| `sourceObservedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | SourceObservedAt is when the referenced check last completed. |  | Optional: \{\} <br /> |
+| `sourceInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | SourceInterval is the cadence the referenced check is expected to run at,<br />after its own defaults and floor clamping. It is a fact about the wrapped<br />check, not a judgement about this one: it is what lets a ClusterHealth<br />aggregate judge staleness relative to cadence, since aggregates select<br />HealthChecks and never see the underlying checks (#277).<br />Empty when the cadence cannot be resolved — an unsupported checkRef kind,<br />a missing target, or a lookup failure — so consumers can tell "runs hourly"<br />from "cadence unknown" rather than reading an absent value as zero. |  | Optional: \{\} <br /> |
+| `sourceObservedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | SourceObservedAt is when the referenced check last completed. |  | Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the most recent HealthReport produced by the<br />referenced check, when one exists. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 
 
@@ -569,7 +569,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `HealthReport` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[HealthReportSpec](#healthreportspec)_ | Spec is immutable: a HealthReport is a point-in-time history record.<br />The operator only ever creates reports (createOrReuseHealthReport);<br />mutating one after the fact would rewrite history (SKA-576). |  |  |
 | `status` _[HealthReportStatus](#healthreportstatus)_ |  |  |  |
 
@@ -592,8 +592,8 @@ _Appears in:_
 | `targetRef` _[HealthReportTargetRef](#healthreporttargetref)_ | TargetRef is the observed resource for this check. |  |  |
 | `summary` _string_ | Summary is a human-readable one-line outcome description. |  | Optional: \{\} <br /> |
 | `details` _object (keys:string, values:string)_ | Details is adapter-defined structured context for the check. |  | Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt is when this check completed. |  |  |
-| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Duration is how long this check took. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when this check completed. |  |  |
+| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is how long this check took. |  | Optional: \{\} <br /> |
 
 
 #### HealthReportList
@@ -610,7 +610,7 @@ HealthReportList contains a list of HealthReport.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `HealthReportList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[HealthReport](#healthreport) array_ |  |  |  |
 
 
@@ -661,8 +661,8 @@ _Appears in:_
 | `contractVersion` _string_ | ContractVersion is the adapter contract version used for this run. |  | Optional: \{\} <br /> |
 | `result` _[HealthReportResult](#healthreportresult)_ | Result is the aggregate outcome across all checks. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
 | `checks` _[HealthReportCheck](#healthreportcheck) array_ | Checks are the individual observations produced by the adapter. |  | Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | ObservedAt is when the adapter run completed. |  |  |
-| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Duration is the total adapter run duration. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the adapter run completed. |  |  |
+| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is the total adapter run duration. |  | Optional: \{\} <br /> |
 
 
 #### HealthReportStatus
@@ -713,7 +713,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `NodeCertificateCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[NodeCertificateCheckSpec](#nodecertificatecheckspec)_ |  |  |  |
 | `status` _[NodeCertificateCheckStatus](#nodecertificatecheckstatus)_ |  |  |  |
 
@@ -732,7 +732,7 @@ NodeCertificateCheckList contains a list of NodeCertificateCheck.
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
 | `kind` _string_ | `NodeCertificateCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[NodeCertificateCheck](#nodecertificatecheck) array_ |  |  |  |
 
 
@@ -760,10 +760,10 @@ _Appears in:_
 | `warnDays` _integer_ | WarnDays is the days-to-expiry threshold at or below which a certificate<br />is reported as Warn. Must be greater than or equal to CriticalDays. | 30 | Minimum: 0 <br />Optional: \{\} <br /> |
 | `criticalDays` _integer_ | CriticalDays is the days-to-expiry threshold at or below which a<br />certificate is reported as Fail. A certificate already past its notAfter<br />time is always Fail regardless of this value. | 7 | Minimum: 0 <br />Optional: \{\} <br /> |
 | `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
-| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. It is empty by default. Control-plane<br />tolerations are NOT added here — use IncludeControlPlaneNodes for that, so<br />scheduling the privileged agent onto control-plane nodes is always an<br />explicit, auditable opt-in rather than a silent default. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. It is empty by default. Control-plane<br />tolerations are NOT added here — use IncludeControlPlaneNodes for that, so<br />scheduling the privileged agent onto control-plane nodes is always an<br />explicit, auditable opt-in rather than a silent default. |  | Optional: \{\} <br /> |
 | `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on control-plane<br />nodes by adding tolerations for the standard control-plane and legacy master<br />taints (node-role.kubernetes.io/control-plane and .../master, Exists /<br />NoSchedule) on top of any Tolerations.<br />It defaults to false. The kubeadm apiserver, etcd, and front-proxy<br />certificates live on control-plane nodes, so set this to true to scan them —<br />but doing so mounts control-plane host paths into the agent, which is why it<br />is gated behind an explicit opt-in rather than applied by default. | false | Optional: \{\} <br /> |
-| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Interval is the cadence at which each node-agent re-scans its<br />certificates and the operator refreshes the rolled-up HealthReport.<br />Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the<br />operator clamps stored objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | Timeout bounds a single node-agent scan pass. Defaults to 30s when<br />unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored<br />objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which each node-agent re-scans its<br />certificates and the operator refreshes the rolled-up HealthReport.<br />Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the<br />operator clamps stored objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent scan pass. Defaults to 30s when<br />unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored<br />objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
 | `paused` _boolean_ | Paused stops the operator from running the agent DaemonSet and refreshing<br />reports. The agent DaemonSet is removed while paused; the most recent<br />Status snapshot is preserved. |  | Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />After each new HealthReport the controller deletes the oldest reports<br />beyond the limit. The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
 
@@ -782,8 +782,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results (the latest poll). It is refreshed on the interval cadence even<br />when the aggregate result is unchanged, so downstream liveness stays fresh,<br />and does not imply a new HealthReport was written on every refresh. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results (the latest poll). It is refreshed on the interval cadence even<br />when the aggregate result is unchanged, so downstream liveness stays fresh,<br />and does not imply a new HealthReport was written on every refresh. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes as of the<br />most recent evaluation. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 | `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
