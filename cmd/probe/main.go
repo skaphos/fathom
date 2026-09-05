@@ -228,15 +228,48 @@ func lookupIPs(ctx context.Context, network, target string) ([]string, error) {
 // error. Treating that as an answer would make every CNAME check pass
 // unconditionally — a check that can only ever succeed is worse than no check,
 // because it reads as coverage.
+//
+// Detecting that by comparing the answer against the subject only works when
+// the resolver did not expand the query. Under a search list it does: querying
+// "localhost" where "search attlocal.net" is configured answers
+// "localhost.attlocal.net.", which is not the subject, so the no-record case
+// reads as a genuine CNAME and the trap reopens. That is not a corner case in a
+// pod — Kubernetes always sets a search list, and the default ndots:5 expands
+// every subject carrying fewer than five dots.
+//
+// It cannot be recovered by a smarter comparison. A real CNAME routinely keeps
+// the leaf label and changes the parent domain (argocd ->
+// argocd.westus2.util.dev.sdp.devaag.com.), which is the exact shape search
+// expansion produces, and LookupCNAME discards both facts that would tell them
+// apart: which search domain it applied, and whether a CNAME record was present
+// at all. So query the fully-qualified subject instead and leave the resolver
+// no expansion to perform, which makes the comparison exact again.
+//
+// The cost is that a relative subject no longer resolves through the search
+// list for CNAME assertions. That is the safer reading for a health check: one
+// whose meaning depends on the ambient search list of whichever namespace the
+// probe happens to run in is not a stable assertion. A CNAME subject is
+// therefore expected to be written fully qualified; admission does not enforce
+// that yet, so a relative one fails as unresolvable rather than as a spec error.
 func lookupCNAME(ctx context.Context, target string) ([]string, error) {
-	cname, err := net.DefaultResolver.LookupCNAME(ctx, target)
+	absolute := absoluteDNSName(target)
+	cname, err := net.DefaultResolver.LookupCNAME(ctx, absolute)
 	if err != nil {
 		return nil, err
 	}
-	if cname == "" || sameDNSName(cname, target) {
+	if cname == "" || sameDNSName(cname, absolute) {
 		return nil, nil
 	}
 	return []string{cname}, nil
+}
+
+// absoluteDNSName returns name as a fully-qualified domain name, so a resolver
+// treats it as absolute and applies no search list to it.
+func absoluteDNSName(name string) string {
+	if name == "" || strings.HasSuffix(name, ".") {
+		return name
+	}
+	return name + "."
 }
 
 // lookupSRV looks up target exactly as written.
