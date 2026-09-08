@@ -40,7 +40,9 @@ case "$out" in
 esac
 mkdir -p "$outabs"
 
-work="$(mktemp -d)"
+# A template keeps mktemp portable: BSD/macOS implementations need one, GNU
+# accepts it, and TMPDIR is honoured on both.
+work="$(mktemp -d "${TMPDIR:-/tmp}/fathomctl-dist.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 archives=()
