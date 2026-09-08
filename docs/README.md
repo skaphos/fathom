@@ -51,6 +51,15 @@ The architecturally significant decisions are recorded as ADRs:
 - [ADR-0003 — Probe-pod model for active in-cluster checks](adr/0003-probe-pod-model.md)
 - [ADR-0004 — HealthCheck as a thin wrapper](adr/0004-healthcheck-as-wrapper.md)
 
+## RFCs
+
+Proposals under discussion, upstream of an ADR. An RFC is a decision being made;
+an ADR is one that has been made.
+
+- [RFC-0001 — AddonDefinition as a CRD](rfc/0001-addondefinition-crd.md)
+  — make adapters installable rather than compiled in: CRD schema, the RBAC
+  escalation analysis, precedence, and runtime loading lifecycle.
+
 ## Design & planning
 
 Living planning docs for in-flight epics (draft; not stable references):
