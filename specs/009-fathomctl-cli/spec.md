@@ -53,7 +53,7 @@ already honours.
 | Kinds covered by read verbs | `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, `HealthCheck`, `ClusterHealth`; `HealthReport` only through `reports` | These are the kinds that exist in the current API. Issue #259 predates `DNSCheck` and lists four; the spec follows the API, not the stale issue. Kinds that do not exist yet (`NodeHealthCheck`) are not advertised. |
 | Structured output is the raw object | `-o json` / `-o yaml` on `ls`, `describe`, and `reports` emit the underlying resources unmodified | A CLI-specific schema would be a second contract to version. The resource schema is already the public contract and already generated into the API reference; `jq` and `yq` compose with it directly. |
 | `run` honours the existing trigger contract | `run` writes a fresh, unique value to the existing on-demand trigger and `--wait` matches on that value being consumed | The operator already implements consume-once semantics for `AddonCheck` and `DNSCheck`. Introducing a second trigger path would violate Principle I (state lives in the resource, not in a side channel). Extending the same contract to every executable kind (#264) is part of this feature. |
-| Exit codes are the scripting contract | `run --wait` exits zero only for a non-failing verdict; timeout and usage errors have their own codes | This is what makes `run` usable as a gate in CI and runbooks. Codes are fixed here so that scripts written against the MVP do not break later. |
+| Exit codes are the scripting contract | kubectl style: `0` on success, `1` on anything else; `run --wait` exits zero only for a non-failing verdict | This is what makes `run` usable as a gate in CI and runbooks, and it matches what every kubectl user already expects. A richer code table (distinct timeout and usage codes) was considered and rejected: it is not the Kubernetes convention, and the message carries the reason. Fixed here so scripts written against the MVP do not break later. |
 | Distribution | Per-platform archives with checksums, keyless signatures and build provenance attached to the same release as the operator images; no container image | A client tool runs on an engineer's workstation or in CI, where an archive is the natural unit. The supply-chain posture matches the operator images so a verifier follows one procedure. The CLI version is the operator release version so skew is visible. |
 | Derived kinds under `run` | Propagate to the sources: a `HealthCheck` triggers its referenced check; a `ClusterHealth` fans out to the source of every selected `HealthCheck` | `HealthCheck` and `ClusterHealth` have no work of their own to redo, so the only way `run` can mean "check again" on them is to re-run what they observe. This gives the operator "re-check everything now" in one command, at the cost of needing write access on every executable kind and of launching many runs at once; the fan-out is bounded by the existing child cap. Rejecting the verb on derived kinds was smaller, and re-mirroring without re-running was cheaper, but neither produces a fresh observation. |
 
@@ -61,6 +61,14 @@ Doing nothing leaves on-demand validation reachable only by users who know
 the annotation, on some kinds, and leaves every verdict reachable only by
 users who know per-kind status layouts. Both are the kind of tribal knowledge
 the constitution forbids.
+
+## Clarifications
+
+### Session 2026-09-07
+
+- Q: What should the value written by `fathomctl run` as the on-demand trigger look like? → A: A UTC timestamp plus a short random suffix (e.g. `2026-09-07T18:04:05Z-7f3a1c`); unique, sortable, human-readable in status, and carries no caller identity.
+- Q: Which exact exit codes should `fathomctl` use? → A: kubectl style: `0` on success (a non-failing verdict for `run --wait`), `1` for everything else (failing verdict, wait timeout, usage, permission, or cluster error). The reason is distinguished by the message, not the code.
+- Q: Should `run` confirm or cap when it would trigger many checks at once? → A: Interactive confirmation when more than 10 checks would be triggered, bypassed with `--yes`; `--dry-run` lists the set without writing anything.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -83,11 +91,12 @@ resource status shows afterward.
 
 1. **Given** an executable check that last ran some time ago, **When** I run `fathomctl run <kind>/<name>`, **Then** the command returns promptly with an acknowledgement, and the check's next reconcile performs a fresh run rather than waiting for its interval.
 2. **Given** the same check, **When** I run `fathomctl run <kind>/<name> --wait`, **Then** the command blocks until *that* trigger has been consumed and the run has completed, prints the resulting verdict and summary, and exits zero for a passing verdict.
-3. **Given** a check whose fresh run fails, **When** I run it with `--wait`, **Then** the verdict is printed and the exit code is non-zero and distinct from the timeout code.
-4. **Given** a check that never consumes the trigger within the wait timeout, **When** I run it with `--wait --timeout <d>`, **Then** the command exits with the timeout code and a message that names the check, the elapsed time, and the most likely causes.
+3. **Given** a check whose fresh run fails, **When** I run it with `--wait`, **Then** the verdict is printed and the exit code is `1`.
+4. **Given** a check that never consumes the trigger within the wait timeout, **When** I run it with `--wait --timeout <d>`, **Then** the command exits `1` with a message that says it timed out and names the check, the elapsed time, and the most likely causes.
 5. **Given** the same trigger value already consumed, **When** the check next reconciles on its interval, **Then** it does not run again on account of that token.
 6. **Given** a label selector or `--all`, **When** I run `fathomctl run` with it, **Then** every matching check is triggered and the outcome is reported per check.
 7. **Given** a `ClusterHealth` that selects several `HealthCheck`s, **When** I run `fathomctl run clusterhealth/<name> --wait`, **Then** every source check behind those `HealthCheck`s is triggered with the same value, each outcome is reported, and the exit code is the worst of them.
+8. **Given** a selector that matches more than 10 checks, **When** I run `fathomctl run -l <selector>` in a terminal, **Then** I am shown the count and asked to confirm before anything is written; **When** I run the same command with `--yes` or from a script with `--dry-run`, **Then** it proceeds without asking or lists the set without writing, respectively.
 
 ---
 
@@ -209,7 +218,11 @@ reachable cluster.
 - `run` on a `HealthCheck` whose target is missing, or on a `ClusterHealth`
   that selects nothing, triggers nothing and says so with a non-zero exit.
 - `run` on a `ClusterHealth` where two selected `HealthCheck`s share one
-  source triggers that source once, not twice.
+  source triggers that source once, not twice, and counts it once toward the
+  confirmation threshold.
+- `run` that would trigger more than 10 checks from a non-interactive
+  context (CI, a pipe) without `--yes` aborts before writing anything and
+  says that `--yes` is required.
 - Two `run` invocations in quick succession produce two distinct tokens; the
   second supersedes the first before it is consumed, and `--wait` on the
   first reports that its token was superseded rather than waiting forever.
@@ -232,7 +245,7 @@ reachable cluster.
 - **FR-004**: `-n` and `-A` MUST be mutually exclusive. With neither, the namespace MUST resolve from the kubeconfig context.
 - **FR-005**: Check kinds MUST be addressable as `<kind>/<name>` and as `<kind> <name>`, and kind names MUST be accepted in singular, plural, and short forms consistent with the resource definitions.
 - **FR-006**: Every verb MUST bound its API requests with a timeout and MUST NOT block indefinitely; `run --wait` MUST honour an explicit `--timeout` with a documented default.
-- **FR-007**: Errors MUST state what failed and the next action; usage errors, cluster errors, and verdict outcomes MUST be distinguishable by exit code.
+- **FR-007**: Errors MUST state what failed and the next action. Exit codes follow the kubectl convention: `0` on success and `1` on any error; the kind of failure (usage, permission, cluster, timeout, failing verdict) MUST be distinguishable from the message, not the code.
 
 **Read verbs**
 
@@ -250,10 +263,11 @@ reachable cluster.
 
 **On-demand validation**
 
-- **FR-019**: `run <kind>/<name>` MUST request an immediate re-evaluation through the existing on-demand trigger contract by writing a fresh, unique value, and MUST return as soon as the request is accepted, printing the value it wrote.
+- **FR-019**: `run <kind>/<name>` MUST request an immediate re-evaluation through the existing on-demand trigger contract by writing a fresh, unique value, and MUST return as soon as the request is accepted, printing the value it wrote. The value MUST be the UTC time of the request in RFC 3339 form followed by a short random suffix (for example `2026-09-07T18:04:05Z-7f3a1c`), so that it is unique across concurrent invocations, sorts chronologically, reads as "when was this triggered" in status output, and carries no caller identity.
 - **FR-020**: `run --wait` MUST wait until the operator has consumed *that* value and the resulting run has completed, then print the verdict and summary. It MUST match on the value being consumed, not merely on the last-run time advancing.
-- **FR-021**: `run --wait` exit codes MUST be: zero for `Pass`, `Warn`, or `Skipped`; a documented non-zero code for `Fail`, `Error`, or `Unknown`; a distinct documented code for timeout; a distinct documented code for usage or cluster errors.
+- **FR-021**: `run --wait` MUST exit `0` when the resulting verdict is `Pass`, `Warn`, or `Skipped`, and `1` when it is `Fail`, `Error`, or `Unknown`, when the wait times out, or when the command fails for any other reason. `run` without `--wait` MUST exit `0` once every requested trigger is accepted and `1` otherwise.
 - **FR-022**: `run` MUST accept `--all` or a label selector to trigger a set of checks, MUST refuse to run with no target and no selector, and MUST report the outcome per check.
+- **FR-022a**: Before writing any trigger, `run` MUST resolve the full set of executable checks it would touch (including sources reached through a derived kind) and print the count. When that set exceeds 10 checks, `run` MUST ask for interactive confirmation and MUST abort with exit `1` if the answer is not affirmative or if no interactive terminal is available; `--yes` skips the confirmation. `--dry-run` MUST print the resolved set and exit `0` without writing anything.
 - **FR-023**: `run` on a paused check MUST fail fast with an explanation and MUST NOT write a trigger.
 - **FR-024**: Every executable check kind (`AddonCheck`, `DNSCheck`, `NodeCertificateCheck`) MUST honour the on-demand trigger with the same semantics: a new value forces a run; the consumed value is recorded; a periodic run never re-fires a consumed value; a periodic run never clears a consumed value. For `NodeCertificateCheck` the forced run MUST cause a fresh node scan, not a re-read of stale reports.
 - **FR-025**: `run` on a derived kind MUST propagate to its sources: `run` on a `HealthCheck` MUST trigger the executable check it references, and `run` on a `ClusterHealth` MUST trigger the source of every `HealthCheck` it currently selects. The derived kind itself is never triggered; the same fresh value is written to every source so `--wait` can match on each. The command MUST list the sources it triggered, MUST report a source it could not trigger (missing, paused, or forbidden) without abandoning the others, and with `--wait` MUST report per-source outcomes with the overall exit code being the worst of them. Propagation MUST be bounded by the existing `ClusterHealth` child cap, and this behaviour MUST be documented in the reference documentation.
@@ -273,7 +287,7 @@ reachable cluster.
 - **Executable check**: a check that performs its own evaluation (`AddonCheck`, `DNSCheck`, `NodeCertificateCheck`) and therefore can be triggered.
 - **Derived check**: a check whose status is computed from other checks (`HealthCheck`, `ClusterHealth`).
 - **Verdict**: the normalised outcome of a check (`Pass`, `Warn`, `Fail`, `Error`, `Skipped`, `Unknown`) plus its summary and last-run time, extracted identically by every verb.
-- **Run trigger**: the existing on-demand trigger contract: a value written on the check that, when it differs from the last consumed value, forces a run; the operator records the consumed value.
+- **Run trigger**: the existing on-demand trigger contract: a value written on the check that, when it differs from the last consumed value, forces a run; the operator records the consumed value. The CLI writes a UTC timestamp plus a short random suffix.
 - **HealthReport**: the immutable change-history record for a check.
 - **Release archive**: a per-platform bundle of the CLI binary and licence, covered by a checksum file, a signature, and provenance.
 
@@ -283,7 +297,7 @@ reachable cluster.
 
 - **SC-001**: An operator can list every check in a cluster and read each verdict with one command, and for a cluster of 100 checks the listing completes in under 5 seconds.
 - **SC-002**: `run --wait` returns the fresh verdict within the check's own configured timeout plus 30 seconds of polling overhead for every executable kind, verified on a real cluster.
-- **SC-003**: A CI job can gate on a check using only `fathomctl run --wait` and its exit code, with no parsing of output, and the exit-code contract is covered by automated tests.
+- **SC-003**: A CI job can gate on a check using only `fathomctl run --wait` and its zero or non-zero exit code, with no parsing of output, and the exit-code contract is covered by automated tests.
 - **SC-004**: 100% of verbs offer `json` and `yaml` output that a standard JSON or YAML parser accepts.
 - **SC-005**: A first-time user can install, verify, and run `fathomctl version` on any of the six supported platform targets in under 5 minutes following only the published documentation.
 - **SC-006**: Every verb is covered by automated tests for every kind it supports without a live cluster, and a real-cluster test proves a triggered run for every executable kind.
@@ -305,8 +319,10 @@ reachable cluster.
   work; the CLI reads and never writes reports.
 - Verdict severity ordering is the existing
   `Pass < Skipped < Warn < Unknown < Fail < Error`.
-- The CLI's default `--wait` timeout is the check's configured timeout plus a
-  fixed margin; an explicit `--timeout` overrides it.
+- The CLI's default `--wait` timeout is the check's configured timeout plus
+  30 seconds (the margin SC-002 measures against); when several checks are
+  waited on, the default is the largest of their individual defaults. An
+  explicit `--timeout` overrides it.
 - Where `run` targets several checks, the per-check outcomes are reported and
   the overall exit code is the worst of them.
 - The CLI supports operators within one minor version; behaviour against an
