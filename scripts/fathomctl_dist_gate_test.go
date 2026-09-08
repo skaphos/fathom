@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package scripts
 
 import (
+	"archive/zip"
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
@@ -66,14 +67,16 @@ func TestFathomctlDistProducesVerifiableArchive(t *testing.T) {
 		t.Fatalf("checksum mismatch: recorded %s, actual %s", recorded, actual)
 	}
 
-	if runtime.GOOS == "windows" {
-		return
-	}
-	extract := exec.Command("tar", "-xzf", archive, "-C", out)
-	if output, err := extract.CombinedOutput(); err != nil {
-		t.Fatalf("extract: %v\n%s", err, output)
-	}
 	bin := filepath.Join(out, base, "fathomctl")
+	if runtime.GOOS == "windows" {
+		extractZip(t, archive, out)
+		bin += ".exe"
+	} else {
+		extract := exec.Command("tar", "-xzf", archive, "-C", out)
+		if output, err := extract.CombinedOutput(); err != nil {
+			t.Fatalf("extract: %v\n%s", err, output)
+		}
+	}
 	version, err := exec.Command(bin, "version", "--client").Output()
 	if err != nil {
 		t.Fatalf("run extracted binary: %v", err)
@@ -83,6 +86,46 @@ func TestFathomctlDistProducesVerifiableArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, base, "LICENSE")); err != nil {
 		t.Fatalf("archive must include LICENSE: %v", err)
+	}
+}
+
+// extractZip unpacks the Windows archive so the same binary and LICENSE
+// assertions run there; a zip entry name is validated against the output
+// directory before it is written.
+func extractZip(t *testing.T, archive, out string) {
+	t.Helper()
+	r, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	for _, entry := range r.File {
+		dest := filepath.Join(out, filepath.FromSlash(entry.Name))
+		if !strings.HasPrefix(dest, filepath.Clean(out)+string(os.PathSeparator)) {
+			t.Fatalf("zip entry %q escapes the output directory", entry.Name)
+		}
+		if entry.FileInfo().IsDir() {
+			if err := os.MkdirAll(dest, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		src, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dst, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, entry.Mode()|0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			t.Fatal(err)
+		}
+		_ = dst.Close()
+		_ = src.Close()
 	}
 }
 

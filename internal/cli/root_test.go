@@ -129,8 +129,8 @@ func TestRootCommand_VerbSet(t *testing.T) {
 		}
 		delete(want, name)
 	}
-	if _, has := want["run"]; has {
-		t.Error("run verb not registered")
+	for missing := range want {
+		t.Errorf("verb %q not registered", missing)
 	}
 	for _, forbidden := range []string{"pause", "resume"} {
 		if c, _, err := cmd.Find([]string{forbidden}); err == nil && c != cmd {
