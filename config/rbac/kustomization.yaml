@@ -37,4 +37,9 @@ resources:
 - nodecertificatecheck_admin_role.yaml
 - nodecertificatecheck_editor_role.yaml
 - nodecertificatecheck_viewer_role.yaml
+# Roles for people and CI jobs using the fathomctl CLI: read-only for the
+# read verbs, plus patch on the executable kinds for `fathomctl run`. Not
+# used by the operator; documented in docs/reference/fathomctl.md.
+- fathomctl_viewer_role.yaml
+- fathomctl_runner_role.yaml
 
