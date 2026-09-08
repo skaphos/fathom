@@ -277,13 +277,33 @@ The agent is built for least privilege:
   each report carries a `fathom.skaphos.io/node-name` annotation, and the
   operator provisions a cluster-scoped **`ValidatingAdmissionPolicy`**
   (`fathom-node-report-authenticity`) that requires this annotation to equal the
-  writing agent's ServiceAccount-token node claim
-  (`authentication.kubernetes.io/node-name`). A node-agent can therefore only
-  publish a report attributed to *its own* node. The operator additionally
-  re-checks the annotation against the report payload at collection time, so a
-  mismatched report is dropped even on a cluster where the policy is not
-  enforced. Requires ServiceAccount-token node info (GA in Kubernetes 1.33) and
-  the `ValidatingAdmissionPolicy` feature (GA 1.30).
+  writing identity's ServiceAccount-token node claim
+  (`authentication.kubernetes.io/node-name`).
+
+  **The policy applies to every writer**, not only to ServiceAccounts named
+  `*-node-agent`. It previously carried a name-pattern match condition, which
+  meant any *other* principal with ConfigMap write in the namespace was never
+  matched by the policy at all and could fabricate a node's verdict — a match
+  condition that evaluates false makes the API server skip the policy entirely.
+  A writer that holds no node claim is now refused outright. The one identity
+  that legitimately has no node claim, the operator itself, is accommodated
+  without an exemption: updates that leave the report payload and its node-name
+  annotation byte-identical (all the operator's owner-reference adoption does)
+  are permitted, and nothing that *writes* a report can take that path.
+
+  The operator additionally re-checks each report at collection time against the
+  bindings a genuine report always satisfies — payload node equals the annotated
+  node, and the ConfigMap sits at the deterministic name the agent for that
+  (check, node) writes to. Those are corroboration rather than authentication:
+  Kubernetes does not record the writer on the stored object, so admission is
+  the boundary. They still matter, because they are what remains on a cluster
+  where the policy is unavailable, and they close the one vector admission alone
+  does not — a *second*, off-name ConfigMap competing with a node's real report.
+  A rejected report is surfaced on the `ReportsAuthentic` condition and a
+  Warning event, never silently skipped.
+
+  Requires ServiceAccount-token node info (GA in Kubernetes 1.33) and the
+  `ValidatingAdmissionPolicy` feature (GA 1.30).
 - **Hardened and dedicated.** It runs from its own image and serves only a
   Prometheus metrics endpoint and a health check.
 - **Network-isolated.** The operator creates a NetworkPolicy with each

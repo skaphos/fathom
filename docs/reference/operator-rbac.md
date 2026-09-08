@@ -96,8 +96,12 @@ borrow the operator namespace's egress posture.
   memory nor reads them on its cached paths (SKA-581 / #164).
 - **Report authenticity.** The cluster-wide ConfigMap write surface for
   node-agents is policed by the report-authenticity
-  ValidatingAdmissionPolicy (#155): an agent token can only publish a report
-  attributed to its own node.
+  ValidatingAdmissionPolicy (#155, #272): a writer can only publish a report
+  attributed to the node its own ServiceAccount-token claim names, and a writer
+  holding no node claim is refused. The policy selects node-report ConfigMaps by
+  `fathom.skaphos.io/managed-by` alone and carries no writer-name match
+  condition, so it covers every principal and every node-scoped kind rather than
+  exempting the writers it does not recognise.
 - **Impersonation for addon reads.** Addon state is read through per-addon
   ServiceAccounts the operator may only `impersonate`
   ([Addon adapter RBAC](rbac.md)), never through the operator's own role.
