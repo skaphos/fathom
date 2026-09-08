@@ -285,11 +285,11 @@ The agent is built for least privilege:
   meant any *other* principal with ConfigMap write in the namespace was never
   matched by the policy at all and could fabricate a node's verdict — a match
   condition that evaluates false makes the API server skip the policy entirely.
-  A writer that holds no node claim is now refused outright. The one identity
+  A writer that holds no node claim is refused from creating or modifying a node report (payload or node-name annotation). The one identity
   that legitimately has no node claim, the operator itself, is accommodated
   without an exemption: updates that leave the report payload and its node-name
   annotation byte-identical (all the operator's owner-reference adoption does)
-  are permitted, and nothing that *writes* a report can take that path.
+  are permitted, and nothing that *writes* or *mutates* a report can take that path.
 
   The operator additionally re-checks each report at collection time against the
   bindings a genuine report always satisfies — payload node equals the annotated

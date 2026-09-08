@@ -66,10 +66,10 @@ func writeReportWithAnnotation(ctx context.Context, check *fathomv1alpha1.NodeCe
 }
 
 // writeReportAtName writes a fully self-consistent report — payload node and
-// annotation agree — at a ConfigMap name of the caller's choosing. This is what
-// a namespace principal who is not a node-agent can produce: admission's
-// node-claim binding never ran on their write, so the only thing left to catch
-// them is the canonical-name binding.
+// annotation agree — at a ConfigMap name of the caller's choosing. Admission
+// authenticates the writer→node binding via the node-name claim, but it cannot
+// enforce that the report is written at the canonical ConfigMap name; the
+// canonical-name binding is what catches this one.
 func writeReportAtName(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, cmName, reportNode string, certs []nodecert.CertResult) {
 	report := nodecert.NodeReport{
 		Node:       reportNode,

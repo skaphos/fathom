@@ -55,9 +55,9 @@ const (
 	RejectNonCanonicalName ReportRejection = "NonCanonicalName"
 )
 
-// IndicatesForgery reports whether a rejection is one only a writer attempting
-// to pass off another node's report can produce.
-//
+// IndicatesForgery reports whether a rejection indicates an active attempt to
+// steer a node's verdict (e.g. node/annotation mismatch or a competing off-name
+// report), rather than a benign/mislabeled/legacy ConfigMap.
 // The distinction drives how loudly the controller reacts: a mislabeled or
 // legacy report is skipped quietly, while a forgery signal is surfaced on a
 // condition and an event, because it means some principal with ConfigMap write

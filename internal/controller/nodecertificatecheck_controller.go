@@ -58,11 +58,11 @@ const (
 	// freezes LastResult, so without an explicit coverage signal a frozen verdict
 	// is indistinguishable from a fresh one (COR-3).
 	nodeCertConditionCoverage = "CoverageComplete"
-	// nodeCertConditionAuthentic reports whether any collected report failed the
-	// structural bindings that tie it to the node it claims. It is separate from
-	// Ready on purpose: rejecting a forged report does not stop the legitimate
-	// ones from covering the fleet, so the check can be Ready and still be under
-	// attack (SEC-1).
+	// nodeCertConditionAuthentic reports whether any collected report was rejected
+	// for a forgery-indicating authenticity failure (e.g. node mismatch or
+	// non-canonical name). It is separate from Ready on purpose: rejecting a forged
+	// report does not stop the legitimate ones from covering the fleet, so the check
+	// can be Ready and still be under attack (SEC-1).
 	nodeCertConditionAuthentic = "ReportsAuthentic"
 
 	// eventReasonForgedReport marks the Warning event raised when a report is

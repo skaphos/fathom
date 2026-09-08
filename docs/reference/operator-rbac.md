@@ -97,8 +97,8 @@ borrow the operator namespace's egress posture.
 - **Report authenticity.** The cluster-wide ConfigMap write surface for
   node-agents is policed by the report-authenticity
   ValidatingAdmissionPolicy (#155, #272): a writer can only publish a report
-  attributed to the node its own ServiceAccount-token claim names, and a writer
-  holding no node claim is refused. The policy selects node-report ConfigMaps by
+  attributed to the node its own ServiceAccount-token claim names; principals
+  without a node claim are denied when creating or mutating the report payload or node-name annotation. The policy selects node-report ConfigMaps by
   `fathom.skaphos.io/managed-by` alone and carries no writer-name match
   condition, so it covers every principal and every node-scoped kind rather than
   exempting the writers it does not recognise.
