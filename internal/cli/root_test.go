@@ -122,9 +122,12 @@ func TestRootCommand_VerbSet(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		got = append(got, c.Name())
 	}
-	want := map[string]bool{"ls": true, "describe": true, "reports": true, "run": true, "version": true, "completion": true, "help": true}
+	// cobra adds completion and help lazily at execute time, so they may or
+	// may not be present here; every fathomctl verb must be, and nothing else.
+	want := map[string]bool{"ls": true, "describe": true, "reports": true, "run": true, "version": true}
+	builtin := map[string]bool{"completion": true, "help": true}
 	for _, name := range got {
-		if !want[name] {
+		if !want[name] && !builtin[name] {
 			t.Errorf("unexpected verb %q registered", name)
 		}
 		delete(want, name)
