@@ -244,6 +244,13 @@ tasks:
     cmds:
       - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}}" -o bin/fathomctl ./cmd/fathomctl
 
+  fathomctl-dist:
+    desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})
+    vars:
+      FATHOMCTL_DIST_DIR: '{{.FATHOMCTL_DIST_DIR | default "dist/fathomctl"}}'
+    cmds:
+      - VERSION={{.VERSION}} OUT={{.FATHOMCTL_DIST_DIR}} scripts/fathomctl-dist.sh
+
   run:
     desc: Run the controller from your host
     cmds:

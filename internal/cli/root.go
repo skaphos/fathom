@@ -90,7 +90,7 @@ Cluster access follows kubectl: --kubeconfig, then $KUBECONFIG, then
 		},
 	}
 	registerGlobalFlags(cmd.PersistentFlags(), f.opts)
-	cmd.AddCommand(newLsCommand(f), newDescribeCommand(f), newReportsCommand(f), newRunCommand(f))
+	cmd.AddCommand(newLsCommand(f), newDescribeCommand(f), newReportsCommand(f), newRunCommand(f), newVersionCommand(f))
 	return cmd
 }
 

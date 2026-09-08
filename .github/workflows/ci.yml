@@ -187,6 +187,11 @@ jobs:
       - name: Run build task
         run: go -C tools tool task build
 
+      # Every release target is cross-compiled on every PR so a broken
+      # GOOS/GOARCH build surfaces here rather than on release day.
+      - name: Cross-compile fathomctl for every release target
+        run: go -C tools tool task fathomctl-dist VERSION=0.0.0-ci FATHOMCTL_DIST_DIR=/tmp/fathomctl-dist
+
   summary:
     name: CI Summary
     permissions:

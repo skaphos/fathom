@@ -361,6 +361,21 @@ var _ = Describe("fathomctl", Ordered, Label(utils.CoreLabel, "fathomctl"), func
 		Expect(out).To(ContainSubstring("Checks:"))
 	})
 
+	// FR-027: version pairs the CLI with the operator it found.
+	It("reports the client and operator versions", func() {
+		out, err := fathomctl("version")
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(MatchRegexp(`Client:\s+\S+`))
+		Expect(out).To(MatchRegexp(`Operator:\s+\S+ \(`+namespace+`/`), "operator line should name the Kind operator's namespace:\n%s", out)
+
+		out, err = fathomctl("version", "--client", "-o", "json")
+		Expect(err).NotTo(HaveOccurred(), out)
+		var info map[string]any
+		Expect(json.Unmarshal([]byte(out), &info)).To(Succeed(), out)
+		Expect(info).To(HaveKey("client"))
+		Expect(info).NotTo(HaveKey("operator"))
+	})
+
 	// FR-023: a paused check is refused before anything is written.
 	It("refuses to trigger a paused check and exits 1", func() {
 		out, err := fathomctl("run", "addoncheck/"+fathomctlPaused, "-n", fathomctlNS)

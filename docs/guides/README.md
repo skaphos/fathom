@@ -25,6 +25,7 @@ for the generated, field-level CRD reference see
 | [DNS checks](dns-checks.md) | Verify positive and required-absence DNS expectations from cluster, node, or explicit resolvers and include the verdict in `ClusterHealth`. |
 | [Node certificate checks](node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before it causes an outage. |
 | [Monitoring & alerting](monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and deployment gates. |
+| [fathomctl](fathomctl.md) | Install the CLI, see every verdict with `ls`, explain one with `describe`, walk history with `reports`, and gate a pipeline on `run --wait`. |
 
 ## Automating Fathom
 

@@ -23,7 +23,9 @@ the canonical resource list.
 - `cmd/main.go`: thin entrypoint. Constructs the cobra root command via `internal/app` and runs it.
 - `cmd/probe/`: the tiny in-cluster network probe binary (`Dockerfile.probe`).
 - `cmd/node-agent/`: the node-agent DaemonSet binary that scans on-disk certificates (`Dockerfile.node-agent`); its own dedicated image, never the operator or probe image.
+- `cmd/fathomctl/`: thin entrypoint for the `fathomctl` CLI. Ships as per-platform release archives (`scripts/fathomctl-dist.sh`), never as an image.
 - `internal/app/`: cobra/viper plumbing, options parsing, manager construction, controller registration. The unit-testable seam.
+- `internal/cli/`: the `fathomctl` command tree (`ls`, `describe`, `reports`, `run`, `version`), client factory with injectable seams, the kind-descriptor table, and the shared verdict normalisation. Tests are in-package stdlib `testing` over the controller-runtime fake client. Must not import `internal/app`, `internal/adapter`, or `internal/controller`.
 - `internal/controller/`: reconciler implementations (`AddonCheckReconciler`, `HealthCheckReconciler`, `ClusterHealthReconciler`, `NodeCertificateCheckReconciler`).
 - `internal/nodecert/`: the on-disk X.509 scan engine and the node-agent↔operator wire contract (no Kubernetes-client deps, so the agent binary stays small).
 - `config/`: kustomize overlays, RBAC, CRDs, OLM scaffolding (`config/crd`, `config/manager`, `config/rbac`, `config/manifests`, …).
@@ -50,7 +52,8 @@ All workflows are wrapped in tasks; never invoke `controller-gen` / `kustomize`
 - `go -C tools tool task vuln`: `govulncheck ./...`.
 - `go -C tools tool task ci`: full local CI (lint, test, staticcheck, vuln, build).
 - `go -C tools tool task crd-compat`: diff `config/crd/bases` against the latest release tag (crdify) and fail on unsanctioned incompatible schema changes; overrides live in `.crd-compat-allowlist.yaml`.
-- `go -C tools tool task build`: `go build -o bin/manager cmd/main.go`.
+- `go -C tools tool task build`: `go build -o bin/manager cmd/main.go` plus `fathomctl-build` (`bin/fathomctl`, versioned from `git describe`).
+- `go -C tools tool task fathomctl-dist VERSION=<x.y.z>`: cross-compile the six `fathomctl` release archives and their checksums into `dist/fathomctl/` (CI runs it on every PR; the release workflow signs and attests the result).
 - `go -C tools tool task run`: run the manager from your host against the current kubeconfig context.
 - `go -C tools tool task install` / `uninstall`: apply or remove CRDs in the current cluster.
 - `go -C tools tool task deploy` / `undeploy`: render and apply the full operator manifests.

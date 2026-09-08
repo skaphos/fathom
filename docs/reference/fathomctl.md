@@ -197,6 +197,45 @@ outcomes:
 `via` is present when the target was reached through a derived kind;
 `skipped`, `error`, `superseded`, and `timedOut` explain a non-success.
 
+## version
+
+```text
+fathomctl version [--client]
+```
+
+Prints the CLI version and, when a cluster is reachable and Fathom is
+installed, the operator's version with the namespace and Deployment it was
+read from:
+
+```text
+Client:   v0.6.0
+Operator: v0.6.0 (fathom-system/fathom-controller-manager)
+```
+
+The operator is located by the `control-plane=controller-manager` label on
+its Deployment (both the kustomize and Helm installs apply it), in `-n` when
+given or across all namespaces otherwise, and confirmed to be Fathom's by its
+`app.kubernetes.io/name` label or `fathom-operator` image. The version comes
+from the `app.kubernetes.io/version` label (Helm sets it), else the manager
+image tag, else a shortened image digest. Any failure, including no
+kubeconfig or no permission to list Deployments, is reported as
+`Operator: unavailable (<reason>)` with exit `0`. `--client` skips the
+cluster entirely. `-o json` emits `{client, operator{version, namespace,
+deployment, image, error}}`; `operator` is omitted with `--client`.
+
+A locally built binary reports a `git describe` version; a release archive
+reports the release tag.
+
+## Version skew
+
+Keep the CLI within one minor version of the operator. The read verbs only
+depend on the resource schema, so they degrade gracefully. `run` depends on
+the operator honouring the run-now trigger for the kind in question: an
+operator older than the CLI that does not yet consume the trigger for a kind
+never writes `status.lastRunTrigger`, so `run --wait` times out rather than
+failing up front. The timeout message points at `fathomctl version` for that
+reason.
+
 ## RBAC for fathomctl users
 
 The operator's own role is unchanged by the CLI. Two auxiliary ClusterRoles
