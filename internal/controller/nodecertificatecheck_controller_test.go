@@ -44,13 +44,30 @@ func writeNodeReportAt(ctx context.Context, check *fathomv1alpha1.NodeCertificat
 }
 
 func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node, reportCheckName string, observedAt time.Time, certs []nodecert.CertResult) {
-	report := nodecert.NodeReport{
+	writeNodeReportObject(ctx, check, node, nodecert.NodeReport{
 		Node:       node,
 		CheckName:  reportCheckName,
 		ObservedAt: observedAt,
 		Aggregate:  nodecert.WorstOutcome(certs),
 		Certs:      certs,
-	}
+	})
+}
+
+// writeTriggeredNodeReport mirrors an agent restarted with a run-now token:
+// the report carries the token, which is what lets the controller complete
+// the trigger for that node.
+func writeTriggeredNodeReport(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node, trigger string, certs []nodecert.CertResult) {
+	writeNodeReportObject(ctx, check, node, nodecert.NodeReport{
+		Node:       node,
+		CheckName:  check.Name,
+		ObservedAt: time.Now(),
+		Aggregate:  nodecert.WorstOutcome(certs),
+		Certs:      certs,
+		Trigger:    trigger,
+	})
+}
+
+func writeNodeReportObject(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node string, report nodecert.NodeReport) {
 	encoded, err := nodecert.EncodeReport(report)
 	Expect(err).NotTo(HaveOccurred())
 	cm := &corev1.ConfigMap{

@@ -113,11 +113,12 @@ func nodeCertificateCheckSnapshot(o client.Object) snapshot {
 	c := o.(*fathomv1alpha1.NodeCertificateCheck)
 	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
 	return snapshot{
-		Verdict:    fathomv1alpha1.HealthReportResult(c.Status.LastResult),
-		Summary:    readyMessage(c.Status.Conditions),
-		LastRun:    c.Status.LastRunTime,
-		NextRun:    nextRun(c.Status.LastRunTime, interval),
-		ReportName: c.Status.LastReportName,
+		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Summary:         readyMessage(c.Status.Conditions),
+		LastRun:         c.Status.LastRunTime,
+		NextRun:         nextRun(c.Status.LastRunTime, interval),
+		ReportName:      c.Status.LastReportName,
+		ConsumedTrigger: c.Status.LastRunTrigger,
 	}
 }
 

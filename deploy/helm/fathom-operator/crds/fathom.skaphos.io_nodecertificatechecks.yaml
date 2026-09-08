@@ -317,6 +317,16 @@ spec:
                   and does not imply a new HealthReport was written on every refresh.
                 format: date-time
                 type: string
+              lastRunTrigger:
+                description: |-
+                  LastRunTrigger records the fathom.skaphos.io/run-now annotation value
+                  most recently consumed. A new value is carried to the node-agents through
+                  their DaemonSet template, which restarts them; each agent stamps the value
+                  into its report, and the operator records it here only once every desired
+                  node's fresh report carries it. Until then the previous verdict is kept.
+                  A given on-demand trigger therefore completes exactly once.
+                maxLength: 253
+                type: string
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent metadata.generation reconciled by

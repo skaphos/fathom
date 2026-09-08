@@ -164,6 +164,16 @@ type NodeCertificateCheckStatus struct {
 	// the operator consumed in the most recent roll-up.
 	// +optional
 	ReportingNodes int32 `json:"reportingNodes,omitempty"`
+
+	// LastRunTrigger records the fathom.skaphos.io/run-now annotation value
+	// most recently consumed. A new value is carried to the node-agents through
+	// their DaemonSet template, which restarts them; each agent stamps the value
+	// into its report, and the operator records it here only once every desired
+	// node's fresh report carries it. Until then the previous verdict is kept.
+	// A given on-demand trigger therefore completes exactly once.
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	LastRunTrigger string `json:"lastRunTrigger,omitempty"`
 }
 
 // +kubebuilder:object:root=true

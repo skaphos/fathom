@@ -51,6 +51,9 @@ type config struct {
 	timeout        time.Duration
 	metricsAddr    string
 	once           bool
+	// trigger is the run-now token this agent was started with (see
+	// nodecert.EnvRunTrigger); stamped into every report it publishes.
+	trigger string
 }
 
 func main() {
@@ -145,6 +148,7 @@ func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, 
 		ObservedAt: now.UTC(),
 		Aggregate:  nodecert.WorstOutcome(results),
 		Certs:      results,
+		Trigger:    cfg.trigger,
 	}
 	if err := upsertReportConfigMap(publishCtx, kube, cfg, report); err != nil {
 		return report, err
@@ -273,6 +277,10 @@ func parseConfig(argv []string) (config, error) {
 		timeout:        *timeout,
 		metricsAddr:    *metricsAddr,
 		once:           *once,
+		// The token arrives through the downward API from the DaemonSet pod
+		// template, so it is an env var rather than a flag: the operator does
+		// not rewrite the args when only the trigger changes.
+		trigger: os.Getenv(nodecert.EnvRunTrigger),
 	}
 	if cfg.checkName == "" || cfg.checkNamespace == "" {
 		return config{}, fmt.Errorf("--check-name and --check-namespace are required")

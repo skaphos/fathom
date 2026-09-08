@@ -274,8 +274,40 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		clearNodeCertRollupStatus(&check)
 	}
 
+	if token, due := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); due {
+		consumeNodeCertRunTrigger(&check, before, ds, reports, token, time.Now())
+	}
+
 	r.setReadyFromState(&check, ds, len(reports))
 	return r.finish(ctx, log, before, &check, interval)
+}
+
+// consumeNodeCertRunTrigger completes a pending on-demand run: the token is
+// recorded as consumed only when every desired node has a fresh report that
+// carries it, which is the proof that every agent restarted with the token and
+// scanned. Reports with an empty or different trigger never count, so an agent
+// predating the field cannot complete a wait falsely. While the set is
+// incomplete nothing changes: the ordinary rollup above keeps the verdict live
+// and the pending token stays pending.
+//
+// A forced run that leaves the aggregate unchanged would otherwise be a rollup
+// no-op, so LastRunTime is refreshed when the rollup did not move it; a waiter
+// then sees both the consumed token and a run time at or after its request.
+func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, before *fathomv1alpha1.NodeCertificateCheckStatus, ds *appsv1.DaemonSet, reports []nodecert.NodeReport, token string, now time.Time) {
+	triggered := 0
+	for _, report := range reports {
+		if report.Trigger == token {
+			triggered++
+		}
+	}
+	if !nodeCertReportsComplete(ds, triggered) {
+		return
+	}
+	check.Status.LastRunTrigger = token
+	if check.Status.LastRunTime != nil && before.LastRunTime != nil && check.Status.LastRunTime.Equal(before.LastRunTime) {
+		refreshed := metav1.NewTime(now)
+		check.Status.LastRunTime = &refreshed
+	}
 }
 
 // finish persists Status if it changed and requeues after interval (0 disables
@@ -646,6 +678,32 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 		"--metrics-bind-address", ":" + strconv.Itoa(metricsContainerPort),
 	}
 
+	env := []corev1.EnvVar{{
+		Name: "NODE_NAME",
+		// APIVersion is set explicitly to the value the API server
+		// defaults it to, so the desired template round-trips and
+		// CreateOrUpdate converges to a no-op (no churn).
+		ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "spec.nodeName"}},
+	}}
+	// The on-demand run token rides on the pod template: the annotation is part
+	// of the spec hash, so a new token rolls the agents (each scans on start),
+	// and the downward-API env var hands each agent the token to stamp into its
+	// report. Both are added only when a token exists so a check that has never
+	// been triggered keeps exactly the template it has today (no restart on
+	// operator upgrade), and a consumed token stays stamped so consumption
+	// itself never causes a second rollout.
+	var templateAnnotations map[string]string
+	if token := check.Annotations[fathomv1alpha1.AnnotationRunNow]; token != "" {
+		templateAnnotations = map[string]string{fathomv1alpha1.AnnotationRunNow: token}
+		env = append(env, corev1.EnvVar{
+			Name: nodecert.EnvRunTrigger,
+			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
+				APIVersion: "v1",
+				FieldPath:  "metadata.annotations['" + fathomv1alpha1.AnnotationRunNow + "']",
+			}},
+		})
+	}
+
 	runAsNonRoot := true
 	runAsUser := int64(65532)
 	allowPrivilegeEscalation := false
@@ -659,7 +717,7 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: selectorLabels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: templateAnnotations},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            saName,
 					AutomountServiceAccountToken:  &automount,
@@ -672,18 +730,12 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 					SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot, RunAsUser: &runAsUser, SeccompProfile: &seccomp},
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
-						Name:            "node-agent",
-						Image:           r.NodeAgentImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Command:         []string{"/node-agent"},
-						Args:            args,
-						Env: []corev1.EnvVar{{
-							Name: "NODE_NAME",
-							// APIVersion is set explicitly to the value the API server
-							// defaults it to, so the desired template round-trips and
-							// CreateOrUpdate converges to a no-op (no churn).
-							ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "spec.nodeName"}},
-						}},
+						Name:                     "node-agent",
+						Image:                    r.NodeAgentImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						Command:                  []string{"/node-agent"},
+						Args:                     args,
+						Env:                      env,
 						Ports:                    []corev1.ContainerPort{{Name: "metrics", ContainerPort: metricsContainerPort, Protocol: corev1.ProtocolTCP}},
 						TerminationMessagePath:   "/dev/termination-log",
 						TerminationMessagePolicy: corev1.TerminationMessageReadFile,

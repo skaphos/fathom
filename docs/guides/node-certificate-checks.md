@@ -187,6 +187,35 @@ spec:
 - **`historyLimit`** (default `10`, min `1`) — `HealthReport`s retained for this
   check; older ones are pruned.
 
+## Forcing a scan
+
+To scan every node now instead of waiting for `interval`, write a fresh value
+to the `fathom.skaphos.io/run-now` annotation (or run
+`fathomctl run nodecertificatecheck/<name> --wait`):
+
+```sh
+kubectl -n fathom-system annotate nodecertificatecheck node-certificates \
+  fathom.skaphos.io/run-now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+```
+
+What happens, and what it costs:
+
+1. The operator stamps the value onto the node-agent DaemonSet's pod
+   template. That changes the template, so the DaemonSet performs a rolling
+   restart: **one agent pod restart per selected node**.
+2. Each agent scans on start and stamps the value it started with into its
+   report.
+3. The operator records the value in `status.lastRunTrigger` only once every
+   desired node's fresh report carries it. Until then the previous verdict is
+   retained and `AgentReady` reports the rollout.
+
+The same value never triggers a second restart: once consumed it stays on the
+template, and a run with no annotation never clears it. On a large cluster the
+rollout is the slow part, so give `fathomctl run --wait` a `--timeout` that
+covers it; the CLI's default is the check's `timeout` plus 30 seconds. See
+[Status and conditions](../reference/status-conditions.md#on-demand-runs) for
+the contract shared by every check kind.
+
 ## Reading results
 
 The check's `status` carries the summary:
@@ -198,6 +227,8 @@ kubectl -n fathom-system describe nodecertificatecheck node-certificates
 - `lastResult` — aggregate result across all reporting nodes.
 - `reportingNodes` / `desiredNodes` — coverage.
 - `lastReportName` — the `HealthReport` for the most recent roll-up.
+- `lastRunTrigger` — the last forced scan every node completed (see
+  [Forcing a scan](#forcing-a-scan)).
 - `conditions` — whether the spec was accepted and the DaemonSet is rolled out
   and reporting. See
   [Status and conditions](../reference/status-conditions.md#nodecertificatecheck)

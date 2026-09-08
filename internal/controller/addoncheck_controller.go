@@ -221,8 +221,8 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	interval := addonCheckInterval(&check)
-	runNow := check.Annotations[fathomv1alpha1.AnnotationRunNow]
-	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
+	runNow, runNowDue := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
+	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval) {
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -259,14 +259,14 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // addonCheckDueForRun reports whether the adapter should run this reconcile: on
 // first sight, on a spec (generation) change, when the on-demand run-now trigger
-// carries a new value, or when Interval has elapsed since the last run.
-func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGeneration int64, runNow string, interval time.Duration) bool {
+// is due (runTriggerDue), or when Interval has elapsed since the last run.
+func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGeneration int64, triggerDue bool, interval time.Duration) bool {
 	switch {
 	case check.Status.LastRunTime == nil:
 		return true
 	case previousObservedGeneration != check.Generation:
 		return true
-	case runNow != "" && runNow != check.Status.LastRunTrigger:
+	case triggerDue:
 		return true
 	default:
 		return time.Since(check.Status.LastRunTime.Time) >= interval

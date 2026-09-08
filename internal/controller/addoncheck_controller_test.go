@@ -899,31 +899,31 @@ var _ = Describe("AddonCheck Controller", func() {
 	})
 
 	DescribeTable("addonCheckDueForRun",
-		func(setup func(*fathomv1alpha1.AddonCheck), prevGen int64, runNow string, interval time.Duration, want bool) {
+		func(setup func(*fathomv1alpha1.AddonCheck), prevGen int64, triggerDue bool, interval time.Duration, want bool) {
 			check := &fathomv1alpha1.AddonCheck{}
 			check.Generation = 1
 			setup(check)
-			Expect(addonCheckDueForRun(check, prevGen, runNow, interval)).To(Equal(want))
+			Expect(addonCheckDueForRun(check, prevGen, triggerDue, interval)).To(Equal(want))
 		},
 		Entry("first sight (no LastRunTime) is due",
-			func(c *fathomv1alpha1.AddonCheck) {}, int64(1), "", time.Minute, true),
+			func(c *fathomv1alpha1.AddonCheck) {}, int64(1), false, time.Minute, true),
 		Entry("generation change is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), "", time.Minute, true),
-		Entry("a new run-now trigger is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), "t1", time.Minute, true),
-		Entry("the same trigger within the interval is not due",
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), false, time.Minute, true),
+		Entry("a due run-now trigger is due",
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), true, time.Minute, true),
+		Entry("a consumed trigger within the interval is not due",
 			func(c *fathomv1alpha1.AddonCheck) {
 				n := metav1.Now()
 				c.Status.LastRunTime = &n
 				c.Status.LastRunTrigger = "t1"
-			}, int64(1), "t1", time.Minute, false),
+			}, int64(1), false, time.Minute, false),
 		Entry("an elapsed interval is due",
 			func(c *fathomv1alpha1.AddonCheck) {
 				p := metav1.NewTime(time.Now().Add(-time.Hour))
 				c.Status.LastRunTime = &p
-			}, int64(1), "", time.Minute, true),
+			}, int64(1), false, time.Minute, true),
 		Entry("within the interval with no triggers is not due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), "", time.Minute, false),
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), false, time.Minute, false),
 	)
 
 	DescribeTable("aggregateHealthReportResult worst-case ranking",

@@ -85,12 +85,12 @@ func TestSnapshot_PerKind(t *testing.T) {
 			name: "NodeCertificateCheck uses Ready message and hourly default",
 			obj: &fathomv1alpha1.NodeCertificateCheck{
 				Status: fathomv1alpha1.NodeCertificateCheckStatus{
-					LastResult: "Warn", Conditions: ready, LastRunTime: &snapLast, LastReportName: "ncc-1",
+					LastResult: "Warn", Conditions: ready, LastRunTime: &snapLast, LastReportName: "ncc-1", LastRunTrigger: "tok-3",
 				},
 			},
 			want: snapshot{
 				Verdict: "Warn", Summary: "3 of 3 checks passed", LastRun: &snapLast,
-				NextRun: ptrTime(snapLast.Add(fathomv1alpha1.DefaultNodeCertificateCheckInterval)), ReportName: "ncc-1",
+				NextRun: ptrTime(snapLast.Add(fathomv1alpha1.DefaultNodeCertificateCheckInterval)), ReportName: "ncc-1", ConsumedTrigger: "tok-3",
 			},
 			wantTimeout: fathomv1alpha1.DefaultNodeCertificateCheckTimeout,
 		},

@@ -788,6 +788,7 @@ _Appears in:_
 | `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 | `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
 | `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every desired<br />node's fresh report carries it. Until then the previous verdict is kept.<br />A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 
 
 #### ThresholdValue

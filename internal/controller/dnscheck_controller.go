@@ -216,6 +216,14 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	observed := metav1.NewTime(startedAt)
 	check.Status.LastRunTime = &observed
 
+	// A DNSCheck evaluates on every reconcile, so an annotation write already
+	// caused this run; recording the token is what makes the trigger observable
+	// (fathomctl run --wait matches on it) and consume-once. Only a due token is
+	// written: a run with no annotation must not clear a consumed one.
+	if token, due := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); due {
+		check.Status.LastRunTrigger = token
+	}
+
 	r.setDNSCheckComplete(&check, len(outcomes), unreached)
 	r.setDNSCheckReady(&check, outcomes)
 	r.publishDNSTargetSeries(&check, outcomes)
