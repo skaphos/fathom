@@ -114,6 +114,31 @@ func TestRootCommand_HelpMentionsExitCodes(t *testing.T) {
 	}
 }
 
+// TestRootCommand_VerbSet locks the verb surface: exactly the verbs that have
+// landed plus cobra's completion and help, and never pause or resume.
+func TestRootCommand_VerbSet(t *testing.T) {
+	cmd := newRootCommand(newFactory())
+	var got []string
+	for _, c := range cmd.Commands() {
+		got = append(got, c.Name())
+	}
+	want := map[string]bool{"run": true, "completion": true, "help": true}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("unexpected verb %q registered", name)
+		}
+		delete(want, name)
+	}
+	if _, has := want["run"]; has {
+		t.Error("run verb not registered")
+	}
+	for _, forbidden := range []string{"pause", "resume"} {
+		if c, _, err := cmd.Find([]string{forbidden}); err == nil && c != cmd {
+			t.Errorf("%s must not exist (decision #262)", forbidden)
+		}
+	}
+}
+
 func TestGlobalOptions_Validate(t *testing.T) {
 	ok := globalOptions{namespace: "a", requestTimeout: time.Second}
 	if err := ok.validate(); err != nil {

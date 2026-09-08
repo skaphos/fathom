@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -48,6 +49,18 @@ type kindDescriptor struct {
 	// DefaultTimeout is the effective spec.timeout the controller would apply,
 	// used to size `run --wait`. Zero for derived kinds, which never run.
 	DefaultTimeout func(client.Object) time.Duration
+	// Sources resolves the executable checks behind a derived kind (see
+	// run.go). Nil for executable kinds, which are their own source.
+	Sources func(context.Context, client.Client, client.Object) ([]sourceResolution, error)
+}
+
+// sourceResolution is one executable check reached through a derived kind,
+// or the reason it could not be reached (Skip non-empty). Via names the
+// HealthCheck the source was found through, for the user's benefit.
+type sourceResolution struct {
+	Ref  checkRef
+	Via  string
+	Skip string
 }
 
 var kinds = []*kindDescriptor{
@@ -118,6 +131,8 @@ var kinds = []*kindDescriptor{
 		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
 		Snapshot:       healthCheckSnapshot,
 		DefaultTimeout: noTimeout,
+		// Sources is wired in run.go's init: the resolvers look kinds up by
+		// name, which would be an initialization cycle here.
 	},
 	{
 		Kind: "ClusterHealth", Resource: "clusterhealths", Aliases: []string{"ch"},

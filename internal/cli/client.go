@@ -7,7 +7,11 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"time"
 
+	"golang.org/x/term"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -34,13 +38,28 @@ type factory struct {
 	// newClient constructs the cache-less controller-runtime client. The
 	// default is client.New; tests supply the fake client.
 	newClient func(*rest.Config, client.Options) (client.Client, error)
+
+	// stdin and isTerminal back the bulk-run confirmation prompt. Tests feed
+	// an answer and claim a terminal (or not) without a tty.
+	stdin      io.Reader
+	isTerminal func() bool
+
+	// pollInterval paces `run --wait`. Two seconds against a handful of
+	// objects is negligible load; tests use milliseconds.
+	pollInterval time.Duration
 }
+
+// defaultPollInterval is how often `run --wait` re-reads a check.
+const defaultPollInterval = 2 * time.Second
 
 func newFactory() *factory {
 	return &factory{
 		opts:         &globalOptions{},
 		clientConfig: defaultClientConfig,
 		newClient:    client.New,
+		stdin:        os.Stdin,
+		isTerminal:   func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
+		pollInterval: defaultPollInterval,
 	}
 }
 
