@@ -191,6 +191,11 @@ makes no cluster contact.
 - [ ] T052 Run the full quickstart gate set: `go -C tools tool task fmt manifests generate helm:sync docs:api-ref verify-generated crd-compat lint vet test staticcheck vuln build`, `scripts/check-coverage.sh coverage.out` (every touched package ≥ 50%), `reuse --no-multiprocessing lint`, `go -C tools tool task test-e2e` (full stack; record any missing local prerequisite in the PR test plan), then `graphify update .` and commit the `graphify-out/` update
 - [ ] T053 Open the PR(s) per the implementation strategy below (ready, not draft), with summary, motivation, exact checks run with outcomes, and doc links; address Copilot and adversarial review comments and resolve threads
 
+> **Status (2026-09-07)**: T001–T051 complete. T052: every gate ran green
+> except `test-e2e`, which could not run locally (no Docker daemon); the CI
+> `kind e2e` job on the PR is the gate. T053: PR #325 is open as one PR with
+> seven per-slice commits; the review loop is in progress.
+
 ---
 
 ## Dependencies & Execution Order
