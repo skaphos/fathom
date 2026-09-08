@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -89,6 +90,15 @@ Cluster access follows kubectl: --kubeconfig, then $KUBECONFIG, then
 		},
 	}
 	registerGlobalFlags(cmd.PersistentFlags(), f.opts)
-	cmd.AddCommand(newRunCommand(f))
+	cmd.AddCommand(newLsCommand(f), newDescribeCommand(f), newReportsCommand(f), newRunCommand(f))
 	return cmd
+}
+
+// commandContext returns the command's context, or a background one when the
+// command was executed without ExecuteContext (as cmd/fathomctl does).
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }

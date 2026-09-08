@@ -20,7 +20,6 @@ import (
 
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -275,12 +274,12 @@ func resolveRunTargets(ctx context.Context, c client.Client, f *factory, opts *r
 // this way.
 func listExecutable(ctx context.Context, c client.Client, ns, selector string) ([]sourceResolution, error) {
 	listOpts := []client.ListOption{client.InNamespace(ns)}
-	if selector != "" {
-		sel, err := labels.Parse(selector)
-		if err != nil {
-			return nil, fmt.Errorf("invalid selector %q: %w", selector, err)
-		}
-		listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: sel})
+	selOpt, err := selectorListOption(selector)
+	if err != nil {
+		return nil, err
+	}
+	if selOpt != nil {
+		listOpts = append(listOpts, selOpt)
 	}
 	var refs []sourceResolution
 	for _, k := range executableKinds() {

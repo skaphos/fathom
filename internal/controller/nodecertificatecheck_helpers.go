@@ -197,8 +197,8 @@ func healthReportForNodeCert(check *fathomv1alpha1.NodeCertificateCheck, reports
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				labelHealthReportSourceKind: "NodeCertificateCheck",
-				labelHealthReportSourceName: check.Name,
+				fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
@@ -239,8 +239,8 @@ func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.L
 	if err := c.List(ctx, &reports,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: check.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 		},
 	); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")

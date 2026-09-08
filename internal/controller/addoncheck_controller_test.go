@@ -170,8 +170,8 @@ func healthReportCount(ctx context.Context, source types.NamespacedName) int {
 	ExpectWithOffset(1, k8sClient.List(ctx, &reports,
 		client.InNamespace(source.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: "AddonCheck",
-			labelHealthReportSourceName: source.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: source.Name,
 		},
 	)).To(Succeed())
 	return len(reports.Items)

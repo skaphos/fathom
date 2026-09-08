@@ -60,14 +60,6 @@ const (
 	// fall back when an in-memory AddonCheck has not been round-tripped through
 	// the API server (envtest fixtures, etc.).
 	defaultHealthReportHistoryLimit = 10
-
-	// labelHealthReportSourceKind/Name pin a HealthReport to the resource that
-	// produced it. The pair is queried via MatchingLabels so retention pruning
-	// can list reports for a given AddonCheck without scanning every report in
-	// the namespace. Future specialized check kinds (DNSCheck, NodeHealthCheck,
-	// etc.) reuse the same label scheme — kind disambiguates name collisions.
-	labelHealthReportSourceKind = "fathom.skaphos.io/source-kind"
-	labelHealthReportSourceName = "fathom.skaphos.io/source-name"
 )
 
 type addonAdapterLookup interface {
@@ -504,8 +496,8 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log
 	if err := r.List(ctx, &reports,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: "AddonCheck",
-			labelHealthReportSourceName: check.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 		},
 	); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
@@ -728,8 +720,8 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				labelHealthReportSourceKind: "AddonCheck",
-				labelHealthReportSourceName: check.Name,
+				fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{

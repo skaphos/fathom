@@ -124,8 +124,8 @@ func setNodeAgentDaemonSetStatusFull(ctx context.Context, check *fathomv1alpha1.
 func nodeCertHealthReportCount(ctx context.Context, source types.NamespacedName) int {
 	reports := &fathomv1alpha1.HealthReportList{}
 	Expect(k8sClient.List(ctx, reports, client.InNamespace(source.Namespace), client.MatchingLabels{
-		labelHealthReportSourceKind: "NodeCertificateCheck",
-		labelHealthReportSourceName: source.Name,
+		fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+		fathomv1alpha1.LabelHealthReportSourceName: source.Name,
 	})).To(Succeed())
 	return len(reports.Items)
 }
@@ -391,8 +391,8 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 
 		reports := &fathomv1alpha1.HealthReportList{}
 		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: "nc-rollup",
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: "nc-rollup",
 		})).To(Succeed())
 		Expect(reports.Items).To(HaveLen(1))
 		Expect(reports.Items[0].Spec.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
@@ -531,8 +531,8 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 
 		reports := &fathomv1alpha1.HealthReportList{}
 		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: "nc-partial",
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: "nc-partial",
 		})).To(Succeed())
 		Expect(reports.Items).To(BeEmpty())
 	})

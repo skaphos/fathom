@@ -122,7 +122,7 @@ func TestRootCommand_VerbSet(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		got = append(got, c.Name())
 	}
-	want := map[string]bool{"run": true, "completion": true, "help": true}
+	want := map[string]bool{"ls": true, "describe": true, "reports": true, "run": true, "completion": true, "help": true}
 	for _, name := range got {
 		if !want[name] {
 			t.Errorf("unexpected verb %q registered", name)

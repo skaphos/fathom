@@ -646,8 +646,8 @@ func healthReportForDNSCheck(
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				labelHealthReportSourceKind: dnsCheckKind,
-				labelHealthReportSourceName: check.Name,
+				fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
@@ -681,8 +681,8 @@ func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr
 	if err := r.List(ctx, &reports,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: dnsCheckKind,
-			labelHealthReportSourceName: check.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 		},
 	); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")

@@ -114,10 +114,10 @@ Delivers #259.
 `fathomctl ls`, `ls <kind>`, `-n`, `-A`, `-l`, and `-o json` match the
 resource statuses; an empty namespace prints "No checks found" and exits 0.
 
-- [ ] T028 [US2] Create `internal/cli/ls.go`: `newLsCommand(f)` with optional kind arg and `-l/--selector`; no kind → list the five kinds in fixed order (ClusterHealth always, regardless of `-n`/`-A`), grouped with a `KIND` column; single kind → that kind only; columns `NAMESPACE` (only with `-A`, blank for ClusterHealth), `NAME`, `VERDICT` (`-` when empty), `SUMMARY` (truncate 80), `LAST RUN`, `NEXT RUN`; empty → `No checks found in namespace <ns>.` / `...in any namespace.` exit 0; `-o json|yaml` → `metav1.List` of unmodified items; register in `internal/cli/root.go`
-- [ ] T029 [US2] Create `internal/cli/ls_test.go`: fake client with one object per kind across two namespaces; grouped listing order and columns; each single-kind spelling; `-n`, `-A`, selector; ClusterHealth present under `-n`; empty message and nil error; json output decodes to the same objects; a 100-object-per-kind fixture renders `ls -A` in well under 5 s (SC-001; assert an upper bound of 2 s so the client-side path is bounded)
-- [ ] T030 [US2] Extend `test/e2e/fathomctl_test.go`: `ls -A` lists every fixture kind with a non-empty verdict and `ls -A -o json | jq` finds the AddonCheck by name
-- [ ] T031 [US2] Add the "ls" section (columns, grouping, ClusterHealth rule, empty result) to `docs/reference/fathomctl.md`
+- [X] T028 [US2] Create `internal/cli/ls.go`: `newLsCommand(f)` with optional kind arg and `-l/--selector`; no kind → list the five kinds in fixed order (ClusterHealth always, regardless of `-n`/`-A`), grouped with a `KIND` column; single kind → that kind only; columns `NAMESPACE` (only with `-A`, blank for ClusterHealth), `NAME`, `VERDICT` (`-` when empty), `SUMMARY` (truncate 80), `LAST RUN`, `NEXT RUN`; empty → `No checks found in namespace <ns>.` / `...in any namespace.` exit 0; `-o json|yaml` → `metav1.List` of unmodified items; register in `internal/cli/root.go`
+- [X] T029 [US2] Create `internal/cli/ls_test.go`: fake client with one object per kind across two namespaces; grouped listing order and columns; each single-kind spelling; `-n`, `-A`, selector; ClusterHealth present under `-n`; empty message and nil error; json output decodes to the same objects; a 100-object-per-kind fixture renders `ls -A` in well under 5 s (SC-001; assert an upper bound of 2 s so the client-side path is bounded)
+- [X] T030 [US2] Extend `test/e2e/fathomctl_test.go`: `ls -A` lists every fixture kind with a non-empty verdict and `ls -A -o json | jq` finds the AddonCheck by name
+- [X] T031 [US2] Add the "ls" section (columns, grouping, ClusterHealth rule, empty result) to `docs/reference/fathomctl.md`
 
 **Checkpoint**: `ls` is the working entry point for the other verbs.
 
@@ -132,10 +132,10 @@ ClusterHealth children. Delivers #260.
 (including a ClusterHealth with mixed children) shows every status field
 the resource carries; not-found exits 1; `-o yaml` is the unmodified object.
 
-- [ ] T032 [US3] Create `internal/cli/describe.go`: `newDescribeCommand(f)`; sections per contracts/cli-commands.md (identity; Spec: interval, timeout, paused, and kind-specific: AddonCheck addonType/policy families, DNSCheck targets/resolvers, NodeCertificateCheck paths/thresholds/selector, HealthCheck checkRef, ClusterHealth selector/namespaces; Status from `snapshot` plus detected version, observed generation; Conditions table; detail rows: AddonCheck absent count, DNSCheck `targetResults`, NodeCertificateCheck desired/reporting nodes, ClusterHealth children); `Latest report: <name> (see: fathomctl reports <kind>/<name>)`; not-found → error `... not found in namespace ...`; `-o json|yaml` emits the object; register in `internal/cli/root.go`
-- [ ] T033 [US3] Create `internal/cli/describe_test.go`: golden-style assertions per kind (each status field present in the output), ClusterHealth with Pass/Warn/Fail children, never-run check, not-found error text, yaml output equals the fixture
-- [ ] T034 [US3] Extend `test/e2e/fathomctl_test.go`: `describe addoncheck/<name>` contains `Conditions` and `Latest report`
-- [ ] T035 [US3] Add the "describe" section to `docs/reference/fathomctl.md`
+- [X] T032 [US3] Create `internal/cli/describe.go`: `newDescribeCommand(f)`; sections per contracts/cli-commands.md (identity; Spec: interval, timeout, paused, and kind-specific: AddonCheck addonType/policy families, DNSCheck targets/resolvers, NodeCertificateCheck paths/thresholds/selector, HealthCheck checkRef, ClusterHealth selector/namespaces; Status from `snapshot` plus detected version, observed generation; Conditions table; detail rows: AddonCheck absent count, DNSCheck `targetResults`, NodeCertificateCheck desired/reporting nodes, ClusterHealth children); `Latest report: <name> (see: fathomctl reports <kind>/<name>)`; not-found → error `... not found in namespace ...`; `-o json|yaml` emits the object; register in `internal/cli/root.go`
+- [X] T033 [US3] Create `internal/cli/describe_test.go`: golden-style assertions per kind (each status field present in the output), ClusterHealth with Pass/Warn/Fail children, never-run check, not-found error text, yaml output equals the fixture
+- [X] T034 [US3] Extend `test/e2e/fathomctl_test.go`: `describe addoncheck/<name>` contains `Conditions` and `Latest report`
+- [X] T035 [US3] Add the "describe" section to `docs/reference/fathomctl.md`
 
 **Checkpoint**: Every verdict has a visible reason.
 
@@ -150,10 +150,10 @@ report. Delivers #261.
 `reports`, `--limit`, `--since`, and `--report` match the stored reports;
 help text states change-only persistence.
 
-- [ ] T036 [US4] Create `internal/cli/reports.go`: `newReportsCommand(f)` with `--limit` (10), `--since`, `--report`; executable kinds → list `HealthReport`s in the check namespace with labels `fathom.skaphos.io/source-kind=<Kind>`, `fathom.skaphos.io/source-name=<name>`, sort by `spec.observedAt` desc, apply `--since` then `--limit`; HealthCheck → follow `spec.checkRef`, print `Showing reports for <source>`; ClusterHealth → error listing the sources; columns `NAME`, `OBSERVED`, `RESULT`, `SUMMARY`, `CHANGE` (`first`, `unchanged`, `<old>→<new>`, `<n> check(s) changed` versus the next-older report); `--report` → `Get` and full render (spec, per-check rows); no history → `No reports yet for <kind>/<name>.` exit 0; `Long` help text states "Reports are written when a verdict changes, not on every interval; a gap is not a missed run."; `-o json|yaml` → `metav1.List`; register in `internal/cli/root.go`
-- [ ] T037 [US4] Create `internal/cli/reports_test.go`: fake client with five labelled reports out of order plus one for another check; ordering, `--limit`, `--since`, `--report`, change column for each case, HealthCheck redirect, ClusterHealth rejection, no-reports message, help text contains the change-only sentence
-- [ ] T038 [US4] Extend `test/e2e/fathomctl_test.go`: `reports addoncheck/<name>` lists at least one report and `--report <name>` prints its result
-- [ ] T039 [US4] Add the "reports" section to `docs/reference/fathomctl.md`
+- [X] T036 [US4] Create `internal/cli/reports.go`: `newReportsCommand(f)` with `--limit` (10), `--since`, `--report`; executable kinds → list `HealthReport`s in the check namespace with labels `fathom.skaphos.io/source-kind=<Kind>`, `fathom.skaphos.io/source-name=<name>`, sort by `spec.observedAt` desc, apply `--since` then `--limit`; HealthCheck → follow `spec.checkRef`, print `Showing reports for <source>`; ClusterHealth → error listing the sources; columns `NAME`, `OBSERVED`, `RESULT`, `SUMMARY`, `CHANGE` (`first`, `unchanged`, `<old>→<new>`, `<n> check(s) changed` versus the next-older report); `--report` → `Get` and full render (spec, per-check rows); no history → `No reports yet for <kind>/<name>.` exit 0; `Long` help text states "Reports are written when a verdict changes, not on every interval; a gap is not a missed run."; `-o json|yaml` → `metav1.List`; register in `internal/cli/root.go`
+- [X] T037 [US4] Create `internal/cli/reports_test.go`: fake client with five labelled reports out of order plus one for another check; ordering, `--limit`, `--since`, `--report`, change column for each case, HealthCheck redirect, ClusterHealth rejection, no-reports message, help text contains the change-only sentence
+- [X] T038 [US4] Extend `test/e2e/fathomctl_test.go`: `reports addoncheck/<name>` lists at least one report and `--report <name>` prints its result
+- [X] T039 [US4] Add the "reports" section to `docs/reference/fathomctl.md`
 
 **Checkpoint**: The evidence trail is navigable from the check.
 

@@ -302,6 +302,65 @@ var _ = Describe("fathomctl", Ordered, Label(utils.CoreLabel, "fathomctl"), func
 		}
 	})
 
+	// FR-008 to FR-011, FR-018: the read verbs over real operator status.
+	It("lists every kind with a verdict and emits unmodified objects as json", func() {
+		out, err := fathomctl("ls", "-A")
+		Expect(err).NotTo(HaveOccurred(), out)
+		for _, want := range []string{"AddonCheck", "DNSCheck", "NodeCertificateCheck", "HealthCheck", "ClusterHealth", fathomctlAddon, fathomctlDNS, fathomctlNodeCrt, fathomctlCH} {
+			Expect(out).To(ContainSubstring(want))
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, fathomctlAddon+" ") && strings.Contains(line, " - ") {
+				Fail("AddonCheck row has no verdict after its first run:\n" + out)
+			}
+		}
+
+		out, err = fathomctl("ls", "-A", "-o", "json")
+		Expect(err).NotTo(HaveOccurred(), out)
+		var list struct {
+			Kind  string `json:"kind"`
+			Items []struct {
+				Kind     string `json:"kind"`
+				Metadata struct {
+					Name string `json:"name"`
+				} `json:"metadata"`
+			} `json:"items"`
+		}
+		Expect(json.Unmarshal([]byte(out), &list)).To(Succeed(), out)
+		Expect(list.Kind).To(Equal("List"))
+		found := false
+		for _, it := range list.Items {
+			if it.Kind == "AddonCheck" && it.Metadata.Name == fathomctlAddon {
+				found = true
+			}
+		}
+		Expect(found).To(BeTrue(), "ls -o json must carry the AddonCheck with its kind")
+	})
+
+	// FR-013: describe shows conditions and the latest report pointer.
+	It("describes a check with conditions and its latest report", func() {
+		out, err := fathomctl("describe", "addoncheck/"+fathomctlAddon, "-n", fathomctlNS)
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(ContainSubstring("Conditions:"))
+		Expect(out).To(ContainSubstring("Latest report:"))
+		Expect(out).To(ContainSubstring("Consumed trigger:"))
+	})
+
+	// FR-015, FR-017: reports lists history and opens one report.
+	It("lists report history and prints one report in full", func() {
+		out, err := fathomctl("reports", "addoncheck/"+fathomctlAddon, "-n", fathomctlNS)
+		Expect(err).NotTo(HaveOccurred(), out)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		Expect(len(lines)).To(BeNumerically(">=", 2), "expected at least one report row:\n%s", out)
+		name := strings.Fields(lines[1])[0]
+
+		out, err = fathomctl("reports", "addoncheck/"+fathomctlAddon, "-n", fathomctlNS, "--report", name)
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(MatchRegexp(`Name:\s+` + name))
+		Expect(out).To(ContainSubstring("Result:"))
+		Expect(out).To(ContainSubstring("Checks:"))
+	})
+
 	// FR-023: a paused check is refused before anything is written.
 	It("refuses to trigger a paused check and exits 1", func() {
 		out, err := fathomctl("run", "addoncheck/"+fathomctlPaused, "-n", fathomctlNS)

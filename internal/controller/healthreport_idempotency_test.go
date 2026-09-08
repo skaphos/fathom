@@ -25,8 +25,8 @@ var _ = Describe("HealthReport idempotency", func() {
 				Name:      "hr-reuse-collision",
 				Namespace: "default",
 				Labels: map[string]string{
-					labelHealthReportSourceKind: "AddonCheck",
-					labelHealthReportSourceName: "expected-check",
+					fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+					fathomv1alpha1.LabelHealthReportSourceName: "expected-check",
 				},
 			},
 			Spec: fathomv1alpha1.HealthReportSpec{
@@ -55,7 +55,7 @@ var _ = Describe("HealthReport idempotency", func() {
 			report.Spec.SourceRef.Name = "other-check"
 		}, "mismatched sourceRef"),
 		Entry("source label", func(report *fathomv1alpha1.HealthReport) {
-			report.Labels[labelHealthReportSourceName] = "other-check"
+			report.Labels[fathomv1alpha1.LabelHealthReportSourceName] = "other-check"
 		}, "mismatched label"),
 		Entry("result", func(report *fathomv1alpha1.HealthReport) {
 			report.Spec.Result = fathomv1alpha1.HealthReportResultFail
@@ -66,7 +66,7 @@ var _ = Describe("HealthReport idempotency", func() {
 		expected := newExpectedReport()
 		existing := expected.DeepCopy()
 		existing.Spec.SourceRef.Name = "other-check"
-		existing.Labels[labelHealthReportSourceName] = "other-check"
+		existing.Labels[fathomv1alpha1.LabelHealthReportSourceName] = "other-check"
 		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, existing))).To(Succeed()) })
 

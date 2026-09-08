@@ -18,3 +18,14 @@ package v1alpha1
 // Derived kinds (HealthCheck, ClusterHealth) ignore the annotation; a client
 // that wants to re-check them triggers their sources instead.
 const AnnotationRunNow = "fathom.skaphos.io/run-now"
+
+// LabelHealthReportSourceKind and LabelHealthReportSourceName pin a
+// HealthReport to the check that produced it. Every controller stamps the
+// pair on the reports it writes, and readers (retention pruning, fathomctl
+// reports) select on it, so history for one check is a label query rather
+// than a scan of every report in the namespace. Kind disambiguates name
+// collisions across kinds.
+const (
+	LabelHealthReportSourceKind = "fathom.skaphos.io/source-kind"
+	LabelHealthReportSourceName = "fathom.skaphos.io/source-name"
+)

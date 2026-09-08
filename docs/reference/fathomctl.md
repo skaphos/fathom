@@ -51,6 +51,75 @@ every trigger was accepted and every verdict is `Pass`, `Warn`, or `Skipped`;
 `Fail`, `Error`, `Unknown`, a timeout, or a superseded trigger exit `1`. That is
 what makes `run --wait` usable as a gate in CI.
 
+## ls
+
+```text
+fathomctl ls [kind] [-l <selector>]
+```
+
+Lists checks with the verdict the operator last published. With no kind it
+lists every kind, grouped in the order AddonCheck, DNSCheck,
+NodeCertificateCheck, HealthCheck, ClusterHealth, with a `KIND` column.
+ClusterHealth is cluster-scoped and is always included regardless of `-n`.
+With a kind, only that kind is listed and the `KIND` column is dropped.
+
+Columns: `NAMESPACE` (only with `-A`, blank for ClusterHealth), `NAME`,
+`VERDICT` (`-` for a check that has never run), `SUMMARY` (truncated to 80
+columns; `describe` has the full text), `LAST RUN` (age), `NEXT RUN` (time
+until the next scheduled run, `now` when overdue, `-` when the kind has no
+interval).
+
+An empty result prints `No checks found in namespace <ns>.` (or `...in any
+namespace.`) and exits `0`. `-o json` and `-o yaml` emit a `kind: List`
+envelope whose items are the resources unmodified, with `apiVersion` and
+`kind` set, so `fathomctl ls -A -o json | jq '.items[] | select(.status.lastResult=="Fail")'`
+works the way it does with kubectl.
+
+## describe
+
+```text
+fathomctl describe <kind>/<name>
+```
+
+Shows one check in full: identity, the spec that drives it (interval and
+timeout as the controller applies them, marked `(default)` or `clamped`
+when the spec is unset or below the floor), the normalised verdict, summary,
+last and next run, the consumed run-now trigger, kind-specific status
+(detected version and absent count for AddonCheck, observed targets for
+DNSCheck, desired and reporting nodes for NodeCertificateCheck, matched count
+for ClusterHealth), every condition with its reason and message, per-target
+results for DNSCheck, each contributing HealthCheck for ClusterHealth, and a
+`Latest report:` pointer into `fathomctl reports`.
+
+A missing check is an error (`AddonCheck "x" not found in namespace y`),
+exit `1`. `-o json` and `-o yaml` emit the resource unmodified.
+
+## reports
+
+```text
+fathomctl reports <kind>/<name> [--limit N] [--since <duration>] [--report <name>]
+```
+
+Lists a check's HealthReport history newest-first with `NAME`, `OBSERVED`
+(age), `RESULT`, a derived `SUMMARY`, and `CHANGE`: `first`, `unchanged`,
+`<old>→<new>` when the verdict changed, or `<n> check(s) changed` when the
+verdict held but per-check results moved. The change column is computed over
+the full history, so the oldest row shown still compares to the report before
+it.
+
+Reports are written when a verdict changes, not on every interval; a gap is
+not a missed run. `--limit` defaults to 10; `--since` keeps reports observed
+within that window. `--report <name>` prints one report in full: source,
+result, observation time, adapter, and every check with its target and
+summary.
+
+Only executable checks write reports. `reports healthcheck/<name>` follows
+`spec.checkRef` to the source and says so on stderr; `reports
+clusterhealth/<name>` fails and lists the sources to query. A check with no
+history prints `No reports yet for <check>.` and exits `0`. `-o json` and
+`-o yaml` emit a `List` of the reports unmodified (or the single report with
+`--report`).
+
 ## run
 
 ```text
