@@ -19,6 +19,7 @@ import (
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -67,6 +68,26 @@ func writeTriggeredNodeReport(ctx context.Context, check *fathomv1alpha1.NodeCer
 	})
 }
 
+// nodeAgentClient returns a client that writes as the per-check node-agent
+// ServiceAccount carrying the ServiceAccount-token node claim for claimNode.
+//
+// Since SEC-1 the report-authenticity policy applies to *every* writer, not just
+// those whose name ends in -node-agent, so a spec can no longer write a report
+// as the envtest admin — that principal has no node claim and is denied, exactly
+// as an attacker would be. envtest has no kubelet to mint a real node-bound
+// token, so the claim is impersonated. This is the only way to write a report
+// the way a genuine agent does.
+func nodeAgentClient(check *fathomv1alpha1.NodeCertificateCheck, claimNode string) client.Client {
+	impersonated := rest.CopyConfig(cfg)
+	impersonated.Impersonate = rest.ImpersonationConfig{
+		UserName: "system:serviceaccount:" + check.Namespace + ":" + agentResourceName(check),
+		Extra:    map[string][]string{"authentication.kubernetes.io/node-name": {claimNode}},
+	}
+	c, err := client.New(impersonated, client.Options{Scheme: k8sClient.Scheme()})
+	Expect(err).NotTo(HaveOccurred())
+	return c
+}
+
 func writeNodeReportObject(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node string, report nodecert.NodeReport) {
 	encoded, err := nodecert.EncodeReport(report)
 	Expect(err).NotTo(HaveOccurred())
@@ -86,17 +107,20 @@ func writeNodeReportObject(ctx context.Context, check *fathomv1alpha1.NodeCertif
 		},
 		Data: map[string]string{nodecert.ConfigMapReportKey: encoded},
 	}
+	// The annotation this helper stamps is `node`, so the writing identity claims
+	// the same node — a legitimate agent.
+	writer := nodeAgentClient(check, node)
 	existing := &corev1.ConfigMap{}
 	err = k8sClient.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existing)
 	if err == nil {
 		existing.Data = cm.Data
 		existing.Labels = cm.Labels
 		existing.Annotations = cm.Annotations
-		Expect(k8sClient.Update(ctx, existing)).To(Succeed())
+		Expect(writer.Update(ctx, existing)).To(Succeed())
 		return
 	}
 	Expect(client.IgnoreNotFound(err)).To(Succeed())
-	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+	Expect(writer.Create(ctx, cm)).To(Succeed())
 }
 
 // setNodeAgentDaemonSetStatus marks the DaemonSet fully rolled out: every desired

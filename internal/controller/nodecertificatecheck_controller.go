@@ -58,6 +58,21 @@ const (
 	// freezes LastResult, so without an explicit coverage signal a frozen verdict
 	// is indistinguishable from a fresh one (COR-3).
 	nodeCertConditionCoverage = "CoverageComplete"
+	// nodeCertConditionAuthentic reports whether any collected report was rejected
+	// for a forgery-indicating authenticity failure (e.g. node mismatch or
+	// non-canonical name). It is separate from Ready on purpose: rejecting a forged
+	// report does not stop the legitimate ones from covering the fleet, so the check
+	// can be Ready and still be under attack (SEC-1).
+	nodeCertConditionAuthentic = "ReportsAuthentic"
+
+	// eventReasonForgedReport marks the Warning event raised when a report is
+	// rejected for a reason only a writer passing off another node's report can
+	// produce.
+	eventReasonForgedReport = "ForgedReportRejected"
+
+	// maxRejectionMessageReports bounds how many rejected ConfigMaps the
+	// ReportsAuthentic condition names before it summarises.
+	maxRejectionMessageReports = 5
 
 	// maxCoverageMessageNodes bounds how many missing node names the coverage
 	// condition names before it summarises, so a large fleet cannot push the
@@ -271,11 +286,12 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
 
-	reports, err := r.collectNodeReports(ctx, log, &check, time.Now(), nodeCertReportMaxAge(&check))
+	reports, rejections, err := r.collectNodeReports(ctx, log, &check, time.Now(), nodeCertReportMaxAge(&check))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	check.Status.ReportingNodes = int32(len(reports))
+	r.setReportsAuthentic(&check, rejections)
 
 	expected, err := r.expectedAgentNodes(ctx, &check)
 	if err != nil {
@@ -479,19 +495,26 @@ func admissionPolicyUnsupported(err error) bool {
 }
 
 // reportAuthenticityPolicySpec is the CEL policy that binds a report ConfigMap to
-// its writing node-agent. The ObjectSelector narrows evaluation to Fathom
-// node-report ConfigMaps so the policy never fires on unrelated ConfigMap writes;
-// the writer-is-node-agent match condition exempts the operator's own owner-
-// reference updates (it does not write as a "<check>-node-agent" ServiceAccount).
+// the node its writer actually runs on. The ObjectSelector narrows evaluation to
+// Fathom node-report ConfigMaps so the policy never fires on unrelated ConfigMap
+// writes.
+//
+// This is the authentication boundary for node reports: Kubernetes does not
+// record the writer on the stored object, so nothing downstream can re-derive
+// who wrote a report. Everything the controller checks at collect time
+// (nodecert.VerifyReportBinding) is corroboration layered on top.
 func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionPolicySpec {
 	fail := admissionregistrationv1.Fail
 	forbidden := metav1.StatusReasonForbidden
 	return admissionregistrationv1.ValidatingAdmissionPolicySpec{
 		FailurePolicy: &fail,
 		MatchConstraints: &admissionregistrationv1.MatchResources{
+			// Selected by managed-by alone, not by source-kind: every node-scoped
+			// kind writes reports through this same wire contract, so one policy
+			// protects them all and NodeHealthCheck (#206) inherits the boundary
+			// instead of provisioning a second, drifting copy.
 			ObjectSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-				nodecert.LabelManagedBy:  nodecert.ManagedByValue,
-				nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
+				nodecert.LabelManagedBy: nodecert.ManagedByValue,
 			}},
 			ResourceRules: []admissionregistrationv1.NamedRuleWithOperations{{
 				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
@@ -504,10 +527,19 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				},
 			}},
 		},
-		MatchConditions: []admissionregistrationv1.MatchCondition{{
-			Name:       "writer-is-node-agent",
-			Expression: `request.userInfo.username.matches('^system:serviceaccount:[^:]+:[^:]+-node-agent$')`,
-		}},
+		// No MatchConditions. A MatchCondition that evaluates false makes the API
+		// server skip the policy entirely, so the previous `writer-is-node-agent`
+		// name filter exempted every principal whose ServiceAccount did not end in
+		// `-node-agent` — i.e. exactly the attacker (SEC-1). Name-matching in a VAP
+		// is a hint, never an authentication boundary. The policy now applies to
+		// every writer of a node-report ConfigMap.
+		//
+		// The filter existed so the operator's own adoptReportConfigMap Update —
+		// made as the operator ServiceAccount, which has no node claim — could set
+		// an owner reference. That is preserved without an identity carve-out:
+		// contentUnchanged permits any update that leaves the report payload and
+		// its node-name annotation byte-identical, which is all adoption does.
+		// Nothing that *writes* a report can take that path.
 		Variables: []admissionregistrationv1.Variable{
 			{
 				Name:       "claimNode",
@@ -517,10 +549,26 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				Name:       "annotatedNode",
 				Expression: `has(object.metadata.annotations) ? object.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
 			},
+			{
+				Name:       "oldAnnotatedNode",
+				Expression: `(request.operation == 'UPDATE' && oldObject != null && has(oldObject.metadata.annotations)) ? oldObject.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
+			},
+			{
+				Name:       "reportData",
+				Expression: `has(object.data) ? object.data[?'` + nodecert.ConfigMapReportKey + `'].orValue('') : ''`,
+			},
+			{
+				Name:       "oldReportData",
+				Expression: `(request.operation == 'UPDATE' && oldObject != null && has(oldObject.data)) ? oldObject.data[?'` + nodecert.ConfigMapReportKey + `'].orValue('') : ''`,
+			},
+			{
+				Name:       "contentUnchanged",
+				Expression: `request.operation == 'UPDATE' && oldObject != null && variables.annotatedNode == variables.oldAnnotatedNode && variables.reportData == variables.oldReportData`,
+			},
 		},
 		Validations: []admissionregistrationv1.Validation{{
-			Expression: `variables.claimNode != '' && variables.annotatedNode == variables.claimNode`,
-			Message:    "node-report ConfigMap fathom.skaphos.io/node-name annotation must match the writing node-agent's ServiceAccount-token node claim (authentication.kubernetes.io/node-name)",
+			Expression: `variables.contentUnchanged || (variables.claimNode != '' && variables.annotatedNode == variables.claimNode)`,
+			Message:    "a node-report ConfigMap's fathom.skaphos.io/node-name annotation must match the writing identity's ServiceAccount-token node claim (authentication.kubernetes.io/node-name); only metadata-only updates that leave the report payload and annotation unchanged are exempt",
 			Reason:     &forbidden,
 		}},
 	}
@@ -802,7 +850,7 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 // decodes them into NodeReports, and adopts only reports whose payload belongs
 // to this check. Reports are keyed by unique node name so duplicate ConfigMaps
 // cannot inflate coverage.
-func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, error) {
+func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, []reportRejection, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
 		client.InNamespace(check.Namespace),
@@ -812,9 +860,10 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 			nodecert.LabelSourceName: check.Name,
 		},
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	var rejections []reportRejection
 	reportsByNode := make(map[string]nodecert.NodeReport, len(cms.Items))
 	for i := range cms.Items {
 		cm := &cms.Items[i]
@@ -827,25 +876,23 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 			log.Error(err, "skipping unparsable node report ConfigMap", "configmap", cm.Name)
 			continue
 		}
-		if report.CheckName != check.Name {
-			log.V(1).Info("skipping node report for different check", "configmap", cm.Name, "reportCheckName", report.CheckName)
-			continue
-		}
-		if report.Node == "" {
-			log.V(1).Info("skipping node report without node name", "configmap", cm.Name)
-			continue
-		}
-		// Consistency cross-check. The node-name annotation is an authenticity signal
-		// only because the report-authenticity ValidatingAdmissionPolicy binds it to
-		// the writing agent's ServiceAccount-token node claim at admission; this check
-		// then rejects a payload whose Node disagrees with that bound annotation, and
-		// skips a report missing it (one predating the contract, or written where the
-		// policy is unavailable). On a cluster without the policy an attacker who can
-		// write the ConfigMap can set both the payload Node and the annotation to a
-		// victim node, so this check alone enforces internal consistency, not
-		// authenticity — the admission policy is what provides authenticity.
-		if annotated := cm.Annotations[nodecert.AnnotationNodeName]; annotated == "" || annotated != report.Node {
-			log.V(1).Info("skipping node report whose payload node does not match its authenticated node-name annotation", "configmap", cm.Name, "annotatedNode", annotated, "reportNode", report.Node)
+		// Structural bindings, shared with NodeHealthCheck (#206) rather than
+		// reimplemented. These corroborate; the ValidatingAdmissionPolicy is what
+		// authenticates, by binding the node-name annotation to the writer's
+		// ServiceAccount-token node claim. Re-checking here covers the cluster
+		// where that policy is unavailable, and catches the one vector admission
+		// alone does not: an off-name ConfigMap competing with a node's real one.
+		annotated := cm.Annotations[nodecert.AnnotationNodeName]
+		if reason := nodecert.VerifyReportBinding(cm.Name, annotated, check.Name, report); reason != nodecert.ReportAccepted {
+			rejections = append(rejections, reportRejection{ConfigMap: cm.Name, Node: report.Node, Reason: reason})
+			if reason.IndicatesForgery() {
+				// Default level, not V(1): some principal with ConfigMap write in
+				// this namespace is trying to steer a node's verdict.
+				log.Info("rejected node report that failed its authenticity bindings",
+					"configmap", cm.Name, "reason", string(reason), "annotatedNode", annotated, "reportNode", report.Node)
+			} else {
+				log.V(1).Info("skipping node report", "configmap", cm.Name, "reason", string(reason))
+			}
 			continue
 		}
 		if !nodeCertReportFresh(report, now, maxAge) {
@@ -863,7 +910,7 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 		reports = append(reports, report)
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Node < reports[j].Node })
-	return reports, nil
+	return reports, rejections, nil
 }
 
 // adoptReportConfigMap sets a controller owner reference on a report ConfigMap
@@ -938,6 +985,28 @@ func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Lo
 	check.Status.LastReportName = persistedReport.Name
 	check.Status.LastResult = string(persistedReport.Spec.Result)
 	return nil
+}
+
+// reportRejection records one collected ConfigMap that failed its structural
+// bindings, so the controller can surface the rejection instead of dropping it
+// on the floor (SEC-1: an explicit error, not a silent skip).
+type reportRejection struct {
+	ConfigMap string
+	Node      string
+	Reason    nodecert.ReportRejection
+}
+
+// forgeryRejections returns only the rejections that indicate a writer trying to
+// pass off another node's report, sorted by ConfigMap for stable messages.
+func forgeryRejections(rejections []reportRejection) []reportRejection {
+	var forged []reportRejection
+	for _, rej := range rejections {
+		if rej.Reason.IndicatesForgery() {
+			forged = append(forged, rej)
+		}
+	}
+	sort.Slice(forged, func(i, j int) bool { return forged[i].ConfigMap < forged[j].ConfigMap })
+	return forged
 }
 
 // nodeCertRollupDecision is what a completed scan cycle does with its aggregate.
@@ -1185,6 +1254,49 @@ func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, l
 		}
 	}
 	return ctrl.Result{}, cause
+}
+
+// setReportsAuthentic records whether any collected report failed its
+// authenticity bindings, and raises a Warning event when one did. A forgery
+// signal means some principal with ConfigMap write in the namespace is actively
+// trying to steer a node's verdict, which must not be a V(1) log line nobody
+// reads (SEC-1).
+func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeCertificateCheck, rejections []reportRejection) {
+	forged := forgeryRejections(rejections)
+	if len(forged) == 0 {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               nodeCertConditionAuthentic,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: check.Generation,
+			Reason:             "AllReportsBound",
+			Message:            "Every collected node report is bound to the node it claims.",
+		})
+		return
+	}
+
+	named := forged
+	suffix := ""
+	if len(named) > maxRejectionMessageReports {
+		named = named[:maxRejectionMessageReports]
+		suffix = fmt.Sprintf(" and %d more", len(forged)-maxRejectionMessageReports)
+	}
+	details := make([]string, 0, len(named))
+	for _, rej := range named {
+		details = append(details, fmt.Sprintf("%s (%s)", rej.ConfigMap, rej.Reason))
+	}
+	message := fmt.Sprintf("Rejected %d node report(s) that failed authenticity bindings: %s%s.",
+		len(forged), strings.Join(details, ", "), suffix)
+
+	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+		Type:               nodeCertConditionAuthentic,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: check.Generation,
+		Reason:             eventReasonForgedReport,
+		Message:            message,
+	})
+	if r.Recorder != nil {
+		r.Recorder.Eventf(check, nil, corev1.EventTypeWarning, eventReasonForgedReport, eventActionEvaluate, "%s", message)
+	}
 }
 
 func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCertificateCheck, status metav1.ConditionStatus, reason, message string) {
