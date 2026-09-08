@@ -81,8 +81,8 @@ completed with a non-failing verdict.
 
 `<RFC3339 UTC seconds>-<6 lowercase hex chars>`, e.g.
 `2026-09-07T18:04:05Z-7f3a1c`. One token per `run` invocation, written to
-every target in the invocation. Length is fixed at 27 characters, well under
-the 253-character status bound.
+every target in the invocation with field manager `fathomctl`. Length is
+fixed at 27 characters, well under the 253-character status bound.
 
 ### reportRow
 

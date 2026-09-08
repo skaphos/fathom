@@ -75,17 +75,22 @@ Lists HealthReport history for a check.
 
 Requests an immediate re-evaluation.
 
-- Exactly one of a target, `--all`, or `-l` is required.
+- Exactly one of a target, `--all`, or `-l` is required. `--all` and `-l`
+  select executable kinds only (AddonCheck, DNSCheck, NodeCertificateCheck)
+  within the `-n`/`-A` scope; derived kinds are never selected this way.
 - Resolution: executable targets are used as-is; a HealthCheck resolves to
-  its `checkRef`; a ClusterHealth resolves to the `checkRef` of every
-  HealthCheck in `status.children`. The set is de-duplicated.
+  its `checkRef` (a paused HealthCheck resolves to nothing, with a reason);
+  a ClusterHealth resolves to the `checkRef` of every non-paused HealthCheck
+  in `status.children`. The set is de-duplicated.
 - Pre-flight: a paused target, a missing source, or a ClusterHealth with no
   children is reported and excluded; if nothing remains, exit 1.
 - Count is printed. Above 10 targets, an interactive confirmation is
   required unless `--yes`; without a terminal and without `--yes`, exit 1
   before any write. `--dry-run` prints the set and exits 0.
 - Write: one token per invocation, written to the
-  `fathom.skaphos.io/run-now` annotation of every target with a merge patch.
+  `fathom.skaphos.io/run-now` annotation of every target with a merge patch
+  whose field manager is `fathomctl` (visible in the object's managed
+  fields).
   Output per target: `Triggered <kind>/<ns>/<name> (token <T>)` or the error.
 - `--wait`: per target, poll until `status.lastRunTrigger == T`, the
   annotation changes (superseded), or the timeout elapses. Default timeout

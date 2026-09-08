@@ -21,7 +21,8 @@ feature is `docs/guides/fathomctl.md`.
 ```sh
 go -C tools tool task build          # must produce bin/manager and bin/fathomctl
 go -C tools tool task fmt
-go -C tools tool task manifests generate docs:api-ref
+go -C tools tool task manifests generate helm:sync docs:api-ref
+go -C tools tool task verify-generated
 go -C tools tool task crd-compat
 git diff --check
 ```
