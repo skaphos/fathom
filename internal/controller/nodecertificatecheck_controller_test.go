@@ -119,6 +119,67 @@ func setNodeAgentDaemonSetStatusFull(ctx context.Context, check *fathomv1alpha1.
 	// current generation. nodeAgentRolledOut gates on this.
 	ds.Status.ObservedGeneration = ds.Generation
 	Expect(k8sClient.Status().Update(ctx, ds)).To(Succeed())
+	// Coverage is per-node-identity (COR-4), so the agent pods the real
+	// DaemonSet controller would create have to be faked too — envtest runs
+	// neither a DaemonSet controller nor a scheduler.
+	scheduleAgentPods(ctx, check, conventionalAgentNodes(desired)...)
+}
+
+// agentNodeNames are the node names the specs use, in order. Reports are
+// written under the same convention, so a desired count and the agent pod
+// identities stay consistent by construction.
+var agentNodeNames = []string{"node-a", "node-b", "node-c", "node-d"}
+
+// conventionalAgentNodes returns the first desired names from agentNodeNames.
+func conventionalAgentNodes(desired int32) []string {
+	Expect(int(desired)).To(BeNumerically("<=", len(agentNodeNames)), "add more names to agentNodeNames")
+	return append([]string(nil), agentNodeNames[:desired]...)
+}
+
+// scheduleAgentPods makes the agent pod set for check exactly nodes: pods on
+// other nodes are removed, so a spec can model a node departing as well as one
+// joining. These pods are what expectedAgentNodes reads to decide which node
+// identities are in scope.
+func scheduleAgentPods(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, nodes ...string) {
+	labels := map[string]string{
+		nodecert.LabelSourceName: check.Name,
+		nodeAgentComponentLabel:  nodeAgentComponentValue,
+	}
+	keep := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		keep[node] = struct{}{}
+	}
+
+	var existing corev1.PodList
+	Expect(k8sClient.List(ctx, &existing, client.InNamespace(check.Namespace), client.MatchingLabels(labels))).To(Succeed())
+	for i := range existing.Items {
+		pod := &existing.Items[i]
+		if _, ok := keep[pod.Spec.NodeName]; ok {
+			continue
+		}
+		// Grace period 0: without a kubelet, a gracefully deleted pod would sit
+		// Terminating forever and still count as a node in scope.
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)))).To(Succeed())
+	}
+
+	for _, node := range nodes {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      agentResourceName(check) + "-" + node,
+				Namespace: check.Namespace,
+				Labels:    labels,
+			},
+			Spec: corev1.PodSpec{
+				NodeName:   node,
+				Containers: []corev1.Container{{Name: "node-agent", Image: "ghcr.io/skaphos/fathom-node-agent:test"}},
+			},
+		}
+		err := k8sClient.Create(ctx, pod)
+		if apierrors.IsAlreadyExists(err) {
+			continue
+		}
+		Expect(err).NotTo(HaveOccurred())
+	}
 }
 
 func nodeCertHealthReportCount(ctx context.Context, source types.NamespacedName) int {
@@ -537,7 +598,7 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(reports.Items).To(BeEmpty())
 	})
 
-	It("clears a previous roll-up when a node report becomes stale", func() {
+	It("freezes the previous roll-up when a node report becomes stale (COR-3)", func() {
 		name := types.NamespacedName{Name: "nc-stale", Namespace: "default"}
 		check := &fathomv1alpha1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
@@ -563,6 +624,9 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(current.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
 		Expect(current.Status.LastReportName).NotTo(BeEmpty())
 
+		frozenRunTime := current.Status.LastRunTime
+		frozenReportName := current.Status.LastReportName
+
 		writeNodeReportAt(ctx, check, "node-b", time.Now().Add(-2*nodeCertReportMaxAge(check)), []nodecert.CertResult{
 			{Path: "/etc/kubernetes/pki/kubelet.crt", Subject: "CN=kubelet", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
 		})
@@ -574,13 +638,87 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.DesiredNodes).To(Equal(int32(2)))
 		Expect(updated.Status.ReportingNodes).To(Equal(int32(1)))
-		Expect(updated.Status.LastResult).To(BeEmpty())
-		Expect(updated.Status.LastReportName).To(BeEmpty())
-		Expect(updated.Status.LastRunTime).To(BeNil())
+
+		// COR-3: a node ageing out is not evidence the fleet changed. The last
+		// known verdict is retained and lastRunTime never rewinds; the loss of
+		// coverage is reported on its own condition instead.
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)), "an incomplete window must freeze the verdict, not wipe it")
+		Expect(updated.Status.LastReportName).To(Equal(frozenReportName))
+		Expect(updated.Status.LastRunTime).NotTo(BeNil())
+		Expect(updated.Status.LastRunTime.Time).To(Equal(frozenRunTime.Time), "lastRunTime must not move backward")
+
 		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal("PartialReports"))
+
+		coverage := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionCoverage)
+		Expect(coverage).NotTo(BeNil(), "a frozen verdict must carry an explicit coverage signal")
+		Expect(coverage.Status).To(Equal(metav1.ConditionFalse))
+		Expect(coverage.Reason).To(Equal("PartialReports"))
+		Expect(coverage.Message).To(ContainSubstring("node-b"))
+	})
+
+	It("does not let a departed node's report cover a newly joined node (COR-4)", func() {
+		name := types.NamespacedName{Name: "nc-identity", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		passing := []nodecert.CertResult{
+			{Path: "/etc/kubernetes/pki/apiserver.crt", Subject: "CN=apiserver", Outcome: nodecert.OutcomePass, DaysRemaining: 300, NotAfter: time.Now().Add(300 * 24 * time.Hour)},
+		}
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+		writeNodeReport(ctx, check, "node-a", passing)
+		writeNodeReport(ctx, check, "node-b", passing)
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		current := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+
+		// node-a departs and node-c joins in the same window. The fleet is still
+		// two nodes and node-a's report is still fresh, so a count comparison sees
+		// 2 reports for 2 desired nodes and declares full coverage — while node-c
+		// has never been scanned. Identity must catch the substitution.
+		scheduleAgentPods(ctx, check, "node-b", "node-c")
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.ReportingNodes).To(Equal(int32(2)), "node-a's report is still fresh and still counted")
+
+		coverage := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionCoverage)
+		Expect(coverage).NotTo(BeNil())
+		Expect(coverage.Status).To(Equal(metav1.ConditionFalse), "node-c has never reported, so coverage is incomplete")
+		Expect(coverage.Reason).To(Equal("PartialReports"))
+		Expect(coverage.Message).To(ContainSubstring("node-c"))
+
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("PartialReports"))
+
+		// Frozen, per COR-3.
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+
+		// Once node-c reports, coverage closes and the roll-up resumes.
+		writeNodeReport(ctx, check, "node-c", passing)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		coverage = apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionCoverage)
+		Expect(coverage).NotTo(BeNil())
+		Expect(coverage.Status).To(Equal(metav1.ConditionTrue))
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
 	})
 
 	It("reuses a HealthReport after a status update conflict", func() {

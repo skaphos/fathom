@@ -228,26 +228,40 @@ Freshness and coverage rules:
   observed report.
 - The operator rolls up only once the DaemonSet has fully converged to its
   current spec (`status.observedGeneration == metadata.generation`, every desired
-  pod updated and ready) and fresh reports cover the desired node count, so a
+  pod updated and ready) and every node in scope has a fresh report, so a
   roll-up is never computed from stale-template pods that are still rolling out.
-- Coverage tolerates transient node-count churn: a report from a node that was
-  removed or deselected survives (it is owner-referenced by the check) until it
-  ages out, so a surplus of fresh reports (`reportingNodes > desiredNodes`) still
-  counts as complete rather than clearing the roll-up.
-- Partial coverage (`reportingNodes < desiredNodes`) or a not-yet-converged
-  rollout clears `lastResult`, `lastRunTime`, and `lastReportName`.
+- **Coverage is per-node-identity, not a count.** The nodes in scope are the
+  nodes the agent pods are scheduled on; coverage is complete only when each of
+  those node names has a fresh report. A count comparison would let a departed
+  node's still-fresh report stand in for a newly joined node's missing one, so
+  the roll-up could claim full coverage while a live node had never been scanned.
+- Coverage still tolerates transient node-count churn: a report from a node that
+  was removed or deselected survives (it is owner-referenced by the check) until
+  it ages out. Surplus reports (`reportingNodes > desiredNodes`) are simply not
+  consulted, so they neither complete nor block coverage.
+- Incomplete coverage **freezes** the roll-up: `lastResult`, `lastRunTime`, and
+  `lastReportName` keep their last known values, and `lastRunTime` never moves
+  backward. A gap in reporting — a rollout, a node joining, an agent restart — is
+  not evidence that the fleet became healthy or unhealthy, and clearing the
+  verdict churned every mirroring `HealthCheck` and `ClusterHealth` through
+  `Unknown`. The `CoverageComplete` condition carries the gap, so a frozen
+  verdict is always distinguishable from a fresh one.
+- A provisioning failure (RBAC, admission policy, NetworkPolicy, or DaemonSet)
+  is persisted as `Ready=False` with the matching reason. It does not clear the
+  verdict either — provisioning failing says nothing about what the last
+  complete scan found.
 - A report ConfigMap is adopted only after its decoded payload belongs to the
   current check (`report.checkName == metadata.name`), so mislabeled reports are
   ignored and not garbage-collected by the wrong check.
-- A pending `run-now` value changes one thing above: while the trigger's
-  rollout is in flight, partial coverage or a not-yet-converged rollout does
-  **not** clear the roll-up. The previous `lastResult`, `lastRunTime`, and
-  `lastReportName` are retained so a forced scan never flaps the mirroring
-  `HealthCheck` or `ClusterHealth`. Ordinary roll-ups continue from whatever
-  fresh reports exist. The value is recorded in `lastRunTrigger` only when
-  the fresh reports carrying that value cover the desired node count; reports
-  with an empty or different value never count toward it, and `lastRunTime`
-  is refreshed on completion even when the aggregate did not change.
+- A pending `run-now` value no longer needs a rule of its own: freezing is now
+  the behavior for every incomplete window, so a forced scan cannot flap the
+  mirroring `HealthCheck` or `ClusterHealth` either. Ordinary roll-ups continue
+  from whatever fresh reports exist. The value is recorded in `lastRunTrigger`
+  only when every node in scope has a fresh report carrying that value — the
+  same per-node-identity rule as an ordinary roll-up, so a departed node cannot
+  complete a trigger on a live node's behalf. Reports with an empty or different
+  value never count toward it, and `lastRunTime` is refreshed on completion even
+  when the aggregate did not change.
 
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
@@ -261,10 +275,16 @@ Freshness and coverage rules:
 | `Ready` | `True / Reporting` | Complete, fresh reports were rolled up into a `HealthReport`. | Read `lastResult` and the referenced `HealthReport`. |
 | `Ready` | `False / NoMatchingNodes` | No nodes match the DaemonSet. | Fix `spec.nodeSelector`, tolerations, or node labels. |
 | `Ready` | `False / AwaitingReports` | No fresh reports have been consumed yet. | Check node-agent pods and ConfigMaps. |
-| `Ready` | `False / PartialReports` | Some, but not all, selected nodes have fresh reports. | Find missing/stale node-agent pods or report ConfigMaps. |
-| `Ready` | `False / AgentRollingOut` | Reports cover the desired node count, but the DaemonSet has not fully converged (a pod is not ready or an update is still rolling). A surplus of reports from node churn is tolerated here, not flagged. | Wait for rollout or inspect pod scheduling/image pulls. |
+| `Ready` | `False / PartialReports` | Some, but not all, nodes in scope have fresh reports. The previous verdict is frozen, not cleared. | Find missing/stale node-agent pods or report ConfigMaps; `CoverageComplete` names the missing nodes. |
+| `Ready` | `False / AgentRollingOut` | Every node in scope has reported, but the DaemonSet has not fully converged (a pod is not ready or an update is still rolling). A surplus of reports from node churn is tolerated here, not flagged. | Wait for rollout or inspect pod scheduling/image pulls. |
+| `CoverageComplete` | `True / AllNodesReporting` | Every node in scope published a fresh scan result, so `lastResult` reflects a complete scan. | None. |
+| `CoverageComplete` | `False / PartialReports` | At least one node in scope has no fresh report. The message names the missing nodes (up to five). `lastResult` is the frozen previous verdict. | Inspect the named nodes' agent pods and report ConfigMaps. |
+| `CoverageComplete` | `False / AgentRollingOut` | The DaemonSet has not fully converged, so no roll-up was computed. `lastResult` is frozen. | Wait for rollout or inspect pod scheduling/image pulls. |
+| `CoverageComplete` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes; there is nothing to scan. | Check `spec.nodeSelector` and cluster labels. |
 | `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
+| `Ready` | `False / AdmissionPolicyProvisioningFailed` | Creating/updating the report-authenticity `ValidatingAdmissionPolicy` or its binding failed. | Check operator RBAC on `admissionregistration.k8s.io` and cluster API support. |
+| `Ready` | `False / NetworkPolicyProvisioningFailed` | Creating/updating the per-check node-agent `NetworkPolicy` failed. | Check operator RBAC on `networking.k8s.io` and admission policies. |
 | `Ready` | `False / Paused` | The check is paused. | Unset `spec.paused`. |
 
 Useful report inspection:
