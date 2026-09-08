@@ -112,7 +112,18 @@ type NodeReport struct {
 	Aggregate Outcome `json:"aggregate"`
 	// Certs are the per-certificate results.
 	Certs []CertResult `json:"certs"`
+	// Trigger is the on-demand run token (fathom.skaphos.io/run-now) the agent
+	// was started with, read from EnvRunTrigger. Empty on routine ticks and for
+	// agents that predate the field, so the operator treats an empty value as
+	// "not this trigger" and an older agent can never complete a wait falsely.
+	Trigger string `json:"trigger,omitempty"`
 }
+
+// EnvRunTrigger is the environment variable through which the operator hands
+// the current run-now token to a node-agent (via the downward API from the
+// DaemonSet pod template annotation). The agent copies it into
+// NodeReport.Trigger.
+const EnvRunTrigger = "FATHOM_RUN_TRIGGER"
 
 // Thresholds carries the day-based expiry thresholds for classification.
 type Thresholds struct {

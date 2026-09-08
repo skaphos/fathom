@@ -216,6 +216,14 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	observed := metav1.NewTime(startedAt)
 	check.Status.LastRunTime = &observed
 
+	// A DNSCheck evaluates on every reconcile, so an annotation write already
+	// caused this run; recording the token is what makes the trigger observable
+	// (fathomctl run --wait matches on it) and consume-once. Only a due token is
+	// written: a run with no annotation must not clear a consumed one.
+	if token, due := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); due {
+		check.Status.LastRunTrigger = token
+	}
+
 	r.setDNSCheckComplete(&check, len(outcomes), unreached)
 	r.setDNSCheckReady(&check, outcomes)
 	r.publishDNSTargetSeries(&check, outcomes)
@@ -638,8 +646,8 @@ func healthReportForDNSCheck(
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				labelHealthReportSourceKind: dnsCheckKind,
-				labelHealthReportSourceName: check.Name,
+				fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
@@ -673,8 +681,8 @@ func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr
 	if err := r.List(ctx, &reports,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: dnsCheckKind,
-			labelHealthReportSourceName: check.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 		},
 	); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")

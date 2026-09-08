@@ -115,14 +115,14 @@ func nodeCertInterval(check *fathomv1alpha1.NodeCertificateCheck) time.Duration 
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
 		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
-	return defaultNodeCertInterval
+	return fathomv1alpha1.DefaultNodeCertificateCheckInterval
 }
 
 func nodeCertTimeout(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
 		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
-	return defaultNodeCertTimeout
+	return fathomv1alpha1.DefaultNodeCertificateCheckTimeout
 }
 
 func nodeOutcomeToResult(o nodecert.Outcome) fathomv1alpha1.HealthReportResult {
@@ -197,8 +197,8 @@ func healthReportForNodeCert(check *fathomv1alpha1.NodeCertificateCheck, reports
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				labelHealthReportSourceKind: "NodeCertificateCheck",
-				labelHealthReportSourceName: check.Name,
+				fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 			},
 		},
 		Spec: fathomv1alpha1.HealthReportSpec{
@@ -239,8 +239,8 @@ func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.L
 	if err := c.List(ctx, &reports,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: check.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
 		},
 	); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")

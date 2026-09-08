@@ -44,13 +44,30 @@ func writeNodeReportAt(ctx context.Context, check *fathomv1alpha1.NodeCertificat
 }
 
 func writeNodeReportForCheck(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node, reportCheckName string, observedAt time.Time, certs []nodecert.CertResult) {
-	report := nodecert.NodeReport{
+	writeNodeReportObject(ctx, check, node, nodecert.NodeReport{
 		Node:       node,
 		CheckName:  reportCheckName,
 		ObservedAt: observedAt,
 		Aggregate:  nodecert.WorstOutcome(certs),
 		Certs:      certs,
-	}
+	})
+}
+
+// writeTriggeredNodeReport mirrors an agent restarted with a run-now token:
+// the report carries the token, which is what lets the controller complete
+// the trigger for that node.
+func writeTriggeredNodeReport(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node, trigger string, certs []nodecert.CertResult) {
+	writeNodeReportObject(ctx, check, node, nodecert.NodeReport{
+		Node:       node,
+		CheckName:  check.Name,
+		ObservedAt: time.Now(),
+		Aggregate:  nodecert.WorstOutcome(certs),
+		Certs:      certs,
+		Trigger:    trigger,
+	})
+}
+
+func writeNodeReportObject(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, node string, report nodecert.NodeReport) {
 	encoded, err := nodecert.EncodeReport(report)
 	Expect(err).NotTo(HaveOccurred())
 	cm := &corev1.ConfigMap{
@@ -107,8 +124,8 @@ func setNodeAgentDaemonSetStatusFull(ctx context.Context, check *fathomv1alpha1.
 func nodeCertHealthReportCount(ctx context.Context, source types.NamespacedName) int {
 	reports := &fathomv1alpha1.HealthReportList{}
 	Expect(k8sClient.List(ctx, reports, client.InNamespace(source.Namespace), client.MatchingLabels{
-		labelHealthReportSourceKind: "NodeCertificateCheck",
-		labelHealthReportSourceName: source.Name,
+		fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+		fathomv1alpha1.LabelHealthReportSourceName: source.Name,
 	})).To(Succeed())
 	return len(reports.Items)
 }
@@ -374,8 +391,8 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 
 		reports := &fathomv1alpha1.HealthReportList{}
 		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: "nc-rollup",
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: "nc-rollup",
 		})).To(Succeed())
 		Expect(reports.Items).To(HaveLen(1))
 		Expect(reports.Items[0].Spec.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
@@ -514,8 +531,8 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 
 		reports := &fathomv1alpha1.HealthReportList{}
 		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
-			labelHealthReportSourceKind: "NodeCertificateCheck",
-			labelHealthReportSourceName: "nc-partial",
+			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: "nc-partial",
 		})).To(Succeed())
 		Expect(reports.Items).To(BeEmpty())
 	})

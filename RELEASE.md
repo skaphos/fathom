@@ -56,12 +56,20 @@ Tag creation triggers `.github/workflows/release.yml`, which:
 5. Builds and pushes the OLM bundle image.
 6. Builds and pushes the OLM catalog image (via `opm`).
 7. Packages and pushes the Helm chart to `oci://ghcr.io/skaphos/charts`.
-8. Signs every published image and the chart with keyless cosign signatures and
+8. Cross-compiles the `fathomctl` CLI for `linux`, `darwin`, and `windows` on
+   `amd64` and `arm64` (`scripts/fathomctl-dist.sh` via the `fathomctl-dist`
+   task) into one archive per platform plus
+   `fathomctl_X.Y.Z_checksums.txt`. The CLI is a client tool and ships as
+   archives only; it is never published as a container image.
+9. Signs every published image and the chart with keyless cosign signatures and
    records SLSA build provenance (`actions/attest-build-provenance`) for the
    operator image, probe image, node-agent image, OLM bundle, OLM catalog, and
-   Helm chart.
-9. Generates SPDX SBOMs for the operator, probe, and node-agent images.
-10. Creates a GitHub Release with `dist/install.yaml` and the SBOMs attached and
+   Helm chart. Signs the `fathomctl` checksums file with `cosign sign-blob`
+   (bundle `fathomctl_X.Y.Z_checksums.txt.sigstore.json`) and records build
+   provenance for every `fathomctl` archive.
+10. Generates SPDX SBOMs for the operator, probe, and node-agent images.
+11. Creates a GitHub Release with `dist/install.yaml`, the SBOMs, and the
+   `fathomctl` archives, checksums, and signature bundle attached, plus
    auto-generated release notes.
 
 ## 5. Verify the Release
@@ -77,6 +85,11 @@ Tag creation triggers `.github/workflows/release.yml`, which:
 - Confirm `ghcr.io/skaphos/fathom-node-agent:vX.Y.Z` advertises both
   `linux/amd64` and `linux/arm64` (`docker buildx imagetools inspect …`).
 - Confirm the GitHub Release exists with `install.yaml` attached.
+- Confirm the six `fathomctl_X.Y.Z_<os>_<arch>` archives,
+  `fathomctl_X.Y.Z_checksums.txt`, and its `.sigstore.json` bundle are
+  attached, and that a downloaded binary reports `vX.Y.Z` from
+  `fathomctl version --client` (see
+  [Verify a fathomctl download](#verify-a-fathomctl-download)).
 - Optionally install the bundle into a cluster via OLM:
 
   ```bash
@@ -131,6 +144,34 @@ cosign verify-attestation \
   --certificate-identity-regexp '^https://github.com/skaphos/fathom/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "${IMAGE}"
+```
+
+### Verify a fathomctl download
+
+The CLI archives are covered by one keyless signature over the checksums file
+and by build provenance on each archive. Verify the signature, then the
+checksum of the archive you downloaded, then (optionally) the provenance:
+
+```bash
+VERSION=X.Y.Z
+gh release download "v${VERSION}" --repo skaphos/fathom --pattern 'fathomctl_*'
+
+cosign verify-blob \
+  --bundle "fathomctl_${VERSION}_checksums.txt.sigstore.json" \
+  --certificate-identity-regexp '^https://github.com/skaphos/fathom/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "fathomctl_${VERSION}_checksums.txt"
+
+sha256sum --check --ignore-missing "fathomctl_${VERSION}_checksums.txt"
+
+gh attestation verify "fathomctl_${VERSION}_linux_amd64.tar.gz" --repo skaphos/fathom
+```
+
+Then extract and confirm the binary reports the release version:
+
+```bash
+tar -xzf "fathomctl_${VERSION}_linux_amd64.tar.gz"
+"fathomctl_${VERSION}_linux_amd64/fathomctl" version --client   # prints vX.Y.Z
 ```
 
 ### Inspect the SBOM

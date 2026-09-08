@@ -225,13 +225,31 @@ tasks:
   # --- Build ---
 
   build:
-    desc: Build manager binary
+    desc: Build manager and fathomctl binaries
     cmds:
       - task: manifests
       - task: generate
       - task: fmt
       - task: vet
       - go build -o bin/manager cmd/main.go
+      - task: fathomctl-build
+
+  fathomctl-build:
+    desc: Build the fathomctl CLI binary into bin/fathomctl (version from git describe)
+    vars:
+      # A local build identifies itself by the nearest tag; release archives
+      # get the exact release version from scripts/fathomctl-dist.sh instead.
+      FATHOMCTL_VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}}" -o bin/fathomctl ./cmd/fathomctl
+
+  fathomctl-dist:
+    desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})
+    vars:
+      FATHOMCTL_DIST_DIR: '{{.FATHOMCTL_DIST_DIR | default "dist/fathomctl"}}'
+    cmds:
+      - VERSION={{.VERSION}} OUT={{.FATHOMCTL_DIST_DIR}} scripts/fathomctl-dist.sh
 
   run:
     desc: Run the controller from your host

@@ -1,0 +1,46 @@
+# This role is not used by the operator itself.
+# It is provided so cluster admins can grant people and CI jobs the read-only
+# access the fathomctl CLI needs: `ls`, `describe`, `reports`, and `version`.
+#
+# The Deployment read is only for `fathomctl version`, which reports the
+# operator's version from its Deployment; without it the CLI still works and
+# reports the operator as unavailable. See docs/reference/fathomctl.md.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: fathomctl-viewer-role
+rules:
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - addonchecks
+  - dnschecks
+  - nodecertificatechecks
+  - healthchecks
+  - clusterhealths
+  - healthreports
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - fathom.skaphos.io
+  resources:
+  - addonchecks/status
+  - dnschecks/status
+  - nodecertificatechecks/status
+  - healthchecks/status
+  - clusterhealths/status
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list

@@ -62,6 +62,47 @@ worst-case aggregation.
 selected `HealthCheck`s, not wall-clock time. It intentionally does not read
 `HealthReport` history.
 
+## On-demand runs
+
+Every executable kind (`AddonCheck`, `DNSCheck`, `NodeCertificateCheck`)
+honours the same on-demand trigger. Write a fresh, non-empty value to the
+`fathom.skaphos.io/run-now` annotation and the controller runs the check
+regardless of `spec.interval`; when that run completes it records the value in
+`status.lastRunTrigger`. The rules are identical across kinds:
+
+- A value that differs from `status.lastRunTrigger` forces a run. The same
+  value never fires twice, so write a timestamp or nonce each time, not a
+  constant (`fathomctl run` writes a UTC timestamp plus a random suffix).
+- The consumed value is written in the same status update as the run's
+  verdict, so `status.lastRunTrigger == <value>` means "that run finished".
+  `fathomctl run --wait` and automation should match on it rather than on
+  `lastRunTime` moving.
+- A run with no annotation, or with the already-consumed value, never clears
+  `status.lastRunTrigger`; re-applying a spent value does nothing, and
+  removing the annotation after consumption is not itself a change (for
+  `NodeCertificateCheck` it does not roll the agents).
+- A value longer than 253 characters, the bound on `status.lastRunTrigger`,
+  is ignored rather than recorded: recording it would make every status
+  update fail validation. No supported writer produces one.
+- A paused check does not consume the trigger. It stays pending until the
+  check is unpaused, and `run --wait` would only time out.
+- `NodeCertificateCheck` completes the trigger differently from the other
+  two: the operator stamps the value onto the node-agent DaemonSet's pod
+  template, which restarts every agent, each agent scans on start and
+  reports the value it started with, and the operator records the value only
+  once every desired node's fresh report carries it. Until then the previous
+  verdict and `lastRunTrigger` are retained. Budget one agent pod restart per
+  node for a forced scan.
+- Derived kinds (`HealthCheck`, `ClusterHealth`) ignore the annotation. To
+  re-check them, trigger their sources; `fathomctl run` does that for you.
+
+```sh
+kubectl -n fathom-system annotate dnscheck cluster-dns \
+  fathom.skaphos.io/run-now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+kubectl -n fathom-system get dnscheck cluster-dns \
+  -o jsonpath='{.status.lastRunTrigger}{"\n"}'
+```
+
 ## AddonCheck
 
 `AddonCheck` is a sensor. It resolves the adapter named by `spec.addonType`,
@@ -78,7 +119,8 @@ Status fields to start with:
 - `status.absent` - count of checks that reported an absent target marker.
 - `status.detectedVersion` - add-on version detected by adapters that support
   version detection.
-- `status.lastRunTrigger` - last consumed non-empty `run-now` annotation value.
+- `status.lastRunTrigger` - last consumed non-empty `run-now` annotation value
+  (see [On-demand runs](#on-demand-runs)).
 
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
@@ -175,6 +217,8 @@ Status fields to start with:
 - `status.desiredNodes` - DaemonSet desired scheduled count.
 - `status.reportingNodes` - count of fresh node reports consumed in the latest
   reconcile.
+- `status.lastRunTrigger` - last `run-now` value every desired node reported
+  back after the forced scan (see [On-demand runs](#on-demand-runs)).
 
 Freshness and coverage rules:
 
@@ -195,6 +239,15 @@ Freshness and coverage rules:
 - A report ConfigMap is adopted only after its decoded payload belongs to the
   current check (`report.checkName == metadata.name`), so mislabeled reports are
   ignored and not garbage-collected by the wrong check.
+- A pending `run-now` value changes one thing above: while the trigger's
+  rollout is in flight, partial coverage or a not-yet-converged rollout does
+  **not** clear the roll-up. The previous `lastResult`, `lastRunTime`, and
+  `lastReportName` are retained so a forced scan never flaps the mirroring
+  `HealthCheck` or `ClusterHealth`. Ordinary roll-ups continue from whatever
+  fresh reports exist. The value is recorded in `lastRunTrigger` only when
+  the fresh reports carrying that value cover the desired node count; reports
+  with an empty or different value never count toward it, and `lastRunTime`
+  is refreshed on completion even when the aggregate did not change.
 
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
@@ -250,6 +303,10 @@ Status fields to start with:
 - `status.observedTargets` — how many pairs the last run covered.
 - `status.lastRunTime` / `status.lastReportName` — when it last ran, and the
   `HealthReport` capturing the current verdict.
+- `status.lastRunTrigger` — last consumed `run-now` value (see
+  [On-demand runs](#on-demand-runs)). A `DNSCheck` evaluates on every
+  reconcile, so the annotation write itself causes the run; this field is what
+  makes it observable.
 
 Rules worth knowing:
 

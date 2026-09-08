@@ -166,6 +166,23 @@ An unreachable resolver never satisfies `absent: true`. Fathom reports a
 network/execution fault rather than treating lack of a reply as proof that the
 name is absent.
 
+## Run it now
+
+A `DNSCheck` re-evaluates on its `interval`. To make it look right now, write
+a fresh value to the `fathom.skaphos.io/run-now` annotation, or use
+`fathomctl run dnscheck/<name> --wait`, which does that and waits for the
+verdict:
+
+```sh
+kubectl -n fathom-system annotate dnscheck cluster-dns \
+  fathom.skaphos.io/run-now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+```
+
+When the run completes, `status.lastRunTrigger` equals the value you wrote.
+The same value never fires twice; write a new one for each forced run. The
+contract is the same for every check kind, see
+[On-demand runs](../reference/status-conditions.md#on-demand-runs).
+
 ## Read the evidence chain
 
 Start at the source:

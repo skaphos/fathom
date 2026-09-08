@@ -174,8 +174,8 @@ func dnsHealthReports(ctx context.Context, ns, check string) []fathomv1alpha1.He
 	Expect(k8sClient.List(ctx, &reports,
 		client.InNamespace(ns),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: dnsCheckKind,
-			labelHealthReportSourceName: check,
+			fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+			fathomv1alpha1.LabelHealthReportSourceName: check,
 		},
 	)).To(Succeed())
 	return reports.Items

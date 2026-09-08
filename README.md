@@ -286,6 +286,26 @@ privilege escalation, runtime-default seccomp, small CPU/memory requests) and
 supports pod anti-affinity so network checks can place client/server probe Pods
 on different nodes.
 
+## fathomctl
+
+`fathomctl` is the command-line client: one consistent view of every check's
+verdict, an explanation of why, the report history, and a `run --wait` that
+asks the operator to validate a check right now and exits by the verdict, so
+it works as a pipeline gate.
+
+```sh
+fathomctl ls -A                                  # every kind, every verdict
+fathomctl describe dnscheck/cluster-dns          # why it has that verdict
+fathomctl reports addoncheck/coredns --since 24h # what changed, when
+fathomctl run healthcheck/coredns --wait         # check again now; exit 1 on Fail
+```
+
+Each release attaches signed, attested archives for Linux, macOS, and Windows
+on amd64 and arm64; the CLI is never published as an image. Install and
+verification steps are in the [fathomctl guide](docs/guides/fathomctl.md);
+the flag-level contract is in the
+[fathomctl reference](docs/reference/fathomctl.md).
+
 ## Contributing & development
 
 Contributor and AI-agent build/test/coding guardrails live in

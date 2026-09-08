@@ -202,6 +202,16 @@ jobs:
           DIGEST=$(awk '/[Dd]igest:/ {print $2}' dist/charts/helm-push.log)
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
+      - name: Build fathomctl release archives
+        # Six per-platform archives plus a SHA-256 checksums file under
+        # dist/fathomctl/. The CLI is a client tool and ships as archives only,
+        # never as an image; the checksums file is signed and the archives
+        # attested below, so a verifier follows the same cosign/attestation
+        # procedure as for the images (RELEASE.md).
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: go -C tools tool task fathomctl-dist VERSION="${VERSION}"
+
       # --- Supply-chain hardening (SKA-296) -------------------------------
       # Keyless signing + build provenance + SBOMs for every published
       # artifact. All identity comes from the job's OIDC token (id-token:
@@ -225,6 +235,24 @@ jobs:
             echo "Signing ${ref}"
             cosign sign --yes "${ref}"
           done
+
+      - name: Sign fathomctl checksums (keyless)
+        # One signature over the checksums file covers every archive: verify
+        # the bundle, then `sha256sum --check` the archive you downloaded.
+        env:
+          COSIGN_YES: "true"
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          set -euo pipefail
+          sums="dist/fathomctl/fathomctl_${VERSION}_checksums.txt"
+          cosign sign-blob --yes --bundle "${sums}.sigstore.json" "${sums}"
+
+      - name: Attest fathomctl archive provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/fathomctl/*.tar.gz
+            dist/fathomctl/*.zip
 
       - name: Attest operator image provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -295,10 +323,11 @@ jobs:
           output-file: dist/sbom/fathom-node-agent-${{ steps.vars.outputs.version }}.spdx.json
           upload-artifact: false
 
-      - name: Create GitHub release with install.yaml and SBOMs
+      - name: Create GitHub release with install.yaml, SBOMs, and fathomctl archives
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             dist/install.yaml
             dist/sbom/*.spdx.json
+            dist/fathomctl/*
           generate_release_notes: true

@@ -13,9 +13,10 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node certificate scanner). |
+| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node certificate scanner, `fathomctl/` CLI). |
 | `api/v1alpha1/` | CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
+| `internal/cli/` | The `fathomctl` command tree, client factory, kind table, and verdict normalisation. |
 | `internal/controller/` | The four reconcilers. |
 | `internal/adapter/` | Adapter registry and built-in adapters. |
 | `internal/probe/` | Probe-pod manifest builder and launcher. |
@@ -39,6 +40,10 @@ for and the key entrypoints to start reading from. For the design rationale see
   `NodeCertificateCheck` DaemonSet. Scans host-mounted certificate paths,
   publishes one ConfigMap report per node, and exposes node-certificate metrics.
   Built into the dedicated node-agent image (`Dockerfile.node-agent`).
+- `cmd/fathomctl/main.go` — thin CLI entrypoint. Imports the client auth
+  plugins, calls `cli.NewRootCommand().Execute()`, exits 1 on error (kubectl
+  convention). All real logic is in `internal/cli`. Ships as per-platform
+  archives (`scripts/fathomctl-dist.sh`), not as an image.
 
 ## `api/v1alpha1/` — CRD types
 
@@ -54,6 +59,28 @@ Key types: `AddonCheckSpec/Status`, `HealthCheckSpec/Status`,
 ordering used by worst-case aggregation. The kubebuilder markers on these types
 drive both the generated CRDs in `config/crd/bases/` and the field descriptions
 in [reference/api.md](reference/api.md), so doc comments here are load-bearing.
+
+## `internal/cli/` — the fathomctl command tree
+
+The unit-testable seam between `cmd/fathomctl/main.go` and the Kubernetes
+API, deliberately free of `internal/app`, `internal/adapter`, and
+`internal/controller` so the client binary links only the API types.
+
+- `root.go` — `NewRootCommand`, the global flags (`--kubeconfig`,
+  `--context`, `-n`, `-A`, `-o`, `--request-timeout`), and verb registration.
+- `client.go` — `factory`: kubeconfig discovery via `clientcmd`, a cache-less
+  controller-runtime client over the Fathom scheme, namespace resolution, and
+  the injectable seams (loader, client constructor, stdin, terminal check,
+  poll interval) the tests use instead of a cluster.
+- `kinds.go` — the descriptor table: every kind's spellings and CLI alias,
+  scope, whether it runs itself, `Paused`, `Snapshot`, `DefaultTimeout`, and
+  `Sources` (how a derived kind resolves to executable checks).
+- `snapshot.go` — one verdict normalisation per kind, shared by `ls`,
+  `describe`, and `run --wait`.
+- `output.go` — table writer, `json`/`yaml` encoding, the `kind: List`
+  envelope, age/truncate helpers.
+- `ls.go`, `describe.go`, `reports.go`, `run.go`, `wait.go`, `version.go` —
+  one file per verb; `wait.go` is the `run --wait` poll loop.
 
 ## `internal/app/` — process plumbing
 

@@ -22,11 +22,10 @@ import (
 // dnscheck_controller.go supplies the I/O around them.
 
 const (
-	// defaultDNSCheckInterval and defaultDNSCheckTimeout mirror the defaults
-	// documented on DNSCheckSpec. They are applied here rather than as CRD
-	// defaults because a stored object may predate them.
-	defaultDNSCheckInterval = time.Minute
-	defaultDNSCheckTimeout  = 10 * time.Second
+	// The default interval and timeout live in api/v1alpha1
+	// (DefaultDNSCheckInterval, DefaultDNSCheckTimeout) so fathomctl computes
+	// next-run and wait bounds from the same values. They are applied here
+	// rather than as CRD defaults because a stored object may predate them.
 
 	// dnsCheckMinRunGap is the floor on the delay between one run starting and
 	// the next (FR-107a). Scheduling is anchored to a run's *start*, so a run
@@ -161,7 +160,7 @@ func expandDNSPairs(spec *fathomv1alpha1.DNSCheckSpec) []dnsPair {
 // dnsCheckInterval is the cadence, defaulted and raised to the schema floor.
 func dnsCheckInterval(check *fathomv1alpha1.DNSCheck) time.Duration {
 	if check.Spec.Interval == nil || check.Spec.Interval.Duration <= 0 {
-		return defaultDNSCheckInterval
+		return fathomv1alpha1.DefaultDNSCheckInterval
 	}
 	return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 }
@@ -175,7 +174,7 @@ func dnsCheckInterval(check *fathomv1alpha1.DNSCheck) time.Duration {
 // invariant is what makes overlapping runs impossible, so it is enforced here
 // rather than assumed.
 func dnsCheckRunBound(check *fathomv1alpha1.DNSCheck) time.Duration {
-	bound := defaultDNSCheckTimeout
+	bound := fathomv1alpha1.DefaultDNSCheckTimeout
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
 		bound = clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}

@@ -170,8 +170,8 @@ func healthReportCount(ctx context.Context, source types.NamespacedName) int {
 	ExpectWithOffset(1, k8sClient.List(ctx, &reports,
 		client.InNamespace(source.Namespace),
 		client.MatchingLabels{
-			labelHealthReportSourceKind: "AddonCheck",
-			labelHealthReportSourceName: source.Name,
+			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+			fathomv1alpha1.LabelHealthReportSourceName: source.Name,
 		},
 	)).To(Succeed())
 	return len(reports.Items)
@@ -692,7 +692,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
 			Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(defaultAddonCheckInterval))
+		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
 	})
 
 	It("does not requeue a paused AddonCheck", func() {
@@ -770,7 +770,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.runCount()).To(Equal(1))
-		Expect(result.RequeueAfter).To(Equal(defaultAddonCheckInterval))
+		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
 	})
 
 	It("runs immediately when the run-now annotation changes, once per value", func() {
@@ -795,7 +795,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		// A new run-now value forces an out-of-band run.
 		updated := &fathomv1alpha1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		updated.Annotations = map[string]string{annotationRunNow: "token-1"}
+		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "token-1"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -817,7 +817,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        name.Name,
 				Namespace:   name.Namespace,
-				Annotations: map[string]string{annotationRunNow: "tok"},
+				Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"},
 			},
 			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
 		}
@@ -855,7 +855,7 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		// Re-applying the same, already-consumed token must NOT re-trigger, and
 		// we are within the interval, so no new run happens.
-		updated.Annotations = map[string]string{annotationRunNow: "tok"}
+		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -899,31 +899,31 @@ var _ = Describe("AddonCheck Controller", func() {
 	})
 
 	DescribeTable("addonCheckDueForRun",
-		func(setup func(*fathomv1alpha1.AddonCheck), prevGen int64, runNow string, interval time.Duration, want bool) {
+		func(setup func(*fathomv1alpha1.AddonCheck), prevGen int64, triggerDue bool, interval time.Duration, want bool) {
 			check := &fathomv1alpha1.AddonCheck{}
 			check.Generation = 1
 			setup(check)
-			Expect(addonCheckDueForRun(check, prevGen, runNow, interval)).To(Equal(want))
+			Expect(addonCheckDueForRun(check, prevGen, triggerDue, interval)).To(Equal(want))
 		},
 		Entry("first sight (no LastRunTime) is due",
-			func(c *fathomv1alpha1.AddonCheck) {}, int64(1), "", time.Minute, true),
+			func(c *fathomv1alpha1.AddonCheck) {}, int64(1), false, time.Minute, true),
 		Entry("generation change is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), "", time.Minute, true),
-		Entry("a new run-now trigger is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), "t1", time.Minute, true),
-		Entry("the same trigger within the interval is not due",
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), false, time.Minute, true),
+		Entry("a due run-now trigger is due",
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), true, time.Minute, true),
+		Entry("a consumed trigger within the interval is not due",
 			func(c *fathomv1alpha1.AddonCheck) {
 				n := metav1.Now()
 				c.Status.LastRunTime = &n
 				c.Status.LastRunTrigger = "t1"
-			}, int64(1), "t1", time.Minute, false),
+			}, int64(1), false, time.Minute, false),
 		Entry("an elapsed interval is due",
 			func(c *fathomv1alpha1.AddonCheck) {
 				p := metav1.NewTime(time.Now().Add(-time.Hour))
 				c.Status.LastRunTime = &p
-			}, int64(1), "", time.Minute, true),
+			}, int64(1), false, time.Minute, true),
 		Entry("within the interval with no triggers is not due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), "", time.Minute, false),
+			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), false, time.Minute, false),
 	)
 
 	DescribeTable("aggregateHealthReportResult worst-case ranking",

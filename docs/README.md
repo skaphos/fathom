@@ -23,6 +23,7 @@ Task-oriented guides for installing and using Fathom live in
 | [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the sixteen built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Newer kind — included in recent builds; not in older ones.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
+| [fathomctl](guides/fathomctl.md) | Install the CLI, list and explain verdicts, walk report history, and trigger a check right now with `run --wait`. |
 | [Agent operations](guides/agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |
 
 ## Reference & internals
@@ -33,6 +34,7 @@ Task-oriented guides for installing and using Fathom live in
 | [code-map.md](code-map.md) | A module-by-module tour of the source tree for new contributors. |
 | [authoring-adapters.md](authoring-adapters.md) | How to add a new add-on adapter — the declarative `AddonDefinition` path, the Go escape hatch, RBAC declaration, versioning, and a ship-it checklist. |
 | [reference/configuration.md](reference/configuration.md) | Every operator option (flag / env var / config file / default) and the precedence rules. |
+| [reference/fathomctl.md](reference/fathomctl.md) | The `fathomctl` CLI: global flags, kind aliases, exit codes, `run` propagation and bulk confirmation, and the RBAC roles for CLI users. |
 | [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
 | [reference/status-conditions.md](reference/status-conditions.md) | Operational status and condition reference: result fields, reasons, freshness, and troubleshooting actions. |
 | [reference/rbac.md](reference/rbac.md) | Generated per-adapter RBAC matrix and least-privilege impersonation model. |

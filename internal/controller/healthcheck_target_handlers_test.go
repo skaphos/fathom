@@ -100,8 +100,8 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 	if snapshot.Result != fathomv1alpha1.HealthReportResultPass || snapshot.Summary != "source is healthy" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
-	if snapshot.Interval != defaultAddonCheckInterval {
-		t.Fatalf("interval = %v, want %v", snapshot.Interval, defaultAddonCheckInterval)
+	if snapshot.Interval != fathomv1alpha1.DefaultAddonCheckInterval {
+		t.Fatalf("interval = %v, want %v", snapshot.Interval, fathomv1alpha1.DefaultAddonCheckInterval)
 	}
 	if snapshot.SourceObservedAt == nil || !snapshot.SourceObservedAt.Equal(&runTime) {
 		t.Fatalf("observed time = %v, want %v", snapshot.SourceObservedAt, &runTime)
@@ -303,8 +303,8 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 	if snapshot.SourceObservedAt == nil || !snapshot.SourceObservedAt.Equal(&runTime) || snapshot.LastReportName != "node-report" {
 		t.Fatalf("source evidence = %#v", snapshot)
 	}
-	if snapshot.Interval != defaultNodeCertInterval {
-		t.Fatalf("default interval = %v, want %v", snapshot.Interval, defaultNodeCertInterval)
+	if snapshot.Interval != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
+		t.Fatalf("default interval = %v, want %v", snapshot.Interval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
 	}
 
 	clamped, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "clamped-cadence"})
@@ -322,8 +322,8 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 	if empty.Result != "" || empty.Summary != "" || empty.SourceObservedAt != nil || empty.LastReportName != "" {
 		t.Fatalf("empty source invented status: %#v", empty)
 	}
-	if empty.Interval != defaultNodeCertInterval {
-		t.Fatalf("empty source interval = %v, want %v", empty.Interval, defaultNodeCertInterval)
+	if empty.Interval != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
+		t.Fatalf("empty source interval = %v, want %v", empty.Interval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
 	}
 }
 
