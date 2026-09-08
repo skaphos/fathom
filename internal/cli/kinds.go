@@ -218,18 +218,28 @@ func (r checkRef) String() string {
 	return strings.ToLower(r.Kind.Kind) + "/" + r.Namespace + "/" + r.Name
 }
 
-// parseTarget accepts `<kind>/<name>` or `<kind> <name>` from the positional
-// arguments and returns the reference plus any arguments left over. The
-// namespace is the caller's resolved namespace, dropped for cluster-scoped
-// kinds.
+// parseTarget accepts `<kind>/<name>`, `<kind>/<namespace>/<name>` (the form
+// every verb prints, so output can be pasted back), or `<kind> <name>` from
+// the positional arguments and returns the reference plus any arguments left
+// over. Without an inline namespace the caller's resolved namespace is used;
+// cluster-scoped kinds take none. A namespaced kind with no namespace at all
+// (the caller passed -A) is an error rather than a silent lookup in "".
 func parseTarget(args []string, namespace string) (checkRef, []string, error) {
 	if len(args) == 0 {
-		return checkRef{}, nil, errors.New("a check is required: <kind>/<name> or <kind> <name>")
+		return checkRef{}, nil, errors.New("a check is required: <kind>/<name>, <kind>/<namespace>/<name>, or <kind> <name>")
 	}
-	var kindArg, name string
+	var kindArg, name, inlineNS string
 	rest := args[1:]
-	if i := strings.IndexByte(args[0], '/'); i >= 0 {
-		kindArg, name = args[0][:i], args[0][i+1:]
+	if strings.Contains(args[0], "/") {
+		parts := strings.Split(args[0], "/")
+		switch len(parts) {
+		case 2:
+			kindArg, name = parts[0], parts[1]
+		case 3:
+			kindArg, inlineNS, name = parts[0], parts[1], parts[2]
+		default:
+			return checkRef{}, nil, fmt.Errorf("cannot parse %q: use <kind>/<name> or <kind>/<namespace>/<name>", args[0])
+		}
 	} else {
 		if len(args) < 2 {
 			return checkRef{}, nil, fmt.Errorf("a name is required after %q: <kind>/<name> or <kind> <name>", args[0])
@@ -245,7 +255,15 @@ func parseTarget(args []string, namespace string) (checkRef, []string, error) {
 		return checkRef{}, nil, fmt.Errorf("a name is required after %q", kindArg)
 	}
 	ref := checkRef{Kind: k, Name: name}
-	if k.Namespaced {
+	switch {
+	case !k.Namespaced && inlineNS != "":
+		return checkRef{}, nil, fmt.Errorf("%s is cluster-scoped; use %s/%s", k.Kind, strings.ToLower(k.Kind), name)
+	case k.Namespaced && inlineNS != "":
+		ref.Namespace = inlineNS
+	case k.Namespaced:
+		if namespace == "" {
+			return checkRef{}, nil, fmt.Errorf("%s/%s needs a namespace: pass -n <namespace> or use %s/<namespace>/%s (--all-namespaces only applies to listing)", strings.ToLower(k.Kind), name, strings.ToLower(k.Kind), name)
+		}
 		ref.Namespace = namespace
 	}
 	return ref, rest, nil

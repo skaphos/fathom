@@ -78,7 +78,12 @@ regardless of `spec.interval`; when that run completes it records the value in
   `fathomctl run --wait` and automation should match on it rather than on
   `lastRunTime` moving.
 - A run with no annotation, or with the already-consumed value, never clears
-  `status.lastRunTrigger`; re-applying a spent value does nothing.
+  `status.lastRunTrigger`; re-applying a spent value does nothing, and
+  removing the annotation after consumption is not itself a change (for
+  `NodeCertificateCheck` it does not roll the agents).
+- A value longer than 253 characters, the bound on `status.lastRunTrigger`,
+  is ignored rather than recorded: recording it would make every status
+  update fail validation. No supported writer produces one.
 - A paused check does not consume the trigger. It stays pending until the
   check is unpaused, and `run --wait` would only time out.
 - `NodeCertificateCheck` completes the trigger differently from the other
@@ -234,11 +239,15 @@ Freshness and coverage rules:
 - A report ConfigMap is adopted only after its decoded payload belongs to the
   current check (`report.checkName == metadata.name`), so mislabeled reports are
   ignored and not garbage-collected by the wrong check.
-- A pending `run-now` value does not change any of the above: ordinary
-  roll-ups continue from whatever fresh reports exist. The value is recorded
-  in `lastRunTrigger` only when the fresh reports carrying that value cover
-  the desired node count; reports with an empty or different value never
-  count toward it.
+- A pending `run-now` value changes one thing above: while the trigger's
+  rollout is in flight, partial coverage or a not-yet-converged rollout does
+  **not** clear the roll-up. The previous `lastResult`, `lastRunTime`, and
+  `lastReportName` are retained so a forced scan never flaps the mirroring
+  `HealthCheck` or `ClusterHealth`. Ordinary roll-ups continue from whatever
+  fresh reports exist. The value is recorded in `lastRunTrigger` only when
+  the fresh reports carrying that value cover the desired node count; reports
+  with an empty or different value never count toward it, and `lastRunTime`
+  is refreshed on completion even when the aggregate did not change.
 
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |

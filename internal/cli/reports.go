@@ -94,6 +94,11 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 			}
 			return fmt.Errorf("get HealthReport %s: %w", opts.report, err)
 		}
+		// The name is global within the namespace; make sure the report is the
+		// target's before printing it under the target's banner.
+		if kind, name := report.Labels[fathomv1alpha1.LabelHealthReportSourceKind], report.Labels[fathomv1alpha1.LabelHealthReportSourceName]; kind != source.Kind.Kind || name != source.Name {
+			return fmt.Errorf("HealthReport %q belongs to %s/%s, not %s", opts.report, strings.ToLower(kind), name, source)
+		}
 		if f.opts.output.structured() {
 			if err := withGVK(c.Scheme(), report); err != nil {
 				return err

@@ -22,7 +22,9 @@ convention); the message distinguishes the cause.
 
 Kind arguments accept the Kind, its lowercase form, the plural resource
 name, or a CLI alias (`ac`, `dns`, `ncc`, `hc`, `ch`). A check is addressed
-as `<kind>/<name>` or `<kind> <name>`.
+as `<kind>/<name>`, `<kind> <name>`, or `<kind>/<namespace>/<name>` (the
+form every verb prints; an inline namespace overrides `-n`). A namespaced
+check under `-A` without an inline namespace is a usage error.
 
 ## `fathomctl ls [kind] [-l selector]`
 

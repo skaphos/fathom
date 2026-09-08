@@ -120,6 +120,18 @@ func TestReports_LimitSinceAndReport(t *testing.T) {
 	if _, _, err := execVerb(f, "reports", "addoncheck/coredns", "--report", "nope"); err == nil || !strings.Contains(err.Error(), `HealthReport "nope" not found in namespace team-a`) {
 		t.Fatalf("--report not found error = %v", err)
 	}
+	// o1 exists in the namespace but belongs to another check.
+	if _, _, err := execVerb(f, "reports", "addoncheck/coredns", "--report", "o1"); err == nil || !strings.Contains(err.Error(), `belongs to addoncheck/other, not addoncheck/team-a/coredns`) {
+		t.Fatalf("--report of another check's report must be refused: %v", err)
+	}
+	// -A cannot address a single namespaced check unless the namespace is inline.
+	if _, _, err := execVerb(f, "reports", "addoncheck/coredns", "-A"); err == nil || !strings.Contains(err.Error(), "needs a namespace") {
+		t.Fatalf("-A with a bare target must ask for a namespace: %v", err)
+	}
+	out, _, err = execVerb(f, "reports", "addoncheck/team-a/coredns", "-A", "--limit", "1")
+	if err != nil || !strings.Contains(out, "r5") {
+		t.Fatalf("inline namespace under -A: err=%v\n%s", err, out)
+	}
 }
 
 func TestReports_DerivedKindsAndEmpty(t *testing.T) {

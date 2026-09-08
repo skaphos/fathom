@@ -74,6 +74,18 @@ var _ = Describe("NodeCertificateCheck run-now trigger", func() {
 		firstRun := updated.Status.LastRunTime
 		Expect(firstRun).NotTo(BeNil())
 
+		// While the DaemonSet is mid-rollout for this trigger the previous
+		// verdict must be retained, not blanked: a forced run must never flap
+		// the mirroring HealthCheck/ClusterHealth to no-result.
+		setNodeAgentDaemonSetStatusFull(ctx, check, 2, 1, 1)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)), "mid-rollout with a pending trigger must keep the prior verdict")
+		Expect(updated.Status.LastReportName).NotTo(BeEmpty(), "mid-rollout with a pending trigger must keep the prior report")
+		Expect(updated.Status.LastRunTime).NotTo(BeNil())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+
 		// One of two nodes carrying the token is not completion.
 		writeTriggeredNodeReport(ctx, check, "node-a", "tok-1", passing)
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -96,7 +108,8 @@ var _ = Describe("NodeCertificateCheck run-now trigger", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-runnow-node-agent", Namespace: "default"}, ds)).To(Succeed())
 		Expect(ds.Generation).To(Equal(generationWithToken), "consuming the token must not rewrite the DaemonSet template")
 
-		// A reconcile with the annotation gone preserves the consumed token.
+		// A reconcile with the annotation gone preserves the consumed token and,
+		// because the template falls back to it, does not roll the agents.
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		updated.Annotations = nil
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
@@ -104,6 +117,9 @@ var _ = Describe("NodeCertificateCheck run-now trigger", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("tok-1"), "a run with no annotation must not clear the consumed token")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-runnow-node-agent", Namespace: "default"}, ds)).To(Succeed())
+		Expect(ds.Generation).To(Equal(generationWithToken), "removing a consumed annotation must not rewrite the DaemonSet template")
+		Expect(ds.Spec.Template.Annotations).To(HaveKeyWithValue(fathomv1alpha1.AnnotationRunNow, "tok-1"))
 	})
 
 	It("leaves the token unconsumed while paused", func() {

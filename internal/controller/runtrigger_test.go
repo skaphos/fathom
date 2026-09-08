@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -25,6 +26,8 @@ func TestRunTriggerDue(t *testing.T) {
 		{name: "different token is due", annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "t2"}, lastConsumed: "t1", wantToken: "t2", wantDue: true},
 		{name: "same token is not due", annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "t1"}, lastConsumed: "t1", wantToken: "t1", wantDue: false},
 		{name: "empty annotation value is not due", annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: ""}, lastConsumed: "t1", wantToken: "", wantDue: false},
+		{name: "a token longer than the status bound is ignored", annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: strings.Repeat("a", maxRunTriggerLength+1)}, lastConsumed: "", wantToken: "", wantDue: false},
+		{name: "a token at the status bound is honoured", annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: strings.Repeat("a", maxRunTriggerLength)}, lastConsumed: "", wantToken: strings.Repeat("a", maxRunTriggerLength), wantDue: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

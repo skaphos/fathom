@@ -265,21 +265,38 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	check.Status.ReportingNodes = int32(len(reports))
 
+	token, triggerPending := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
+
 	if nodeCertReportsComplete(ds, len(reports)) {
 		aggregate := aggregateNodeReports(reports)
 		if err := r.rollup(ctx, log, &check, reports, aggregate, interval); err != nil {
 			return ctrl.Result{}, err
 		}
-	} else {
+	} else if !triggerPending {
 		clearNodeCertRollupStatus(&check)
 	}
+	// While a trigger is pending the DaemonSet is rolling the agents on
+	// purpose; blanking the roll-up would flap every mirroring HealthCheck and
+	// ClusterHealth to no-result on each forced run. The previous verdict is
+	// retained until the triggered reports cover the fleet (or the trigger is
+	// abandoned), which is the contract status.lastRunTrigger documents.
 
-	if token, due := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); due {
+	if triggerPending {
 		consumeNodeCertRunTrigger(&check, before, ds, reports, token, time.Now())
 	}
 
 	r.setReadyFromState(&check, ds, len(reports))
 	return r.finish(ctx, log, before, &check, interval)
+}
+
+// nodeCertTemplateToken is the run-now token the agent template carries: the
+// annotation when set (a new one rolls the agents), otherwise the last
+// consumed token so removing the annotation is not itself a template change.
+func nodeCertTemplateToken(check *fathomv1alpha1.NodeCertificateCheck) string {
+	if token, _ := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); token != "" {
+		return token
+	}
+	return check.Status.LastRunTrigger
 }
 
 // consumeNodeCertRunTrigger completes a pending on-demand run: the token is
@@ -304,7 +321,12 @@ func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, befor
 		return
 	}
 	check.Status.LastRunTrigger = token
-	if check.Status.LastRunTime != nil && before.LastRunTime != nil && check.Status.LastRunTime.Equal(before.LastRunTime) {
+	// Refresh unless the rollup above already moved LastRunTime forward, so a
+	// waiter always sees a run time at or after its request even when the
+	// aggregate was unchanged or a deterministic report was reused.
+	moved := check.Status.LastRunTime != nil &&
+		(before.LastRunTime == nil || check.Status.LastRunTime.After(before.LastRunTime.Time))
+	if !moved {
 		refreshed := metav1.NewTime(now)
 		check.Status.LastRunTime = &refreshed
 	}
@@ -690,10 +712,11 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 	// and the downward-API env var hands each agent the token to stamp into its
 	// report. Both are added only when a token exists so a check that has never
 	// been triggered keeps exactly the template it has today (no restart on
-	// operator upgrade), and a consumed token stays stamped so consumption
-	// itself never causes a second rollout.
+	// operator upgrade). The consumed token is used when the annotation is
+	// absent, so neither consumption nor removing the annotation afterwards
+	// changes the template: exactly one rollout per new token.
 	var templateAnnotations map[string]string
-	if token := check.Annotations[fathomv1alpha1.AnnotationRunNow]; token != "" {
+	if token := nodeCertTemplateToken(check); token != "" {
 		templateAnnotations = map[string]string{fathomv1alpha1.AnnotationRunNow: token}
 		env = append(env, corev1.EnvVar{
 			Name: nodecert.EnvRunTrigger,

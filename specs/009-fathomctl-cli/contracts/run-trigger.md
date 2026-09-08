@@ -29,7 +29,15 @@ For every executable kind:
    `status.lastRunTrigger`, MUST NOT run on account of the trigger and MUST
    NOT clear `status.lastRunTrigger`.
 4. A paused check MUST NOT consume the trigger; it stays pending until the
-   check is unpaused or deleted.
+   check is unpaused or deleted. The same holds for any check the operator
+   cannot run (invalid policy, missing adapter, no matching nodes): the
+   operator leaves the token pending and states the reason on `Ready`, and
+   a waiter reports that reason rather than a timeout.
+5. A value longer than the `status.lastRunTrigger` bound (253) MUST be
+   ignored, never recorded.
+6. Removing a consumed annotation MUST NOT cause a run or, for
+   `NodeCertificateCheck`, a rollout; the template falls back to the consumed
+   token.
 
 ## Kind-specific behaviour
 

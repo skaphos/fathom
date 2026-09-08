@@ -27,8 +27,12 @@ duplicated for a handful of flags.
 
 ## Kind names and aliases
 
-Every verb that takes a check accepts `<kind>/<name>` or `<kind> <name>`.
-The kind may be spelled as the Kind, its lowercase form, the plural resource
+Every verb that takes a check accepts `<kind>/<name>`, `<kind> <name>`, or
+`<kind>/<namespace>/<name>`. The last form is what every verb prints, so any
+reference in `fathomctl` output can be pasted back as an argument; an inline
+namespace overrides `-n`. A namespaced check addressed under `-A` without an
+inline namespace is an error (`-A` scopes listing, not a single target). The
+kind may be spelled as the Kind, its lowercase form, the plural resource
 name, or a CLI alias:
 
 | Kind | Resource | Alias | Scope | Runs itself? |
@@ -111,7 +115,9 @@ Reports are written when a verdict changes, not on every interval; a gap is
 not a missed run. `--limit` defaults to 10; `--since` keeps reports observed
 within that window. `--report <name>` prints one report in full: source,
 result, observation time, adapter, and every check with its target and
-summary.
+summary. The named report must belong to the addressed check; a report of
+another check in the same namespace is refused rather than printed under the
+wrong banner.
 
 Only executable checks write reports. `reports healthcheck/<name>` follows
 `spec.checkRef` to the source and says so on stderr; `reports
@@ -165,9 +171,14 @@ With `--wait`, `run` polls each target every 2 seconds until
 sets in the same status update as the run's verdict. The default timeout is
 the largest target's effective `spec.timeout` plus 30 seconds; `--timeout`
 overrides it. If the annotation changes to a different value before the
-token is consumed, the run is reported as **superseded**. A timeout message
-names the likely causes: an operator older than the CLI (compare with
-`fathomctl version`), a paused check, or a node-agent rollout still in
+token is consumed, the run is reported as **superseded**. If the operator
+reports it can never run the check (`Ready=False` with `InvalidPolicy`,
+`MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
+`--wait` fails immediately with that reason instead of waiting out the
+deadline. Transient API errors (rate limiting, a restarting API server) do
+not end the wait; only a deleted check or a permission failure does. A
+timeout message names the remaining likely causes: an operator older than
+the CLI (compare with `fathomctl version`) or a node-agent rollout still in
 progress.
 
 A `NodeCertificateCheck` run restarts one node-agent pod per node before the

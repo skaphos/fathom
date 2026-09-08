@@ -8,15 +8,18 @@ package cli
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 )
@@ -128,5 +131,64 @@ func TestWaitForRun_ReadErrorIsReported(t *testing.T) {
 	res := f.waitForRun(context.Background(), fc, addonTarget("team-a", "missing", addonCheck("team-a", "missing")), "tok-1", time.Second)
 	if res.err == nil || !strings.Contains(res.err.Error(), "re-read") {
 		t.Fatalf("expected a re-read error, got %+v", res)
+	}
+}
+
+// TestWaitForRun_RetriesTransientErrors proves a 429 mid-wait does not end
+// the wait with an error: the trigger is already accepted and the next poll
+// succeeds.
+func TestWaitForRun_RetriesTransientErrors(t *testing.T) {
+	ac := addonCheck("team-a", "coredns")
+	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	scheme, _ := newScheme()
+	var calls atomic.Int32
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ac).
+		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if calls.Add(1) <= 2 {
+					return apierrors.NewTooManyRequests("slow down", 1)
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+	f := newFactory()
+	f.pollInterval = 5 * time.Millisecond
+	completeRun(t, fc, types.NamespacedName{Namespace: "team-a", Name: "coredns"}, "Pass")
+
+	res := f.waitForRun(context.Background(), fc, addonTarget("team-a", "coredns", ac), "tok-1", 3*time.Second)
+	if res.err != nil || res.timedOut || res.superseded || res.snap.Verdict != "Pass" {
+		t.Fatalf("transient errors must be retried: %+v", res)
+	}
+	if calls.Load() < 3 {
+		t.Fatalf("expected the wait to keep polling past the injected errors, got %d calls", calls.Load())
+	}
+}
+
+// TestWaitForRun_FailsFastWhenOperatorCannotRun covers checks the operator
+// will never run (misconfigured, nothing to run on): the token stays pending
+// forever, so --wait reports the operator's own reason instead of timing out.
+func TestWaitForRun_FailsFastWhenOperatorCannotRun(t *testing.T) {
+	ac := addonCheck("team-a", "broken")
+	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	ac.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "InvalidPolicy", Message: "unknown family nope"}}
+	f, fc := fakeFactory(t, ac)
+
+	start := time.Now()
+	res := f.waitForRun(context.Background(), fc, addonTarget("team-a", "broken", ac), "tok-1", 5*time.Second)
+	if res.err == nil || !strings.Contains(res.err.Error(), "InvalidPolicy") || !strings.Contains(res.err.Error(), "unknown family nope") {
+		t.Fatalf("expected the Ready reason, got %+v", res)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("should fail fast, took %s", time.Since(start))
+	}
+	// A transient Ready=False (e.g. AdapterRunFailed) is not blocking.
+	ac2 := addonCheck("team-a", "flaky")
+	ac2.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-2"}
+	ac2.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "AdapterRunFailed", Message: "timeout"}}
+	f2, fc2 := fakeFactory(t, ac2)
+	res = f2.waitForRun(context.Background(), fc2, addonTarget("team-a", "flaky", ac2), "tok-2", 30*time.Millisecond)
+	if !res.timedOut {
+		t.Fatalf("a recoverable Ready=False must keep waiting, got %+v", res)
 	}
 }
