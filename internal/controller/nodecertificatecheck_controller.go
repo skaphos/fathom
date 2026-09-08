@@ -53,8 +53,6 @@ const (
 	nodeCertConditionAgentReady = "AgentReady"
 	nodeCertConditionReady      = "Ready"
 
-	defaultNodeCertInterval     = time.Hour
-	defaultNodeCertTimeout      = 30 * time.Second
 	defaultNodeCertWarnDays     = 30
 	defaultNodeCertCriticalDays = 7
 

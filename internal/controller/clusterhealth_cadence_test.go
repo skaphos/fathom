@@ -53,7 +53,7 @@ var _ = Describe("check cadence publication", func() {
 
 			value, ok := intervalGauge("AddonCheck", "cadence-default", "default")
 			Expect(ok).To(BeTrue(), "every self-scheduling check must publish a cadence")
-			Expect(value).To(Equal(defaultAddonCheckInterval.Seconds()))
+			Expect(value).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval.Seconds()))
 		})
 
 		It("publishes the per-resource override rather than the default", func() {

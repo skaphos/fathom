@@ -370,7 +370,7 @@ var _ = Describe("HealthCheck Controller", func() {
 			"kind": "HealthCheck", "name": hc.Name, "namespace": hc.Namespace,
 		})
 		Expect(ok).To(BeTrue(), "a paused wrapper must retain cadence-relative stale-alert coverage")
-		Expect(interval).To(Equal(defaultAddonCheckInterval.Seconds()))
+		Expect(interval).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval.Seconds()))
 		paused := apiMeta.FindStatusCondition(hc.Status.Conditions, healthCheckConditionPaused)
 		Expect(paused).NotTo(BeNil())
 		Expect(paused.Status).To(Equal(metav1.ConditionTrue))

@@ -104,11 +104,11 @@ func TestAddonCheckCadenceHelpersClamp(t *testing.T) {
 	}
 
 	unset := &fathomv1alpha1.AddonCheck{}
-	if got := addonCheckInterval(unset); got != defaultAddonCheckInterval {
-		t.Errorf("unset interval = %v, want default %v", got, defaultAddonCheckInterval)
+	if got := addonCheckInterval(unset); got != fathomv1alpha1.DefaultAddonCheckInterval {
+		t.Errorf("unset interval = %v, want default %v", got, fathomv1alpha1.DefaultAddonCheckInterval)
 	}
-	if got := addonCheckTimeout(unset); got != defaultAddonCheckTimeout {
-		t.Errorf("unset timeout = %v, want default %v", got, defaultAddonCheckTimeout)
+	if got := addonCheckTimeout(unset); got != fathomv1alpha1.DefaultAddonCheckTimeout {
+		t.Errorf("unset timeout = %v, want default %v", got, fathomv1alpha1.DefaultAddonCheckTimeout)
 	}
 }
 
@@ -124,11 +124,11 @@ func TestNodeCertCadenceHelpersClamp(t *testing.T) {
 	}
 
 	unset := &fathomv1alpha1.NodeCertificateCheck{}
-	if got := nodeCertInterval(unset); got != defaultNodeCertInterval {
-		t.Errorf("unset interval = %v, want default %v", got, defaultNodeCertInterval)
+	if got := nodeCertInterval(unset); got != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
+		t.Errorf("unset interval = %v, want default %v", got, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
 	}
-	if got := nodeCertTimeout(unset); got != defaultNodeCertTimeout {
-		t.Errorf("unset timeout = %v, want default %v", got, defaultNodeCertTimeout)
+	if got := nodeCertTimeout(unset); got != fathomv1alpha1.DefaultNodeCertificateCheckTimeout {
+		t.Errorf("unset timeout = %v, want default %v", got, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
 	}
 }
 

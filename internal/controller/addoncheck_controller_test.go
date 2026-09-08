@@ -692,7 +692,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
 			Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(defaultAddonCheckInterval))
+		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
 	})
 
 	It("does not requeue a paused AddonCheck", func() {
@@ -770,7 +770,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.runCount()).To(Equal(1))
-		Expect(result.RequeueAfter).To(Equal(defaultAddonCheckInterval))
+		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
 	})
 
 	It("runs immediately when the run-now annotation changes, once per value", func() {
@@ -795,7 +795,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		// A new run-now value forces an out-of-band run.
 		updated := &fathomv1alpha1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		updated.Annotations = map[string]string{annotationRunNow: "token-1"}
+		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "token-1"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -817,7 +817,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        name.Name,
 				Namespace:   name.Namespace,
-				Annotations: map[string]string{annotationRunNow: "tok"},
+				Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"},
 			},
 			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
 		}
@@ -855,7 +855,7 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		// Re-applying the same, already-consumed token must NOT re-trigger, and
 		// we are within the interval, so no new run happens.
-		updated.Annotations = map[string]string{annotationRunNow: "tok"}
+		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())

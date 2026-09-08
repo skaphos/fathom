@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -42,6 +43,11 @@ type kindDescriptor struct {
 	Items func(client.ObjectList) []client.Object
 	// Paused reads spec.paused. Kinds without the field report false.
 	Paused func(client.Object) bool
+	// Snapshot is the kind's verdict normalisation (see snapshot.go).
+	Snapshot func(client.Object) snapshot
+	// DefaultTimeout is the effective spec.timeout the controller would apply,
+	// used to size `run --wait`. Zero for derived kinds, which never run.
+	DefaultTimeout func(client.Object) time.Duration
 }
 
 var kinds = []*kindDescriptor{
@@ -58,7 +64,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused: func(o client.Object) bool { return o.(*fathomv1alpha1.AddonCheck).Spec.Paused },
+		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.AddonCheck).Spec.Paused },
+		Snapshot:       addonCheckSnapshot,
+		DefaultTimeout: addonCheckTimeout,
 	},
 	{
 		Kind: "DNSCheck", Resource: "dnschecks", Aliases: []string{"dns"},
@@ -73,7 +81,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused: func(client.Object) bool { return false },
+		Paused:         func(client.Object) bool { return false },
+		Snapshot:       dnsCheckSnapshot,
+		DefaultTimeout: dnsCheckTimeout,
 	},
 	{
 		Kind: "NodeCertificateCheck", Resource: "nodecertificatechecks", Aliases: []string{"ncc"},
@@ -88,7 +98,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused: func(o client.Object) bool { return o.(*fathomv1alpha1.NodeCertificateCheck).Spec.Paused },
+		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.NodeCertificateCheck).Spec.Paused },
+		Snapshot:       nodeCertificateCheckSnapshot,
+		DefaultTimeout: nodeCertificateCheckTimeout,
 	},
 	{
 		Kind: "HealthCheck", Resource: "healthchecks", Aliases: []string{"hc"},
@@ -103,7 +115,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused: func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
+		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
+		Snapshot:       healthCheckSnapshot,
+		DefaultTimeout: noTimeout,
 	},
 	{
 		Kind: "ClusterHealth", Resource: "clusterhealths", Aliases: []string{"ch"},
@@ -117,7 +131,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused: func(client.Object) bool { return false },
+		Paused:         func(client.Object) bool { return false },
+		Snapshot:       clusterHealthSnapshot,
+		DefaultTimeout: noTimeout,
 	},
 }
 

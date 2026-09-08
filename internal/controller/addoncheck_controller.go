@@ -47,21 +47,6 @@ const (
 	addonCheckConditionPaused   = "Paused"
 	addonCheckConditionReady    = "Ready"
 
-	defaultAddonCheckTimeout = 30 * time.Second
-
-	// defaultAddonCheckInterval is the cadence at which an AddonCheck's adapter
-	// re-runs when Spec.Interval is unset. Periodic re-execution is what keeps a
-	// HealthReport current: without it a check runs once and its result goes
-	// stale the moment the underlying addon degrades.
-	defaultAddonCheckInterval = 5 * time.Minute
-
-	// annotationRunNow forces an immediate adapter run, out of band from the
-	// interval, whenever its value changes. The controller records the consumed
-	// value in Status.LastRunTrigger so a given trigger fires exactly once —
-	// callers (the fathom CLI's on-demand run, SKA-45) must therefore write a fresh
-	// value each time (e.g. a timestamp or nonce), not a constant.
-	annotationRunNow = "fathom.skaphos.io/run-now"
-
 	// addonCheckMaxConcurrentReconciles bounds how many AddonChecks reconcile in
 	// parallel. Adapter Run is synchronous and may block up to spec.timeout
 	// (probe pods, admission dry-runs, network I/O), so the default single
@@ -236,7 +221,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	interval := addonCheckInterval(&check)
-	runNow := check.Annotations[annotationRunNow]
+	runNow := check.Annotations[fathomv1alpha1.AnnotationRunNow]
 	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNow, interval) {
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
@@ -548,14 +533,14 @@ func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
 		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
-	return defaultAddonCheckTimeout
+	return fathomv1alpha1.DefaultAddonCheckTimeout
 }
 
 func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
 		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
-	return defaultAddonCheckInterval
+	return fathomv1alpha1.DefaultAddonCheckInterval
 }
 
 // setAddonCheckAccepted records the Accepted condition from policy validation:

@@ -115,14 +115,14 @@ func nodeCertInterval(check *fathomv1alpha1.NodeCertificateCheck) time.Duration 
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
 		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
 	}
-	return defaultNodeCertInterval
+	return fathomv1alpha1.DefaultNodeCertificateCheckInterval
 }
 
 func nodeCertTimeout(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
 		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
 	}
-	return defaultNodeCertTimeout
+	return fathomv1alpha1.DefaultNodeCertificateCheckTimeout
 }
 
 func nodeOutcomeToResult(o nodecert.Outcome) fathomv1alpha1.HealthReportResult {
