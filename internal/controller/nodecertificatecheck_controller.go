@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,16 @@ const (
 	nodeCertConditionPaused     = "Paused"
 	nodeCertConditionAgentReady = "AgentReady"
 	nodeCertConditionReady      = "Ready"
+	// nodeCertConditionCoverage distinguishes "this verdict is current" from
+	// "this verdict is the last one we could compute". An incomplete scan window
+	// freezes LastResult, so without an explicit coverage signal a frozen verdict
+	// is indistinguishable from a fresh one (COR-3).
+	nodeCertConditionCoverage = "CoverageComplete"
+
+	// maxCoverageMessageNodes bounds how many missing node names the coverage
+	// condition names before it summarises, so a large fleet cannot push the
+	// message toward the API server's condition-message limit.
+	maxCoverageMessageNodes = 5
 
 	defaultNodeCertWarnDays     = 30
 	defaultNodeCertCriticalDays = 7
@@ -152,6 +163,12 @@ type NodeCertificateCheckReconciler struct {
 // The per-check node-agent NetworkPolicy (#153) is owner-referenced, so
 // deletion rides garbage collection — no delete verb.
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
+// Coverage is computed against the nodes the agent pods actually landed on
+// (expectedAgentNodes). Reading the agent's own pods is a namespaced list the
+// operator already holds for the probe; resolving the DaemonSet's node selector
+// instead would require a cluster-wide read on nodes, which this operator
+// deliberately does not take (compare #255).
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 // The controller ensures a cluster-scoped ValidatingAdmissionPolicy + binding
 // that authenticate per-node report ConfigMaps (#155). Creating a VAP confers no
 // privilege of its own, so this grant does not trip the RBAC escalation check.
@@ -229,32 +246,27 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	})
 
 	if err := r.ensureNodeAgentClusterRole(ctx); err != nil {
-		r.setReady(&check, metav1.ConditionFalse, "RBACProvisioningFailed", err.Error())
-		return ctrl.Result{}, err
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 
 	if err := r.ensureReportAuthenticityPolicy(ctx, log); err != nil {
-		r.setReady(&check, metav1.ConditionFalse, "AdmissionPolicyProvisioningFailed", err.Error())
-		return ctrl.Result{}, err
+		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
 
 	saName, err := r.ensureAgentRBAC(ctx, &check)
 	if err != nil {
-		r.setReady(&check, metav1.ConditionFalse, "RBACProvisioningFailed", err.Error())
-		return ctrl.Result{}, err
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 
 	// Converge the NetworkPolicy before the DaemonSet so agent pods never start
 	// in a window where their metrics port is open cluster-wide (#153).
 	if err := r.ensureAgentNetworkPolicy(ctx, &check); err != nil {
-		r.setReady(&check, metav1.ConditionFalse, "NetworkPolicyProvisioningFailed", err.Error())
-		return ctrl.Result{}, err
+		return r.failProvisioning(ctx, log, before, &check, "NetworkPolicyProvisioningFailed", err)
 	}
 
 	ds, err := r.ensureDaemonSet(ctx, &check, saName)
 	if err != nil {
-		r.setReady(&check, metav1.ConditionFalse, "DaemonSetProvisioningFailed", err.Error())
-		return ctrl.Result{}, err
+		return r.failProvisioning(ctx, log, before, &check, "DaemonSetProvisioningFailed", err)
 	}
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
@@ -265,27 +277,35 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	check.Status.ReportingNodes = int32(len(reports))
 
+	expected, err := r.expectedAgentNodes(ctx, &check)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	reported := nodeNameSet(reports)
+
 	token, triggerPending := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
 
-	if nodeCertReportsComplete(ds, len(reports)) {
+	// An incomplete window — a DaemonSet rollout, a node joining, an agent
+	// restart — freezes the last known verdict instead of clearing it. A gap in
+	// reporting is not evidence that the fleet changed, and clearing it churned
+	// every mirroring HealthCheck and ClusterHealth through Unknown and moved
+	// lastRunTime backward (COR-3). The freeze is what status.lastRunTrigger
+	// already promised for the pending-trigger case; it now holds unconditionally,
+	// with CoverageComplete carrying the "this verdict is frozen" signal.
+	complete := nodeCertReportsComplete(ds, expected, reported)
+	if complete {
 		aggregate := aggregateNodeReports(reports)
 		if err := r.rollup(ctx, log, &check, reports, aggregate, interval); err != nil {
 			return ctrl.Result{}, err
 		}
-	} else if !triggerPending {
-		clearNodeCertRollupStatus(&check)
 	}
-	// While a trigger is pending the DaemonSet is rolling the agents on
-	// purpose; blanking the roll-up would flap every mirroring HealthCheck and
-	// ClusterHealth to no-result on each forced run. The previous verdict is
-	// retained until the triggered reports cover the fleet (or the trigger is
-	// abandoned), which is the contract status.lastRunTrigger documents.
+	r.setCoverage(&check, ds, expected, reported, complete)
 
 	if triggerPending {
-		consumeNodeCertRunTrigger(&check, before, ds, reports, token, time.Now())
+		consumeNodeCertRunTrigger(&check, before, ds, expected, reports, token, time.Now())
 	}
 
-	r.setReadyFromState(&check, ds, len(reports))
+	r.setReadyFromState(&check, ds, expected, reported)
 	return r.finish(ctx, log, before, &check, interval)
 }
 
@@ -310,14 +330,11 @@ func nodeCertTemplateToken(check *fathomv1alpha1.NodeCertificateCheck) string {
 // A forced run that leaves the aggregate unchanged would otherwise be a rollup
 // no-op, so LastRunTime is refreshed when the rollup did not move it; a waiter
 // then sees both the consumed token and a run time at or after its request.
-func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, before *fathomv1alpha1.NodeCertificateCheckStatus, ds *appsv1.DaemonSet, reports []nodecert.NodeReport, token string, now time.Time) {
-	triggered := 0
-	for _, report := range reports {
-		if report.Trigger == token {
-			triggered++
-		}
-	}
-	if !nodeCertReportsComplete(ds, triggered) {
+func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, before *fathomv1alpha1.NodeCertificateCheckStatus, ds *appsv1.DaemonSet, expected map[string]struct{}, reports []nodecert.NodeReport, token string, now time.Time) {
+	// Per-node-identity, exactly like the routine roll-up: a trigger completes
+	// only once every node in scope has answered with this token, so a departed
+	// node's report can never stand in for a live node that has not run yet.
+	if !nodeCertReportsComplete(ds, expected, triggeredNodeSet(reports, token)) {
 		return
 	}
 	check.Status.LastRunTrigger = token
@@ -912,7 +929,12 @@ func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Lo
 		pruneNodeCertHealthReports(ctx, r.Client, log, check)
 	}
 
-	check.Status.LastRunTime = &persistedReport.Spec.ObservedAt
+	// Reusing a deterministic HealthReport hands back that report's original
+	// ObservedAt, which can predate the current LastRunTime. The observable run
+	// time must never move backward (COR-3).
+	if check.Status.LastRunTime == nil || persistedReport.Spec.ObservedAt.After(check.Status.LastRunTime.Time) {
+		check.Status.LastRunTime = &persistedReport.Spec.ObservedAt
+	}
 	check.Status.LastReportName = persistedReport.Name
 	check.Status.LastResult = string(persistedReport.Spec.Result)
 	return nil
@@ -978,20 +1000,129 @@ func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
 		ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled
 }
 
-func nodeCertReportsComplete(ds *appsv1.DaemonSet, reportCount int) bool {
-	// Require a fully converged rollout so a rollup is never computed from
-	// stale-template pods, and tolerate transient node-count churn: a report from
-	// a node that was removed or deselected survives (owner-referenced by the
-	// check) until it ages out, so accept reportCount >= desired rather than exact
-	// equality, which would otherwise blank the rollup for up to interval+timeout
-	// (SKA-589).
-	return nodeAgentRolledOut(ds) && int32(reportCount) >= ds.Status.DesiredNumberScheduled
+// expectedAgentNodes returns the identities of the nodes the agent DaemonSet is
+// currently scheduled on, read from the agent pods themselves.
+//
+// The pods are the source of truth rather than the DaemonSet's node selector:
+// resolving the selector would mean re-implementing scheduling, and listing
+// Nodes would take a cluster-wide read this operator deliberately does not hold
+// (compare #255). Every agent pod carrying a node name counts, including one
+// that is terminating — a node mid-rollout is still in scope, and counting it
+// keeps coverage failing closed until its replacement reports.
+func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (map[string]struct{}, error) {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods,
+		client.InNamespace(check.Namespace),
+		client.MatchingLabels{
+			nodecert.LabelSourceName: check.Name,
+			nodeAgentComponentLabel:  nodeAgentComponentValue,
+		},
+	); err != nil {
+		return nil, err
+	}
+	nodes := make(map[string]struct{}, len(pods.Items))
+	for i := range pods.Items {
+		if node := pods.Items[i].Spec.NodeName; node != "" {
+			nodes[node] = struct{}{}
+		}
+	}
+	return nodes, nil
 }
 
-func clearNodeCertRollupStatus(check *fathomv1alpha1.NodeCertificateCheck) {
-	check.Status.LastRunTime = nil
-	check.Status.LastReportName = ""
-	check.Status.LastResult = ""
+// nodeNameSet indexes reports by the node that produced them.
+func nodeNameSet(reports []nodecert.NodeReport) map[string]struct{} {
+	nodes := make(map[string]struct{}, len(reports))
+	for _, report := range reports {
+		nodes[report.Node] = struct{}{}
+	}
+	return nodes
+}
+
+// triggeredNodeSet indexes the nodes whose fresh report carries token. The empty
+// token never matches, so an agent predating the field cannot complete a wait.
+func triggeredNodeSet(reports []nodecert.NodeReport, token string) map[string]struct{} {
+	nodes := make(map[string]struct{}, len(reports))
+	for _, report := range reports {
+		if token != "" && report.Trigger == token {
+			nodes[report.Node] = struct{}{}
+		}
+	}
+	return nodes
+}
+
+// missingNodes lists expected nodes absent from reported, sorted so status
+// messages and log lines are stable across reconciles.
+func missingNodes(expected, reported map[string]struct{}) []string {
+	var missing []string
+	for node := range expected {
+		if _, ok := reported[node]; !ok {
+			missing = append(missing, node)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// nodeCertReportsComplete reports whether every node in scope published a fresh
+// scan result.
+//
+// Completeness is per-node-identity, not a count. Counting let a departed node's
+// still-fresh report substitute for a newly joined node's missing one, so the
+// roll-up claimed full coverage while a live node had never been scanned
+// (COR-4). Surplus reports from nodes that have left are simply not consulted,
+// which preserves the churn tolerance the count comparison was reaching for
+// (SKA-589) without the substitution it allowed.
+//
+// The count floor is kept on top of the identity check: before the agent pods
+// exist, expected is a subset of the fleet and identity alone would pass
+// vacuously. A fully converged rollout is still required so a roll-up is never
+// computed from stale-template pods.
+func nodeCertReportsComplete(ds *appsv1.DaemonSet, expected, reported map[string]struct{}) bool {
+	return nodeAgentRolledOut(ds) &&
+		int32(len(expected)) >= ds.Status.DesiredNumberScheduled &&
+		len(missingNodes(expected, reported)) == 0
+}
+
+// setCoverage records whether the current verdict was computed from a complete
+// scan of the fleet, so a frozen verdict is distinguishable from a fresh one.
+func (r *NodeCertificateCheckReconciler) setCoverage(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, complete bool) {
+	condition := metav1.Condition{
+		Type:               nodeCertConditionCoverage,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: check.Generation,
+		Reason:             "AllNodesReporting",
+		Message:            fmt.Sprintf("All %d node(s) in scope published a fresh scan result.", len(expected)),
+	}
+	if !complete {
+		condition.Status = metav1.ConditionFalse
+		switch {
+		case ds.Status.DesiredNumberScheduled == 0:
+			condition.Reason = "NoMatchingNodes"
+			condition.Message = "No nodes match the node-agent DaemonSet; nothing to scan."
+		case !nodeAgentRolledOut(ds):
+			condition.Reason = "AgentRollingOut"
+			condition.Message = "Node-agent DaemonSet is still rolling out; the last known verdict is retained."
+		default:
+			condition.Reason = "PartialReports"
+			condition.Message = fmt.Sprintf("%s have not published a fresh scan result; the last known verdict is retained.",
+				coverageGapSummary(expected, reported, ds.Status.DesiredNumberScheduled))
+		}
+	}
+	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
+}
+
+// coverageGapSummary describes the coverage gap, naming at most
+// maxCoverageMessageNodes missing nodes so the condition message stays bounded.
+func coverageGapSummary(expected, reported map[string]struct{}, desired int32) string {
+	if int32(len(expected)) < desired {
+		return fmt.Sprintf("Only %d of %d node-agent pod(s) are scheduled, so some nodes", len(expected), desired)
+	}
+	missing := missingNodes(expected, reported)
+	if len(missing) > maxCoverageMessageNodes {
+		return fmt.Sprintf("%d of %d node(s) in scope (%s and %d more)",
+			len(missing), len(expected), strings.Join(missing[:maxCoverageMessageNodes], ", "), len(missing)-maxCoverageMessageNodes)
+	}
+	return fmt.Sprintf("%d of %d node(s) in scope (%s)", len(missing), len(expected), strings.Join(missing, ", "))
 }
 
 func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) {
@@ -1016,22 +1147,44 @@ func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.Nod
 	})
 }
 
-func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, reportCount int) {
+func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}) {
 	switch {
 	case ds.Status.DesiredNumberScheduled == 0:
 		r.setReady(check, metav1.ConditionFalse, "NoMatchingNodes", "No nodes match the node-agent DaemonSet.")
-	case reportCount == 0:
+	case len(reported) == 0:
 		r.setReady(check, metav1.ConditionFalse, "AwaitingReports", "Waiting for node-agents to publish fresh scan results.")
-	case int32(reportCount) < ds.Status.DesiredNumberScheduled:
+	case len(missingNodes(expected, reported)) > 0 || int32(len(expected)) < ds.Status.DesiredNumberScheduled:
 		r.setReady(check, metav1.ConditionFalse, "PartialReports", "Waiting for every selected node-agent to publish a fresh scan result.")
 	case !nodeAgentRolledOut(ds):
-		// reportCount >= desired but the DaemonSet has not fully converged (a pod
-		// is not ready or an update is still rolling). A surplus of reports here is
-		// tolerated as transient node-count churn rather than flagged as a mismatch.
+		// Every node in scope has reported but the DaemonSet has not fully
+		// converged (a pod is not ready, or an update is still rolling). Surplus
+		// reports from departed nodes are tolerated as transient churn rather than
+		// flagged as a mismatch.
 		r.setReady(check, metav1.ConditionFalse, "AgentRollingOut", "Node-agent DaemonSet is still rolling out.")
 	default:
 		r.setReady(check, metav1.ConditionTrue, "Reporting", "Node-agents are reporting and a HealthReport was rolled up.")
 	}
+}
+
+// failProvisioning records a provisioning failure on Ready and persists it
+// before returning the error.
+//
+// Setting the condition in memory and returning was the whole of COR-2: nothing
+// reached the API server, so a check whose provisioning had been failing for
+// days kept advertising the Ready=True/Pass it last succeeded with — the worst
+// failure mode for a health product, whose entire job is to be believed when it
+// says something is wrong. The provisioning error is returned unchanged so the
+// controller keeps its rate-limited retry.
+func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeCertificateCheckStatus, check *fathomv1alpha1.NodeCertificateCheck, reason string, cause error) (ctrl.Result, error) {
+	r.setReady(check, metav1.ConditionFalse, reason, cause.Error())
+	if !equality.Semantic.DeepEqual(before, &check.Status) {
+		if err := r.Status().Update(ctx, check); err != nil {
+			// A failed persist must not mask the provisioning error that caused it;
+			// the next reconcile retries both.
+			log.Error(err, "failed to persist NodeCertificateCheck status after provisioning failure", "reason", reason)
+		}
+	}
+	return ctrl.Result{}, cause
 }
 
 func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCertificateCheck, status metav1.ConditionStatus, reason, message string) {
