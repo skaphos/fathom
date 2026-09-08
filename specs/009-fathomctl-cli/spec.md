@@ -340,6 +340,8 @@ reachable cluster.
 - Creating, editing, or deleting checks; the CLI is read-only apart from the
   run trigger. Authoring stays in Git per Principle II.
 - A CLI-specific output schema, plugin system, or interactive UI.
+- An MCP (Model Context Protocol) server surface for agents; tracked
+  separately as #322 and built on the verbs delivered here.
 - A container image for the CLI.
 - Support for kinds that do not exist in the current API.
 - Changing report retention, deduplication, or the `ClusterHealth` contract.
