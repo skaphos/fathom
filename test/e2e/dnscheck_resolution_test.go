@@ -55,10 +55,12 @@ spec:
 	})
 	// Start from nothing: on a reused cluster a same-named check from an
 	// earlier run would keep its old status through an apply, and a stale
-	// Pass must never satisfy this run's assertion.
-	_, _ = utils.Run(exec.Command("kubectl", "delete", "dnscheck", name,
-		"-n", dnsResolutionNamespace, "--ignore-not-found=true", "--wait=true"))
-	_, err := utils.Run(exec.Command("kubectl", "apply", "-f", path))
+	// Pass must never satisfy this run's assertion. A delete that cannot
+	// complete is therefore a spec failure, not something to apply over.
+	_, err := utils.Run(exec.Command("kubectl", "delete", "dnscheck", name,
+		"-n", dnsResolutionNamespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"))
+	Expect(err).NotTo(HaveOccurred(), "could not clear a pre-existing DNSCheck %q; applying over it would keep its stale status", name)
+	_, err = utils.Run(exec.Command("kubectl", "apply", "-f", path))
 	Expect(err).NotTo(HaveOccurred())
 }
 
