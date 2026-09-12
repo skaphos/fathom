@@ -47,9 +47,10 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 ## `api/v1alpha1/` — CRD types
 
-Defines the five kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
-(`addoncheck_types.go`, `healthcheck_types.go`, `clusterhealth_types.go`,
-`healthreport_types.go`, `nodecertificatecheck_types.go`), plus
+Defines the six kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+(`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
+`clusterhealth_types.go`, `healthreport_types.go`,
+`nodecertificatecheck_types.go`), plus
 `groupversion_info.go` (scheme registration) and the generated
 `zz_generated.deepcopy.go` (**never hand-edit**).
 
@@ -109,7 +110,7 @@ ownership and watch wiring. Each implements `Reconcile` and `SetupWithManager`.
 | File | Type | Notes |
 | --- | --- | --- |
 | `addoncheck_controller.go` | `AddonCheckReconciler` | Dispatches to adapters, creates + prunes `HealthReport`s. |
-| `dnscheck_controller.go` | `DNSCheckReconciler` | Launches one probe Pod per resolver in the check's namespace, judges each target, persists change-only `HealthReport`s. `dnscheck_plan.go` expands resolvers × targets into the bounded run plan. |
+| `dnscheck_controller.go` | `DNSCheckReconciler` | Runs one probe Pod per (target, resolver) pair in the check's namespace, folds the pair outcomes into one verdict, persists change-only `HealthReport`s. `dnscheck_plan.go` expands the pairs and budgets the run so the fan-out stays bounded. |
 | `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck`, `DNSCheck`, and `NodeCertificateCheck` status via `CheckTargetRef`; watches all three. |
 | `clusterhealth_controller.go` | `ClusterHealthReconciler` | Worst-case roll-up of `HealthCheck.status`; watches `HealthCheck`. |
 | `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. |

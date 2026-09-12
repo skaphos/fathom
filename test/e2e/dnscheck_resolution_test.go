@@ -53,6 +53,11 @@ spec:
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "-f", path, "--ignore-not-found=true"))
 		_ = os.Remove(path)
 	})
+	// Start from nothing: on a reused cluster a same-named check from an
+	// earlier run would keep its old status through an apply, and a stale
+	// Pass must never satisfy this run's assertion.
+	_, _ = utils.Run(exec.Command("kubectl", "delete", "dnscheck", name,
+		"-n", dnsResolutionNamespace, "--ignore-not-found=true", "--wait=true"))
 	_, err := utils.Run(exec.Command("kubectl", "apply", "-f", path))
 	Expect(err).NotTo(HaveOccurred())
 }
@@ -159,6 +164,26 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].resolver}")).To(Equal("upstream"))
 		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].answers}")).NotTo(BeEmpty(),
 			"a Pass from an explicit resolver must carry the answers it was judged on")
+
+		// The Pass above would also hold if the controller quietly fell back to
+		// cluster DNS, since kube-dns answers either way. The discriminator is
+		// what an explicit vantage point does NOT have: the cluster search
+		// domains. A short name resolves through an inherited resolv.conf and
+		// only there, so a Fail here is proof the query went out with the
+		// declared nameserver and no search list (see DNSTarget.Name).
+		By("failing a short name through the same resolver, proving no search domains were inherited")
+		applyDNSCheck("explicit-upstream-short", fmt.Sprintf(`  interval: 1m
+  timeout: 30s
+  resolvers:
+    - name: upstream
+      from: Explicit
+      address: %s:53
+  targets:
+    - name: kubernetes.default
+      recordType: A
+      resolver: upstream
+`, clusterDNS))
+		eventuallyDNSResult("explicit-upstream-short", "Fail")
 	})
 
 	// T047 — FR-025 and FR-012. `.invalid` is guaranteed non-resolvable

@@ -27,8 +27,9 @@ Local validation note (2026-09-11): the core tier passed again with 52 of 81
 specs (the 29 skipped are addon-scoped), now including the explicit
 upstream-resolver spec added for #268. Kind 0.32 cannot list clusters under
 Podman 6 (`podman ps` template error); pin kind 0.33 or later on `PATH` for a
-local run. The full-stack run still exceeds the 3.8 GiB Podman VM, so T033 is
-satisfied by the CI `kind e2e` matrix on the PR rather than locally.
+local run. The full-stack run still exceeds the 3.8 GiB Podman VM, so T033
+stays pending until the CI `kind e2e` matrix on skaphos/fathom#331 completes;
+tick it and this note together when it does.
 
 ## 1. Verify generated contracts
 
