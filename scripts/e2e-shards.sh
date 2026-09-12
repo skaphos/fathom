@@ -90,9 +90,13 @@ shard_for_file() {
     test/e2e/cilium_test.go) echo core ;;
     test/e2e/externalsecrets_test.go) echo core ;;
     test/e2e/nodecert_test.go) echo core ;;
+    # DNSCheck is a core-tier kind (probe Pods + CoreDNS, no addon); its
+    # specs carry the core label and run on every shard.
+    test/e2e/dnscheck*_test.go) echo core ;;
     test/e2e/impersonation_test.go) echo core ;;
     test/e2e/addoncheck_refresh_test.go) echo core ;;
     config/samples/fathom_v1alpha1_addoncheck.yaml) echo core ;;
+    config/samples/fathom_v1alpha1_dnscheck.yaml) echo core ;;
     config/samples/*_coredns.yaml) echo core ;;
     config/samples/*_cilium.yaml) echo core ;;
     config/samples/*_external_secrets.yaml) echo core ;;

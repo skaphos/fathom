@@ -128,6 +128,39 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 			dnsResolutionNamespace)
 	})
 
+	// #268 — the upstream-resolver row. An Explicit vantage point runs its
+	// probe with dnsPolicy None and exactly the declared nameserver, so the
+	// query never touches the pod's inherited resolv.conf. Pointing it at the
+	// cluster DNS Service's own ClusterIP keeps the spec deterministic (no
+	// internet egress) while still proving the address path end to end: a
+	// fully qualified name answered by a resolver the check named itself.
+	It("resolves through an explicitly addressed upstream resolver", func() {
+		out, err := utils.Run(exec.Command("kubectl", "get", "service", "kube-dns",
+			"-n", "kube-system", "-o", "jsonpath={.spec.clusterIP}"))
+		Expect(err).NotTo(HaveOccurred())
+		clusterDNS := strings.TrimSpace(out)
+		Expect(clusterDNS).NotTo(BeEmpty(), "kube-system/kube-dns has no ClusterIP")
+
+		applyDNSCheck("explicit-upstream", fmt.Sprintf(`  interval: 1m
+  timeout: 30s
+  resolvers:
+    - name: upstream
+      from: Explicit
+      address: %s:53
+  targets:
+    - name: kubernetes.default.svc.cluster.local.
+      recordType: A
+      resolver: upstream
+`, clusterDNS))
+		eventuallyDNSResult("explicit-upstream", "Pass")
+
+		By("attributing the answer to the named vantage point, with the records as evidence")
+		Expect(dnsCheckField("explicit-upstream", "{.status.observedTargets}")).To(Equal("1"))
+		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].resolver}")).To(Equal("upstream"))
+		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].answers}")).NotTo(BeEmpty(),
+			"a Pass from an explicit resolver must carry the answers it was judged on")
+	})
+
 	// T047 — FR-025 and FR-012. `.invalid` is guaranteed non-resolvable
 	// (RFC 6761), so one name exercises both assertion polarities against a real
 	// resolver.

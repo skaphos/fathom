@@ -23,6 +23,13 @@ after installing the addon stack; the Kubernetes API connection dropped during
 operator deployment, before the specs began. T033 remains pending for CI or a
 larger Podman VM.
 
+Local validation note (2026-09-11): the core tier passed again with 52 of 81
+specs (the 29 skipped are addon-scoped), now including the explicit
+upstream-resolver spec added for #268. Kind 0.32 cannot list clusters under
+Podman 6 (`podman ps` template error); pin kind 0.33 or later on `PATH` for a
+local run. The full-stack run still exceeds the 3.8 GiB Podman VM, so T033 is
+satisfied by the CI `kind e2e` matrix on the PR rather than locally.
+
 ## 1. Verify generated contracts
 
 ```sh
