@@ -17,7 +17,7 @@ for and the key entrypoints to start reading from. For the design rationale see
 | `api/v1alpha1/` | CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
 | `internal/cli/` | The `fathomctl` command tree, client factory, kind table, and verdict normalisation. |
-| `internal/controller/` | The four reconcilers. |
+| `internal/controller/` | The five reconcilers. |
 | `internal/adapter/` | Adapter registry and built-in adapters. |
 | `internal/probe/` | Probe-pod manifest builder and launcher. |
 | `pkg/adapter/` | The public, in-process adapter contract. |
@@ -47,9 +47,10 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 ## `api/v1alpha1/` — CRD types
 
-Defines the five kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
-(`addoncheck_types.go`, `healthcheck_types.go`, `clusterhealth_types.go`,
-`healthreport_types.go`, `nodecertificatecheck_types.go`), plus
+Defines the six kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+(`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
+`clusterhealth_types.go`, `healthreport_types.go`,
+`nodecertificatecheck_types.go`), plus
 `groupversion_info.go` (scheme registration) and the generated
 `zz_generated.deepcopy.go` (**never hand-edit**).
 
@@ -96,7 +97,7 @@ The unit-testable seam between `cmd/main.go` and controller-runtime.
   [reference/configuration.md](reference/configuration.md).
 - `run.go` — `NewScheme` (registers client-go, fathom v1alpha1, and
   apiextensions/v1), `BuildManagerOptions` (Options → `ctrl.Options` + cert
-  watchers), `DefaultControllers` (constructs the four reconcilers),
+  watchers), `DefaultControllers` (constructs the five reconcilers),
   `BuildAdapterRegistry` / `builtInAdapters` (registry assembly), and `Run`
   (starts the manager, gates `/readyz` on cache sync). `managerFactory` is a
   package var so tests can swap in a fake manager.
@@ -109,7 +110,8 @@ ownership and watch wiring. Each implements `Reconcile` and `SetupWithManager`.
 | File | Type | Notes |
 | --- | --- | --- |
 | `addoncheck_controller.go` | `AddonCheckReconciler` | Dispatches to adapters, creates + prunes `HealthReport`s. |
-| `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck.status`; watches `AddonCheck`. |
+| `dnscheck_controller.go` | `DNSCheckReconciler` | Runs one probe Pod per (target, resolver) pair in the check's namespace, folds the pair outcomes into one verdict, persists change-only `HealthReport`s. `dnscheck_plan.go` expands the pairs and budgets the run so the fan-out stays bounded. |
+| `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck`, `DNSCheck`, and `NodeCertificateCheck` status via `CheckTargetRef`; watches all three. |
 | `clusterhealth_controller.go` | `ClusterHealthReconciler` | Worst-case roll-up of `HealthCheck.status`; watches `HealthCheck`. |
 | `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. |
 | `suite_test.go` | — | envtest bootstrap for the Ginkgo controller tests. |

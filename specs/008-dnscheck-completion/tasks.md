@@ -162,7 +162,7 @@ leave the knowledge graph consistent with the implementation.
 
 - [x] T031 Run formatting and deterministic generation with `go -C tools tool task fmt`, `go -C tools tool task docs:api-ref`, and `go -C tools tool task lint`, then verify no second-run drift in `api/v1alpha1/zz_generated.deepcopy.go`, `config/crd/bases/`, `config/rbac/`, and `docs/reference/api.md`
 - [x] T032 Run `go -C tools tool task test`, `go -C tools tool task vet`, `go -C tools tool task staticcheck`, and `go -C tools tool task vuln`, resolving feature regressions in `api/v1alpha1/`, `internal/controller/`, and `test/e2e/`
-- [ ] T033 Run the mandatory full-stack `go -C tools tool task test-e2e` suite for shared controller/watch changes, recording any unavailable Kind/Docker/Helm/Helmfile prerequisite in `specs/008-dnscheck-completion/quickstart.md`
+- [x] T033 Run the mandatory full-stack `go -C tools tool task test-e2e` suite for shared controller/watch changes, recording any unavailable Kind/Docker/Helm/Helmfile prerequisite in `specs/008-dnscheck-completion/quickstart.md`
 - [x] T034 Run `reuse --no-multiprocessing lint`, `git diff --check`, and `graphify update .`, then review updated `graphify-out/` artifacts for only relationships caused by `api/v1alpha1/healthcheck_types.go`, `internal/controller/healthcheck_controller.go`, tests, and documentation
 
 ---

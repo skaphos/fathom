@@ -11,8 +11,10 @@
 # helmfile sync and the Ginkgo label filter (see test/utils).
 #
 # Usage:
-#   scripts/e2e-shards.sh             # no base ref: plan the full matrix
-#   scripts/e2e-shards.sh <base-ref>  # plan for `git diff <base-ref>...HEAD`
+#   scripts/e2e-shards.sh                   # no base ref: plan the full matrix
+#   scripts/e2e-shards.sh <base-ref>        # plan for `git diff <base-ref>...HEAD`
+#   scripts/e2e-shards.sh --classify <path> # print one path's shard ("", core,
+#                                           # an opt-in addon, or all); for tests
 #
 # Prints a JSON array of shard names on stdout. Policy:
 #   - files scoped to one opt-in addon           -> that addon's shard
@@ -90,9 +92,13 @@ shard_for_file() {
     test/e2e/cilium_test.go) echo core ;;
     test/e2e/externalsecrets_test.go) echo core ;;
     test/e2e/nodecert_test.go) echo core ;;
+    # DNSCheck is a core-tier kind (probe Pods + CoreDNS, no addon); its
+    # specs carry the core label, so the always-on core shard runs them.
+    test/e2e/dnscheck*_test.go) echo core ;;
     test/e2e/impersonation_test.go) echo core ;;
     test/e2e/addoncheck_refresh_test.go) echo core ;;
     config/samples/fathom_v1alpha1_addoncheck.yaml) echo core ;;
+    config/samples/fathom_v1alpha1_dnscheck.yaml) echo core ;;
     config/samples/*_coredns.yaml) echo core ;;
     config/samples/*_cilium.yaml) echo core ;;
     config/samples/*_external_secrets.yaml) echo core ;;
@@ -119,6 +125,11 @@ shard_for_file() {
     *) echo all ;;
   esac
 }
+
+if [ "${1:-}" = "--classify" ]; then
+  shard_for_file "${2:?--classify needs a path}"
+  exit 0
+fi
 
 base="${1:-}"
 if [ -z "$base" ]; then

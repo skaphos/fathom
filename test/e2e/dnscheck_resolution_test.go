@@ -53,7 +53,14 @@ spec:
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "-f", path, "--ignore-not-found=true"))
 		_ = os.Remove(path)
 	})
-	_, err := utils.Run(exec.Command("kubectl", "apply", "-f", path))
+	// Start from nothing: on a reused cluster a same-named check from an
+	// earlier run would keep its old status through an apply, and a stale
+	// Pass must never satisfy this run's assertion. A delete that cannot
+	// complete is therefore a spec failure, not something to apply over.
+	_, err := utils.Run(exec.Command("kubectl", "delete", "dnscheck", name,
+		"-n", dnsResolutionNamespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"))
+	Expect(err).NotTo(HaveOccurred(), "could not clear a pre-existing DNSCheck %q; applying over it would keep its stale status", name)
+	_, err = utils.Run(exec.Command("kubectl", "apply", "-f", path))
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -126,6 +133,59 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		Expect(found).To(BeTrue(),
 			"no fathom-dnscheck-* Pod was scheduled in %s; resolution may have run elsewhere (SC-008)",
 			dnsResolutionNamespace)
+	})
+
+	// #268 — the upstream-resolver row. An Explicit vantage point runs its
+	// probe with dnsPolicy None and exactly the declared nameserver, so the
+	// query never touches the pod's inherited resolv.conf. Pointing it at the
+	// cluster DNS Service's own ClusterIP keeps the spec deterministic (no
+	// internet egress) while still proving the address path end to end: a
+	// fully qualified name answered by a resolver the check named itself.
+	It("resolves through an explicitly addressed upstream resolver", func() {
+		out, err := utils.Run(exec.Command("kubectl", "get", "service", "kube-dns",
+			"-n", "kube-system", "-o", "jsonpath={.spec.clusterIP}"))
+		Expect(err).NotTo(HaveOccurred())
+		clusterDNS := strings.TrimSpace(out)
+		Expect(clusterDNS).NotTo(BeEmpty(), "kube-system/kube-dns has no ClusterIP")
+
+		applyDNSCheck("explicit-upstream", fmt.Sprintf(`  interval: 1m
+  timeout: 30s
+  resolvers:
+    - name: upstream
+      from: Explicit
+      address: %s:53
+  targets:
+    - name: kubernetes.default.svc.cluster.local.
+      recordType: A
+      resolver: upstream
+`, clusterDNS))
+		eventuallyDNSResult("explicit-upstream", "Pass")
+
+		By("attributing the answer to the named vantage point, with the records as evidence")
+		Expect(dnsCheckField("explicit-upstream", "{.status.observedTargets}")).To(Equal("1"))
+		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].resolver}")).To(Equal("upstream"))
+		Expect(dnsCheckField("explicit-upstream", "{.status.targetResults[0].answers}")).NotTo(BeEmpty(),
+			"a Pass from an explicit resolver must carry the answers it was judged on")
+
+		// The Pass above would also hold if the controller quietly fell back to
+		// cluster DNS, since kube-dns answers either way. The discriminator is
+		// what an explicit vantage point does NOT have: the cluster search
+		// domains. A short name resolves through an inherited resolv.conf and
+		// only there, so a Fail here is proof the query went out with the
+		// declared nameserver and no search list (see DNSTarget.Name).
+		By("failing a short name through the same resolver, proving no search domains were inherited")
+		applyDNSCheck("explicit-upstream-short", fmt.Sprintf(`  interval: 1m
+  timeout: 30s
+  resolvers:
+    - name: upstream
+      from: Explicit
+      address: %s:53
+  targets:
+    - name: kubernetes.default
+      recordType: A
+      resolver: upstream
+`, clusterDNS))
+		eventuallyDNSResult("explicit-upstream-short", "Fail")
 	})
 
 	// T047 — FR-025 and FR-012. `.invalid` is guaranteed non-resolvable

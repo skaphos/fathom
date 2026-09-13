@@ -20,8 +20,16 @@ the core suite passed with 41 specs using
 `E2E_IMG=docker.io/library/fathom-operator:e2e`. The mandatory full-stack run
 was attempted, but the local Podman VM's 3.725 GiB allocation was exhausted
 after installing the addon stack; the Kubernetes API connection dropped during
-operator deployment, before the specs began. T033 remains pending for CI or a
-larger Podman VM.
+operator deployment, before the specs began. T033 was left pending at that
+point; see the 2026-09-11 note below for how it was closed.
+
+Local validation note (2026-09-11): the core tier passed again with 52 of 81
+specs (the 29 skipped are addon-scoped), now including the explicit
+upstream-resolver spec added for #268. Kind 0.32 cannot list clusters under
+Podman 6 (`podman ps` template error); pin kind 0.33 or later on `PATH` for a
+local run. The full-stack run still exceeds the 3.8 GiB Podman VM; T033 is
+satisfied by the CI `kind e2e` matrix on skaphos/fathom#331, where all nine
+shards (core plus every opt-in addon) passed on 2026-09-12.
 
 ## 1. Verify generated contracts
 
