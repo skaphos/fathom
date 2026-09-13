@@ -260,6 +260,17 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 			Tracer:         tracer,
 			Recorder:       mgr.GetEventRecorder("fathom-nodecertificatecheck-controller"),
 		},
+		&controller.NodeHealthCheckReconciler{
+			Client:         mgr.GetClient(),
+			Scheme:         mgr.GetScheme(),
+			NodeAgentImage: opts.NodeAgentImage,
+			// Nodes are read one at a time through the uncached API reader so
+			// NodeCondition items never start a cluster-wide Node informer (and
+			// the grant stays `get` only) — see NodeHealthCheckReconciler.NodeReader.
+			NodeReader: mgr.GetAPIReader(),
+			Tracer:     tracer,
+			Recorder:   mgr.GetEventRecorder("fathom-nodehealthcheck-controller"),
+		},
 		&controller.DNSCheckReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),

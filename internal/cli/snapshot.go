@@ -18,7 +18,8 @@ import (
 
 // readyCondition is the condition every kind uses for its operational
 // summary. AddonCheck and NodeCertificateCheck carry no summary field, so the
-// Ready message is the bounded one-line explanation the operator writes.
+// Ready message is the bounded one-line explanation the operator writes;
+// NodeHealthCheck falls back to it until its own summary is populated.
 const readyCondition = "Ready"
 
 // snapshot is the normalised view of a check that ls, describe, and
@@ -125,6 +126,30 @@ func nodeCertificateCheckSnapshot(o client.Object) snapshot {
 func nodeCertificateCheckTimeout(o client.Object) time.Duration {
 	c := o.(*fathomv1alpha1.NodeCertificateCheck)
 	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
+}
+
+func nodeHealthCheckSnapshot(o client.Object) snapshot {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+	// NodeHealthCheck writes its own bounded summary once it has rolled up;
+	// before that the Ready message is the best one-line explanation.
+	summary := c.Status.Summary
+	if summary == "" {
+		summary = readyMessage(c.Status.Conditions)
+	}
+	return snapshot{
+		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Summary:         summary,
+		LastRun:         c.Status.LastRunTime,
+		NextRun:         nextRun(c.Status.LastRunTime, interval),
+		ReportName:      c.Status.LastReportName,
+		ConsumedTrigger: c.Status.LastRunTrigger,
+	}
+}
+
+func nodeHealthCheckTimeout(o client.Object) time.Duration {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
 }
 
 func healthCheckSnapshot(o client.Object) snapshot {

@@ -41,6 +41,7 @@ func TestAddToScheme(t *testing.T) {
 		&HealthReport{}, &HealthReportList{},
 		&NodeCertificateCheck{}, &NodeCertificateCheckList{},
 		&DNSCheck{}, &DNSCheckList{},
+		&NodeHealthCheck{}, &NodeHealthCheckList{},
 	}
 	for _, obj := range kinds {
 		gvks, _, err := scheme.ObjectKinds(obj)

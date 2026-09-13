@@ -13,7 +13,7 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node certificate scanner, `fathomctl/` CLI). |
+| `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node-scoped agent for `NodeCertificateCheck` and `NodeHealthCheck`, `fathomctl/` CLI). |
 | `api/v1alpha1/` | CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
 | `internal/cli/` | The `fathomctl` command tree, client factory, kind table, and verdict normalisation. |
@@ -36,8 +36,10 @@ for and the key entrypoints to start reading from. For the design rationale see
   `/dev/termination-log`, and exits. Built into the probe image
   (`Dockerfile.probe`, `scratch` base). Key funcs: `run`, `runDNS`,
   `runTCPConnect`, `runTCPListen`.
-- `cmd/node-agent/main.go` — the node-local certificate scanner run by the
-  `NodeCertificateCheck` DaemonSet. Scans host-mounted certificate paths,
+- `cmd/node-agent/main.go` — the node-local agent run by the
+  `NodeCertificateCheck` and `NodeHealthCheck` DaemonSets, selected by
+  `--mode certificates|health`. In certificates mode it scans host-mounted
+  certificate paths,
   publishes one ConfigMap report per node, and exposes node-certificate metrics.
   Built into the dedicated node-agent image (`Dockerfile.node-agent`).
 - `cmd/fathomctl/main.go` — thin CLI entrypoint. Imports the client auth
@@ -50,7 +52,7 @@ for and the key entrypoints to start reading from. For the design rationale see
 Defines the six kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
 (`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
 `clusterhealth_types.go`, `healthreport_types.go`,
-`nodecertificatecheck_types.go`), plus
+`nodecertificatecheck_types.go`, `nodehealthcheck_types.go`), plus
 `groupversion_info.go` (scheme registration) and the generated
 `zz_generated.deepcopy.go` (**never hand-edit**).
 
@@ -111,9 +113,10 @@ ownership and watch wiring. Each implements `Reconcile` and `SetupWithManager`.
 | --- | --- | --- |
 | `addoncheck_controller.go` | `AddonCheckReconciler` | Dispatches to adapters, creates + prunes `HealthReport`s. |
 | `dnscheck_controller.go` | `DNSCheckReconciler` | Runs one probe Pod per (target, resolver) pair in the check's namespace, folds the pair outcomes into one verdict, persists change-only `HealthReport`s. `dnscheck_plan.go` expands the pairs and budgets the run so the fan-out stays bounded. |
-| `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck`, `DNSCheck`, and `NodeCertificateCheck` status via `CheckTargetRef`; watches all three. |
+| `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck` status via `CheckTargetRef`; watches all four. |
 | `clusterhealth_controller.go` | `ClusterHealthReconciler` | Worst-case roll-up of `HealthCheck.status`; watches `HealthCheck`. |
-| `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. |
+| `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. Hosts the shared runtime-singleton helpers (`ensureNodeAgentClusterRole`, `ensureReportAuthenticityPolicy`) both node-scoped kinds converge. |
+| `nodehealthcheck_controller.go` | `NodeHealthCheckReconciler` | Manages the node-agent DaemonSet in health mode (granting hostNetwork/root only for the check types that need them), grades node conditions from the Node object, merges them with the agent reports, and rolls up per-node health. `nodehealthcheck_helpers.go` holds item resolution, condition grading, the fold, and the HealthReport builder. |
 | `suite_test.go` | — | envtest bootstrap for the Ginkgo controller tests. |
 
 `+kubebuilder:rbac` markers on the reconcilers are the source of the operator's
@@ -148,6 +151,28 @@ The public, importable contract (see
   a `resolveProbeImage`.
 - `crdutil/` — shared helper for adapters that verify an add-on's CRDs are
   installed and served.
+
+## `internal/nodehealth/` — node-local health engine
+
+The `NodeHealthCheck` twin of `internal/nodecert`, with the same discipline:
+no Kubernetes client or controller-runtime dependencies, so the node-agent
+binary stays small.
+
+- `types.go` — the wire contract: `Item` (a resolved check the agent
+  evaluates), `CheckResult`, `NodeReport`, the `Type*` string constants
+  mirroring the API enum, and `WorstOutcome` (Skipped is informational, matching
+  `api/v1alpha1.WorstResult`).
+- `wire.go` — kind-qualified report ConfigMap names (`nodehealth-<check>-…`,
+  so a `NodeHealthCheck` and a `NodeCertificateCheck` sharing a name never
+  collide), JSON encoding for reports and items, and `VerifyReportBinding`,
+  which applies nodecert's SEC-1 bindings through the shared
+  `nodecert.VerifyReportIdentity`.
+- `paths.go` — the headroom-path and CRI-socket allowlists (mirrored in the
+  CRD CEL rules; a lockstep test enforces it), `FilterAllowedItems`, and
+  `MountDirs`.
+- `scan.go` — `Scan`: `statfs` headroom, kubelet `/healthz`, and the CRI
+  socket dial, with injectable seams for tests. `NodeCondition` items are
+  ignored here — the operator grades them.
 
 ## `internal/probe/` — probe-pod plumbing
 

@@ -12,6 +12,12 @@
 - apiGroups:
   - ""
   resources:
+  - nodes
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
@@ -66,6 +72,7 @@
   - dnschecks/finalizers
   - healthchecks/finalizers
   - nodecertificatechecks/finalizers
+  - nodehealthchecks/finalizers
   verbs:
   - update
 - apiGroups:
@@ -76,6 +83,7 @@
   - dnschecks/status
   - healthchecks/status
   - nodecertificatechecks/status
+  - nodehealthchecks/status
   verbs:
   - get
   - patch
@@ -85,6 +93,7 @@
   resources:
   - dnschecks
   - nodecertificatechecks
+  - nodehealthchecks
   verbs:
   - get
   - list

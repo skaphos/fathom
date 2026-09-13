@@ -10,8 +10,8 @@ import (
 )
 
 // CheckTargetRef references a supported specialized check resource
-// (AddonCheck, DNSCheck, or NodeCertificateCheck) whose status a HealthCheck
-// mirrors and surfaces for ClusterHealth aggregation.
+// (AddonCheck, DNSCheck, NodeCertificateCheck, or NodeHealthCheck) whose status
+// a HealthCheck mirrors and surfaces for ClusterHealth aggregation.
 type CheckTargetRef struct {
 	// APIVersion of the target check resource. When empty, defaults to
 	// fathom.skaphos.io/v1alpha1.
@@ -19,8 +19,8 @@ type CheckTargetRef struct {
 	// +kubebuilder:validation:MaxLength=317
 	APIVersion string `json:"apiVersion,omitempty"`
 
-	// Kind of the target check resource: AddonCheck, DNSCheck, or
-	// NodeCertificateCheck.
+	// Kind of the target check resource: AddonCheck, DNSCheck,
+	// NodeCertificateCheck, or NodeHealthCheck.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	Kind string `json:"kind"`

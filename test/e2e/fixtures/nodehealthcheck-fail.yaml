@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# E2E fixture variant of nodehealthcheck.yaml that forces a deliberate Fail:
+# a DiskHeadroom threshold of 100% free can never be satisfied, so the node's
+# verdict must transition to Fail and name the check, proving the threshold
+# path end to end. Same name and namespace, so `kubectl apply` swaps it in place.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: nodehealth-e2e
+  namespace: default
+spec:
+  includeControlPlaneNodes: true
+  interval: 30s
+  timeout: 20s
+  checks:
+    - type: DiskHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 100
+      criticalPercentFree: 100
+    - type: InodeHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 1
+      criticalPercentFree: 0
+    - type: NodeCondition
+    - type: KubeletHealthz
+    - type: ContainerRuntime

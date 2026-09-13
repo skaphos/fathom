@@ -95,6 +95,28 @@ func TestSnapshot_PerKind(t *testing.T) {
 			wantTimeout: fathomv1alpha1.DefaultNodeCertificateCheckTimeout,
 		},
 		{
+			name: "NodeHealthCheck prefers its own summary and the 5m default",
+			obj: &fathomv1alpha1.NodeHealthCheck{
+				Status: fathomv1alpha1.NodeHealthCheckStatus{
+					LastResult: "Fail", Summary: "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free", Conditions: ready,
+					LastRunTime: &snapLast, LastReportName: "nhc-1", LastRunTrigger: "tok-4",
+				},
+			},
+			want: snapshot{
+				Verdict: "Fail", Summary: "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free", LastRun: &snapLast,
+				NextRun: ptrTime(snapLast.Add(fathomv1alpha1.DefaultNodeHealthCheckInterval)), ReportName: "nhc-1", ConsumedTrigger: "tok-4",
+			},
+			wantTimeout: fathomv1alpha1.DefaultNodeHealthCheckTimeout,
+		},
+		{
+			name: "NodeHealthCheck falls back to the Ready message before its first roll-up",
+			obj: &fathomv1alpha1.NodeHealthCheck{
+				Status: fathomv1alpha1.NodeHealthCheckStatus{Conditions: ready},
+			},
+			want:        snapshot{Summary: "3 of 3 checks passed"},
+			wantTimeout: fathomv1alpha1.DefaultNodeHealthCheckTimeout,
+		},
+		{
 			name: "HealthCheck mirrors source observation and interval",
 			obj: &fathomv1alpha1.HealthCheck{
 				Status: fathomv1alpha1.HealthCheckStatus{
@@ -172,6 +194,8 @@ func descriptorFor(t *testing.T, o client.Object) *kindDescriptor {
 		return kindByName("DNSCheck")
 	case *fathomv1alpha1.NodeCertificateCheck:
 		return kindByName("NodeCertificateCheck")
+	case *fathomv1alpha1.NodeHealthCheck:
+		return kindByName("NodeHealthCheck")
 	case *fathomv1alpha1.HealthCheck:
 		return kindByName("HealthCheck")
 	case *fathomv1alpha1.ClusterHealth:

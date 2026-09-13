@@ -189,6 +189,40 @@ monitoring namespace (`kubectl label namespace <ns> metrics=enabled`) or the
 scrape will be dropped — see
 [Network policies](../reference/network-policies.md).
 
+### Node-health metrics
+
+> Applies only to builds that include the `NodeHealthCheck` kind — see
+> [Node health checks → Availability](node-health-checks.md#availability).
+
+Each node-agent running for a `NodeHealthCheck` exports two gauges on its own
+metrics endpoint:
+
+| Metric | Type | Labels | Use |
+| --- | --- | --- | --- |
+| `fathom_node_health_check_result` | gauge (one-hot) | `node`, `type`, `path`, `result` | **Per-check result on each node.** Exactly one `result` series per `(node, type, path)` is 1. Alert on the node and check that broke rather than on the check as a whole. Series are bounded by the schema: 16 items × 6 results per node. |
+| `fathom_node_health_filesystem_free_percent` | gauge | `node`, `path`, `resource` (`bytes` \| `inodes`) | **The measured headroom behind a `DiskHeadroom`/`InodeHeadroom` verdict**, so you can graph the trend and alert ahead of the threshold. |
+
+```yaml
+      - alert: NodeHealthCheckFailing
+        expr: fathom_node_health_check_result{result="Fail"} == 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: >-
+            {{ $labels.type }} {{ $labels.path }} is failing on {{ $labels.node }}
+      - alert: NodeFilesystemHeadroomLow
+        expr: fathom_node_health_filesystem_free_percent{resource="bytes"} < 15
+        for: 15m
+        labels: {severity: warning}
+```
+
+Scrape these agents the same way as the certificate agents (a `PodMonitor` on
+the agent pods, or scrape annotations). Note that a `KubeletHealthz` item puts
+the agent on the **host network**: its metrics then bind on a per-check host
+port (30000–32767; the check's `AgentPrivileged` condition names it) and the
+per-check NetworkPolicy does not gate them — see
+[Network policies](../reference/network-policies.md#node-agent-daemonset-runtime-managed-always-on).
+
 ## 3. Tracing
 
 The operator can emit OpenTelemetry spans for each reconcile and adapter run,

@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# E2E fixture: exercises every NodeHealthCheck type against the real kind node
+# (#206). The headroom thresholds are set so a busy CI disk cannot false-fail
+# (Warn only at <=1% free, never Fail); nodehealthcheck-fail.yaml flips the
+# disk threshold to force a deliberate Fail. KubeletHealthz and ContainerRuntime
+# are the two privileged types: the agent runs on the host network and as root
+# with the containerd socket mounted — kind nodes run containerd at the default
+# socket path. The kind node is a control-plane node, so includeControlPlaneNodes
+# must be set for the agent to schedule there. A short interval keeps the spec
+# fast.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: nodehealth-e2e
+  namespace: default
+spec:
+  includeControlPlaneNodes: true
+  interval: 30s
+  timeout: 20s
+  checks:
+    - type: DiskHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 1
+      criticalPercentFree: 0
+    - type: InodeHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 1
+      criticalPercentFree: 0
+    - type: NodeCondition
+    - type: KubeletHealthz
+    - type: ContainerRuntime

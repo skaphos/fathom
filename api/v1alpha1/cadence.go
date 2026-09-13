@@ -36,4 +36,14 @@ const (
 	// DefaultNodeCertificateCheckTimeout bounds a node-agent scan when
 	// Spec.Timeout is unset.
 	DefaultNodeCertificateCheckTimeout = 30 * time.Second
+
+	// DefaultNodeHealthCheckInterval is the node-agent re-evaluation cadence
+	// and the operator's rollup cadence for a NodeHealthCheck when
+	// Spec.Interval is unset. Shorter than the certificate scan: headroom,
+	// kubelet, and runtime liveness change on the order of minutes, not days.
+	DefaultNodeHealthCheckInterval = 5 * time.Minute
+	// DefaultNodeHealthCheckTimeout bounds one node-agent evaluation pass
+	// (every check, including the kubelet and runtime-socket probes) when
+	// Spec.Timeout is unset.
+	DefaultNodeHealthCheckTimeout = 30 * time.Second
 )

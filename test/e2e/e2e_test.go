@@ -221,8 +221,15 @@ var _ = Describe("Manager", Ordered, Label(utils.CoreLabel), func() {
 
 			By("getting the metrics by checking curl-metrics logs")
 			metricsOutput := getMetricsOutput()
+			// Assert on a family that exists from the moment the endpoint serves.
+			// fathom_adapter_registered is set while the reconcilers are being
+			// wired, before mgr.Start — so it never depends on reconcile history
+			// or on leader election having completed. The scaffold's
+			// controller_runtime_reconcile_total is a counter that only appears
+			// after the first reconcile of any controller, which made this spec
+			// flake whenever it ran before anything had reconciled (#335).
 			Expect(metricsOutput).To(ContainSubstring(
-				"controller_runtime_reconcile_total",
+				"fathom_adapter_registered",
 			))
 		})
 
