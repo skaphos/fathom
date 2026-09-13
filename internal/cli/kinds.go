@@ -116,6 +116,23 @@ var kinds = []*kindDescriptor{
 		DefaultTimeout: nodeCertificateCheckTimeout,
 	},
 	{
+		Kind: "NodeHealthCheck", Resource: "nodehealthchecks", Aliases: []string{"nhc"},
+		Namespaced: true, Executable: true, WritesReports: true,
+		New:     func() client.Object { return &fathomv1alpha1.NodeHealthCheck{} },
+		NewList: func() client.ObjectList { return &fathomv1alpha1.NodeHealthCheckList{} },
+		Items: func(l client.ObjectList) []client.Object {
+			list := l.(*fathomv1alpha1.NodeHealthCheckList)
+			out := make([]client.Object, 0, len(list.Items))
+			for i := range list.Items {
+				out = append(out, &list.Items[i])
+			}
+			return out
+		},
+		Paused:         func(client.Object) bool { return false },
+		Snapshot:       nodeHealthCheckSnapshot,
+		DefaultTimeout: nodeHealthCheckTimeout,
+	},
+	{
 		Kind: "HealthCheck", Resource: "healthchecks", Aliases: []string{"hc"},
 		Namespaced: true,
 		New:        func() client.Object { return &fathomv1alpha1.HealthCheck{} },

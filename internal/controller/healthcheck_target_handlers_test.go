@@ -35,7 +35,7 @@ func (c failingHealthCheckTargetClient) Get(
 	opts ...client.GetOption,
 ) error {
 	switch obj.(type) {
-	case *fathomv1alpha1.AddonCheck, *fathomv1alpha1.DNSCheck, *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1alpha1.AddonCheck, *fathomv1alpha1.DNSCheck, *fathomv1alpha1.NodeCertificateCheck, *fathomv1alpha1.NodeHealthCheck:
 		return c.err
 	default:
 		return c.Client.Get(ctx, key, obj, opts...)

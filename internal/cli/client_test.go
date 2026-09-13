@@ -214,7 +214,7 @@ func TestNewScheme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newScheme: %v", err)
 	}
-	for _, kind := range []string{"AddonCheck", "DNSCheck", "NodeCertificateCheck", "HealthCheck", "ClusterHealth", "HealthReport"} {
+	for _, kind := range []string{"AddonCheck", "DNSCheck", "NodeCertificateCheck", "NodeHealthCheck", "HealthCheck", "ClusterHealth", "HealthReport"} {
 		if !s.Recognizes(fathomv1alpha1.GroupVersion.WithKind(kind)) {
 			t.Errorf("scheme missing %s", kind)
 		}

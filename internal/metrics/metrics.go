@@ -171,6 +171,32 @@ var (
 		},
 		[]string{"node", "path"},
 	)
+
+	// NodeHealthCheckResult is the per-check result one level below the
+	// NodeHealthCheck's own verdict: a one-hot state set per (node, type, path),
+	// so an operator alerts on the node and check that broke rather than on
+	// the check as a whole (#206). Series count is bounded by the CRD schema:
+	// 16 items × 6 results per node. Labelled by node, type, and path only —
+	// no free-form summary text on this unauthenticated endpoint.
+	NodeHealthCheckResult = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_node_health_check_result",
+			Help: "Current result of one NodeHealthCheck item on a node (one-hot: exactly one series per (node, type, path) is 1).",
+		},
+		[]string{"node", "type", "path", "result"},
+	)
+
+	// NodeHealthFilesystemFreePercent is the measured headroom behind a
+	// DiskHeadroom or InodeHeadroom result, so a dashboard can graph the trend
+	// rather than only the thresholded verdict. resource is "bytes" or
+	// "inodes".
+	NodeHealthFilesystemFreePercent = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_node_health_filesystem_free_percent",
+			Help: "Percentage of free bytes or inodes on the filesystem holding a NodeHealthCheck headroom path, by node, path, and resource.",
+		},
+		[]string{"node", "path", "resource"},
+	)
 )
 
 func init() {
@@ -184,6 +210,8 @@ func init() {
 		CheckInterval,
 		DNSCheckTargetResult,
 		NodeCertificateExpiryDays,
+		NodeHealthCheckResult,
+		NodeHealthFilesystemFreePercent,
 	)
 }
 
@@ -276,4 +304,36 @@ func RecordReconcile(kind, outcome string, duration time.Duration) {
 // RecordAdapterRun records the duration of a single adapter Run() invocation.
 func RecordAdapterRun(adapter, family, outcome string, duration time.Duration) {
 	AdapterRunDuration.WithLabelValues(adapter, family, outcome).Observe(duration.Seconds())
+}
+
+// ObserveNodeHealthCheck mirrors one NodeHealthCheck item's outcome on one node
+// into the per-check gauge as a one-hot set. An empty or unrecognized result is
+// coerced to "Unknown", matching ObserveCheck. Callers rebuild rather than
+// diff: ResetNodeHealthSeries first, then one call per item the current pass
+// evaluated, so an item the spec dropped simply disappears.
+func ObserveNodeHealthCheck(node, checkType, path, result string) {
+	if !slices.Contains(checkResultValues, result) {
+		result = "Unknown"
+	}
+	for _, value := range checkResultValues {
+		current := 0.0
+		if value == result {
+			current = 1
+		}
+		NodeHealthCheckResult.WithLabelValues(node, checkType, path, value).Set(current)
+	}
+}
+
+// ObserveNodeHealthFilesystem records the measured free percentage behind a
+// headroom result.
+func ObserveNodeHealthFilesystem(node, path, resource string, percentFree float64) {
+	NodeHealthFilesystemFreePercent.WithLabelValues(node, path, resource).Set(percentFree)
+}
+
+// ResetNodeHealthSeries clears every node-health series this agent published,
+// so a check or path that disappears between passes does not leave a stale
+// series behind. The agent serves only its own node, so a full reset is exact.
+func ResetNodeHealthSeries() {
+	NodeHealthCheckResult.Reset()
+	NodeHealthFilesystemFreePercent.Reset()
 }

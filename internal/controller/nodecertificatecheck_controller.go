@@ -420,8 +420,16 @@ func (r *NodeCertificateCheckReconciler) roleName() string {
 // they are only ever bound via the per-check RoleBinding). The operator already
 // holds these ConfigMap verbs, so creating the role does not escalate privilege.
 func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.Context) error {
-	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: r.roleName()}}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
+	return ensureNodeAgentClusterRole(ctx, r.Client, r.roleName())
+}
+
+// ensureNodeAgentClusterRole is the shared implementation behind both
+// node-scoped reconcilers: the ClusterRole is a runtime singleton, so the two
+// controllers must converge it to one identical spec rather than fight over it
+// (#206).
+func ensureNodeAgentClusterRole(ctx context.Context, c client.Client, name string) error {
+	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	_, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
 		role.Labels = mergeLabels(role.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
 		// Exactly the verbs the node-agent uses on its own report ConfigMap
 		// (Get, Create, Update — see cmd/node-agent upsertReportConfigMap). No
@@ -449,8 +457,16 @@ func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.
 // not serve ValidatingAdmissionPolicy the ensure is skipped — the operator's
 // collect-time cross-check in collectNodeReports still rejects mismatched reports.
 func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx context.Context, log logr.Logger) error {
+	return ensureReportAuthenticityPolicy(ctx, r.Client, log)
+}
+
+// ensureReportAuthenticityPolicy is the shared implementation behind both
+// node-scoped reconcilers. The policy selects node-report ConfigMaps by
+// managed-by alone, so one converged singleton authenticates every kind's
+// reports (#206, SEC-1).
+func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log logr.Logger) error {
 	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, policy, func() error {
 		policy.Labels = mergeLabels(policy.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
 		policy.Spec = reportAuthenticityPolicySpec()
 		return nil
@@ -466,7 +482,7 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 	}
 
 	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, binding, func() error {
 		binding.Labels = mergeLabels(binding.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
 		binding.Spec = admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{
 			PolicyName:        reportAuthenticityPolicyName,
@@ -1079,10 +1095,15 @@ func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
 // that is terminating — a node mid-rollout is still in scope, and counting it
 // keeps coverage failing closed until its replacement reports.
 func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (map[string]struct{}, error) {
+	// The kind label is part of the match: a NodeHealthCheck that shares this
+	// check's name runs its own agent pods under the same component and
+	// source-name labels, and those must never count as this check's coverage
+	// (#206).
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
+			nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
 			nodecert.LabelSourceName: check.Name,
 			nodeAgentComponentLabel:  nodeAgentComponentValue,
 		},

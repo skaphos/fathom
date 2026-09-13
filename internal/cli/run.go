@@ -93,13 +93,13 @@ its interval, by writing a fresh token to the fathom.skaphos.io/run-now
 annotation. The operator records the token in status.lastRunTrigger when the
 run completes, which is what --wait watches for.
 
-Executable checks (AddonCheck, DNSCheck, NodeCertificateCheck) are triggered
-directly. A HealthCheck triggers the check it references; a ClusterHealth
+Executable checks (AddonCheck, DNSCheck, NodeCertificateCheck, NodeHealthCheck)
+are triggered directly. A HealthCheck triggers the check it references; a ClusterHealth
 triggers the source behind every HealthCheck it selects. --all and -l select
 executable checks only, within the namespace scope.
 
-A NodeCertificateCheck run restarts one node-agent pod per node; on a large
-cluster give --wait a longer --timeout. Exit codes follow kubectl: 0 when every
+A NodeCertificateCheck or NodeHealthCheck run restarts one node-agent pod per
+node; on a large cluster give --wait a longer --timeout. Exit codes follow kubectl: 0 when every
 trigger was accepted and, with --wait, every verdict is Pass, Warn, or
 Skipped; 1 otherwise.`,
 		Args: cobra.MaximumNArgs(2),
@@ -464,7 +464,7 @@ func printRunOutcomes(w io.Writer, format outputFormat, outcomes []runOutcome, w
 		case o.Superseded:
 			tb.row(target, "superseded", "another trigger replaced token "+o.Token+" before it was consumed")
 		case o.TimedOut:
-			tb.row(target, "timed out", "token "+o.Token+" was not consumed; check `fathomctl version` (operator older than the CLI?), whether the check is paused, or (NodeCertificateCheck) the node-agent rollout")
+			tb.row(target, "timed out", "token "+o.Token+" was not consumed; check `fathomctl version` (operator older than the CLI?), whether the check is paused, or (NodeCertificateCheck/NodeHealthCheck) the node-agent rollout")
 		default:
 			tb.row(target, orDash(o.Verdict), truncate(o.Summary, 80))
 		}

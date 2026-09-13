@@ -42,6 +42,7 @@ const (
 	healthCheckTargetKindAddonCheck           = "AddonCheck"
 	healthCheckTargetKindDNSCheck             = "DNSCheck"
 	healthCheckTargetKindNodeCertificateCheck = "NodeCertificateCheck"
+	healthCheckTargetKindNodeHealthCheck      = "NodeHealthCheck"
 
 	healthCheckConditionMessageMaxLen = 1024
 )
@@ -115,6 +116,12 @@ func newHealthCheckTargetRegistry() healthCheckTargetRegistry {
 			Object:     &fathomv1alpha1.NodeCertificateCheck{},
 			read:       readNodeCertificateCheckTarget,
 		},
+		{
+			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			Kind:       healthCheckTargetKindNodeHealthCheck,
+			Object:     &fathomv1alpha1.NodeHealthCheck{},
+			read:       readNodeHealthCheckTarget,
+		},
 	}}
 }
 
@@ -181,6 +188,31 @@ func readNodeCertificateCheckTarget(
 	}, nil
 }
 
+func readNodeHealthCheckTarget(
+	ctx context.Context,
+	cl client.Client,
+	key types.NamespacedName,
+) (healthCheckTargetSnapshot, error) {
+	var target fathomv1alpha1.NodeHealthCheck
+	if err := cl.Get(ctx, key, &target); err != nil {
+		return healthCheckTargetSnapshot{}, err
+	}
+	// NodeHealthCheck carries its own bounded summary (how many nodes passed
+	// and the worst of them), which is more useful downstream than the Ready
+	// message; fall back to the conditions when it has not rolled up yet.
+	summary := target.Status.Summary
+	if summary == "" {
+		summary = summarizeFromConditions(target.Status.Conditions)
+	}
+	return healthCheckTargetSnapshot{
+		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Summary:          summary,
+		SourceObservedAt: target.Status.LastRunTime,
+		LastReportName:   target.Status.LastReportName,
+		Interval:         nodeHealthInterval(&target),
+	}, nil
+}
+
 func applyHealthCheckTargetSnapshot(hc *fathomv1alpha1.HealthCheck, snapshot healthCheckTargetSnapshot) {
 	hc.Status.Result = snapshot.Result
 	hc.Status.Summary = snapshot.Summary
@@ -212,6 +244,7 @@ type HealthCheckReconciler struct {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=dnschecks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodehealthchecks,verbs=get;list;watch
 
 func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "healthcheck.reconcile", trace.WithAttributes(
@@ -354,7 +387,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 		setHealthCheckTargetFailure(
 			hc,
 			"UnsupportedKind",
-			"checkRef.kind "+identity.Kind+" is not supported; supported kinds are AddonCheck, DNSCheck, and NodeCertificateCheck.",
+			"checkRef.kind "+identity.Kind+" is not supported; supported kinds are AddonCheck, DNSCheck, NodeCertificateCheck, and NodeHealthCheck.",
 		)
 		// No cadence is knowable for a kind this build cannot resolve. Returning
 		// zero leaves the series unset, so the check simply drops out of any

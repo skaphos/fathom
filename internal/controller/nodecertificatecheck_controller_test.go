@@ -166,6 +166,7 @@ func conventionalAgentNodes(desired int32) []string {
 // identities are in scope.
 func scheduleAgentPods(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, nodes ...string) {
 	labels := map[string]string{
+		nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
 		nodecert.LabelSourceName: check.Name,
 		nodeAgentComponentLabel:  nodeAgentComponentValue,
 	}

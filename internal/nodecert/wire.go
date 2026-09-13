@@ -93,6 +93,16 @@ func NodeReportConfigMapName(checkName, node string) string {
 	return name
 }
 
+// NodeReportConfigMapNameFor returns the deterministic report ConfigMap name
+// for a node-scoped kind other than NodeCertificateCheck. kindSlug (for
+// example "nodehealth") is folded into the base so two kinds that share a check
+// name in one namespace never write to — or authenticate against — the same
+// ConfigMap. NodeCertificateCheck keeps the unqualified name for compatibility
+// with reports already on clusters (#206).
+func NodeReportConfigMapNameFor(kindSlug, checkName, node string) string {
+	return NodeReportConfigMapName(kindSlug+"-"+checkName, node)
+}
+
 // dnsSafe lowercases s and maps anything outside [a-z0-9.-] to '-', then trims
 // leading/trailing punctuation so the result is a legal DNS-1123 subdomain
 // fragment. Returns "" if nothing usable remains.

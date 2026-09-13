@@ -37,7 +37,7 @@ func fakeFactory(t *testing.T, objs ...client.Object) (*factory, client.Client) 
 		WithScheme(scheme).
 		WithObjects(objs...).
 		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}, &fathomv1alpha1.DNSCheck{}, &fathomv1alpha1.NodeCertificateCheck{},
-			&fathomv1alpha1.HealthCheck{}, &fathomv1alpha1.ClusterHealth{}).
+			&fathomv1alpha1.NodeHealthCheck{}, &fathomv1alpha1.HealthCheck{}, &fathomv1alpha1.ClusterHealth{}).
 		Build()
 	f := newFactory()
 	f.clientConfig = func(*globalOptions) clientcmd.ClientConfig {
