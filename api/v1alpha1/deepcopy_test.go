@@ -619,3 +619,125 @@ func TestDeepCopy_LeafTypesDirect(t *testing.T) {
 		t.Run(tc.name, tc.do)
 	}
 }
+
+// fullyPopulatedNodeHealthCheck returns a NodeHealthCheck with every optional
+// slice/map/pointer field non-nil so the generated DeepCopy exercises every
+// branch: the per-item threshold pointers and Conditions set, the Toleration
+// slice, and the per-node status list.
+func fullyPopulatedNodeHealthCheck() *NodeHealthCheck {
+	warn := int32(20)
+	critical := int32(10)
+	interval := metav1.Duration{Duration: 5 * time.Minute}
+	timeout := metav1.Duration{Duration: 30 * time.Second}
+	historyLimit := int32(10)
+	lastRun := metav1.NewTime(time.Unix(1_700_000_300, 0))
+	return &NodeHealthCheck{
+		TypeMeta:   metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "NodeHealthCheck"},
+		ObjectMeta: metav1.ObjectMeta{Name: "node-health", Namespace: "fathom-system"},
+		Spec: NodeHealthCheckSpec{
+			Checks: []NodeHealthCheckItem{
+				{Type: NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: &warn, CriticalPercentFree: &critical},
+				{Type: NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"},
+				{Type: NodeHealthCheckNodeCondition, Conditions: []string{"Ready", "MemoryPressure"}},
+				{Type: NodeHealthCheckKubeletHealthz},
+				{Type: NodeHealthCheckContainerRuntime, SocketPath: "/run/containerd/containerd.sock"},
+			},
+			NodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			Tolerations: []corev1.Toleration{{
+				Key:      "node-role.kubernetes.io/control-plane",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			}},
+			IncludeControlPlaneNodes: ptr.To(true),
+			Interval:                 &interval,
+			Timeout:                  &timeout,
+			HistoryLimit:             &historyLimit,
+		},
+		Status: NodeHealthCheckStatus{
+			Conditions: []metav1.Condition{{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: lastRun,
+				Reason:             "Reporting",
+			}},
+			LastRunTime:    &lastRun,
+			LastResult:     "Warn",
+			Summary:        "2 of 3 nodes passed",
+			LastReportName: "node-health-abc12",
+			LastRunTrigger: "tok-1",
+			DesiredNodes:   3,
+			ReportingNodes: 3,
+			NodeResults: []NodeHealthNodeResult{
+				{Node: "node-a", Result: "Pass", ObservedAt: &lastRun},
+				{Node: "node-b", Result: "Warn", Message: "DiskHeadroom /var/lib/kubelet: 15% free", ObservedAt: &lastRun},
+			},
+		},
+	}
+}
+
+func TestDeepCopy_NodeHealthCheck(t *testing.T) {
+	orig := fullyPopulatedNodeHealthCheck()
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "NodeHealthCheck", orig, copy)
+
+	copy.Spec.Checks[0].Path = "/mutated"
+	if orig.Spec.Checks[0].Path == "/mutated" {
+		t.Fatal("NodeHealthCheck.DeepCopy: Checks slice share detected")
+	}
+	*copy.Spec.Checks[0].WarnPercentFree = 99
+	if *orig.Spec.Checks[0].WarnPercentFree == 99 {
+		t.Fatal("NodeHealthCheck.DeepCopy: WarnPercentFree pointer share detected")
+	}
+	copy.Spec.Checks[2].Conditions[0] = "mutated"
+	if orig.Spec.Checks[2].Conditions[0] == "mutated" {
+		t.Fatal("NodeHealthCheck.DeepCopy: nested Conditions slice share detected")
+	}
+	copy.Spec.NodeSelector["kubernetes.io/os"] = "windows"
+	if orig.Spec.NodeSelector["kubernetes.io/os"] == "windows" {
+		t.Fatal("NodeHealthCheck.DeepCopy: nested NodeSelector map share detected")
+	}
+	copy.Spec.Tolerations[0].Key = "mutated"
+	if orig.Spec.Tolerations[0].Key == "mutated" {
+		t.Fatal("NodeHealthCheck.DeepCopy: Tolerations slice share detected")
+	}
+	copy.Status.NodeResults[1].Message = "mutated"
+	if orig.Status.NodeResults[1].Message == "mutated" {
+		t.Fatal("NodeHealthCheck.DeepCopy: NodeResults slice share detected")
+	}
+
+	runtimeObjectContract(t, "NodeHealthCheck", orig)
+}
+
+// TestDeepCopy_NodeHealthCheckTolerationsEmptyIsPreserved pins that an empty
+// (non-nil) Tolerations slice survives DeepCopy as empty rather than nil. The
+// operator treats the two identically, but the round-trip fidelity is what
+// #150 flagged on the sibling kind, so it is asserted here from the start.
+func TestDeepCopy_NodeHealthCheckTolerationsEmptyIsPreserved(t *testing.T) {
+	orig := &NodeHealthCheck{Spec: NodeHealthCheckSpec{
+		Checks:      []NodeHealthCheckItem{{Type: NodeHealthCheckKubeletHealthz}},
+		Tolerations: []corev1.Toleration{},
+	}}
+	copy := orig.DeepCopy()
+	if copy.Spec.Tolerations == nil {
+		t.Fatal("NodeHealthCheck.DeepCopy: empty Tolerations became nil")
+	}
+	if len(copy.Spec.Tolerations) != 0 {
+		t.Fatalf("NodeHealthCheck.DeepCopy: empty Tolerations gained %d entries", len(copy.Spec.Tolerations))
+	}
+}
+
+func TestDeepCopy_NodeHealthCheckList(t *testing.T) {
+	orig := &NodeHealthCheckList{
+		TypeMeta: metav1.TypeMeta{APIVersion: GroupVersion.String(), Kind: "NodeHealthCheckList"},
+		Items:    []NodeHealthCheck{*fullyPopulatedNodeHealthCheck()},
+	}
+	copy := orig.DeepCopy()
+	deepCopyContract(t, "NodeHealthCheckList", orig, copy)
+
+	copy.Items[0].Spec.Checks[0].Path = "/mutated"
+	if orig.Items[0].Spec.Checks[0].Path == "/mutated" {
+		t.Fatal("NodeHealthCheckList.DeepCopy: Items share detected")
+	}
+
+	runtimeObjectContract(t, "NodeHealthCheckList", orig)
+}

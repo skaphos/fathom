@@ -72,8 +72,8 @@ spec:
                     type: string
                   kind:
                     description: |-
-                      Kind of the target check resource: AddonCheck, DNSCheck, or
-                      NodeCertificateCheck.
+                      Kind of the target check resource: AddonCheck, DNSCheck,
+                      NodeCertificateCheck, or NodeHealthCheck.
                     maxLength: 63
                     minLength: 1
                     type: string

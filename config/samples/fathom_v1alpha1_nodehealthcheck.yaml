@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Asserts node-local health signals on every selected node — filesystem
+# headroom, the node's own conditions, kubelet health, and container-runtime
+# liveness — via the same hardened node-agent DaemonSet NodeCertificateCheck
+# uses. The five check types are NOT equal in what they cost the agent; the
+# operator grants each privilege only when a check of that type is present.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: node-health
+spec:
+  # Cadence floors are shared with every other check kind: interval >= 10s,
+  # timeout >= 1s, and timeout must not exceed interval.
+  interval: 5m
+  timeout: 30s
+  historyLimit: 10
+  checks:
+    # Free bytes / inodes on the filesystem holding the path, as a percentage.
+    # <= criticalPercentFree -> Fail, <= warnPercentFree -> Warn. Defaults are
+    # 20 / 10. The path is mounted read-only; it must sit under an allowed
+    # prefix and can never be the host root. On most nodes /var/lib/kubelet is
+    # on the root filesystem, so this doubles as a root-fs headroom check.
+    - type: DiskHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 20
+      criticalPercentFree: 10
+    - type: InodeHeadroom
+      path: /var/lib/kubelet
+    # Ready must be True and each pressure condition False. Evaluated by the
+    # operator from the Node object (it needs a cluster-wide read on nodes), not
+    # by the agent. Omit `conditions` for Ready, MemoryPressure, DiskPressure,
+    # PIDPressure.
+    - type: NodeCondition
+    # The kubelet's /healthz binds to localhost, so this check runs the agent
+    # with hostNetwork: true — which also means the per-check NetworkPolicy no
+    # longer isolates it. Opt in deliberately.
+    # - type: KubeletHealthz
+    # Dials the CRI socket. The socket is root-owned, so this check runs the
+    # agent as root with the socket mounted (hostPath type Socket). Opt in
+    # deliberately; set socketPath for cri-o (/run/crio/crio.sock).
+    # - type: ContainerRuntime
+    #   socketPath: /run/containerd/containerd.sock
+  # Control-plane nodes are an explicit opt-in, especially for the two
+  # privileged check types above:
+  # includeControlPlaneNodes: true

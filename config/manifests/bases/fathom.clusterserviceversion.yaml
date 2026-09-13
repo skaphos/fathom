@@ -35,6 +35,11 @@ spec:
       kind: NodeCertificateCheck
       name: nodecertificatechecks.fathom.skaphos.io
       version: v1alpha1
+    - description: NodeHealthCheck is the Schema for the nodehealthchecks API.
+      displayName: Node Health Check
+      kind: NodeHealthCheck
+      name: nodehealthchecks.fathom.skaphos.io
+      version: v1alpha1
   description: |
     Fathom is a Kubernetes operator that continuously validates the platform
     integrity of a cluster. It reconciles HealthCheck and ClusterHealth custom

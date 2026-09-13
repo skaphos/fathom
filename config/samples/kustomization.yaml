@@ -17,4 +17,5 @@ resources:
 - fathom_v1alpha1_healthreport.yaml
 - fathom_v1alpha1_nodecertificatecheck.yaml
 - fathom_v1alpha1_dnscheck.yaml
+- fathom_v1alpha1_nodehealthcheck.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
