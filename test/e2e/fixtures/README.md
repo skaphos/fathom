@@ -183,9 +183,12 @@ kubectl get pods -l app.kubernetes.io/managed-by=fathom -A --watch
        `policy.dns_resolution.enabled: false`) and only run `system_health`
        until the probe image is published.
 
-  `e2e:cluster:fathom` builds and loads `fathom-probe:e2e` by default;
-  override the `E2E_PROBE_IMG` Task var if you want the loaded tag to match
-  the operator's compiled-in default.
+  `e2e:cluster:fathom` already does step 1 for you: it builds and loads the
+  probe under `E2E_PROBE_IMG`, whose default in `Taskfile.yml` is kept in
+  lockstep with the operator's compiled-in `DefaultProbeImage`
+  (`ghcr.io/skaphos/fathom-probe:vX.Y.Z`, bumped by release-please). Only
+  override `E2E_PROBE_IMG` if you also change the operator's default;
+  otherwise the loaded tag won't be the one the operator requests.
 - **cert-manager webhook timeouts on first install**: helmfile uses
   `wait: true` and a 10-minute timeout. On a slow machine you may need to
   bump the timeout in `helmfile.yaml`.
