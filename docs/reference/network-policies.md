@@ -57,6 +57,16 @@ DaemonSet:
 - **Lifecycle**: garbage-collected with the check; like the agent's RBAC it is
   left in place while the check is paused.
 
+`NodeHealthCheck` agents get an identical per-check policy
+(`<check>-node-health-agent`), with one caveat that the check states on its own
+object: a `KubeletHealthz` item runs the agent with `hostNetwork: true`, and
+**NetworkPolicy does not apply to host-network pods**. The agent's metrics then
+bind on a per-check host port (30000–32767, named in the `AgentPrivileged`
+condition) reachable from the node's network, and its API-server egress is the
+node's. The policy is still created so the surface stays uniform, but it is
+inert for that check. Treat a `KubeletHealthz` opt-in as a decision about the
+node's network posture, not just the pod's.
+
 ## Probe pods (deliberately no Fathom-shipped policy)
 
 Probe pods (ADR-0003) exist to answer one question: *does this network path

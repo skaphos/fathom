@@ -15,6 +15,8 @@ the Go e2e suite under `test/e2e/` will eventually drive automatically.
 | ---- | ------- |
 | `kind-cluster.yaml` | Single-node kind cluster, `kindest/node` pinned by digest to `v1.37.0` (matches `ENVTEST_K8S_VERSION` 1.37 in `Taskfile.yml`; kind only publishes specific patch tags per release, so use a real one). |
 | `helmfile.yaml` | The tiered addon stack (see below): Cilium (the cluster CNI) + cert-manager + external-secrets always; external-dns, metrics-server, Envoy Gateway, istio (sidecar mode: base + istiod), Argo CD, NodeLocal DNSCache, and the azure-workload-identity webhook, and kube-state-metrics as per-addon opt-ins — via their official charts, except NodeLocal DNSCache, which uses the community deliveryhero chart (upstream ships raw manifests only). CoreDNS is preinstalled by kind and is not managed here. |
+| `nodecertificatecheck.yaml` | `NodeCertificateCheck` fixture scanning the kind node's world-readable kubeadm certificates. Core tier. |
+| `nodehealthcheck.yaml`, `nodehealthcheck-fail.yaml` | `NodeHealthCheck` fixture exercising every check type against the kind node (host-network + root agent, containerd socket), and the variant with an unsatisfiable headroom threshold the spec swaps in to force a deliberate Fail. Core tier. |
 
 ## Tiered Stack & Scoped Runs
 

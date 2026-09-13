@@ -35,8 +35,8 @@ const (
 
 	// CoreLabel is the Ginkgo label carried by every spec in the core tier:
 	// operator-infrastructure specs (Manager, RBAC impersonation,
-	// NodeCertificateCheck, refresh-on-change) plus the specs of the core-tier
-	// addons. It doubles as the E2E_ADDONS keyword that selects that tier.
+	// NodeCertificateCheck, NodeHealthCheck, refresh-on-change) plus the specs
+	// of the core-tier addons. It doubles as the E2E_ADDONS keyword that selects that tier.
 	CoreLabel = "core"
 )
 

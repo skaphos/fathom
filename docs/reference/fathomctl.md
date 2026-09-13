@@ -40,6 +40,7 @@ name, or a CLI alias:
 | `AddonCheck` | `addonchecks` | `ac` | namespaced | yes |
 | `DNSCheck` | `dnschecks` | `dns` | namespaced | yes |
 | `NodeCertificateCheck` | `nodecertificatechecks` | `ncc` | namespaced | yes |
+| `NodeHealthCheck` | `nodehealthchecks` | `nhc` | namespaced | yes |
 | `HealthCheck` | `healthchecks` | `hc` | namespaced | no (mirrors a source) |
 | `ClusterHealth` | `clusterhealths` | `ch` | cluster | no (aggregates) |
 
@@ -254,8 +255,8 @@ ship under `config/rbac/` for people and CI jobs:
 
 | Role | Grants | Use it for |
 | --- | --- | --- |
-| `fathomctl-viewer-role` | `get`, `list`, `watch` on the five check kinds and `healthreports` (plus `/status`); `get`, `list` on `apps/deployments` | `ls`, `describe`, `reports`, `version` |
-| `fathomctl-runner-role` | the viewer rules plus `patch` on `addonchecks`, `dnschecks`, `nodecertificatechecks` | everything, including `run` |
+| `fathomctl-viewer-role` | `get`, `list`, `watch` on the six check kinds and `healthreports` (plus `/status`); `get`, `list` on `apps/deployments` | `ls`, `describe`, `reports`, `version` |
+| `fathomctl-runner-role` | the viewer rules plus `patch` on `addonchecks`, `dnschecks`, `nodecertificatechecks`, `nodehealthchecks` | everything, including `run` |
 
 `run` writes only the trigger annotation, but Kubernetes RBAC cannot scope
 `patch` to metadata, so the runner role also permits spec edits; bind it to

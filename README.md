@@ -21,6 +21,10 @@ Fathom **validates** existing add-ons; it does not install or manage them.
   Envoy Gateway, istio, and more. Each adapter runs targeted check families
   (deployment/pod health, DNS resolution, metrics-endpoint scrapes, certificate
   expiry, secret sync, CRD readiness, …).
+- **Node health** — the same node-agent, in health mode, measures filesystem
+  headroom and probes the kubelet and container runtime on every node, and the
+  operator grades each node's own conditions
+  (`NodeHealthCheck`, [guide](docs/guides/node-health-checks.md)).
 - **Node certificates** — a hardened node-agent DaemonSet scans on-disk X.509
   certificates on every node and warns before an expiring cert can take the
   cluster down.
@@ -70,7 +74,7 @@ spec:
         failDays: "7"
 ```
 
-To turn an `AddonCheck`, `DNSCheck`, or `NodeCertificateCheck` into a
+To turn an `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, or `NodeHealthCheck` into a
 cluster-wide signal, wrap it in a `HealthCheck` and select it from a
 `ClusterHealth`. See
 [Add-on checks](docs/guides/addon-checks.md) for every adapter, its check
@@ -268,6 +272,42 @@ material it cannot read (e.g. `etcd` keys). Configure the DaemonSet image once,
 cluster-wide, via `--node-agent-image` / `FATHOM_NODE_AGENT_IMAGE`. See the
 [Node certificate checks guide](docs/guides/node-certificate-checks.md) for the
 full walkthrough.
+
+## Node health checks
+
+A `NodeHealthCheck` asserts **node-local health signals on each node**:
+filesystem headroom (bytes and inodes) against thresholds, the node's own
+status conditions, kubelet health, and container-runtime liveness. It reuses
+the node-agent DaemonSet in health mode; the operator grades the node
+conditions itself and rolls every node into one `HealthReport` with a
+per-node result list in `status`.
+
+```yaml
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: node-health
+spec:
+  interval: 5m
+  checks:
+    - type: DiskHeadroom
+      path: /var/lib/kubelet
+      warnPercentFree: 20      # <= this -> Warn
+      criticalPercentFree: 10  # <= this -> Fail
+    - type: InodeHeadroom
+      path: /var/lib/kubelet
+    - type: NodeCondition      # Ready=True; Memory/Disk/PIDPressure=False
+    # - type: KubeletHealthz   # needs hostNetwork on the agent
+    # - type: ContainerRuntime # needs the CRI socket mounted + root
+```
+
+The five check types are **not equal in what they cost**: headroom checks keep
+the agent's hardened profile, `NodeCondition` needs a cluster-scoped `get` on
+nodes for the operator, `KubeletHealthz` puts the agent on the host network,
+and `ContainerRuntime` runs it as root with the socket mounted. The operator
+grants each privilege only when a check of that type is present and reports
+the posture in effect on the check's `AgentPrivileged` condition. See the
+[Node health checks guide](docs/guides/node-health-checks.md).
 
 ## Probe pods
 

@@ -129,9 +129,10 @@ GHCR mirror set `--probe-image` once instead of on every `AddonCheck`.
 
 `--node-agent-image` (default `ghcr.io/skaphos/fathom-node-agent:v0.4.0`,
 `DefaultNodeAgentImage` in `options.go`) is the cluster-wide image used by the
-`NodeCertificateCheck` controller when it creates its managed node-agent
-DaemonSet. The node-agent image is dedicated to on-disk certificate scanning; it
-is not the operator image and not the probe image.
+`NodeCertificateCheck` and `NodeHealthCheck` controllers when they create their
+managed node-agent DaemonSets. The one binary serves both kinds, selected per
+DaemonSet by `--mode certificates|health`; it is not the operator image and not
+the probe image.
 
 With Helm, set `nodeAgent.image.repository` / `nodeAgent.image.tag`. The chart
 passes the rendered image to the operator as `--node-agent-image`; it does not
