@@ -183,9 +183,12 @@ kubectl get pods -l app.kubernetes.io/managed-by=fathom -A --watch
        `policy.dns_resolution.enabled: false`) and only run `system_health`
        until the probe image is published.
 
-  `e2e:cluster:fathom` builds and loads `fathom-probe:e2e` by default;
-  override the `E2E_PROBE_IMG` Task var if you want the loaded tag to match
-  the operator's compiled-in default.
+  `e2e:cluster:fathom` already does step 1 for you: it builds and loads the
+  probe under `E2E_PROBE_IMG`, whose default in `Taskfile.yml` is kept in
+  lockstep with the operator's compiled-in `DefaultProbeImage`
+  (`ghcr.io/skaphos/fathom-probe:vX.Y.Z`, bumped by release-please). Only
+  override `E2E_PROBE_IMG` if you also change the operator's default;
+  otherwise the loaded tag won't be the one the operator requests.
 - **cert-manager webhook timeouts on first install**: helmfile uses
   `wait: true` and a 10-minute timeout. On a slow machine you may need to
   bump the timeout in `helmfile.yaml`.
@@ -194,6 +197,18 @@ kubectl get pods -l app.kubernetes.io/managed-by=fathom -A --watch
   but a partial install can leave them out.
 - **Kind cluster won't start**: `kind delete cluster --name fathom-e2e` then
   retry. Docker daemon issues are the usual cause.
+- **`ImagePullBackOff` on the controller-manager under Podman** ("pull access
+  denied, repository does not exist"): Podman stores an image built with an
+  unqualified tag (`docker build -t fathom-operator:e2e`) as
+  `localhost/fathom-operator:e2e`, and `kind load docker-image` ships it to the
+  node under that name. containerd on the node resolves the unqualified name
+  in the Deployment to `docker.io/library/fathom-operator:e2e` instead, finds
+  nothing, and every operator-dependent spec hangs until the `go test`
+  timeout. The `E2E_IMG` default is therefore the fully-qualified
+  `docker.io/library/fathom-operator:e2e`, which both engines store and
+  export under the exact reference containerd looks for. If you override
+  `E2E_IMG` on a Podman host, keep the registry prefix. The probe and
+  node-agent defaults are already `ghcr.io/...`-qualified and are unaffected.
 
 ## What's NOT Wired Up Yet
 
