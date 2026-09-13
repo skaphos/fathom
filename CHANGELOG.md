@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.0](https://github.com/skaphos/fathom/compare/v0.5.1...v0.6.0) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** ClusterHealth staleness is the stalest child, not the newest ([#307](https://github.com/skaphos/fathom/issues/307))
+
+### Features
+
+* **cli:** fathomctl MVP — run/ls/describe/reports/version and the run-now trigger on every kind ([#325](https://github.com/skaphos/fathom/issues/325)) ([f32f964](https://github.com/skaphos/fathom/commit/f32f964e3da3ffbec2c6028c91ad242a7c9e0b97))
+* **controller:** generalize HealthCheck target mirroring ([#313](https://github.com/skaphos/fathom/issues/313)) ([45c6ea9](https://github.com/skaphos/fathom/commit/45c6ea9dbcc2bcd1702789fa2c1bfbd65c3d7e1c))
+
+
+### Bug Fixes
+
+* **api:** ClusterHealth staleness is the stalest child, not the newest ([#307](https://github.com/skaphos/fathom/issues/307)) ([003e0d8](https://github.com/skaphos/fathom/commit/003e0d832e1c68ed9caef3d0232ba90e6ebe4a99))
+* **controller:** COR-2/3/4 — persist provisioning failures, freeze verdicts, per-node coverage ([#326](https://github.com/skaphos/fathom/issues/326)) ([e06d234](https://github.com/skaphos/fathom/commit/e06d2342da88bc3566a84d84b2a4b519b75aa0cf))
+* **nodecert:** SEC-1 — bind node-report authenticity to the writing identity ([#329](https://github.com/skaphos/fathom/issues/329)) ([11364f0](https://github.com/skaphos/fathom/commit/11364f05720b87a369d874118f9eb6b7f0f89c54))
+* **probe:** query CNAME subjects absolutely so a search list cannot fake a record ([#310](https://github.com/skaphos/fathom/issues/310)) ([49b894e](https://github.com/skaphos/fathom/commit/49b894eb821fe98cafdc43defb3e65c653810184))
+
 ## [0.5.1](https://github.com/skaphos/fathom/compare/v0.5.0...v0.5.1) (2026-08-10)
 
 
