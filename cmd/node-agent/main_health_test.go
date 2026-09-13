@@ -39,9 +39,13 @@ func TestParseConfigHealthMode(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects an empty item list", func(t *testing.T) {
-		if _, err := parseConfig(append(base, "--mode", "health", "--checks", "[]")); err == nil || !strings.Contains(err.Error(), "at least one item") {
-			t.Fatalf("expected empty-items error, got %v", err)
+	t.Run("accepts an empty item list (NodeCondition-only spec)", func(t *testing.T) {
+		cfg, err := parseConfig(append(base, "--mode", "health", "--checks", "[]"))
+		if err != nil {
+			t.Fatalf("an empty agent-side list is a valid configuration: %v", err)
+		}
+		if len(cfg.healthItems) != 0 {
+			t.Fatalf("healthItems = %+v, want none", cfg.healthItems)
 		}
 	})
 
@@ -224,5 +228,27 @@ func TestScanAndPublishHealthFailsOpenOnKubeletDown(t *testing.T) {
 	}
 	if report.Aggregate != nodehealth.OutcomeFail || len(report.Checks) != 1 || !strings.Contains(report.Checks[0].Summary, "unreachable") {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+// TestScanAndPublishHealthWithNoAgentItems pins the NodeCondition-only case:
+// the agent has nothing to evaluate, but it must still publish a report so
+// the node counts toward coverage and the operator can grade its conditions.
+func TestScanAndPublishHealthWithNoAgentItems(t *testing.T) {
+	kube := fake.NewSimpleClientset()
+	cfg := config{
+		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodehealth.ReportConfigMapName("nh", "node-1"),
+		timeout:       2 * time.Second,
+	}
+	report, err := scanAndPublishHealth(context.Background(), kube, cfg, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Checks) != 0 || report.Aggregate != nodehealth.OutcomeSkipped {
+		t.Fatalf("report = %+v, want no checks and Skipped", report)
+	}
+	if _, err := kube.CoreV1().ConfigMaps("ns").Get(context.Background(), cfg.configMapName, metav1.GetOptions{}); err != nil {
+		t.Fatalf("report ConfigMap must still be published: %v", err)
 	}
 }

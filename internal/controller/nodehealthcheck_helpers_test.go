@@ -374,3 +374,15 @@ func TestCheckForNodeHealthReportConfigMap(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeHealthEvaluationsInScope(t *testing.T) {
+	t.Parallel()
+	evals := []nodeHealthEvaluation{{Node: "a"}, {Node: "b"}, {Node: "c"}}
+	got := nodeHealthEvaluationsInScope(evals, map[string]struct{}{"b": {}, "c": {}, "d": {}})
+	if len(got) != 2 || got[0].Node != "b" || got[1].Node != "c" {
+		t.Fatalf("in scope = %+v, want b,c in order", got)
+	}
+	if got := nodeHealthEvaluationsInScope(evals, nil); len(got) != 0 {
+		t.Fatalf("no expected nodes should yield nothing, got %+v", got)
+	}
+}

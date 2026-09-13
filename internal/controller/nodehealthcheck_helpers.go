@@ -532,6 +532,18 @@ func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr
 	log.V(1).Info("pruned NodeHealthCheck HealthReport history", "deleted", excess, "limit", limit)
 }
 
+// nodeHealthEvaluationsInScope keeps only evaluations for nodes in expected,
+// preserving order.
+func nodeHealthEvaluationsInScope(evals []nodeHealthEvaluation, expected map[string]struct{}) []nodeHealthEvaluation {
+	out := make([]nodeHealthEvaluation, 0, len(evals))
+	for _, e := range evals {
+		if _, ok := expected[e.Node]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // nodeHealthNodeNameSet indexes evaluations by node.
 func nodeHealthNodeNameSet(evals []nodeHealthEvaluation) map[string]struct{} {
 	nodes := make(map[string]struct{}, len(evals))

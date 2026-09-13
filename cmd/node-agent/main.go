@@ -399,9 +399,10 @@ func parseConfig(argv []string) (config, error) {
 		if err != nil {
 			return config{}, fmt.Errorf("--checks: %w", err)
 		}
-		if len(items) == 0 {
-			return config{}, fmt.Errorf("--checks must contain at least one item")
-		}
+		// An empty list is legal: a spec with only NodeCondition items has
+		// nothing for the agent to evaluate, but the agent must still publish
+		// (an empty, Skipped) report so the node counts as covered and the
+		// operator can grade its conditions.
 		cfg.healthItems = items
 		if cfg.configMapName == "" {
 			cfg.configMapName = nodehealth.ReportConfigMapName(cfg.checkName, cfg.nodeName)

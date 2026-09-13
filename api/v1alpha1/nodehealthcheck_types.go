@@ -98,8 +98,15 @@ type NodeHealthCheckItem struct {
 	// Path is a location on the filesystem whose headroom is measured. Required
 	// for DiskHeadroom and InodeHeadroom and rejected for every other type. The
 	// operator mounts it into the agent read-only, so it must be a traversal-free
-	// absolute path under one of the operator-approved prefixes. A path absent on
-	// a node is reported Skipped, never Fail.
+	// absolute path under one of the operator-approved prefixes.
+	//
+	// The mounted directory is created empty by the kubelet when it does not
+	// exist on a node (hostPath DirectoryOrCreate, as for NodeCertificateCheck),
+	// so the measurement is then the headroom of the filesystem that would hold
+	// it — usually the root filesystem — and the node's filesystem is mutated
+	// by that directory. Prefer paths that exist on every node in scope. Only a
+	// path that is missing beneath the mount (a subdirectory the agent cannot
+	// stat) is reported Skipped.
 	// +optional
 	// +kubebuilder:validation:MaxLength=512
 	Path string `json:"path,omitempty"`

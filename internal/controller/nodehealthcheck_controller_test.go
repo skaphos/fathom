@@ -492,11 +492,60 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(coverage.Message).To(ContainSubstring("node-c"))
 		Expect(updated.Status.LastResult).To(Equal("Pass"), "frozen, per COR-3")
 
-		writeNodeHealthReport(ctx, check, "node-c", nodeHealthPassing)
+		// node-c reports with a failing check while node-a's departed report is
+		// still fresh and passing. Coverage closes, and the roll-up must reflect
+		// exactly the fleet in scope: node-a shapes nothing.
+		failing := []nodehealth.CheckResult{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomeFail, Summary: "3.0% of bytes free (at or below criticalPercentFree 10)"}}
+		writeNodeHealthReport(ctx, check, "node-c", failing)
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionTrue))
+		Expect(updated.Status.ReportingNodes).To(BeEquivalentTo(3), "the surplus report is still counted as reporting")
+		Expect(updated.Status.LastResult).To(Equal("Fail"))
+		Expect(updated.Status.Summary).To(Equal("1 of 2 node(s) passed; worst: node-c DiskHeadroom /var/lib/kubelet: 3.0% of bytes free (at or below criticalPercentFree 10)"))
+		Expect(updated.Status.NodeResults).To(HaveLen(2), "a departed node must not appear in the roll-up")
+		Expect(updated.Status.NodeResults[0].Node).To(Equal("node-b"))
+		Expect(updated.Status.NodeResults[1].Node).To(Equal("node-c"))
+		report := &fathomv1alpha1.HealthReport{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: updated.Status.LastReportName, Namespace: name.Namespace}, report)).To(Succeed())
+		for _, c := range report.Spec.Checks {
+			Expect(c.TargetRef.Name).NotTo(Equal("node-a"), "a departed node's evidence must not reach the HealthReport")
+		}
+	})
+
+	It("rolls up a NodeCondition-only spec from empty agent reports", func() {
+		name := types.NamespacedName{Name: "nh-condonly", Namespace: "default"}
+		check := newNHC(name, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition})
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		ensureNode(ctx, "node-a", healthyNodeConditions()...)
+
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The agent has nothing to evaluate but must still be told so, with an
+		// empty (never absent) item list.
+		ds := &appsv1.DaemonSet{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-condonly-node-health-agent", Namespace: "default"}, ds)).To(Succeed())
+		args := ds.Spec.Template.Spec.Containers[0].Args
+		Expect(args[indexOf(args, "--checks")+1]).To(Equal("[]"))
+		Expect(ds.Spec.Template.Spec.Volumes).To(BeEmpty())
+
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", nil) // what the agent publishes: no checks, Skipped
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		current := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.LastResult).To(Equal("Pass"), "the operator-graded conditions alone decide the verdict")
+		Expect(current.Status.Summary).To(Equal("1 of 1 node(s) passed"))
+		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionReady).Status).To(Equal(metav1.ConditionTrue))
+		report := &fathomv1alpha1.HealthReport{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: current.Status.LastReportName, Namespace: name.Namespace}, report)).To(Succeed())
+		Expect(report.Spec.Checks).To(HaveLen(4), "one check per graded condition")
 	})
 
 	It("rejects a report whose payload node does not match its authenticated annotation, and says so (SEC-1)", func() {

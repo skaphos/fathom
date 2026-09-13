@@ -90,7 +90,7 @@ misapplied threshold is a write-time error rather than a silently ignored one.
 
 | Type | Measures | Fields | Verdict |
 | --- | --- | --- | --- |
-| `DiskHeadroom` | Percentage of free **bytes** on the filesystem holding `path` (`statfs`; blocks available to an unprivileged caller, so ext4's root reservation is not counted). | `path` (required), `warnPercentFree`, `criticalPercentFree` | `<= criticalPercentFree` → Fail, `<= warnPercentFree` → Warn, else Pass. A path absent on a node is Skipped. |
+| `DiskHeadroom` | Percentage of free **bytes** on the filesystem holding `path` (`statfs`; blocks available to an unprivileged caller, so ext4's root reservation is not counted). | `path` (required), `warnPercentFree`, `criticalPercentFree` | `<= criticalPercentFree` → Fail, `<= warnPercentFree` → Warn, else Pass. See [Which path to measure](#which-path-to-measure) for what happens when a path does not exist on a node. |
 | `InodeHeadroom` | Percentage of free **inodes** on the filesystem holding `path`. | same as `DiskHeadroom` | same |
 | `NodeCondition` | The node's `status.conditions`, graded by the operator. `Ready` must be `True`; every other listed condition must be `False` — the healthy value for every pressure and unavailability condition Kubernetes and the cloud providers define. | `conditions` (defaults to `Ready`, `MemoryPressure`, `DiskPressure`, `PIDPressure`) | A condition with its expected value → Pass; otherwise Fail, with the condition's reason and message in the summary. A condition the node does not report is Skipped. |
 | `KubeletHealthz` | `GET http://127.0.0.1:10248/healthz` from the node. | none | 2xx → Pass; any other response, or an unreachable kubelet, → Fail. |
@@ -111,6 +111,16 @@ container or log volume should add `/var/lib/containerd` (or `/var/lib/docker`)
 and `/var/log`. The host root `/` is never allowed: the operator mounts the
 measured path read-only into the agent, and mounting `/` is the opposite of
 least privilege.
+
+**A path that does not exist on a node is created**, empty, by the kubelet:
+the operator mounts each measured directory with `hostPath` type
+`DirectoryOrCreate` — the same mechanism `NodeCertificateCheck` uses — so
+the measurement becomes the headroom of the filesystem that would hold the
+directory (usually the root filesystem), and the node's filesystem is
+mutated by that empty directory. That is rarely what a missing path meant.
+Prefer paths that exist on every node in scope, and narrow
+`spec.nodeSelector` on mixed fleets. Only a location missing *beneath* the
+mount (a subdirectory the agent cannot `stat`) is reported `Skipped`.
 
 Paths are restricted to an operator-approved allowlist — `/var/lib/kubelet`,
 `/var/lib/containerd`, `/var/lib/docker`, `/var/lib/etcd`, `/var/log`,

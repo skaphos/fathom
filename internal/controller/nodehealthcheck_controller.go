@@ -231,8 +231,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// CoverageComplete condition carries the "this verdict is frozen" signal.
 	complete := nodeCertReportsComplete(ds, expected, reported)
 	if complete {
-		aggregate := aggregateNodeHealth(evals)
-		if err := r.rollup(ctx, log, &check, evals, aggregate, interval); err != nil {
+		// Only nodes currently in scope contribute to the verdict. A departed
+		// node's still-fresh report is tolerated for coverage (it neither
+		// completes nor blocks it) but must not shape the verdict, summary,
+		// nodeResults, or HealthReport of a fleet it has left.
+		inScope := nodeHealthEvaluationsInScope(evals, expected)
+		aggregate := aggregateNodeHealth(inScope)
+		if err := r.rollup(ctx, log, &check, inScope, aggregate, interval); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
