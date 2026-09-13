@@ -74,6 +74,35 @@ func DecodeItems(data string) ([]Item, error) {
 	return items, nil
 }
 
+// itemKey identifies what an item measures, matching CheckResult.Path for the
+// result the agent emits: the filesystem path for headroom, the socket for
+// ContainerRuntime, empty for KubeletHealthz.
+func itemKey(it Item) string {
+	if it.Type == TypeContainerRuntime {
+		return it.SocketPath
+	}
+	return it.Path
+}
+
+// ReportCovers reports whether report carries a result for every item in
+// items, keyed by (type, path). Items the agent does not evaluate
+// (NodeCondition) are ignored. An empty item set is trivially covered.
+func ReportCovers(report NodeReport, items []Item) bool {
+	have := make(map[string]struct{}, len(report.Checks))
+	for _, c := range report.Checks {
+		have[c.Type+"\x00"+c.Path] = struct{}{}
+	}
+	for _, it := range items {
+		if !it.AgentEvaluated() {
+			continue
+		}
+		if _, ok := have[it.Type+"\x00"+itemKey(it)]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // VerifyReportBinding applies the structural authenticity bindings shared with
 // NodeCertificateCheck (nodecert.VerifyReportIdentity) to a decoded
 // NodeHealthCheck report, using this kind's canonical ConfigMap name. It is

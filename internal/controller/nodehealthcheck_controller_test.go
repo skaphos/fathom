@@ -19,10 +19,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -144,6 +146,8 @@ func scheduleNodeHealthAgentPods(ctx context.Context, check *fathomv1alpha1.Node
 		}
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)))).To(Succeed())
 	}
+	ds := &appsv1.DaemonSet{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}, ds)).To(Succeed())
 	for _, node := range nodes {
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check) + "-" + node, Namespace: check.Namespace, Labels: labels},
@@ -152,6 +156,7 @@ func scheduleNodeHealthAgentPods(ctx context.Context, check *fathomv1alpha1.Node
 				Containers: []corev1.Container{{Name: "node-agent", Image: "ghcr.io/skaphos/fathom-node-agent:test"}},
 			},
 		}
+		Expect(controllerutil.SetControllerReference(ds, pod, k8sClient.Scheme())).To(Succeed())
 		err := k8sClient.Create(ctx, pod)
 		if apierrors.IsAlreadyExists(err) {
 			continue
@@ -668,12 +673,99 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		}
 		Expect(nodehealth.ReportConfigMapName("shared", "node-a")).NotTo(Equal(nodecert.NodeReportConfigMapName("shared", "node-a")))
 
+		// The two kinds' selectors are disjoint: neither DaemonSet nor
+		// NetworkPolicy can ever select the other's pods, even for a shared name.
+		nhDS, ncDS := &appsv1.DaemonSet{}, &appsv1.DaemonSet{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeHealthAgentResourceName(nhc), Namespace: "default"}, nhDS)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(ncc), Namespace: "default"}, ncDS)).To(Succeed())
+		ncSelector := labels.SelectorFromSet(ncDS.Spec.Selector.MatchLabels)
+		nhSelector := labels.SelectorFromSet(nhDS.Spec.Selector.MatchLabels)
+		Expect(ncSelector.Matches(labels.Set(nhDS.Spec.Template.Labels))).To(BeFalse(), "certificate selector matches health-agent pods")
+		Expect(nhSelector.Matches(labels.Set(ncDS.Spec.Template.Labels))).To(BeFalse(), "health selector matches certificate-agent pods")
+		ncNP, nhNP := &networkingv1.NetworkPolicy{}, &networkingv1.NetworkPolicy{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(ncc), Namespace: "default"}, ncNP)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeHealthAgentResourceName(nhc), Namespace: "default"}, nhNP)).To(Succeed())
+		Expect(labels.SelectorFromSet(ncNP.Spec.PodSelector.MatchLabels).Matches(labels.Set(nhDS.Spec.Template.Labels))).To(BeFalse(), "certificate NetworkPolicy isolates health-agent pods")
+		Expect(labels.SelectorFromSet(nhNP.Spec.PodSelector.MatchLabels).Matches(labels.Set(ncDS.Spec.Template.Labels))).To(BeFalse(), "health NetworkPolicy isolates certificate-agent pods")
+
 		// Health agent pods must not count toward the certificate check's coverage.
 		scheduleNodeHealthAgentPods(ctx, nhc, "node-a")
 		r := newNodeCertReconciler()
-		expected, err := r.expectedAgentNodes(ctx, ncc)
+		expected, err := r.expectedAgentNodes(ctx, ncc, ncDS)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(expected).To(BeEmpty(), "NodeCertificateCheck counted a NodeHealthCheck agent pod as its own")
+	})
+
+	It("ignores a planted pod that carries the agent labels but is not controlled by the DaemonSet", func() {
+		name := types.NamespacedName{Name: "nh-planted", Namespace: "default"}
+		check := newNHC(name, headroom)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
+
+		// A principal with pod create plants a labelled pod on a node that will
+		// never report. Without the owner check this pins coverage incomplete.
+		planted := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "planted", Namespace: name.Namespace, Labels: nodeHealthAgentSelectorLabels(check)},
+			Spec:       corev1.PodSpec{NodeName: "node-z", Containers: []corev1.Container{{Name: "x", Image: "x"}}},
+		}
+		Expect(k8sClient.Create(ctx, planted)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, planted, client.GracePeriodSeconds(0)) })
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		current := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionTrue), "a pod the DaemonSet does not control must not count as a node in scope")
+		Expect(current.Status.LastResult).To(Equal("Pass"))
+	})
+
+	It("does not consume a fresh report that predates the current spec's agent items", func() {
+		name := types.NamespacedName{Name: "nh-specchange", Namespace: "default"}
+		check := newNHC(name, headroom)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		current := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.LastResult).To(Equal("Pass"))
+		frozenReport := current.Status.LastReportName
+
+		// Add a check. The rollout completes, but node-a's still-fresh report
+		// carries no result for the new item: it is a spec-change window, not
+		// evidence, so the verdict stays frozen with an honest coverage signal.
+		Expect(k8sClient.Get(ctx, name, check)).To(Succeed())
+		check.Spec.Checks = append(check.Spec.Checks, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"})
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.ReportingNodes).To(BeEquivalentTo(0), "the pre-change report must not be consumed")
+		coverage := apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage)
+		Expect(coverage.Status).To(Equal(metav1.ConditionFalse))
+		Expect(coverage.Reason).To(Equal("PartialReports"))
+		Expect(current.Status.LastReportName).To(Equal(frozenReport), "frozen, per COR-3")
+
+		// The updated agent reports every item: coverage closes again.
+		writeNodeHealthReport(ctx, check, "node-a", append(nodeHealthPassing,
+			nodehealth.CheckResult{Type: nodehealth.TypeInodeHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomePass, Summary: "90.0% of inodes free"}))
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionTrue))
 	})
 })
 

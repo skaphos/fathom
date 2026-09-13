@@ -206,14 +206,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	r.setAgentPrivileged(&check, items)
 
 	now := time.Now()
-	reports, rejections, err := r.collectNodeReports(ctx, log, &check, now, nodeHealthReportMaxAge(&check))
+	reports, rejections, err := r.collectNodeReports(ctx, log, &check, nodeHealthAgentItems(items), now, nodeHealthReportMaxAge(&check))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	check.Status.ReportingNodes = int32(len(reports))
 	r.setReportsAuthentic(&check, rejections)
 
-	expected, err := r.expectedAgentNodes(ctx, &check)
+	expected, err := r.expectedAgentNodes(ctx, &check, ds)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -558,9 +558,11 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 
 // collectNodeReports lists fresh per-node report ConfigMaps for this check,
 // decodes them, and keeps only reports that satisfy the shared authenticity
-// bindings (SEC-1) and the freshness bound. Reports are keyed by node so
-// duplicates cannot inflate coverage.
-func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, now time.Time, maxAge time.Duration) ([]nodehealth.NodeReport, []reportRejection, error) {
+// bindings (SEC-1), the freshness bound, and the current spec (a report that
+// does not carry a result for every agent-side item predates the template and
+// is not consumed). Reports are keyed by node so duplicates cannot inflate
+// coverage.
+func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, agentItems []nodehealth.Item, now time.Time, maxAge time.Duration) ([]nodehealth.NodeReport, []reportRejection, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
 		client.InNamespace(check.Namespace),
@@ -601,6 +603,10 @@ func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log 
 			log.V(1).Info("skipping stale node health report", "configmap", cm.Name, "node", report.Node, "observedAt", report.ObservedAt, "maxAge", maxAge.String())
 			continue
 		}
+		if !nodeHealthReportCoversSpec(report, agentItems) {
+			log.V(1).Info("skipping node health report that predates the current spec", "configmap", cm.Name, "node", report.Node)
+			continue
+		}
 		if existing, ok := reportsByNode[report.Node]; ok && !report.ObservedAt.After(existing.ObservedAt) {
 			continue
 		}
@@ -636,7 +642,12 @@ func (r *NodeHealthCheckReconciler) adoptReportConfigMap(ctx context.Context, lo
 // truth for scope without a cluster-wide Node read). Every agent pod carrying a
 // node name counts, including one that is terminating, so coverage fails
 // closed mid-rollout.
-func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) (map[string]struct{}, error) {
+//
+// Only pods the managed DaemonSet controls count. Labels are public: any
+// principal with pod create in the namespace could otherwise plant a labelled
+// pod naming a node that will never report and pin coverage incomplete — a
+// frozen verdict — for as long as it likes.
+func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods,
 		client.InNamespace(check.Namespace),
@@ -646,7 +657,11 @@ func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, chec
 	}
 	nodes := make(map[string]struct{}, len(pods.Items))
 	for i := range pods.Items {
-		if node := pods.Items[i].Spec.NodeName; node != "" {
+		pod := &pods.Items[i]
+		if !metav1.IsControlledBy(pod, ds) {
+			continue
+		}
+		if node := pod.Spec.NodeName; node != "" {
 			nodes[node] = struct{}{}
 		}
 	}

@@ -38,6 +38,15 @@ const (
 	// check name in one namespace without fighting over a DaemonSet (#206).
 	nodeHealthAgentSuffix = "-node-health-agent"
 
+	// nodeHealthAgentComponentValue is this kind's value for the shared
+	// component label. NodeCertificateCheck's DaemonSet and NetworkPolicy
+	// selectors are {source-name, component} — and a DaemonSet selector is
+	// immutable, so they cannot grow a kind label on upgrade. Using a distinct
+	// component value is what makes the two kinds' selectors disjoint for a
+	// shared check name: neither kind's DaemonSet or NetworkPolicy can ever
+	// select the other's pods.
+	nodeHealthAgentComponentValue = "node-health-agent"
+
 	// maxNodeHealthAgentInterval caps how rarely an agent re-evaluates. The
 	// operator's roll-up cadence follows spec.interval, but report freshness
 	// must not scale with it: a 24h interval must not accept a 24h-old
@@ -70,13 +79,14 @@ func nodeHealthAgentResourceName(check *fathomv1alpha1.NodeHealthCheck) string {
 }
 
 // nodeHealthAgentSelectorLabels are the immutable DaemonSet selector labels.
-// The kind label is part of the selector so a NodeCertificateCheck with the
-// same name never matches these pods, and vice versa.
+// The distinct component value (see nodeHealthAgentComponentValue) is what
+// keeps them disjoint from a same-named NodeCertificateCheck's selectors; the
+// kind label is carried as well so the pods are self-describing.
 func nodeHealthAgentSelectorLabels(check *fathomv1alpha1.NodeHealthCheck) map[string]string {
 	return map[string]string{
 		nodecert.LabelSourceKind: nodehealth.KindNodeHealthCheck,
 		nodecert.LabelSourceName: check.Name,
-		nodeAgentComponentLabel:  nodeAgentComponentValue,
+		nodeAgentComponentLabel:  nodeHealthAgentComponentValue,
 	}
 }
 
@@ -542,6 +552,16 @@ func nodeHealthEvaluationsInScope(evals []nodeHealthEvaluation, expected map[str
 		}
 	}
 	return out
+}
+
+// nodeHealthReportCoversSpec reports whether a fresh report carries a result
+// for every agent-side item of the current spec. The agent emits exactly one
+// result per item (Skipped and Error included), so a report missing an item
+// predates the current template: it is a spec-change window, not evidence,
+// and consuming it would let a newly added check — or a failing one the old
+// template never had — be absent from the roll-up.
+func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodehealth.Item) bool {
+	return nodehealth.ReportCovers(report, agentItems)
 }
 
 // nodeHealthNodeNameSet indexes evaluations by node.

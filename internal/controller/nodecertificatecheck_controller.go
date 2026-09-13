@@ -293,7 +293,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	check.Status.ReportingNodes = int32(len(reports))
 	r.setReportsAuthentic(&check, rejections)
 
-	expected, err := r.expectedAgentNodes(ctx, &check)
+	expected, err := r.expectedAgentNodes(ctx, &check, ds)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1094,7 +1094,11 @@ func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
 // (compare #255). Every agent pod carrying a node name counts, including one
 // that is terminating — a node mid-rollout is still in scope, and counting it
 // keeps coverage failing closed until its replacement reports.
-func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (map[string]struct{}, error) {
+//
+// Only pods the managed DaemonSet controls count: labels are public, so a
+// planted pod naming a node that never reports could otherwise pin coverage
+// incomplete indefinitely.
+func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
 	// The kind label is part of the match: a NodeHealthCheck that shares this
 	// check's name runs its own agent pods under the same component and
 	// source-name labels, and those must never count as this check's coverage
@@ -1112,7 +1116,11 @@ func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context,
 	}
 	nodes := make(map[string]struct{}, len(pods.Items))
 	for i := range pods.Items {
-		if node := pods.Items[i].Spec.NodeName; node != "" {
+		pod := &pods.Items[i]
+		if !metav1.IsControlledBy(pod, ds) {
+			continue
+		}
+		if node := pod.Spec.NodeName; node != "" {
 			nodes[node] = struct{}{}
 		}
 	}

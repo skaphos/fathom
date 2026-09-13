@@ -166,3 +166,31 @@ func TestWorstOutcomeFold(t *testing.T) {
 		})
 	}
 }
+
+func TestReportCovers(t *testing.T) {
+	t.Parallel()
+	items := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"},
+		{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+		{Type: TypeKubeletHealthz},
+		{Type: TypeNodeCondition}, // operator-side; never required of the agent
+	}
+	full := NodeReport{Checks: []CheckResult{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: OutcomeSkipped},
+		{Type: TypeContainerRuntime, Path: "/run/crio/crio.sock", Outcome: OutcomeFail},
+		{Type: TypeKubeletHealthz, Outcome: OutcomePass},
+	}}
+	if !ReportCovers(full, items) {
+		t.Fatal("a report with a result per agent item (any outcome) must cover")
+	}
+	if ReportCovers(NodeReport{Checks: full.Checks[:2]}, items) {
+		t.Fatal("a report missing KubeletHealthz must not cover")
+	}
+	wrongPath := NodeReport{Checks: append([]CheckResult{{Type: TypeDiskHeadroom, Path: "/var/log"}}, full.Checks[1:]...)}
+	if ReportCovers(wrongPath, items) {
+		t.Fatal("same type at a different path must not cover")
+	}
+	if !ReportCovers(NodeReport{}, []Item{{Type: TypeNodeCondition}}) || !ReportCovers(NodeReport{}, nil) {
+		t.Fatal("no agent-side items are trivially covered")
+	}
+}

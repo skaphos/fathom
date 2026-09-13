@@ -102,10 +102,15 @@ func main() {
 // run serves metrics and drives the evaluation loop until ctx is cancelled.
 // With cfg.once it performs a single pass and returns.
 func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
+	// A bind failure is fatal, not a log line: in health mode with hostNetwork
+	// the metrics port is a host port, and a collision must surface as a
+	// crashing pod (AgentReady=False on the check) rather than an agent that
+	// keeps publishing while its metrics silently never serve.
 	srv := &http.Server{Addr: cfg.metricsAddr, Handler: metricsMux(), ReadHeaderTimeout: 5 * time.Second}
+	serveErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("node-agent: metrics server: %v", err)
+			serveErr <- fmt.Errorf("metrics server on %s: %w", cfg.metricsAddr, err)
 		}
 	}()
 	defer func() {
@@ -138,7 +143,12 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 
 	scanOnce()
 	if cfg.once {
-		return nil
+		select {
+		case err := <-serveErr:
+			return err
+		default:
+			return nil
+		}
 	}
 
 	ticker := time.NewTicker(cfg.interval)
@@ -147,6 +157,8 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case err := <-serveErr:
+			return err
 		case <-ticker.C:
 			scanOnce()
 		}

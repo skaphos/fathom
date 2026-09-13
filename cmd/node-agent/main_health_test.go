@@ -252,3 +252,31 @@ func TestScanAndPublishHealthWithNoAgentItems(t *testing.T) {
 		t.Fatalf("report ConfigMap must still be published: %v", err)
 	}
 }
+
+// TestRunFailsWhenMetricsPortIsTaken pins that a metrics bind failure is
+// fatal. On the host network the metrics port is a host port, and the
+// documented collision behaviour — the second agent crashloops, AgentReady
+// goes False — depends on the process exiting rather than logging and
+// carrying on.
+func TestRunFailsWhenMetricsPortIsTaken(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	kube := fake.NewSimpleClientset()
+	cfg := config{
+		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodehealth.ReportConfigMapName("nh", "node-1"),
+		metricsAddr:   l.Addr().String(),
+		interval:      time.Hour,
+		timeout:       time.Second,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err = run(ctx, kube, cfg)
+	if err == nil || !strings.Contains(err.Error(), "metrics server") {
+		t.Fatalf("run must fail when the metrics port is taken, got %v", err)
+	}
+}
