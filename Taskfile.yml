@@ -29,7 +29,14 @@ vars:
   E2E_KIND_CLUSTER: '{{.E2E_KIND_CLUSTER | default "fathom-e2e"}}'
   E2E_KIND_CONFIG: '{{.E2E_KIND_CONFIG | default "test/e2e/fixtures/kind-cluster.yaml"}}'
   E2E_HELMFILE: '{{.E2E_HELMFILE | default "test/e2e/fixtures/helmfile.yaml"}}'
-  E2E_IMG: '{{.E2E_IMG | default "fathom-operator:e2e"}}'
+  # Registry-qualified on purpose: under Podman (kind's podman provider, or a
+  # `docker` shim) an unqualified `docker build -t fathom-operator:e2e` is
+  # stored and `kind load`ed as localhost/fathom-operator:e2e, while containerd
+  # on the node resolves the deployed image to docker.io/library/..., so the
+  # operator pod sits in ImagePullBackOff. Real Docker resolves the unqualified
+  # name to this exact reference, so it is a no-op there. See
+  # test/e2e/fixtures/README.md (Troubleshooting).
+  E2E_IMG: '{{.E2E_IMG | default "docker.io/library/fathom-operator:e2e"}}'
   # The probe image tag must match the operator's compiled-in DefaultProbeImage
   # so kind's locally-loaded image satisfies the operator's pull request via
   # IfNotPresent. Bumped automatically in lockstep with the operator release by
