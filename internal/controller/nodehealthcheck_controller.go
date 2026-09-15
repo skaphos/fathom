@@ -201,7 +201,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason: conditionReasonItemsRejected, Message: message,
 		})
 		r.setReady(&check, metav1.ConditionFalse, conditionReasonItemsRejected, message)
-		return r.finish(ctx, log, before, &check, interval)
+		return r.finish(ctx, log, before, &check, nodeHealthRequeueAfter(&check))
 	}
 
 	if err := ensureNodeAgentClusterRole(ctx, r.Client, r.roleName()); err != nil {
@@ -271,7 +271,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	r.setReadyFromState(&check, ds, expected, reported)
-	return r.finish(ctx, log, before, &check, interval)
+	// Requeue on the agent cadence, not the roll-up interval. Freshness is
+	// bounded by the capped agent cadence, and a silently dead agent — one that
+	// stopped publishing, or cannot write its ConfigMap — raises no watch
+	// event, so only a timely requeue lets the stale-report window be seen.
+	// The roll-up transition cadence stays at interval inside rollup.
+	return r.finish(ctx, log, before, &check, nodeHealthRequeueAfter(&check))
 }
 
 func (r *NodeHealthCheckReconciler) roleName() string {

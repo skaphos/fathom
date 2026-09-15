@@ -80,7 +80,11 @@ func DefaultNodeHealthConditions() []string {
 // not a silently ignored one.
 // +kubebuilder:validation:XValidation:rule="(self.type == 'DiskHeadroom' || self.type == 'InodeHeadroom') == has(self.path)",message="path is required for DiskHeadroom and InodeHeadroom, and must be omitted for every other type"
 // +kubebuilder:validation:XValidation:rule="self.type == 'DiskHeadroom' || self.type == 'InodeHeadroom' || (!has(self.warnPercentFree) && !has(self.criticalPercentFree))",message="warnPercentFree and criticalPercentFree apply only to DiskHeadroom and InodeHeadroom"
-// +kubebuilder:validation:XValidation:rule="!has(self.warnPercentFree) || !has(self.criticalPercentFree) || self.warnPercentFree >= self.criticalPercentFree",message="warnPercentFree must be greater than or equal to criticalPercentFree"
+// The relation is checked on the effective values: an omitted threshold
+// counts as its runtime default, so criticalPercentFree: 30 with warn omitted
+// (effective warn 20) and warnPercentFree: 0 with critical omitted (effective
+// critical 10) are rejected here rather than silently clamped at run time.
+// +kubebuilder:validation:XValidation:rule="(has(self.warnPercentFree) ? self.warnPercentFree : 20) >= (has(self.criticalPercentFree) ? self.criticalPercentFree : 10)",message="warnPercentFree must be greater than or equal to criticalPercentFree; an omitted field counts as its default (warn 20, critical 10)"
 // +kubebuilder:validation:XValidation:rule="self.type == 'NodeCondition' || !has(self.conditions)",message="conditions applies only to NodeCondition"
 // +kubebuilder:validation:XValidation:rule="self.type == 'ContainerRuntime' || !has(self.socketPath)",message="socketPath applies only to ContainerRuntime"
 // The path allowlist stops a namespaced tenant from turning the node-agent into

@@ -821,6 +821,10 @@ NodeHealthCheckItem is one assertion made on every node in scope. Which
 fields are legal depends on Type; the rules below reject a field on a type
 that does not use it, so a misapplied threshold is a write-time error and
 not a silently ignored one.
+The relation is checked on the effective values: an omitted threshold
+counts as its runtime default, so criticalPercentFree: 30 with warn omitted
+(effective warn 20) and warnPercentFree: 0 with critical omitted (effective
+critical 10) are rejected here rather than silently clamped at run time.
 The path allowlist stops a namespaced tenant from turning the node-agent into
 a confused deputy that mounts arbitrary host directories; it is mirrored in
 internal/nodehealth so the operator re-checks it on clusters running an older

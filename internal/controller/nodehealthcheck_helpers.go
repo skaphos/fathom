@@ -128,6 +128,13 @@ func nodeHealthAgentTimeout(check *fathomv1alpha1.NodeHealthCheck) time.Duration
 	return min(nodeHealthTimeout(check), nodeHealthAgentInterval(check))
 }
 
+// nodeHealthRequeueAfter is the periodic reconcile cadence: the capped agent
+// cadence, which is never longer than spec.interval. Reports go stale on that
+// cadence, so that is how often a silent agent failure must be looked for.
+func nodeHealthRequeueAfter(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+	return nodeHealthAgentInterval(check)
+}
+
 // nodeHealthReportMaxAge is how old a node report may be and still count. It
 // follows the agent cadence and the agent's (capped) timeout, never the
 // roll-up cadence (#270).

@@ -290,6 +290,32 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			name: "36 criticalPercentFree above the default warn is rejected",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", CriticalPercentFree: ptr.To[int32](30)})
+			},
+			wantReject: true, wantInMsg: "greater than or equal",
+		},
+		{
+			name: "37 warnPercentFree 0 alone is rejected (effective critical 10)",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](0)})
+			},
+			wantReject: true, wantInMsg: "greater than or equal",
+		},
+		{
+			name: "38 warn 0 with critical 0 is accepted (never warn)",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](0), CriticalPercentFree: ptr.To[int32](0)})
+			},
+		},
+		{
+			name: "39 criticalPercentFree at the default warn is accepted",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", CriticalPercentFree: ptr.To[int32](20)})
+			},
+		},
+		{
 			name:       "34 metricsHostPort below 1024",
 			mutate:     func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](80) },
 			wantReject: true, wantInMsg: "metricsHostPort",

@@ -199,7 +199,7 @@ metrics endpoint:
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
-| `fathom_node_health_check_result` | gauge (one-hot) | `node`, `type`, `path`, `result` | **Per-check result on each node.** Exactly one `result` series per `(node, type, path)` is 1. Alert on the node and check that broke rather than on the check as a whole. Series are bounded by the schema: 16 items × 6 results per node. |
+| `fathom_node_health_check_result` | gauge (one-hot) | `node`, `type`, `path`, `result` | **Per-check result on each node, for the agent-evaluated types only** (`DiskHeadroom`, `InodeHeadroom`, `KubeletHealthz`, `ContainerRuntime`). `NodeCondition` is graded by the operator, not the agent, so it has no series here; it is visible in the check-level `fathom_check_result`, `status.nodeResults`, and the HealthReport. Exactly one `result` series per `(node, type, path)` is 1. Alert on the node and check that broke rather than on the check as a whole. Series are bounded by the schema: 16 items × 6 results per node. |
 | `fathom_node_health_filesystem_free_percent` | gauge | `node`, `path`, `resource` (`bytes` \| `inodes`) | **The measured headroom behind a `DiskHeadroom`/`InodeHeadroom` verdict**, so you can graph the trend and alert ahead of the threshold. |
 
 ```yaml

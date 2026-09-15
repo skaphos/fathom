@@ -282,6 +282,11 @@ func TestNodeHealthCadence(t *testing.T) {
 	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+30*time.Second {
 		t.Fatalf("report max age = %v, must follow the agent cadence, not the 24h interval", got)
 	}
+	// The requeue follows the agent cadence: a 24h interval is still looked at
+	// every 5m, so a silently dead agent is noticed within the freshness bound.
+	if got := nodeHealthRequeueAfter(long); got != maxNodeHealthAgentInterval {
+		t.Fatalf("requeue = %v, want the %v agent cadence", got, maxNodeHealthAgentInterval)
+	}
 	// timeout == interval is legal; the agent's timeout is capped at its
 	// cadence so the freshness bound stays minutes, never a day.
 	long.Spec.Timeout = &metav1.Duration{Duration: 24 * time.Hour}

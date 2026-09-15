@@ -93,9 +93,15 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 				}
 				g.Expect(c.TargetRef.Kind).To(Equal("Node"), "node_health check should target a Node")
 				seen[c.Details["type"]] = true
-				// Skipped is legal for a condition the node does not report;
-				// anything else must be Pass on a healthy kind node.
-				g.Expect(c.Result).To(BeElementOf("Pass", "Skipped"),
+				// Every agent-side type must actually measure the node and Pass;
+				// Skipped is legal only for a condition the node does not report.
+				// Letting the agent types be Skipped would let a check that stopped
+				// measuring (a missing path, a permission failure) pass this spec.
+				want := []string{"Pass"}
+				if c.Details["type"] == "NodeCondition" {
+					want = append(want, "Skipped")
+				}
+				g.Expect(c.Result).To(BeElementOf(want),
 					"node_health %s %s on %s: got %q (%s)", c.Details["type"], c.Details["path"], c.TargetRef.Name, c.Result, c.Summary)
 			}
 			for _, typ := range []string{"DiskHeadroom", "InodeHeadroom", "NodeCondition", "KubeletHealthz", "ContainerRuntime"} {

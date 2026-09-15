@@ -96,10 +96,13 @@ misapplied threshold is a write-time error rather than a silently ignored one.
 | `KubeletHealthz` | `GET http://127.0.0.1:10248/healthz` from the node. | none | 2xx → Pass; any other response, or an unreachable kubelet, → Fail. |
 | `ContainerRuntime` | A connection to the CRI socket (dial + close; the agent speaks no CRI). | `socketPath` (defaults to `/run/containerd/containerd.sock`) | Accepts a connection → Pass; refuses → Fail. A socket that disappears while the agent runs → Fail. A socket absent when the agent *starts* keeps the pod from starting at all (`hostPath` type `Socket`), which shows as `AgentReady=False` and incomplete coverage rather than a verdict — see [Troubleshooting](#troubleshooting). |
 
-Thresholds default to **20 / 10** when unset. Zero is legal (`warnPercentFree:
-0` means "never warn"), which is why the defaults are applied at runtime rather
-than by the schema — a schema default on one type's field would break the
-type rules for every other item.
+Thresholds default to **20 / 10** when unset, and the API server checks
+`warnPercentFree >= criticalPercentFree` on the *effective* values — an
+omitted field counts as its default — so `criticalPercentFree: 30` on its own
+is rejected (effective warn is 20). Zero is legal (`warnPercentFree: 0` means
+"never warn"), but it then needs an explicit `criticalPercentFree: 0` too. The
+defaults are applied at runtime rather than by the schema because a schema
+default on one type's field would break the type rules for every other item.
 
 Items must be unique by `(type, path)`, and the list is capped at 16.
 
