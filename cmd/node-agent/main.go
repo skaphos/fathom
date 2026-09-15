@@ -193,8 +193,10 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 // unconditionally. A pass that never returns — a statfs wedged on a hung mount
 // in uninterruptible sleep, which no context can cancel — used to leave the
 // pod Running and Ready forever while it published nothing; the kubelet's
-// liveness probe now restarts it once a pass is overdue by more than one
-// cadence plus a timeout.
+// liveness probe now restarts it once no pass has published within two
+// cadences plus a timeout — one whole missed pass is tolerated (a slow API
+// write, a probe running to its deadline) before a restart, so a single
+// slow pass is not a false positive.
 type liveness struct {
 	lastPass atomic.Int64 // unix nanoseconds of the last completed pass (or start)
 	maxAge   time.Duration
