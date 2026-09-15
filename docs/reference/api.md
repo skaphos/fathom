@@ -880,6 +880,9 @@ mirrors the aggregate into Status.
 
 There is no field to pause a NodeHealthCheck. Stopping a check means
 deleting it (#262).
+The comparison uses the effective interval: an omitted interval is 5m at
+runtime, so timeout: 10m without an interval was admitted and then silently
+capped. Keep the literal in step with DefaultNodeHealthCheckInterval.
 Per-node results and HealthReport checks are keyed by the item's identity —
 its type plus what it measures: the path for the headroom types, the socket
 for ContainerRuntime (its default counts as a value), nothing for the

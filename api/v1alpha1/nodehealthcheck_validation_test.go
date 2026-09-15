@@ -332,6 +332,21 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			name: "42 timeout above the default interval is rejected when interval is omitted",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Interval = nil
+				c.Spec.Timeout = &metav1.Duration{Duration: 10 * time.Minute}
+			},
+			wantReject: true, wantInMsg: "5m when interval is omitted",
+		},
+		{
+			name: "43 timeout equal to the default interval is accepted when interval is omitted",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Interval = nil
+				c.Spec.Timeout = &metav1.Duration{Duration: 5 * time.Minute}
+			},
+		},
+		{
 			name:       "34 metricsHostPort below 1024",
 			mutate:     func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](80) },
 			wantReject: true, wantInMsg: "metricsHostPort",

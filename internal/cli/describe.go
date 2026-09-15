@@ -349,12 +349,13 @@ func (d *describer) details(obj client.Object) {
 			tb.row("  "+r.Node, orDash(r.Result), age(r.ObservedAt, d.now), truncate(r.Message, summaryColumnWidth))
 		}
 		_ = tb.flush()
-		// ReportingNodes counts fresh reports, including surplus ones from nodes
-		// that have left scope, while NodeResults is the in-scope fleet, so the
-		// two differing is not truncation. Only a list at the cap was cut.
-		if len(o.Status.NodeResults) == int(fathomv1alpha1.MaxNodeHealthNodeResults) && int(o.Status.ReportingNodes) > len(o.Status.NodeResults) {
+		// ReportingNodes counts fresh reports, surplus ones from departed nodes
+		// included, while NodeResults is the in-scope fleet, so the two differing
+		// is not truncation; DesiredNodes is the in-scope count to compare with,
+		// and only a list at the cap was cut.
+		if len(o.Status.NodeResults) == int(fathomv1alpha1.MaxNodeHealthNodeResults) && int(o.Status.DesiredNodes) > len(o.Status.NodeResults) {
 			_, _ = fmt.Fprintf(d.w, "  (%d of %d nodes listed; the list is capped at %d)\n",
-				len(o.Status.NodeResults), o.Status.ReportingNodes, fathomv1alpha1.MaxNodeHealthNodeResults)
+				len(o.Status.NodeResults), o.Status.DesiredNodes, fathomv1alpha1.MaxNodeHealthNodeResults)
 		}
 	case *fathomv1alpha1.ClusterHealth:
 		if len(o.Status.Children) == 0 {

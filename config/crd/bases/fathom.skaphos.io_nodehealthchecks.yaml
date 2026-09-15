@@ -68,6 +68,9 @@ spec:
 
               There is no field to pause a NodeHealthCheck. Stopping a check means
               deleting it (#262).
+              The comparison uses the effective interval: an omitted interval is 5m at
+              runtime, so timeout: 10m without an interval was admitted and then silently
+              capped. Keep the literal in step with DefaultNodeHealthCheckInterval.
               Per-node results and HealthReport checks are keyed by the item's identity —
               its type plus what it measures: the path for the headroom types, the socket
               for ContainerRuntime (its default counts as a value), nothing for the
@@ -334,9 +337,9 @@ spec:
               rule: '!has(self.timeout) || duration(self.timeout) >= duration(''1s'')'
             - message: interval must be at least 10s
               rule: '!has(self.interval) || duration(self.interval) >= duration(''10s'')'
-            - message: timeout must not exceed interval
-              rule: '!has(self.timeout) || !has(self.interval) || duration(self.timeout)
-                <= duration(self.interval)'
+            - message: timeout must not exceed interval (5m when interval is omitted)
+              rule: '!has(self.timeout) || duration(self.timeout) <= (has(self.interval)
+                ? duration(self.interval) : duration(''5m''))'
             - message: checks must be unique by type and path (socketPath for ContainerRuntime)
               rule: 'self.checks.all(c, self.checks.filter(o, o.type == c.type &&
                 (has(o.path) ? o.path : (o.type == ''ContainerRuntime'' ? (has(o.socketPath)
