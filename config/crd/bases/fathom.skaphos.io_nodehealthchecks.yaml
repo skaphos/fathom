@@ -78,6 +78,10 @@ spec:
               pathless types key on their own type name rather than an empty string:
               gofmt rewrites two adjacent apostrophes inside a doc comment as a
               typographic quote, which would silently break the rule at CRD install.
+              A headroom path that is also a ContainerRuntime socket would be mounted
+              twice at one mountPath — as a DirectoryOrCreate directory and as a Socket —
+              which the kubelet rejects, and a directory mount over a socket is
+              meaningless anyway. The socket's default counts as a value.
             properties:
               checks:
                 description: |-
@@ -331,6 +335,11 @@ spec:
                 (has(c.path) ? c.path : (c.type == ''ContainerRuntime'' ? (has(c.socketPath)
                 ? c.socketPath : ''/run/containerd/containerd.sock'') : c.type))).size()
                 == 1)'
+            - message: a headroom path must not be a ContainerRuntime socket path
+              rule: '!self.checks.exists(h, (h.type == ''DiskHeadroom'' || h.type
+                == ''InodeHeadroom'') && self.checks.exists(r, r.type == ''ContainerRuntime''
+                && (has(r.socketPath) ? r.socketPath : ''/run/containerd/containerd.sock'')
+                == h.path))'
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck.
             properties:

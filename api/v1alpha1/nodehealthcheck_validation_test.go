@@ -313,6 +313,25 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			name: "40 a headroom path equal to a runtime socket is rejected",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+				)
+			},
+			wantReject: true, wantInMsg: "must not be a ContainerRuntime socket",
+		},
+		{
+			name: "41 a headroom directory above the runtime socket is accepted",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd"},
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+				)
+			},
+		},
+		{
 			name:       "34 metricsHostPort below 1024",
 			mutate:     func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](80) },
 			wantReject: true, wantInMsg: "metricsHostPort",

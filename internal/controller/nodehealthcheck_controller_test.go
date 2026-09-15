@@ -729,6 +729,27 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 	})
 
+	It("leaves a report with an unknown outcome unconsumed so coverage fails closed", func() {
+		name := types.NamespacedName{Name: "nh-malformed", Namespace: "default"}
+		check := newNHC(name, headroom)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", []nodehealth.CheckResult{
+			{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.Outcome("Bogus"), Summary: "tampered"},
+		})
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		current := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.ReportingNodes).To(BeEquivalentTo(0), "a malformed report must not be consumed")
+		Expect(current.Status.LastResult).To(BeEmpty(), "nothing may be graded from it")
+		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionFalse))
+	})
+
 	It("does not consume a fresh report that predates the current spec's agent items", func() {
 		name := types.NamespacedName{Name: "nh-specchange", Namespace: "default"}
 		check := newNHC(name, headroom)

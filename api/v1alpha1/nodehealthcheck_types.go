@@ -181,6 +181,11 @@ type NodeHealthCheckItem struct {
 // gofmt rewrites two adjacent apostrophes inside a doc comment as a
 // typographic quote, which would silently break the rule at CRD install.
 // +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? (has(o.socketPath) ? o.socketPath : '/run/containerd/containerd.sock') : o.type)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? (has(c.socketPath) ? c.socketPath : '/run/containerd/containerd.sock') : c.type))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
+// A headroom path that is also a ContainerRuntime socket would be mounted
+// twice at one mountPath — as a DirectoryOrCreate directory and as a Socket —
+// which the kubelet rejects, and a directory mount over a socket is
+// meaningless anyway. The socket's default counts as a value.
+// +kubebuilder:validation:XValidation:rule="!self.checks.exists(h, (h.type == 'DiskHeadroom' || h.type == 'InodeHeadroom') && self.checks.exists(r, r.type == 'ContainerRuntime' && (has(r.socketPath) ? r.socketPath : '/run/containerd/containerd.sock') == h.path))",message="a headroom path must not be a ContainerRuntime socket path"
 type NodeHealthCheckSpec struct {
 	// Checks are the assertions made on every node in scope. At least one is
 	// required — a check with no items would report a vacuous pass.

@@ -147,12 +147,22 @@ func outcomeRank(o Outcome) int {
 	}
 }
 
+// KnownOutcome reports whether o is one of the outcomes this contract
+// defines. A report carrying anything else is malformed or tampered with and
+// must not be graded as if the unknown value were benign.
+func KnownOutcome(o Outcome) bool {
+	return outcomeRank(o) > 0
+}
+
 // WorstOutcome returns the highest-severity outcome across results, with the
 // same fold the operator applies (api/v1alpha1.WorstResult): Skipped is
 // informational — "this check did not apply on this node" — and never wins
 // while any other outcome is present, so a Pass alongside a Skipped headroom
 // path folds to Pass. An empty or all-Skipped slice yields OutcomeSkipped (the
 // node observed nothing to grade).
+//
+// An outcome outside the known set folds to Error, never silently away: a
+// tampered or malformed result beside a passing one must not yield Pass.
 func WorstOutcome(results []CheckResult) Outcome {
 	var worst Outcome
 	worstRank := 0
@@ -160,8 +170,12 @@ func WorstOutcome(results []CheckResult) Outcome {
 		if r.Outcome == OutcomeSkipped {
 			continue
 		}
-		if rank := outcomeRank(r.Outcome); rank > worstRank {
-			worst = r.Outcome
+		outcome, rank := r.Outcome, outcomeRank(r.Outcome)
+		if rank == 0 {
+			outcome, rank = OutcomeError, outcomeRank(OutcomeError)+1
+		}
+		if rank > worstRank {
+			worst = outcome
 			worstRank = rank
 		}
 	}

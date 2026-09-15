@@ -890,6 +890,10 @@ it. Two ContainerRuntime items with different sockets are distinct. The
 pathless types key on their own type name rather than an empty string:
 gofmt rewrites two adjacent apostrophes inside a doc comment as a
 typographic quote, which would silently break the rule at CRD install.
+A headroom path that is also a ContainerRuntime socket would be mounted
+twice at one mountPath — as a DirectoryOrCreate directory and as a Socket —
+which the kubelet rejects, and a directory mount over a socket is
+meaningless anyway. The socket's default counts as a value.
 
 
 

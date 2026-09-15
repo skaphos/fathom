@@ -122,6 +122,19 @@ func ItemsDigest(items []Item) string {
 	return hex.EncodeToString(sum[:])[:itemsDigestLength]
 }
 
+// ReportWellFormed reports whether every result in report carries a known
+// outcome. The operator does not grade a malformed report at all: it is left
+// unconsumed so the coverage window fails closed, rather than folding an
+// unknown value into a verdict.
+func ReportWellFormed(report NodeReport) bool {
+	for _, c := range report.Checks {
+		if !KnownOutcome(c.Outcome) {
+			return false
+		}
+	}
+	return true
+}
+
 // ReportCovers reports whether report carries exactly one result for each
 // agent-side item in items and nothing else: the report's (type, key) set
 // must equal the items', each key exactly once. A superset is not enough — a report written before

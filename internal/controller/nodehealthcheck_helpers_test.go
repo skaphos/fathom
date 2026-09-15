@@ -440,3 +440,29 @@ func TestTruncateNodeHealthMessageCountsRunes(t *testing.T) {
 		t.Fatalf("truncated = %q (%d runes, valid=%v)", got, utf8.RuneCountInString(got), utf8.ValidString(got))
 	}
 }
+
+// TestDesiredDaemonSetNeverMountsOnePathTwice pins the older-CRD guard: a
+// headroom item at the runtime socket path is rejected by admission today, but
+// an object stored under an older CRD must still produce a pod the kubelet
+// accepts, not two mounts at one mountPath.
+func TestDesiredDaemonSetNeverMountsOnePathTwice(t *testing.T) {
+	t.Parallel()
+	check := nhCheck(
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+	)
+	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
+	ds := r.desiredDaemonSet(check, "sa", resolveNodeHealthItems(check))
+	seen := map[string]int{}
+	for _, m := range ds.Spec.Template.Spec.Containers[0].VolumeMounts {
+		seen[m.MountPath]++
+	}
+	for path, n := range seen {
+		if n != 1 {
+			t.Fatalf("mountPath %s appears %d times", path, n)
+		}
+	}
+	if len(ds.Spec.Template.Spec.Volumes) != len(ds.Spec.Template.Spec.Containers[0].VolumeMounts) {
+		t.Fatalf("volumes (%d) and mounts (%d) must pair one to one", len(ds.Spec.Template.Spec.Volumes), len(ds.Spec.Template.Spec.Containers[0].VolumeMounts))
+	}
+}

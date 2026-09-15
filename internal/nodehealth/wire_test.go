@@ -240,3 +240,26 @@ func TestItemsDigest(t *testing.T) {
 		t.Fatal("no agent-side items must digest the same regardless of NodeCondition items")
 	}
 }
+
+func TestUnknownOutcomesFailClosed(t *testing.T) {
+	t.Parallel()
+	mixed := []CheckResult{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: OutcomePass},
+		{Type: TypeKubeletHealthz, Outcome: Outcome("Bogus")},
+	}
+	if got := WorstOutcome(mixed); got != OutcomeError {
+		t.Fatalf("a tampered outcome beside a Pass folded to %s, want Error", got)
+	}
+	if got := WorstOutcome([]CheckResult{{Outcome: Outcome("Bogus")}, {Outcome: OutcomeError}}); got != OutcomeError {
+		t.Fatalf("unknown beside Error = %s, want Error", got)
+	}
+	if ReportWellFormed(NodeReport{Checks: mixed}) {
+		t.Fatal("a report with an unknown outcome must not be well-formed")
+	}
+	if !ReportWellFormed(NodeReport{Checks: mixed[:1]}) || !ReportWellFormed(NodeReport{}) {
+		t.Fatal("known outcomes only, or no checks, must be well-formed")
+	}
+	if KnownOutcome(Outcome("")) || !KnownOutcome(OutcomeSkipped) {
+		t.Fatal("KnownOutcome must reject the empty outcome and accept Skipped")
+	}
+}

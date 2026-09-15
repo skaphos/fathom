@@ -487,7 +487,18 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 	// incomplete coverage rather than as a verdict about a runtime that was
 	// never reached.
 	socketType := corev1.HostPathSocket
+	mounted := make(map[string]struct{}, len(mounts))
+	for _, m := range mounts {
+		mounted[m.MountPath] = struct{}{}
+	}
 	for i, sock := range nodeHealthSocketPaths(agentItems) {
+		// Admission rejects a headroom path equal to a socket; for an object
+		// stored under an older CRD the socket mount is skipped rather than
+		// producing a pod with two mounts at one path that the kubelet rejects.
+		if _, dup := mounted[sock]; dup {
+			continue
+		}
+		mounted[sock] = struct{}{}
 		volName := "cri-" + strconv.Itoa(i)
 		volumes = append(volumes, corev1.Volume{
 			Name:         volName,
@@ -629,6 +640,10 @@ func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log 
 		}
 		if !nodeHealthReportFresh(report.ObservedAt, now, maxAge) {
 			log.V(1).Info("skipping stale node health report", "configmap", cm.Name, "node", report.Node, "observedAt", report.ObservedAt, "maxAge", maxAge.String())
+			continue
+		}
+		if !nodehealth.ReportWellFormed(report) {
+			log.Info("skipping malformed node health report with an unknown outcome", "configmap", cm.Name, "node", report.Node)
 			continue
 		}
 		if !nodeHealthReportCoversSpec(report, agentItems) {
