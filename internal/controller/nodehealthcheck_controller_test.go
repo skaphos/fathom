@@ -83,6 +83,11 @@ func writeTriggeredNodeHealthReport(ctx context.Context, check *fathomv1alpha1.N
 // cmNode, annotated (and written by an identity claiming) annotationNode. A
 // genuine agent passes the same node for both; a forgery test separates them.
 func writeNodeHealthReportObject(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, cmNode, annotationNode string, report nodehealth.NodeReport) {
+	if report.ItemsDigest == "" {
+		// What a genuine agent started from this check's current template
+		// stamps. A test that wants a report from a previous spec sets its own.
+		report.ItemsDigest = nodehealth.ItemsDigest(nodeHealthAgentItems(resolveNodeHealthItems(check)))
+	}
 	encoded, err := nodehealth.EncodeReport(report)
 	Expect(err).NotTo(HaveOccurred())
 	cm := &corev1.ConfigMap{
@@ -766,6 +771,23 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionTrue))
+
+		// A threshold-only change keeps the (type, path) set identical, so only
+		// the digest can tell an old report from a current one. The old report's
+		// 55% free passes the old critical threshold and would fail a 60% one;
+		// it must be graded neither way until the updated agent reports.
+		Expect(k8sClient.Get(ctx, name, check)).To(Succeed())
+		check.Spec.Checks[0].CriticalPercentFree = ptr.To[int32](60)
+		check.Spec.Checks[0].WarnPercentFree = ptr.To[int32](70)
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.ReportingNodes).To(BeEquivalentTo(0), "a report evaluated under the old thresholds must not be consumed")
+		Expect(current.Status.LastResult).To(Equal("Pass"), "frozen, per COR-3")
 	})
 })
 

@@ -58,6 +58,10 @@ const (
 	// and ContainerRuntime runs it as root. A reader should never have to
 	// derive that from the DaemonSet (#206).
 	nodeHealthConditionPrivileged = "AgentPrivileged"
+
+	// conditionReasonItemsRejected marks a spec carrying an item the operator's
+	// allowlist refuses — never silently filtered (see rejectedNodeHealthItems).
+	conditionReasonItemsRejected = "ItemsRejected"
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object. It manages a
@@ -183,6 +187,22 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	interval := nodeHealthInterval(&check)
 	items := resolveNodeHealthItems(&check)
+
+	// An item the allowlist refuses (only possible for an object stored under
+	// an older CRD) is a failed specification, not a filter: provisioning an
+	// agent for the remainder — or for nothing, when every agent-side item is
+	// refused — would report a vacuous verdict for a check that cannot measure
+	// what it declares. Say so on the object and run nothing new; whatever the
+	// check ran before is left in place, so a bad edit cannot erase coverage.
+	if rejected := rejectedNodeHealthItems(&check); len(rejected) > 0 {
+		message := fmt.Sprintf("Rejected %d item(s) whose path is outside the operator-approved allowlist: %s.", len(rejected), strings.Join(rejected, ", "))
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type: nodeHealthConditionAccepted, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
+			Reason: conditionReasonItemsRejected, Message: message,
+		})
+		r.setReady(&check, metav1.ConditionFalse, conditionReasonItemsRejected, message)
+		return r.finish(ctx, log, before, &check, interval)
+	}
 
 	if err := ensureNodeAgentClusterRole(ctx, r.Client, r.roleName()); err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)

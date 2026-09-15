@@ -116,6 +116,13 @@ type NodeReport struct {
 	// nodecert.EnvRunTrigger). Empty on routine ticks, so the operator treats
 	// an empty value as "not this trigger".
 	Trigger string `json:"trigger,omitempty"`
+	// ItemsDigest identifies the exact agent-side item set — types, paths,
+	// sockets, and thresholds — this report was evaluated against (see
+	// ItemsDigest). The operator accepts a report only when it equals the
+	// digest of the spec's current resolved items, so a report evaluated
+	// under a previous threshold is never graded as if it carried the
+	// current one.
+	ItemsDigest string `json:"itemsDigest,omitempty"`
 }
 
 // outcomeRank orders outcomes for worst-case aggregation. It matches

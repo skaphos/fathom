@@ -206,3 +206,31 @@ func TestReportCovers(t *testing.T) {
 		t.Fatal("ItemKey must be the socket for ContainerRuntime, the path otherwise")
 	}
 }
+
+func TestItemsDigest(t *testing.T) {
+	t.Parallel()
+	a := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10},
+		{Type: TypeKubeletHealthz},
+		{Type: TypeNodeCondition},
+	}
+	d := ItemsDigest(a)
+	if len(d) != itemsDigestLength {
+		t.Fatalf("digest %q has length %d", d, len(d))
+	}
+	// Order-insensitive, and NodeCondition (operator-graded) does not participate.
+	if ItemsDigest([]Item{a[1], a[0]}) != d {
+		t.Fatal("digest must not depend on item order or on NodeCondition items")
+	}
+	// A threshold change is a semantic change: the digest must move.
+	tightened := []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 15}, a[1]}
+	if ItemsDigest(tightened) == d {
+		t.Fatal("changing a threshold must change the digest")
+	}
+	if ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}}) == ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"}}) {
+		t.Fatal("different sockets must digest differently")
+	}
+	if ItemsDigest(nil) != ItemsDigest([]Item{{Type: TypeNodeCondition}}) {
+		t.Fatal("no agent-side items must digest the same regardless of NodeCondition items")
+	}
+}

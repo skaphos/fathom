@@ -6,8 +6,11 @@ SPDX-License-Identifier: MIT
 package nodehealth
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/skaphos/fathom/internal/nodecert"
 )
@@ -83,6 +86,40 @@ func ItemKey(it Item) string {
 		return it.SocketPath
 	}
 	return it.Path
+}
+
+// itemsDigestLength truncates the digest to 32 hex characters (128 bits):
+// short enough for a report field, collision-safe for one check's item set.
+const itemsDigestLength = 32
+
+// ItemsDigest is the identity of an agent-side item set: a short hex SHA-256
+// of the agent-evaluated items in canonical order, thresholds included. The
+// operator computes it from the spec's resolved items and the agent from the
+// items it was started with; the two agree only when the report was
+// evaluated against exactly the current spec semantics. NodeCondition items
+// are excluded because the operator, not the agent, grades them, and order
+// is irrelevant: items are sorted by (type, key) before hashing.
+func ItemsDigest(items []Item) string {
+	canonical := make([]Item, 0, len(items))
+	for _, it := range items {
+		if it.AgentEvaluated() {
+			canonical = append(canonical, it)
+		}
+	}
+	sort.Slice(canonical, func(i, j int) bool {
+		if canonical[i].Type != canonical[j].Type {
+			return canonical[i].Type < canonical[j].Type
+		}
+		return ItemKey(canonical[i]) < ItemKey(canonical[j])
+	})
+	raw, err := json.Marshal(canonical)
+	if err != nil {
+		// Item always marshals; on the impossible error an empty digest never
+		// matches, so the report is left unconsumed rather than wrongly trusted.
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])[:itemsDigestLength]
 }
 
 // ReportCovers reports whether report carries exactly one result for each

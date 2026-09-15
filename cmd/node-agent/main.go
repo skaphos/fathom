@@ -227,12 +227,13 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 	defer cancel()
 
 	report := nodehealth.NodeReport{
-		Node:       cfg.nodeName,
-		CheckName:  cfg.checkName,
-		ObservedAt: now.UTC(),
-		Aggregate:  nodehealth.WorstOutcome(results),
-		Checks:     results,
-		Trigger:    cfg.trigger,
+		Node:        cfg.nodeName,
+		CheckName:   cfg.checkName,
+		ObservedAt:  now.UTC(),
+		Aggregate:   nodehealth.WorstOutcome(results),
+		Checks:      results,
+		Trigger:     cfg.trigger,
+		ItemsDigest: nodehealth.ItemsDigest(cfg.healthItems),
 	}
 	encoded, err := nodehealth.EncodeReport(report)
 	if err != nil {

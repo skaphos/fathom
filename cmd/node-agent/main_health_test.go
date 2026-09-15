@@ -149,6 +149,9 @@ func TestScanAndPublishHealth(t *testing.T) {
 	if report.Trigger != "tok-9" || report.Node != "node-1" || report.CheckName != "nh" {
 		t.Fatalf("report header = %+v", report)
 	}
+	if report.ItemsDigest == "" || report.ItemsDigest != nodehealth.ItemsDigest(cfg.healthItems) {
+		t.Fatalf("report must carry the digest of the items it ran with, got %q", report.ItemsDigest)
+	}
 
 	cm, err := kube.CoreV1().ConfigMaps("fathom-system").Get(context.Background(), cfg.configMapName, metav1.GetOptions{})
 	if err != nil {

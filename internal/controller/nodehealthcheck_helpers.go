@@ -584,8 +584,38 @@ func nodeHealthEvaluationsInScope(evals []nodeHealthEvaluation, expected map[str
 // predates the current template: it is a spec-change window, not evidence,
 // and consuming it would let a newly added check — or a failing one the old
 // template never had — be absent from the roll-up.
+//
+// Two bindings, both required. The digest binds semantics: it is computed over
+// the resolved items, thresholds included, so a report evaluated under a
+// previous threshold is never graded as if it carried the current one. The
+// structural check binds shape: exactly one result per current item and
+// nothing else, so a removed item's result cannot linger in the roll-up.
 func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodehealth.Item) bool {
-	return nodehealth.ReportCovers(report, agentItems)
+	return report.ItemsDigest == nodehealth.ItemsDigest(agentItems) &&
+		nodehealth.ReportCovers(report, agentItems)
+}
+
+// rejectedNodeHealthItems returns the spec items the operator's allowlist
+// refuses (a headroom path or a runtime socket outside the approved
+// prefixes). Admission rejects these too, so the list is non-empty only for
+// an object stored under an older CRD. Such items are never silently
+// dropped: a check that cannot measure what it declares must say so, not
+// report a vacuous verdict from whatever remained.
+func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
+	var rejected []string
+	for _, c := range check.Spec.Checks {
+		switch c.Type {
+		case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
+			if !nodehealth.PathAllowed(c.Path) {
+				rejected = append(rejected, string(c.Type)+" "+c.Path)
+			}
+		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
+			if c.SocketPath != "" && !nodehealth.SocketPathAllowed(c.SocketPath) {
+				rejected = append(rejected, string(c.Type)+" "+c.SocketPath)
+			}
+		}
+	}
+	return rejected
 }
 
 // nodeHealthNodeNameSet indexes evaluations by node.
