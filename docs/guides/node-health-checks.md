@@ -34,8 +34,10 @@ For each node it targets, the agent:
 
 The operator merges each node's report with the node's **status conditions**
 (read from the Node object — the agent never carries a Node grant), rolls every
-node into a single `HealthReport` (one entry per `(node, check)`, worst-case
-aggregate), and mirrors the aggregate plus a per-node result list into the
+node into a single `HealthReport` (one entry per `(node, check item)` — each
+headroom path, each socket, and each graded node condition is its own entry —
+folded to a worst-case aggregate), and mirrors the aggregate plus a per-node
+result list into the
 check's `status`. Each agent also exports per-check gauges (see
 [Monitoring](monitoring.md#node-health-metrics)).
 
@@ -228,6 +230,15 @@ Report authenticity is enforced the same way as for `NodeCertificateCheck`:
 the shared report-authenticity `ValidatingAdmissionPolicy` binds each report to
 the writing agent's node identity, and the `ReportsAuthentic` condition (plus a
 Warning event) surfaces any report that failed its bindings.
+
+That policy requires the `ValidatingAdmissionPolicy` API (GA in Kubernetes
+1.30). On a cluster that does not serve it the operator logs, at its default
+level, that authenticity enforcement is **disabled** and continues: the
+controller's collect-time bindings (canonical name, node annotation, check
+name, spec digest) still apply, but they corroborate a report's shape — they
+do not authenticate its writer. Treat writer identity as unverified on such
+clusters; see the same requirement in the
+[node certificate guide](node-certificate-checks.md).
 
 ## Projecting into cluster health
 

@@ -61,8 +61,9 @@ var (
 )
 
 // Check metrics express the current verdict and staleness of every check
-// resource the operator reconciles (AddonCheck, HealthCheck, ClusterHealth,
-// NodeCertificateCheck), so operators can alert on failing or stale checks
+// resource the operator reconciles (AddonCheck, DNSCheck, NodeCertificateCheck,
+// NodeHealthCheck, HealthCheck, ClusterHealth), so operators can alert on
+// failing or stale checks
 // without bridging CRD status into their monitoring stack (skaphos/fathom#154).
 var (
 	// CheckResult is a one-hot state set: for every existing check there is one

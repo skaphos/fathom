@@ -212,7 +212,8 @@ func readNodeHealthCheckTarget(
 		// The wrapper's SourceInterval drives its staleness judgement, so it is
 		// the capped agent cadence, not spec.interval: a NodeHealthCheck with a
 		// 24h interval whose agents have gone quiet must not read as current
-		// for days (transition roll-ups still follow spec.interval).
+		// for days. The reconciler runs, refreshes lastRunTime, and rolls up on
+		// that same cadence; spec.interval above the cap has no runtime effect.
 		Interval: nodeHealthRequeueAfter(&target),
 	}, nil
 }
