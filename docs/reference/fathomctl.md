@@ -181,7 +181,7 @@ overrides it. For most kinds that bound is the effective `spec.timeout`. For
 publication are each bounded by `min(spec.timeout, min(spec.interval, 5m))`
 — so a 24h/24h check gets a 10-minute default, never a day. If the annotation changes to a different value before the
 token is consumed, the run is reported as **superseded**. If the operator
-reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` — a NodeHealthCheck item the operator's allowlist refuses —,
+reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` (a NodeHealthCheck item the operator's allowlist refuses),
 `MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
 `--wait` fails immediately with that reason instead of waiting out the
 deadline. Transient API errors (rate limiting, a restarting API server) do
