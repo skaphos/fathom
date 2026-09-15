@@ -201,17 +201,22 @@ spec:
                   - message: path must be an absolute, traversal-free path under an
                       allowed prefix (/var/lib/kubelet, /var/lib/containerd, /var/lib/docker,
                       /var/lib/etcd, /var/log, /var/lib/rancher, /etc/kubernetes,
-                      /run/containerd)
+                      /run/containerd); it must be canonical (no trailing slash, no
+                      // or /./ segments)
                     rule: '!has(self.path) || (self.path.startsWith(''/'') && self.path
-                      != ''/'' && !self.path.contains(''..'') && [''/var/lib/kubelet'',''/var/lib/containerd'',''/var/lib/docker'',''/var/lib/etcd'',''/var/log'',''/var/lib/rancher'',''/etc/kubernetes'',''/run/containerd''].exists(a,
+                      != ''/'' && !self.path.contains(''..'') && !self.path.endsWith(''/'')
+                      && !self.path.contains(''//'') && !self.path.contains(''/./'')
+                      && !self.path.endsWith(''/.'') && [''/var/lib/kubelet'',''/var/lib/containerd'',''/var/lib/docker'',''/var/lib/etcd'',''/var/log'',''/var/lib/rancher'',''/etc/kubernetes'',''/run/containerd''].exists(a,
                       self.path == a || self.path.startsWith(a + ''/'')))'
                   - message: socketPath must be a traversal-free .sock path under
                       an allowed runtime directory (/run/containerd, /var/run/containerd,
                       /run/crio, /var/run/crio, /run/k3s/containerd, /var/run/k3s/containerd,
                       /run/cri-dockerd, /var/run/cri-dockerd) or the cri-dockerd socket
-                      itself (/run/cri-dockerd.sock, /var/run/cri-dockerd.sock)
+                      itself (/run/cri-dockerd.sock, /var/run/cri-dockerd.sock); socketPath
+                      must be canonical (no // or /./ segments)
                     rule: '!has(self.socketPath) || (self.socketPath.endsWith(''.sock'')
-                      && !self.socketPath.contains(''..'') && ([''/run/containerd'',''/var/run/containerd'',''/run/crio'',''/var/run/crio'',''/run/cri-dockerd'',''/var/run/cri-dockerd'',''/run/k3s/containerd'',''/var/run/k3s/containerd''].exists(a,
+                      && !self.socketPath.contains(''..'') && !self.socketPath.contains(''//'')
+                      && !self.socketPath.contains(''/./'') && ([''/run/containerd'',''/var/run/containerd'',''/run/crio'',''/var/run/crio'',''/run/cri-dockerd'',''/var/run/cri-dockerd'',''/run/k3s/containerd'',''/var/run/k3s/containerd''].exists(a,
                       self.socketPath.startsWith(a + ''/'')) || [''/run/cri-dockerd.sock'',''/var/run/cri-dockerd.sock''].exists(f,
                       self.socketPath == f)))'
                 maxItems: 16

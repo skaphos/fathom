@@ -85,6 +85,9 @@ func PathAllowed(p string) bool {
 		return false
 	}
 	clean := path.Clean(p)
+	if clean != p {
+		return false // an alias of an allowed path is not an allowed path
+	}
 	if clean == "/" {
 		return false
 	}
@@ -96,12 +99,24 @@ func PathAllowed(p string) bool {
 	return false
 }
 
+// Canonical reports whether p is its own cleaned form: no trailing slash, no
+// empty or "." segments. Every string comparison the operator makes between
+// paths — the socket/headroom collision check above all — is on the raw
+// value, while the mount set is built from path.Clean; an alias such as
+// /run/containerd/./containerd.sock would pass the comparison and then land a
+// directory mount on the canonical socket path. Admission rejects aliases
+// (the CRD rules enumerate the same forms, since CEL has no Clean) and the
+// operator re-checks here for objects stored under an older CRD.
+func Canonical(p string) bool {
+	return p != "" && path.Clean(p) == p
+}
+
 // SocketPathAllowed reports whether p is a dialable CRI socket path: a
 // traversal-free .sock file anywhere under one of allowedSocketDirs (nested
 // paths included), or one of the exact allowedSocketFiles. It is the Go twin
 // of the CRD's socketPath validation.
 func SocketPathAllowed(p string) bool {
-	if p == "" || !path.IsAbs(p) || strings.Contains(p, "..") || !strings.HasSuffix(p, ".sock") {
+	if p == "" || !path.IsAbs(p) || strings.Contains(p, "..") || !strings.HasSuffix(p, ".sock") || !Canonical(p) {
 		return false
 	}
 	for _, dir := range allowedSocketDirs {

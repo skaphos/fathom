@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -724,7 +725,10 @@ func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 			// absent socket. Admission rejects it too; an older-CRD object must
 			// not be provisioned with a different mount set than it declares.
 			for _, other := range check.Spec.Checks {
-				if other.Type == fathomv1alpha1.NodeHealthCheckContainerRuntime && c.Path == nodeHealthEffectiveSocket(other) {
+				// Compared on cleaned values: PathAllowed already refuses aliases,
+				// but the collision must hold even for a stored object that slipped
+				// an alias past an older rule.
+				if other.Type == fathomv1alpha1.NodeHealthCheckContainerRuntime && path.Clean(c.Path) == path.Clean(nodeHealthEffectiveSocket(other)) {
 					rejected = append(rejected, fmt.Sprintf("%s path %s collides with ContainerRuntime socketPath %s", c.Type, c.Path, c.Path))
 				}
 			}

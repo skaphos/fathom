@@ -8,6 +8,7 @@ package nodehealth_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -33,7 +34,11 @@ func TestPathAllowed(t *testing.T) {
 		{"/var/lib/kubelet/../../etc/shadow", false},
 		{"/home", false},
 		{"/var/lib", false},
-		{" /var/lib/kubelet", false}, // raw value, no trimming — matches the CEL rule
+		{" /var/lib/kubelet", false},       // raw value, no trimming — matches the CEL rule
+		{"/var/lib/kubelet/", false},       // aliases of an allowed path are not allowed paths:
+		{"/var/lib/kubelet/./pods", false}, // the mount set is built from path.Clean, so a raw
+		{"/var/lib//kubelet", false},       // alias must never pass a comparison its clean form
+		{"/var/lib/kubelet/.", false},      // would fail
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -58,7 +63,9 @@ func TestSocketPathAllowed(t *testing.T) {
 		{"/run/k3s/containerd/containerd.sock", true}, // k3s / RKE2
 		{"/var/run/cri-dockerd.sock", true},           // cri-dockerd's actual default: a file directly in /var/run
 		{"/run/cri-dockerd.sock", true},
-		{"/run/docker.sock", false}, // no directory allowance for /run itself
+		{"/run/docker.sock", false},                  // no directory allowance for /run itself
+		{"/run/containerd/./containerd.sock", false}, // aliases are rejected
+		{"/run/containerd//containerd.sock", false},
 		{"/var/run/cri-dockerd.sock/x.sock", false},
 		{"/run/containerd/containerd", false},
 		{"/var/run/docker.sock", false},
@@ -131,13 +138,18 @@ func TestAllowlistsMirrorCRDRules(t *testing.T) {
 	for _, f := range nodehealth.AllowedSocketFiles() {
 		known[f] = true
 	}
+	// Only literals inside the allowlist arrays ([...]) are allowances; the
+	// same rule lines also carry forbidden alias forms ('//', '/./', '/.').
+	arrays := regexp.MustCompile(`\[[^\]]*\]`)
 	for _, line := range strings.Split(crd, "\n") {
 		if !strings.Contains(line, ".exists(") {
 			continue
 		}
-		for _, lit := range strings.Split(line, "'") {
-			if len(lit) > 1 && strings.HasPrefix(lit, "/") && !known[lit] {
-				t.Errorf("CRD rule allows %q but the Go allowlists do not", lit)
+		for _, arr := range arrays.FindAllString(line, -1) {
+			for _, lit := range strings.Split(arr, "'") {
+				if len(lit) > 1 && strings.HasPrefix(lit, "/") && !known[lit] {
+					t.Errorf("CRD rule allows %q but the Go allowlists do not", lit)
+				}
 			}
 		}
 	}

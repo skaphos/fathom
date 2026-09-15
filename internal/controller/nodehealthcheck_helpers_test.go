@@ -664,4 +664,15 @@ func TestRejectedItemsIncludeSocketCollisions(t *testing.T) {
 	if len(rejected) != 1 || !strings.Contains(rejected[0], "collides with ContainerRuntime socketPath") {
 		t.Fatalf("rejected = %v, want the socket collision", rejected)
 	}
+	// An alias of the socket path is rejected twice over: as a non-canonical
+	// path, and — compared on cleaned values — as the same collision.
+	alias := nhCheck(
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/./containerd.sock"},
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+	)
+	rejected = rejectedNodeHealthItems(alias)
+	joined := strings.Join(rejected, "; ")
+	if !strings.Contains(joined, "path /run/containerd/./containerd.sock") || !strings.Contains(joined, "collides with ContainerRuntime socketPath") {
+		t.Fatalf("rejected = %v, want both the alias rejection and the cleaned-value collision", rejected)
+	}
 }
