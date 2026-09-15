@@ -624,6 +624,8 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
 		r := newNodeHealthReconciler()
+		controllerNow := time.Now().Truncate(time.Second)
+		r.Clock = func() time.Time { return controllerNow }
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		ds := &appsv1.DaemonSet{}
@@ -653,6 +655,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastRunTrigger).To(Equal("tok-1"))
 		Expect(current.Status.LastRunTime).NotTo(BeNil())
+		Expect(current.Status.LastRunTime.Time).To(Equal(controllerNow), "trigger completion must use the reconciler's clock")
 	})
 
 	It("keeps its agent and reports apart from a NodeCertificateCheck of the same name", func() {

@@ -284,7 +284,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	evals, err := r.evaluateNodes(ctx, log, &check, reports)
+	evals, err := r.evaluateNodes(ctx, log, &check, reports, expected)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -315,7 +315,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	r.setCoverage(&check, ds, expected, reported, complete)
 
 	if triggerPending {
-		consumeNodeHealthRunTrigger(&check, before, ds, expected, reports, token, time.Now())
+		consumeNodeHealthRunTrigger(&check, before, ds, expected, reports, token, now)
 	}
 
 	r.setReadyFromState(&check, ds, expected, reported)
@@ -829,10 +829,16 @@ func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, chec
 // for nodes that reported, so the read surface is exactly the fleet in scope.
 // A node that cannot be read is an Error on that node's NodeCondition checks —
 // the report still counts toward coverage, because the agent did its part.
-func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, reports []nodehealth.NodeReport) ([]nodeHealthEvaluation, error) {
+func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, reports []nodehealth.NodeReport, expected map[string]struct{}) ([]nodeHealthEvaluation, error) {
 	conditionTypes := nodeHealthConditionTypes(check)
 	evals := make([]nodeHealthEvaluation, 0, len(reports))
 	for _, report := range reports {
+		// A fresh report can outlive the pod that established this node as part
+		// of the current fleet. Do not let an irrelevant Node read failure from
+		// such a departed node block evaluation of the nodes still in scope.
+		if _, ok := expected[report.Node]; !ok {
+			continue
+		}
 		var conditions []nodehealth.CheckResult
 		if len(conditionTypes) > 0 {
 			var node corev1.Node

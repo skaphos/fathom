@@ -453,3 +453,90 @@ func TestNetworkProbesAreNotStarvedByAHungStatfs(t *testing.T) {
 		t.Fatalf("hung headroom = %+v, want Error", byType[TypeDiskHeadroom])
 	}
 }
+
+// TestHungStatfsDoesNotStarveOtherHeadroom pins that each filesystem starts
+// its measurement independently. A wedged mount must not consume the shared
+// pass deadline before a healthy disk or inode path is even examined.
+func TestHungStatfsDoesNotStarveOtherHeadroom(t *testing.T) {
+	t.Parallel()
+
+	hungStarted := make(chan struct{})
+	healthyStarted := make(chan struct{})
+	releaseHung := make(chan struct{})
+	t.Cleanup(func() { close(releaseHung) })
+
+	statfs := func(path string, st *unix.Statfs_t) error {
+		switch path {
+		case "/var/lib/kubelet/hung":
+			close(hungStarted)
+			<-releaseHung
+		case "/var/log/healthy":
+			close(healthyStarted)
+			st.Blocks = 100
+			st.Bavail = 50
+			st.Bsize = 1
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan []CheckResult, 1)
+	go func() {
+		done <- Scan(ctx, ScanOptions{
+			Items: []Item{
+				{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet/hung", WarnPercentFree: 20, CriticalPercentFree: 10},
+				{Type: TypeDiskHeadroom, Path: "/var/log/healthy", WarnPercentFree: 20, CriticalPercentFree: 10},
+			},
+			Timeout: 5 * time.Second,
+			statfs:  statfs,
+		})
+	}()
+
+	<-hungStarted
+	select {
+	case <-healthyStarted:
+		// The healthy filesystem began while the first statfs remained wedged.
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("a hung statfs prevented another headroom check from starting")
+	}
+	cancel()
+	<-done
+}
+
+// TestHeadroomTypesSharingAPathDoNotCollideInStatfsGuard pins the common case
+// where disk and inode headroom measure one mount. Distinct paths may run in
+// parallel, but calls for the same path must not overlap and be mistaken for a
+// statfs abandoned by a previous pass. The same lifetime guard is reused to
+// exercise the long-running agent behavior too.
+func TestHeadroomTypesSharingAPathDoNotCollideInStatfsGuard(t *testing.T) {
+	t.Parallel()
+
+	guard := NewStatfsGuard()
+	items := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10},
+		{Type: TypeInodeHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10},
+	}
+	statfs := func(_ string, st *unix.Statfs_t) error {
+		st.Blocks, st.Bavail, st.Bsize = 100, 50, 1
+		st.Files, st.Ffree = 100, 50
+		return nil
+	}
+
+	for pass := range 2 {
+		results := Scan(context.Background(), ScanOptions{
+			Items:       items,
+			Timeout:     time.Second,
+			StatfsGuard: guard,
+			statfs:      statfs,
+		})
+		if len(results) != 2 {
+			t.Fatalf("pass %d: got %d results, want 2", pass, len(results))
+		}
+		for _, result := range results {
+			if result.Outcome != OutcomePass {
+				t.Fatalf("pass %d: result = %+v, want Pass", pass, result)
+			}
+		}
+	}
+}

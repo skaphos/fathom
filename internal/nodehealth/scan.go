@@ -97,9 +97,13 @@ func (g *StatfsGuard) statfsWithin(ctx context.Context, statfs statfsFunc, path 
 	}
 	done := make(chan result, 1)
 	go func() {
-		defer g.inFlight.Delete(path)
 		var st unix.Statfs_t
 		err := statfs(path, &st)
+		// Clear the guard before publishing the result. The caller may begin a
+		// second measurement of this path as soon as it receives from done; if
+		// deletion were deferred until after the send, that healthy follow-up
+		// could be mistaken for a statfs abandoned by an earlier pass.
+		g.inFlight.Delete(path)
 		done <- result{st: st, err: err}
 	}()
 	select {
@@ -145,38 +149,33 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 		guard = NewStatfsGuard()
 	}
 
-	// Every network probe is launched first, concurrently, each under its own
-	// timeout derived from the pass context; only then does headroom run
-	// inline. Run one after another under a shared deadline, a hung runtime
-	// socket (or a hung statfs, which comes first in item order) would exhaust
-	// the budget and hand the kubelet probe an already-expired context,
-	// grading a healthy kubelet as Fail without ever asking it.
+	// Launch every agent-side check concurrently under the shared pass context.
+	// Running headroom checks inline would let one hung statfs consume the pass
+	// deadline before a later filesystem was measured. The API caps a spec at
+	// 16 items, and StatfsGuard still limits an uninterruptible syscall to one
+	// abandoned goroutine per path across the agent's lifetime. Disk and inode
+	// checks for the same path stay in one goroutine: they intentionally share
+	// a StatfsGuard, so overlapping their healthy statfs calls would make the
+	// second look like a call left hung by a previous pass.
 	out := make([]CheckResult, len(opts.Items))
-	var probes sync.WaitGroup
-	for i, it := range opts.Items {
-		switch it.Type {
-		case TypeKubeletHealthz:
-			probes.Add(1)
-			go func(i int) {
-				defer probes.Done()
-				out[i] = kubeletHealthz(ctx, client, healthzURL, timeout)
-			}(i)
-		case TypeContainerRuntime:
-			probes.Add(1)
-			go func(i int, socket string) {
-				defer probes.Done()
-				out[i] = containerRuntime(ctx, dial, socket, timeout)
-			}(i, it.SocketPath)
-		}
-	}
+	var checks sync.WaitGroup
+	headroomByPath := make(map[string][]int)
 	for i, it := range opts.Items {
 		switch it.Type {
 		case TypeDiskHeadroom, TypeInodeHeadroom:
-			hctx, cancel := context.WithTimeout(ctx, timeout)
-			out[i] = headroom(hctx, it, statfs, guard, it.Type == TypeInodeHeadroom)
-			cancel()
-		case TypeKubeletHealthz, TypeContainerRuntime:
-			// Already in flight.
+			headroomByPath[it.Path] = append(headroomByPath[it.Path], i)
+		case TypeKubeletHealthz:
+			checks.Add(1)
+			go func(i int) {
+				defer checks.Done()
+				out[i] = kubeletHealthz(ctx, client, healthzURL, timeout)
+			}(i)
+		case TypeContainerRuntime:
+			checks.Add(1)
+			go func(i int, socket string) {
+				defer checks.Done()
+				out[i] = containerRuntime(ctx, dial, socket, timeout)
+			}(i, it.SocketPath)
 		case TypeNodeCondition:
 			// Operator-evaluated from the Node object; nothing for the agent.
 			out[i] = CheckResult{}
@@ -185,7 +184,20 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 				Summary: fmt.Sprintf("unknown check type %q (operator newer than this agent?)", it.Type)}
 		}
 	}
-	probes.Wait()
+	for _, indexes := range headroomByPath {
+		indexes := indexes
+		checks.Add(1)
+		go func() {
+			defer checks.Done()
+			for _, i := range indexes {
+				it := opts.Items[i]
+				hctx, cancel := context.WithTimeout(ctx, timeout)
+				out[i] = headroom(hctx, it, statfs, guard, it.Type == TypeInodeHeadroom)
+				cancel()
+			}
+		}()
+	}
+	checks.Wait()
 	// Drop the NodeCondition placeholders so the result set is exactly the
 	// agent-evaluated items.
 	kept := out[:0]

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/utils/ptr"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -31,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 // TestNodeHealthProvisioningFailurePersistsStatus is the COR-2 property for
@@ -333,5 +335,44 @@ func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
 	c := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionAuthentic)
 	if c == nil || c.Status != metav1.ConditionUnknown || c.Reason != reasonAuthenticityUnenforced {
 		t.Fatalf("ReportsAuthentic = %+v, want Unknown/AuthenticityUnenforced without the policy API", c)
+	}
+}
+
+// TestNodeHealthEvaluationIgnoresDepartedNodes pins that a surplus fresh
+// report cannot make the current fleet unevaluable. Node reads are needed only
+// for reports that still belong to nodes in scope; a transient read failure
+// for a departed node must not abort the roll-up for the live fleet.
+func TestNodeHealthEvaluationIgnoresDepartedNodes(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	live := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-live"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionTrue,
+		}}},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(live).
+		WithInterceptorFuncs(interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Node); ok && key.Name == "node-departed" {
+				return apierrors.NewInternalError(errors.New("departed node read failed"))
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}}).Build()
+	check := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{
+		Type: fathomv1alpha1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"},
+	}}}}
+	reports := []nodehealth.NodeReport{{Node: "node-departed"}, {Node: "node-live"}}
+
+	evals, err := (&NodeHealthCheckReconciler{Client: cl, APIReader: cl}).evaluateNodes(
+		context.Background(), logr.Discard(), check, reports, map[string]struct{}{"node-live": {}},
+	)
+	if err != nil {
+		t.Fatalf("a departed node's read failure blocked the live fleet: %v", err)
+	}
+	if len(evals) != 1 || evals[0].Node != "node-live" || evals[0].Outcome != nodehealth.OutcomePass {
+		t.Fatalf("evaluations = %+v, want one passing live node", evals)
 	}
 }

@@ -87,25 +87,28 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 			g.Expect(report.Spec.Checks).NotTo(BeEmpty(), "HealthReport %q has no checks yet", report.Metadata.Name)
 
 			seen := map[string]bool{}
+			nodeConditions := map[string]string{}
 			for _, c := range report.Spec.Checks {
 				if c.Family != "node_health" {
 					continue
 				}
 				g.Expect(c.TargetRef.Kind).To(Equal("Node"), "node_health check should target a Node")
 				seen[c.Details["type"]] = true
-				// Every agent-side type must actually measure the node and Pass;
-				// Skipped is legal only for a condition the node does not report.
-				// Letting the agent types be Skipped would let a check that stopped
-				// measuring (a missing path, a permission failure) pass this spec.
-				want := []string{"Pass"}
+				// Every agent-side type must actually measure the node and Pass.
+				// The default NodeCondition set is asserted below because kind nodes
+				// report all four; accepting Skipped here would miss a broken Node read.
 				if c.Details["type"] == "NodeCondition" {
-					want = append(want, "Skipped")
+					nodeConditions[c.Details["path"]] = c.Result
 				}
-				g.Expect(c.Result).To(BeElementOf(want),
+				g.Expect(c.Result).To(Equal("Pass"),
 					"node_health %s %s on %s: got %q (%s)", c.Details["type"], c.Details["path"], c.TargetRef.Name, c.Result, c.Summary)
 			}
 			for _, typ := range []string{"DiskHeadroom", "InodeHeadroom", "NodeCondition", "KubeletHealthz", "ContainerRuntime"} {
 				g.Expect(seen).To(HaveKey(typ), "no %s check in HealthReport", typ)
+			}
+			for _, condition := range []string{"Ready", "MemoryPressure", "DiskPressure", "PIDPressure"} {
+				g.Expect(nodeConditions).To(HaveKeyWithValue(condition, "Pass"),
+					"the real kind node's %s condition was not graded as healthy", condition)
 			}
 		}
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed(),
@@ -123,10 +126,11 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 			g.Expect(status.condition("AgentPrivileged")).To(Equal("True/HostNetworkAndRoot"))
 			g.Expect(status.LastResult).To(Equal("Pass"))
 			g.Expect(status.LastReportName).NotTo(BeEmpty())
-			g.Expect(status.ReportingNodes).To(BeNumerically(">", 0))
+			g.Expect(status.DesiredNodes).To(BeNumerically(">", 0))
+			g.Expect(status.ReportingNodes).To(Equal(status.DesiredNodes))
 			g.Expect(status.NodeResults).NotTo(BeEmpty())
 			g.Expect(status.NodeResults[0].Result).To(Equal("Pass"))
-			g.Expect(status.Summary).To(Equal(fmt.Sprintf("%d of %d node(s) passed", status.ReportingNodes, status.ReportingNodes)))
+			g.Expect(status.Summary).To(Equal(fmt.Sprintf("%d of %d node(s) passed", status.ReportingNodes, status.DesiredNodes)))
 		}
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
@@ -177,6 +181,7 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(status.condition("CoverageComplete")).To(Equal("False/NoMatchingNodes"))
 			g.Expect(status.condition("Ready")).To(Equal("False/NoMatchingNodes"))
+			g.Expect(status.DesiredNodes).To(Equal(0))
 			// The whole point: the last complete verdict is retained.
 			g.Expect(status.LastResult).To(Equal("Pass"), "an incomplete window must freeze the verdict")
 			g.Expect(status.LastReportName).To(Equal(frozen.LastReportName), "no new HealthReport during the gap")
@@ -204,6 +209,8 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(status.condition("CoverageComplete")).To(Equal("True/AllNodesReporting"))
 			g.Expect(status.condition("Ready")).To(Equal("True/Reporting"))
+			g.Expect(status.DesiredNodes).To(BeNumerically(">", 0))
+			g.Expect(status.ReportingNodes).To(Equal(status.DesiredNodes))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed(), "coverage did not recover")
 	})
 })
@@ -218,6 +225,7 @@ type nodeHealthStatusView struct {
 	LastReportName string `json:"lastReportName"`
 	Summary        string `json:"summary"`
 	ReportingNodes int    `json:"reportingNodes"`
+	DesiredNodes   int    `json:"desiredNodes"`
 	NodeResults    []struct {
 		Node    string `json:"node"`
 		Result  string `json:"result"`

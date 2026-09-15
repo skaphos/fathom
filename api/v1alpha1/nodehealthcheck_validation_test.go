@@ -15,7 +15,9 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -347,12 +349,9 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
-			name: "44 an explicit empty socketPath is rejected by the format rule",
+			name: "44 an omitted socketPath uses the default runtime socket",
 			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
-				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: ""})
-				// omitempty drops "" on the wire; force presence through the raw form is not
-				// possible with the typed client, so this pins that the typed default path
-				// (omitted socket) is accepted and identical to the default socket.
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime})
 			},
 		},
 		{
@@ -404,6 +403,55 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantInMsg) {
 				t.Fatalf("rejection does not name the field: want substring %q in %q", tt.wantInMsg, err.Error())
 			}
+		})
+	}
+}
+
+// TestNodeHealthCheckAdmissionRejectsExplicitEmptySocketPath uses an
+// unstructured object so socketPath: "" remains present on the wire. The
+// typed object cannot express that admission input because socketPath has
+// omitempty and the serializer drops its empty value.
+func TestNodeHealthCheckAdmissionRejectsExplicitEmptySocketPath(t *testing.T) {
+	requireAPIServer(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		socketPath any
+		wantReject bool
+	}{
+		{name: "explicit empty socketPath", socketPath: "", wantReject: true},
+		{name: "omitted socketPath", wantReject: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := map[string]any{"type": string(fathomv1alpha1.NodeHealthCheckContainerRuntime)}
+			if tt.socketPath != nil {
+				check["socketPath"] = tt.socketPath
+			}
+			obj := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "fathom.skaphos.io/v1alpha1",
+				"kind":       "NodeHealthCheck",
+				"metadata":   map[string]any{"generateName": "nodehealthcheck-wire-", "namespace": "default"},
+				"spec": map[string]any{
+					"checks": []any{check},
+				},
+			}}
+			err := k8sClient.Create(ctx, obj, client.FieldValidation(metav1.FieldValidationStrict))
+			if tt.wantReject {
+				if err == nil {
+					_ = k8sClient.Delete(ctx, obj)
+					t.Fatal("explicit empty socketPath was accepted")
+				}
+				if !strings.Contains(err.Error(), "socketPath") {
+					t.Fatalf("rejection must name socketPath; got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("omitted socketPath should be accepted: %v", err)
+			}
+			_ = k8sClient.Delete(ctx, obj)
 		})
 	}
 }
