@@ -297,13 +297,20 @@ adapter level is forced to `Error`.
 
 ### Requeue / interval handling
 
-`AddonCheckReconciler`, `NodeCertificateCheckReconciler`, and
-`NodeHealthCheckReconciler` return `RequeueAfter` based on their effective
-`spec.interval` (`5m`, `1h`, and `5m` defaults, respectively). `AddonCheck` uses that cadence to re-run the adapter and refresh
+`AddonCheckReconciler` and `NodeCertificateCheckReconciler` return
+`RequeueAfter` based on their effective `spec.interval` (`5m` and `1h`
+defaults). `AddonCheck` uses that cadence to re-run the adapter and refresh
 `status.lastRunTime`; it creates a new `HealthReport` only for the first run or
 an aggregate-result transition. `NodeCertificateCheck` uses the cadence to
 refresh the rolled-up node-agent report, in addition to the ConfigMap-watch
 events its agents generate.
+
+`NodeHealthCheckReconciler` deliberately requeues on the **capped agent
+cadence**, `min(spec.interval, 5m)`, not on `spec.interval`: report freshness
+is bounded by that cadence, and a silently dead agent raises no watch event,
+so a 24h interval must not mean a daily look. `spec.interval` still governs
+only the roll-up refresh (`status.lastRunTime` and the transition-only
+`HealthReport` contract).
 
 `HealthCheckReconciler` and `ClusterHealthReconciler` are projection/
 aggregation controllers with no timer; they are event-driven by spec edits and

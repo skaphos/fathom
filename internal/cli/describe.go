@@ -187,7 +187,14 @@ func (d *describer) spec(obj client.Object) {
 		}
 	case *fathomv1alpha1.NodeHealthCheck:
 		d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval))
-		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout))
+		// The agent's pass is bounded by min(timeout, agent cadence); show the
+		// value the runtime enforces, naming the declared one when it was capped.
+		declared := effectiveDuration(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+		if eff := nodeHealthCheckTimeout(o); eff < declared {
+			d.sub("Timeout", fmt.Sprintf("%s (declared %s, capped at the agent cadence)", eff, declared))
+		} else {
+			d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout))
+		}
 		d.sub("History limit", int32PtrString(o.Spec.HistoryLimit, "10 (default)"))
 		d.sub("Control-plane nodes", fmt.Sprint(o.Spec.IncludeControlPlaneNodes != nil && *o.Spec.IncludeControlPlaneNodes))
 		if len(o.Spec.NodeSelector) > 0 {

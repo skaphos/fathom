@@ -146,11 +146,19 @@ func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool
 	if observedAt.IsZero() {
 		return false
 	}
-	if observedAt.After(now.Add(maxAge)) {
+	// A report from the future is a clock problem, not evidence, and must not
+	// extend the freshness window: accepted up to maxAge ahead of now, a
+	// report at that bound stayed fresh for 2*maxAge. Allow a small explicit
+	// skew for ordinary clock drift between the node and the operator.
+	if observedAt.After(now.Add(maxNodeHealthReportClockSkew)) {
 		return false
 	}
 	return now.Sub(observedAt) <= maxAge
 }
+
+// maxNodeHealthReportClockSkew is how far ahead of the operator's clock a
+// report's observedAt may be and still count, covering ordinary drift.
+const maxNodeHealthReportClockSkew = 30 * time.Second
 
 // resolveNodeHealthItems turns the spec's items into the resolved wire items
 // the agent receives: API defaults applied to every unset threshold and

@@ -466,3 +466,25 @@ func TestDesiredDaemonSetNeverMountsOnePathTwice(t *testing.T) {
 		t.Fatalf("volumes (%d) and mounts (%d) must pair one to one", len(ds.Spec.Template.Spec.Volumes), len(ds.Spec.Template.Spec.Containers[0].VolumeMounts))
 	}
 }
+
+// TestNodeHealthReportFreshRejectsTheFuture pins the clock-skew allowance: a
+// report slightly ahead of the operator's clock counts (drift), but one far
+// ahead does not — otherwise a future observedAt would extend the freshness
+// window beyond the documented cadence-plus-timeout bound.
+func TestNodeHealthReportFreshRejectsTheFuture(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	const maxAge = 10 * time.Minute
+	if !nodeHealthReportFresh(now.Add(10*time.Second), now, maxAge) {
+		t.Fatal("10s of clock drift must be tolerated")
+	}
+	if nodeHealthReportFresh(now.Add(2*time.Minute), now, maxAge) {
+		t.Fatal("a report two minutes in the future must not be fresh")
+	}
+	if nodeHealthReportFresh(now.Add(maxAge), now, maxAge) {
+		t.Fatal("a report at the future bound must not double the freshness window")
+	}
+	if !nodeHealthReportFresh(now.Add(-maxAge), now, maxAge) || nodeHealthReportFresh(now.Add(-maxAge-time.Second), now, maxAge) {
+		t.Fatal("the past bound is inclusive at maxAge")
+	}
+}
