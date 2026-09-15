@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -170,14 +171,20 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 		}
 	}
 
-	liveness.record(scanOnce())
+	published := scanOnce()
+	liveness.record(published)
 	if cfg.once {
 		// A one-shot run exists to publish one report; whether the metrics
-		// listener bound is irrelevant to that and must not fail it.
+		// listener bound is irrelevant to that and must not fail it — but a
+		// pass that did not publish is exactly the failure a Job or CLI caller
+		// needs to see.
 		select {
 		case err := <-serveErr:
 			log.Printf("node-agent: %v (ignored for a one-shot run)", err)
 		default:
+		}
+		if !published {
+			return errors.New("the pass did not publish its report")
 		}
 		return nil
 	}

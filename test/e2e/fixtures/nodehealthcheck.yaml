@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: MIT
 #
 # E2E fixture: exercises every NodeHealthCheck type against the real kind node
-# (#206). The headroom thresholds are set so a busy CI disk cannot false-fail
-# (Warn only at <=1% free, never Fail); nodehealthcheck-fail.yaml flips the
-# disk threshold to force a deliberate Fail. KubeletHealthz and ContainerRuntime
+# (#206). The headroom thresholds are both 0 so a busy CI disk can neither
+# Warn nor Fail (the healthy spec requires every agent-side result to be Pass,
+# and a node at 1% free is a valid state, not a failure of the check);
+# nodehealthcheck-fail.yaml flips the disk threshold to force a deliberate
+# Fail. KubeletHealthz and ContainerRuntime
 # are the two privileged types: the agent runs on the host network and as root
 # with the containerd socket mounted — kind nodes run containerd at the default
 # socket path. The kind node is a control-plane node, so includeControlPlaneNodes
@@ -22,11 +24,11 @@ spec:
   checks:
     - type: DiskHeadroom
       path: /var/lib/kubelet
-      warnPercentFree: 1
+      warnPercentFree: 0
       criticalPercentFree: 0
     - type: InodeHeadroom
       path: /var/lib/kubelet
-      warnPercentFree: 1
+      warnPercentFree: 0
       criticalPercentFree: 0
     - type: NodeCondition
     - type: KubeletHealthz

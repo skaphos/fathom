@@ -424,3 +424,25 @@ func TestProbeHealthz(t *testing.T) {
 		t.Fatalf("absent flag = %q, want empty", got)
 	}
 }
+
+// TestOnceFailsWhenThePassDoesNotPublish pins that a one-shot run reports
+// the failure a Job or CLI caller needs: a pass whose ConfigMap write is
+// refused returns an error instead of a silent success without a report.
+func TestOnceFailsWhenThePassDoesNotPublish(t *testing.T) {
+	kube := fake.NewSimpleClientset()
+	kube.PrependReactor("create", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "x", errors.New("rbac revoked"))
+	})
+	cfg := config{
+		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodehealth.ReportConfigMapName("nh", "node-1"),
+		metricsAddr:   "127.0.0.1:0", interval: time.Hour, timeout: time.Second, once: true,
+	}
+	if err := run(context.Background(), kube, cfg); err == nil {
+		t.Fatal("a one-shot pass that could not publish must return an error")
+	}
+	ok := fake.NewSimpleClientset()
+	if err := run(context.Background(), ok, cfg); err != nil {
+		t.Fatalf("a one-shot pass that published must succeed: %v", err)
+	}
+}
