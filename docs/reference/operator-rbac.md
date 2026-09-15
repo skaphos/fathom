@@ -146,8 +146,8 @@ ClusterRole:
   `get`/`list`/`watch` on the five check kinds and `healthreports` (plus
   `/status`) and `get`/`list` on `apps/deployments`, the last only so
   `fathomctl version` can read the operator's version from its Deployment.
-  The runner adds `patch` on `addonchecks`, `dnschecks`, and
-  `nodecertificatechecks`, which is how `fathomctl run` writes the
+  The runner adds `patch` on `addonchecks`, `dnschecks`,
+  `nodecertificatechecks`, and `nodehealthchecks`, which is how `fathomctl run` writes the
   `fathom.skaphos.io/run-now` trigger; RBAC cannot scope `patch` to metadata,
   so the runner also permits spec edits and should be bound only to subjects
   trusted to trigger runs. Neither role is bound by default, neither is used

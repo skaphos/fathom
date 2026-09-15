@@ -86,9 +86,9 @@ func TestMountDirs(t *testing.T) {
 		{Type: nodehealth.TypeKubeletHealthz},
 		{Type: nodehealth.TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"},
 	})
-	want := []string{"/var/lib/kubelet", "/var/log"}
+	want := []string{"/var/lib/kubelet", "/var/lib/kubelet/pods", "/var/log"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("nodehealth.MountDirs = %v, want %v (descendants collapsed, sockets excluded)", got, want)
+		t.Fatalf("nodehealth.MountDirs = %v, want %v (every requested directory, parents first, sockets excluded)", got, want)
 	}
 }
 
@@ -188,9 +188,9 @@ func TestItemPrivilegeFlags(t *testing.T) {
 
 // TestMountDirsKeepsDottedDirectories pins that a headroom path is always a
 // directory: a dot in its last segment (/var/log/app.v1) must not turn it
-// into its parent, which would mount the wrong directory and report an absent
-// dotted directory as Skipped instead of measuring it. The host root is never
-// mounted.
+// into its parent, and a requested nested directory is its own mount so an
+// absent one is created and measured rather than Skipped. The host root is
+// never mounted.
 func TestMountDirsKeepsDottedDirectories(t *testing.T) {
 	t.Parallel()
 	got := nodehealth.MountDirs([]nodehealth.Item{
@@ -198,7 +198,7 @@ func TestMountDirsKeepsDottedDirectories(t *testing.T) {
 		{Type: nodehealth.TypeInodeHeadroom, Path: "/var/log/app.v1/nested"},
 		{Type: nodehealth.TypeDiskHeadroom, Path: "/"},
 	})
-	if strings.Join(got, ",") != "/var/log/app.v1" {
-		t.Fatalf("MountDirs = %v, want [/var/log/app.v1] (dotted directory kept, descendant collapsed, root dropped)", got)
+	if strings.Join(got, ",") != "/var/log/app.v1,/var/log/app.v1/nested" {
+		t.Fatalf("MountDirs = %v, want the dotted directory and its nested child as their own mounts, root dropped", got)
 	}
 }

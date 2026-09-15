@@ -131,8 +131,10 @@ the measurement becomes the headroom of the filesystem that would hold the
 directory (usually the root filesystem), and the node's filesystem is
 mutated by that empty directory. That is rarely what a missing path meant.
 Prefer paths that exist on every node in scope, and narrow
-`spec.nodeSelector` on mixed fleets. Only a location missing *beneath* the
-mount (a subdirectory the agent cannot `stat`) is reported `Skipped`.
+`spec.nodeSelector` on mixed fleets. Every requested directory is mounted in
+its own right, even one nested under another requested directory, so each
+gets that behaviour; only a location missing *beneath* a requested directory
+(a subdirectory the agent cannot `stat`) is reported `Skipped`.
 
 Paths are restricted to an operator-approved allowlist — `/var/lib/kubelet`,
 `/var/lib/containerd`, `/var/lib/docker`, `/var/lib/etcd`, `/var/log`,

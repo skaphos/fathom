@@ -117,22 +117,24 @@ func SocketPathAllowed(p string) bool {
 	return false
 }
 
-// MountDirs computes the least-privilege set of host directories the agent
-// must have mounted read-only to measure every headroom item, collapsed so no
-// returned directory is a descendant of another. Every headroom path is a
-// directory by contract — nodecert.MinimalMountDirs is not reused because its
-// file heuristic turns a directory with a dot in its last segment
-// (/var/log/app.v1) into its parent, mounting the wrong thing. The host root
-// is never mounted. Socket paths are not included: the socket is mounted
-// individually with hostPath type Socket.
+// MountDirs returns the host directories the agent must have mounted
+// read-only to measure every headroom item: one mount per requested
+// directory, parents first, duplicates removed, the host root never. Each
+// requested path is mounted itself — with hostPath DirectoryOrCreate — rather
+// than collapsed into a requested ancestor: a nested mount exposes nothing
+// the ancestor did not, and collapsing it left a requested child that does
+// not exist on a node unmounted and therefore Skipped instead of created and
+// measured as documented. Every headroom path is a directory by contract;
+// nodecert.MinimalMountDirs is not reused because its file heuristic turns a
+// directory with a dot in its last segment (/var/log/app.v1) into its parent.
+// Socket paths are not included: the socket is mounted individually with
+// hostPath type Socket.
 func MountDirs(items []Item) []string {
 	seen := map[string]struct{}{}
 	for _, it := range items {
 		if it.Type != TypeDiskHeadroom && it.Type != TypeInodeHeadroom {
 			continue
 		}
-		// The raw value, untrimmed, exactly as PathAllowed judged it: a mount
-		// must never be computed from a different string than admission saw.
 		p := it.Path
 		if p == "" || !path.IsAbs(p) {
 			continue
@@ -147,19 +149,6 @@ func MountDirs(items []Item) []string {
 	for d := range seen {
 		dirs = append(dirs, d)
 	}
-	sort.Strings(dirs)
-	var kept []string
-	for _, d := range dirs {
-		covered := false
-		for _, k := range kept {
-			if d == k || strings.HasPrefix(d, k+"/") {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			kept = append(kept, d)
-		}
-	}
-	return kept
+	sort.Strings(dirs) // lexical order mounts a parent before its children
+	return dirs
 }
