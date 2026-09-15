@@ -423,7 +423,7 @@ func parseConfig(argv []string) (config, error) {
 		checksJSON    = fs.String("checks", "", "health mode: JSON-encoded NodeHealthCheck items with thresholds already resolved (required in health mode)")
 		kubeletURL    = fs.String("kubelet-healthz-url", nodehealth.DefaultKubeletHealthzURL, "health mode: kubelet health endpoint a KubeletHealthz check probes")
 		interval      = fs.Duration("interval", time.Hour, "re-evaluation cadence")
-		timeout       = fs.Duration("timeout", 30*time.Second, "per-pass publish timeout (health mode: bounds the whole pass)")
+		timeout       = fs.Duration("timeout", 30*time.Second, "bound on the report publish (health mode: bounds the evaluation and, separately, the publish, so one pass takes at most twice this)")
 		metricsAddr   = fs.String("metrics-bind-address", ":8080", "address for the Prometheus metrics endpoint")
 		fatalBind     = fs.Bool("fatal-metrics-bind", false, "exit when the metrics endpoint cannot bind (set by the operator for host-network agents, whose port is a host port)")
 		once          = fs.Bool("once", false, "run a single pass and exit")
