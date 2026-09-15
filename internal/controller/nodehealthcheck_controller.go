@@ -107,6 +107,19 @@ type NodeHealthCheckReconciler struct {
 	// Recorder emits the Kubernetes Events contract on NodeHealthCheck
 	// resources. Optional: nil disables event recording.
 	Recorder events.EventRecorder
+
+	// Clock is the reconciler's notion of now for freshness and liveness.
+	// Nil means time.Now; tests advance it to age reports out, since a report's
+	// observation time is the API server's write time, which a test cannot
+	// backdate.
+	Clock func() time.Time
+}
+
+func (r *NodeHealthCheckReconciler) now() time.Time {
+	if r.Clock != nil {
+		return r.Clock()
+	}
+	return time.Now()
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodehealthchecks,verbs=get;list;watch;update;patch
@@ -258,7 +271,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
 
-	now := time.Now()
+	now := r.now()
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, nodeHealthAgentItems(items), now, nodeHealthReportMaxAge(&check))
 	if err != nil {
 		return ctrl.Result{}, err
@@ -766,10 +779,18 @@ func (r *NodeHealthCheckReconciler) adoptReportConfigMap(ctx context.Context, lo
 		log.V(1).Info("cannot set owner reference on report ConfigMap", "configmap", cm.Name, "error", err.Error())
 		return
 	}
-	if err := r.Update(ctx, patched); err != nil {
+	// A distinct field manager, so the adoption is recorded as its own
+	// managedFields entry. Sharing the agent's manager name would fold this
+	// write into the entry that owns the report payload and refresh its time,
+	// which the freshness bound would then mistake for report arrival.
+	if err := r.Update(ctx, patched, client.FieldOwner(nodeHealthAdopterFieldManager)); err != nil {
 		log.V(1).Info("adopt report ConfigMap failed; will retry", "configmap", cm.Name, "error", err.Error())
 	}
 }
+
+// nodeHealthAdopterFieldManager names the operator's adoption writes in
+// managedFields; nodeHealthObservedBound never reads their time.
+const nodeHealthAdopterFieldManager = "fathom-report-adopter"
 
 // expectedAgentNodes returns the identities of the nodes the agent DaemonSet
 // is currently scheduled on, read from the agent pods themselves (the source of
@@ -844,7 +865,7 @@ func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.
 // per-node results and summary are refreshed on every complete evaluation so
 // status reflects the latest measurements even when the fold is unchanged.
 func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, evals []nodeHealthEvaluation, aggregate fathomv1alpha1.HealthReportResult, interval time.Duration) error {
-	now := time.Now()
+	now := r.now()
 	check.Status.NodeResults = nodeHealthNodeResults(evals)
 	check.Status.Summary = nodeHealthSummary(evals, aggregate)
 
@@ -854,6 +875,11 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 	case rollupRefreshLiveness:
 		refreshed := metav1.NewTime(now)
 		check.Status.LastRunTime = &refreshed
+		// Retention runs on every complete roll-up, not only when a report is
+		// created: a lowered spec.historyLimit must take effect even while the
+		// aggregate is unchanged, and a reused deterministic report must not
+		// skip it either.
+		pruneNodeHealthHealthReports(ctx, r.Client, log, check)
 		return nil
 	}
 
@@ -872,13 +898,11 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 			return err
 		}
 	}
-	persistedReport, created, err := createOrReuseHealthReport(ctx, r.Client, report)
+	persistedReport, _, err := createOrReuseHealthReport(ctx, r.Client, report)
 	if err != nil {
 		return err
 	}
-	if created {
-		pruneNodeHealthHealthReports(ctx, r.Client, log, check)
-	}
+	pruneNodeHealthHealthReports(ctx, r.Client, log, check)
 
 	// The observable run time must never move backward (COR-3), even when a
 	// deterministic HealthReport is reused with its original ObservedAt.

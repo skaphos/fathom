@@ -74,8 +74,12 @@ node-health   Pass     3           3         42s        2m
 ```
 
 - **RESULT** — worst-case across every node in scope.
-- **REPORTING / DESIRED** — how many node-agents have published a fresh result
-  vs. how many nodes the DaemonSet targets.
+- **REPORTING / DESIRED** — how many fresh reports the operator found at its
+  latest reconcile (a liveness count: it includes surplus reports from nodes
+  that have since left scope and can change while the verdict is frozen) vs.
+  how many nodes the DaemonSet targets. Coverage is the `CoverageComplete`
+  condition, not this pair — `REPORTING == DESIRED` alone does not mean every
+  node in scope reported.
 - `status.summary` says how many nodes passed and, when some did not, names
   the worst node and check: `2 of 3 node(s) passed; worst: node-b DiskHeadroom
   /var/lib/kubelet: 8.2% of bytes free (at or below criticalPercentFree 10)`.

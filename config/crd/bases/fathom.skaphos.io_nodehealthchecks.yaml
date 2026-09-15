@@ -344,11 +344,11 @@ spec:
                 ? duration(self.interval) : duration(''5m''))'
             - message: checks must be unique by type and path (socketPath for ContainerRuntime)
               rule: 'self.checks.all(c, self.checks.filter(o, o.type == c.type &&
-                (has(o.path) ? o.path : (o.type == ''ContainerRuntime'' ? (has(o.socketPath)
-                ? o.socketPath : ''/run/containerd/containerd.sock'') : o.type)) ==
-                (has(c.path) ? c.path : (c.type == ''ContainerRuntime'' ? (has(c.socketPath)
-                ? c.socketPath : ''/run/containerd/containerd.sock'') : c.type))).size()
-                == 1)'
+                (has(o.path) ? o.path : (o.type == ''ContainerRuntime'' ? ((has(o.socketPath)
+                && size(o.socketPath) > 0) ? o.socketPath : ''/run/containerd/containerd.sock'')
+                : o.type)) == (has(c.path) ? c.path : (c.type == ''ContainerRuntime''
+                ? ((has(c.socketPath) && size(c.socketPath) > 0) ? c.socketPath :
+                ''/run/containerd/containerd.sock'') : c.type))).size() == 1)'
             - message: a headroom path must not be a ContainerRuntime socket path
               rule: '!self.checks.exists(h, (h.type == ''DiskHeadroom'' || h.type
                 == ''InodeHeadroom'') && self.checks.exists(r, r.type == ''ContainerRuntime''

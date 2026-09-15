@@ -557,6 +557,13 @@ func parseConfig(argv []string) (config, error) {
 	if cfg.interval <= 0 {
 		cfg.interval = time.Hour
 	}
+	if cfg.timeout <= 0 {
+		// A non-positive timeout would leave evaluation and publication
+		// unbounded and hash the report with a timeout the operator never
+		// resolves, so the report would never be consumed. The operator always
+		// passes a positive value; this only guards a hand-run agent.
+		cfg.timeout = 30 * time.Second
+	}
 	return cfg, nil
 }
 

@@ -22,6 +22,7 @@ Task-oriented guides for installing and using Fathom live in
 | [Concepts](guides/concepts.md) | The platform-team mental model: the resource kinds, what drives work vs. aggregates, and result severity. |
 | [Add-on checks](guides/addon-checks.md) | Configure `AddonCheck`s for the sixteen built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Newer kind — included in recent builds; not in older ones.)* |
+| [Node health checks](guides/node-health-checks.md) | Filesystem headroom, node conditions, kubelet and container-runtime liveness on every node, with an explicit privilege posture per check type. *(Ships from v0.6.0.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
 | [fathomctl](guides/fathomctl.md) | Install the CLI, list and explain verdicts, walk report history, and trigger a check right now with `run --wait`. |
 | [Agent operations](guides/agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |

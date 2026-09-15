@@ -148,7 +148,8 @@ kubectl -n fathom-system annotate addoncheck cert-manager-system-health \
 ## HealthCheck
 
 `HealthCheck` is a projection layer. It mirrors one `AddonCheck`, `DNSCheck`,
-or `NodeCertificateCheck` into a uniform status shape for `ClusterHealth`.
+`NodeCertificateCheck`, or `NodeHealthCheck` into a uniform status shape for
+`ClusterHealth`.
 `spec.checkRef` is immutable — retargeting a wrapper would silently repoint its
 mirrored status snapshot at a different check, so replace the wrapper instead.
 

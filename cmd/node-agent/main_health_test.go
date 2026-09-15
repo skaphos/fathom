@@ -55,6 +55,16 @@ func TestParseConfigHealthMode(t *testing.T) {
 		}
 	})
 
+	t.Run("normalises a non-positive timeout to the default", func(t *testing.T) {
+		cfg, err := parseConfig(append(base, "--mode", "health", "--checks", "[]", "--timeout", "0"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.timeout != 30*time.Second {
+			t.Fatalf("timeout = %v, want the 30s default (an unbounded pass would never be consumed)", cfg.timeout)
+		}
+	})
+
 	t.Run("rejects an unknown mode", func(t *testing.T) {
 		if _, err := parseConfig(append(base, "--mode", "bogus")); err == nil || !strings.Contains(err.Error(), "--mode must be") {
 			t.Fatalf("expected mode error, got %v", err)

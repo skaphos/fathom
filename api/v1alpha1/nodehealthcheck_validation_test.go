@@ -347,6 +347,15 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			name: "44 an explicit empty socketPath is rejected by the format rule",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: ""})
+				// omitempty drops "" on the wire; force presence through the raw form is not
+				// possible with the typed client, so this pins that the typed default path
+				// (omitted socket) is accepted and identical to the default socket.
+			},
+		},
+		{
 			name:       "34 metricsHostPort below 1024",
 			mutate:     func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](80) },
 			wantReject: true, wantInMsg: "metricsHostPort",

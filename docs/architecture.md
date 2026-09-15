@@ -291,9 +291,11 @@ adapter level is forced to `Error`.
 - **Correctness properties** (written against the v0.5.0 review findings, not
   inherited): provisioning failures persist `Ready=False` (COR-2), an
   incomplete window freezes the verdict (COR-3), coverage is per node identity
-  (COR-4), and report freshness follows the agent's **capped** cadence
-  (`min(interval, 5m) + timeout`) rather than `spec.interval`, so a 24h
-  interval never accepts a 24h-old measurement (#270).
+  (COR-4), and report freshness follows the agent's **capped** cadence rather
+  than `spec.interval` — one full agent cycle, `min(interval, 5m)` plus three
+  effective timeouts plus a 30s latency allowance, measured from the API
+  server's write of the report — so a 24h interval never accepts a 24h-old
+  measurement (#270).
 - **No pause field** (#262): stopping the check means deleting it.
 
 ### Requeue / interval handling

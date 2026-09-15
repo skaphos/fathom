@@ -160,8 +160,9 @@ they can be expressed.
 **At admission** (`kubectl apply` fails immediately):
 
 - `spec.interval` must be at least **10s** and `spec.timeout` at least **1s**
-  on `AddonCheck` and `NodeCertificateCheck` (and `timeout` may not exceed
-  `interval`). This stops a `1m` → `1ms` typo from hot-looping the operator.
+  on `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck`
+  (and `timeout` may not exceed `interval`; for `NodeHealthCheck` an omitted
+  `interval` counts as its 5m default in that comparison). This stops a `1m` → `1ms` typo from hot-looping the operator.
   Objects stored before these floors existed keep running — the operator
   clamps their effective cadence up to the floors and says so with a Warning
   `CadenceClamped` event and an `Accepted=True/SpecClamped` condition naming

@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -64,12 +65,6 @@ func nodeHealthAgentClient(check *fathomv1alpha1.NodeHealthCheck, claimNode stri
 func writeNodeHealthReport(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, node string, checks []nodehealth.CheckResult) {
 	writeNodeHealthReportObject(ctx, check, node, node, nodehealth.NodeReport{
 		Node: node, CheckName: check.Name, ObservedAt: time.Now(), Aggregate: nodehealth.WorstOutcome(checks), Checks: checks,
-	})
-}
-
-func writeNodeHealthReportAt(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, node string, observedAt time.Time, checks []nodehealth.CheckResult) {
-	writeNodeHealthReportObject(ctx, check, node, node, nodehealth.NodeReport{
-		Node: node, CheckName: check.Name, ObservedAt: observedAt, Aggregate: nodehealth.WorstOutcome(checks), Checks: checks,
 	})
 }
 
@@ -450,16 +445,18 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 		frozenRun, frozenReport, frozenResults := current.Status.LastRunTime, current.Status.LastReportName, current.Status.NodeResults
 
-		// Freshness follows the (capped) agent cadence: a report older than
-		// agentInterval+timeout is stale even though the roll-up interval is the
-		// default 5m — and would still be stale under a 24h interval (#270).
-		writeNodeHealthReportAt(ctx, check, "node-b", time.Now().Add(-2*nodeHealthReportMaxAge(check)), nodeHealthPassing)
+		// Freshness follows the (capped) agent cadence and is measured from the
+		// API server's write time, which a test cannot backdate — so the
+		// reconciler's clock is advanced past the bound instead. Both reports
+		// then age out even though the roll-up interval is the default 5m, and
+		// would under a 24h interval too (#270).
+		r.Clock = func() time.Time { return time.Now().Add(2 * nodeHealthReportMaxAge(check)) }
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
 		updated := &fathomv1alpha1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		Expect(updated.Status.ReportingNodes).To(BeEquivalentTo(1))
+		Expect(updated.Status.ReportingNodes).To(BeEquivalentTo(0), "aged-out reports are not consumed")
 		Expect(updated.Status.LastResult).To(Equal("Pass"), "an incomplete window must freeze the verdict, not wipe it")
 		Expect(updated.Status.LastReportName).To(Equal(frozenReport))
 		Expect(updated.Status.LastRunTime.Time).To(Equal(frozenRun.Time), "lastRunTime must not move backward")
@@ -467,10 +464,11 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionReady)
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-		Expect(ready.Reason).To(Equal("PartialReports"))
+		Expect(ready.Reason).To(Equal("AwaitingReports"), "no fresh report at all")
 		coverage := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionCoverage)
 		Expect(coverage.Status).To(Equal(metav1.ConditionFalse))
 		Expect(coverage.Reason).To(Equal("PartialReports"))
+		Expect(coverage.Message).To(ContainSubstring("node-a"))
 		Expect(coverage.Message).To(ContainSubstring("node-b"))
 	})
 
@@ -748,6 +746,84 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(current.Status.ReportingNodes).To(BeEquivalentTo(0), "a malformed report must not be consumed")
 		Expect(current.Status.LastResult).To(BeEmpty(), "nothing may be graded from it")
 		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionFalse))
+	})
+
+	It("adopts a report without the operator's write being mistaken for report arrival", func() {
+		// The freshness bound reads the latest managedFields write of f:data.
+		// Adoption is an ordinary Update that changes only ownerReferences; the
+		// API server attributes only changed fields to the updating manager, so
+		// the operator's entry must not cover f:data. Pinned against the real
+		// API server, not a synthetic managedFields list.
+		name := types.NamespacedName{Name: "nh-adopt", Namespace: "default"}
+		check := newNHC(name, headroom)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name}) // collects and adopts
+		Expect(err).NotTo(HaveOccurred())
+
+		cm := &corev1.ConfigMap{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodehealth.ReportConfigMapName(check.Name, "node-a"), Namespace: name.Namespace}, cm)).To(Succeed())
+		Expect(metav1.IsControlledBy(cm, check)).To(BeTrue(), "the report must have been adopted")
+		dataWriters := 0
+		for _, mf := range cm.ManagedFields {
+			if mf.FieldsV1 == nil {
+				continue
+			}
+			fields := string(mf.FieldsV1.GetRawBytes())
+			if strings.Contains(fields, `"f:ownerReferences"`) {
+				Expect(fields).NotTo(ContainSubstring(`"f:data"`), "the adoption write must not be attributed the report payload")
+			}
+			if strings.Contains(fields, `"f:data"`) {
+				dataWriters++
+			}
+		}
+		Expect(dataWriters).To(Equal(1), "exactly one manager — the agent — owns f:data")
+	})
+
+	It("enforces a lowered historyLimit on an unchanged roll-up", func() {
+		name := types.NamespacedName{Name: "nh-retain", Namespace: "default"}
+		check := newNHC(name, headroom)
+		check.Spec.HistoryLimit = ptr.To[int32](5)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Older history the check accumulated under the higher limit.
+		for i := 0; i < 3; i++ {
+			extra := &fathomv1alpha1.HealthReport{ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("nh-retain-old-%d", i), Namespace: name.Namespace,
+				Labels: map[string]string{fathomv1alpha1.LabelHealthReportSourceKind: nodeHealthKind, fathomv1alpha1.LabelHealthReportSourceName: check.Name},
+			}, Spec: fathomv1alpha1.HealthReportSpec{
+				SourceRef:   fathomv1alpha1.HealthReportTargetRef{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind, Namespace: name.Namespace, Name: check.Name},
+				AdapterName: "node-health-check", AdapterVersion: "0.1.0",
+				Result: fathomv1alpha1.HealthReportResultPass, ObservedAt: metav1.Now(),
+			}}
+			Expect(k8sClient.Create(ctx, extra)).To(Succeed())
+		}
+		Expect(k8sClient.Get(ctx, name, check)).To(Succeed())
+		check.Spec.HistoryLimit = ptr.To[int32](1)
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+
+		// The aggregate is unchanged, so this roll-up only refreshes liveness —
+		// and must still apply the new cap. Advance the clock past the cadence
+		// but within the freshness bound.
+		r.Clock = func() time.Time { return time.Now().Add(nodeHealthRequeueAfter(check) + time.Minute) }
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		var reports fathomv1alpha1.HealthReportList
+		Expect(k8sClient.List(ctx, &reports, client.InNamespace(name.Namespace), client.MatchingLabels{fathomv1alpha1.LabelHealthReportSourceName: check.Name})).To(Succeed())
+		Expect(reports.Items).To(HaveLen(1), "a lowered historyLimit must be enforced without a new report")
 	})
 
 	It("does not consume a fresh report that predates the current spec's agent items", func() {

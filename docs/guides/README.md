@@ -24,6 +24,7 @@ for the generated, field-level CRD reference see
 | [Add-on checks](addon-checks.md) | Configure `AddonCheck`s for the sixteen built-in adapters — families, thresholds, roll-up, troubleshooting. |
 | [DNS checks](dns-checks.md) | Verify positive and required-absence DNS expectations from cluster, node, or explicit resolvers and include the verdict in `ClusterHealth`. |
 | [Node certificate checks](node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before it causes an outage. |
+| [Node health checks](node-health-checks.md) | Filesystem headroom, node conditions, kubelet and container-runtime liveness on every node, with an explicit privilege posture per check type. |
 | [Monitoring & alerting](monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and deployment gates. |
 | [fathomctl](fathomctl.md) | Install the CLI, see every verdict with `ls`, explain one with `describe`, walk history with `reports`, and gate a pipeline on `run --wait`. |
 

@@ -192,8 +192,11 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 		}, 40*time.Second, 5*time.Second).Should(Succeed(), "verdict flapped during the coverage gap")
 
 		By("restoring the selector")
+		// A merge patch with null clears the field whether or not it exists —
+		// the fixture omits nodeSelector, and a JSON-patch remove would fail on
+		// a missing path if this step ever ran without the add above.
 		cmd = exec.Command("kubectl", "patch", "nodehealthcheck", nodeHealthSampleName, "-n", nodeHealthSampleNS,
-			"--type=json", "-p", `[{"op":"remove","path":"/spec/nodeSelector"}]`)
+			"--type=merge", "-p", `{"spec":{"nodeSelector":null}}`)
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func(g Gomega) {

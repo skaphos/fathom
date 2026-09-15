@@ -146,9 +146,18 @@ func nodeHealthRequeueAfter(check *fathomv1alpha1.NodeHealthCheck) time.Duration
 // takes up to one timeout to evaluate and one more to publish before it is
 // visible. With timeout == interval (legal) a continuously running agent was
 // therefore judged stale on every cycle and its coverage frozen.
+//
+// The cycle bound is exact for timeout == interval, so a fixed allowance for
+// scheduler and API latency is added on top: without it a probe that ran to
+// its deadline could make a healthy check read as stale in the moments before
+// its next report became visible.
 func nodeHealthReportMaxAge(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
-	return nodeHealthAgentInterval(check) + 3*nodeHealthAgentTimeout(check)
+	return nodeHealthAgentInterval(check) + 3*nodeHealthAgentTimeout(check) + nodeHealthFreshnessSlack
 }
+
+// nodeHealthFreshnessSlack covers ordinary scheduling and API latency between
+// a report's completion and its visibility to the operator.
+const nodeHealthFreshnessSlack = 30 * time.Second
 
 func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool {
 	if observedAt.IsZero() {
@@ -177,21 +186,29 @@ func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool
 const maxNodeHealthReportClockSkew = 30 * time.Second
 
 // nodeHealthObservedBound returns the time freshness is measured from: the
-// report's own observedAt, capped at the API server's most recent write time
-// for the ConfigMap (managedFields[].time, stamped from the server's clock).
-// A node whose clock runs fast stamps the future; measuring from its stamp
-// kept the report fresh for up to 2*maxAge, and rejecting it excluded the node
-// entirely. The server's write time is the one clock both sides share, so a
-// fast node's report is exactly as fresh as its arrival, no more and no less.
-// Without managedFields (an older server, a fake client) the stamp is used.
+// API server's most recent write of the report payload (managedFields[].time
+// for an entry that touched f:data, stamped from the server's clock), falling
+// back to the report's own observedAt only when no such write is recorded (an
+// older server, a fake client).
 //
-// Only writes that touched the report payload (f:data) count. The operator's
-// own adoption write sets an owner reference and nothing else; taking its
-// time would treat adoption as report arrival and keep a stopped agent's old
+// The server's write time is the one clock both sides share, so node clock
+// skew in either direction is irrelevant: a fast node's stamp cannot stretch
+// the window, and a slow node's stamp cannot make every current report read
+// as stale — with a 10s interval and 1s timeout the bound is under a minute,
+// which a modest lag would exhaust. The write time is at most one publish
+// (bounded by the timeout) later than the evaluation, which the cycle bound
+// already allows for.
+//
+// Only writes that touched the report payload count. The operator's own
+// adoption write sets an owner reference and nothing else; taking its time
+// would treat adoption as report arrival and keep a stopped agent's old
 // report fresh for another maxAge.
 func nodeHealthObservedBound(observedAt time.Time, cm *corev1.ConfigMap) time.Time {
 	var latest time.Time
 	for _, mf := range cm.ManagedFields {
+		if mf.Manager == nodeHealthAdopterFieldManager {
+			continue
+		}
 		if mf.Time == nil || mf.FieldsV1 == nil || !strings.Contains(string(mf.FieldsV1.GetRawBytes()), `"f:data"`) {
 			continue
 		}
@@ -199,7 +216,7 @@ func nodeHealthObservedBound(observedAt time.Time, cm *corev1.ConfigMap) time.Ti
 			latest = mf.Time.Time
 		}
 	}
-	if !latest.IsZero() && observedAt.After(latest) {
+	if !latest.IsZero() {
 		return latest
 	}
 	return observedAt

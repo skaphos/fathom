@@ -281,7 +281,7 @@ func TestNodeHealthCadence(t *testing.T) {
 	if got := nodeHealthAgentInterval(long); got != maxNodeHealthAgentInterval {
 		t.Fatalf("agent interval = %v, want the %v cap", got, maxNodeHealthAgentInterval)
 	}
-	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+3*30*time.Second {
+	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+3*30*time.Second+nodeHealthFreshnessSlack {
 		t.Fatalf("report max age = %v, must follow the agent cadence, not the 24h interval", got)
 	}
 	// The requeue follows the agent cadence: a 24h interval is still looked at
@@ -295,7 +295,7 @@ func TestNodeHealthCadence(t *testing.T) {
 	if got := nodeHealthAgentTimeout(long); got != maxNodeHealthAgentInterval {
 		t.Fatalf("agent timeout = %v, want the %v cadence cap", got, maxNodeHealthAgentInterval)
 	}
-	if got := nodeHealthReportMaxAge(long); got != 4*maxNodeHealthAgentInterval {
+	if got := nodeHealthReportMaxAge(long); got != 4*maxNodeHealthAgentInterval+nodeHealthFreshnessSlack {
 		t.Fatalf("report max age with a 24h timeout = %v, want %v", got, 2*maxNodeHealthAgentInterval)
 	}
 
@@ -536,9 +536,12 @@ func TestNodeHealthObservedBoundUsesTheServerClock(t *testing.T) {
 	if got := nodeHealthObservedBound(server.Add(5*time.Minute), cm); !got.Equal(server) {
 		t.Fatalf("future stamp bound = %v, want the server write time %v", got, server)
 	}
-	honest := server.Add(-10 * time.Second)
-	if got := nodeHealthObservedBound(honest, cm); !got.Equal(honest) {
-		t.Fatalf("honest stamp bound = %v, want the stamp itself %v", got, honest)
+	// An honest stamp is superseded by the server write time too: the server
+	// clock is the one both sides share, so a slow node clock cannot make a
+	// current report read as stale either.
+	lagging := server.Add(-10 * time.Minute)
+	if got := nodeHealthObservedBound(lagging, cm); !got.Equal(server) {
+		t.Fatalf("lagging stamp bound = %v, want the server write time %v", got, server)
 	}
 	if got := nodeHealthObservedBound(server.Add(5*time.Minute), &corev1.ConfigMap{}); !got.Equal(server.Add(5 * time.Minute)) {
 		t.Fatal("without managedFields the stamp is used (the freshness clamp still applies)")
@@ -568,8 +571,12 @@ func TestNodeHealthReportMaxAgeCoversAFullCycle(t *testing.T) {
 	if !nodeHealthReportFresh(stamp, nextVisible, maxAge) {
 		t.Fatalf("report k must still be fresh when report k+1 becomes visible (maxAge %v)", maxAge)
 	}
-	if nodeHealthReportFresh(stamp, nextVisible.Add(11*time.Second), maxAge) {
-		t.Fatal("a report a full cycle plus a cadence old is stale")
+	// Ordinary scheduler/API latency at the boundary must not make it stale.
+	if !nodeHealthReportFresh(stamp, nextVisible.Add(10*time.Second), maxAge) {
+		t.Fatal("a few seconds of latency at the cycle boundary must not make report k stale")
+	}
+	if nodeHealthReportFresh(stamp, nextVisible.Add(nodeHealthFreshnessSlack+time.Second), maxAge) {
+		t.Fatal("beyond the cycle plus the latency allowance the report is stale")
 	}
 }
 
@@ -635,6 +642,12 @@ func TestNodeHealthObservedBoundIgnoresAdoptionWrites(t *testing.T) {
 	}}}
 	if got := nodeHealthObservedBound(now.Add(time.Hour), cm); !got.Equal(agentWrite) {
 		t.Fatalf("bound = %v, want the agent's data write %v, not the adoption write", got, agentWrite)
+	}
+	// Even an adopter entry that claims f:data (a server attributing more than
+	// the changed fields) is never read: the manager name excludes it.
+	cm.ManagedFields = append(cm.ManagedFields, metav1.ManagedFieldsEntry{Manager: nodeHealthAdopterFieldManager, Time: ptr.To(metav1.NewTime(now)), FieldsV1: metav1.NewFieldsV1(`{"f:data":{}}`)})
+	if got := nodeHealthObservedBound(now.Add(time.Hour), cm); !got.Equal(agentWrite) {
+		t.Fatalf("bound = %v, want the agent's write; the adopter's entry must be ignored by name", got)
 	}
 }
 

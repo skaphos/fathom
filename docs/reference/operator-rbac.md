@@ -138,12 +138,12 @@ ClusterRole:
 - **Per-addon ServiceAccounts and roles** (`config/rbac/addons/`): generated
   from adapter declarations; every grant is justified in
   [Addon adapter RBAC](rbac.md).
-- **`{clusterhealth,healthcheck,healthreport,nodecertificatecheck}-{admin,editor,viewer}`**
+- **`{clusterhealth,healthcheck,healthreport,nodecertificatecheck,nodehealthcheck}-{admin,editor,viewer}`**
   ClusterRoles: aggregation-label convenience roles for cluster admins to hand
   out. Not bound by default and not used by the operator.
 - **`fathomctl-viewer-role`** and **`fathomctl-runner-role`** (ClusterRoles):
   what a person or CI job needs to use the `fathomctl` CLI. The viewer grants
-  `get`/`list`/`watch` on the five check kinds and `healthreports` (plus
+  `get`/`list`/`watch` on the six check kinds and `healthreports` (plus
   `/status`) and `get`/`list` on `apps/deployments`, the last only so
   `fathomctl version` can read the operator's version from its Deployment.
   The runner adds `patch` on `addonchecks`, `dnschecks`,

@@ -17,7 +17,7 @@ for and the key entrypoints to start reading from. For the design rationale see
 | `api/v1alpha1/` | CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
 | `internal/cli/` | The `fathomctl` command tree, client factory, kind table, and verdict normalisation. |
-| `internal/controller/` | The five reconcilers. |
+| `internal/controller/` | The six reconcilers. |
 | `internal/adapter/` | Adapter registry and built-in adapters. |
 | `internal/probe/` | Probe-pod manifest builder and launcher. |
 | `pkg/adapter/` | The public, in-process adapter contract. |
@@ -49,7 +49,7 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 ## `api/v1alpha1/` — CRD types
 
-Defines the six kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+Defines the seven kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
 (`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
 `clusterhealth_types.go`, `healthreport_types.go`,
 `nodecertificatecheck_types.go`, `nodehealthcheck_types.go`), plus
@@ -99,7 +99,7 @@ The unit-testable seam between `cmd/main.go` and controller-runtime.
   [reference/configuration.md](reference/configuration.md).
 - `run.go` — `NewScheme` (registers client-go, fathom v1alpha1, and
   apiextensions/v1), `BuildManagerOptions` (Options → `ctrl.Options` + cert
-  watchers), `DefaultControllers` (constructs the five reconcilers),
+  watchers), `DefaultControllers` (constructs the six reconcilers),
   `BuildAdapterRegistry` / `builtInAdapters` (registry assembly), and `Run`
   (starts the manager, gates `/readyz` on cache sync). `managerFactory` is a
   package var so tests can swap in a fake manager.
