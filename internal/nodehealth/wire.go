@@ -124,7 +124,7 @@ func ItemsDigest(items []Item) string {
 
 // ReportCovers reports whether report carries exactly one result for each
 // agent-side item in items and nothing else: the report's (type, key) set
-// must equal the items'. A superset is not enough — a report written before
+// must equal the items', each key exactly once. A superset is not enough — a report written before
 // an item was removed still carries that item's result, and forwarding it
 // would let a removed (possibly failing) check keep shaping the verdict of a
 // spec that no longer declares it. Items the agent does not evaluate
@@ -137,15 +137,19 @@ func ReportCovers(report NodeReport, items []Item) bool {
 			want[it.Type+"\x00"+ItemKey(it)] = struct{}{}
 		}
 	}
-	if len(report.Checks) != len(want) {
-		return false
-	}
+	// Each expected key must appear exactly once. Consuming keys as they are
+	// seen makes a duplicate look like an unknown key, so a report that repeats
+	// one current item cannot stand in for another it omits — a count-and-
+	// membership check alone would let a missing check vanish from the roll-up
+	// while coverage still read complete.
 	for _, c := range report.Checks {
-		if _, ok := want[c.Type+"\x00"+c.Path]; !ok {
+		key := c.Type + "\x00" + c.Path
+		if _, ok := want[key]; !ok {
 			return false
 		}
+		delete(want, key)
 	}
-	return true
+	return len(want) == 0
 }
 
 // VerifyReportBinding applies the structural authenticity bindings shared with

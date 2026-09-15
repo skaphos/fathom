@@ -202,6 +202,12 @@ func TestReportCovers(t *testing.T) {
 	if ReportCovers(full, nil) {
 		t.Fatal("a non-empty report must not cover an empty item set")
 	}
+	// Same count, but one current item repeated in place of another: the
+	// duplicate must not mask the missing check.
+	duplicated := NodeReport{Checks: []CheckResult{full.Checks[0], full.Checks[0], full.Checks[2]}}
+	if ReportCovers(duplicated, items) {
+		t.Fatal("a duplicated key must not stand in for a missing one")
+	}
 	if ItemKey(Item{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}) != "/run/crio/crio.sock" || ItemKey(Item{Type: TypeDiskHeadroom, Path: "/var/log"}) != "/var/log" || ItemKey(Item{Type: TypeKubeletHealthz}) != "" {
 		t.Fatal("ItemKey must be the socket for ContainerRuntime, the path otherwise")
 	}
