@@ -644,9 +644,15 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 						Ports:           []corev1.ContainerPort{{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP}},
 						// The agent answers /healthz from its own progress: a pass that
 						// never returns (statfs wedged on a hung mount) makes it 503 once
-						// overdue, and the kubelet restarts the container.
+						// overdue, and the kubelet restarts the container. The probe execs
+						// the agent binary against loopback rather than using an HTTP
+						// probe from the kubelet: the per-check NetworkPolicy admits
+						// ingress only from metrics-labelled namespaces, and an enforcing
+						// CNI would deny a kubelet-originated probe and restart healthy
+						// agents. Loopback inside the pod's own network namespace is not
+						// policed.
 						LivenessProbe: &corev1.Probe{
-							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromInt32(metricsPort), Scheme: corev1.URISchemeHTTP}},
+							ProbeHandler:        corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"/node-agent", "--probe-healthz", "http://127.0.0.1:" + strconv.Itoa(int(metricsPort)) + "/healthz"}}},
 							InitialDelaySeconds: 10,
 							PeriodSeconds:       60,
 							TimeoutSeconds:      5,

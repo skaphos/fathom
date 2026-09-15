@@ -80,6 +80,16 @@ type config struct {
 }
 
 func main() {
+	// --probe-healthz turns the binary into its own liveness probe: the
+	// kubelet execs it inside the pod's network namespace, where loopback is
+	// not subject to the per-check NetworkPolicy, and it exits non-zero when
+	// /healthz does not answer 200.
+	if url := probeHealthzArg(os.Args[1:]); url != "" {
+		if err := probeHealthz(url, 5*time.Second); err != nil {
+			log.Fatalf("node-agent: liveness: %v", err)
+		}
+		return
+	}
 	cfg, err := parseConfig(os.Args[1:])
 	if err != nil {
 		log.Fatalf("node-agent: %v", err)
@@ -189,6 +199,37 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 	}
 }
 
+// probeHealthzArg returns the URL given to --probe-healthz (in either
+// "--probe-healthz URL" or "--probe-healthz=URL" form), or "" when the flag is
+// absent. It is parsed ahead of the normal flag set because the probe must
+// not require the agent's other flags.
+func probeHealthzArg(argv []string) string {
+	for i, a := range argv {
+		if a == "--probe-healthz" && i+1 < len(argv) {
+			return argv[i+1]
+		}
+		if v, ok := strings.CutPrefix(a, "--probe-healthz="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// probeHealthz GETs the agent's own /healthz over loopback and reports
+// anything but a 2xx as an error, for use as the container's exec probe.
+func probeHealthz(url string, timeout time.Duration) error {
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("%s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s returned %d", url, resp.StatusCode)
+	}
+	return nil
+}
+
 // liveness answers /healthz from the agent's own progress rather than
 // unconditionally. A pass that never returns — a statfs wedged on a hung mount
 // in uninterruptible sleep, which no context can cancel — used to leave the
@@ -287,7 +328,8 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 	})
 	cancelScan()
 	// ObservedAt is the evaluation's completion time, which is what the
-	// operator's freshness bound (agent cadence + timeout) is measured from.
+	// operator's freshness bound (one full cycle: agent cadence plus three
+	// effective timeouts) is measured from.
 	// Stamping the start time would make a probe that used most of its
 	// timeout publish an already nearly-stale report. now is the injected
 	// base clock; the elapsed scan time is added to it.

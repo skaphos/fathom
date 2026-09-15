@@ -48,13 +48,14 @@ const (
 	// select the other's pods.
 	nodeHealthAgentComponentValue = "node-health-agent"
 
-	// maxNodeHealthAgentInterval caps how rarely an agent re-evaluates. The
-	// operator's roll-up cadence follows spec.interval, but report freshness
-	// must not scale with it: a 24h interval must not accept a 24h-old
-	// measurement of a signal that changes on the order of minutes (#270). The
-	// agent therefore runs at min(interval, this) and a report is fresh for
-	// that cadence plus the timeout, so a long-interval check still detects a
-	// transition within minutes while refreshing liveness on its own cadence.
+	// maxNodeHealthAgentInterval caps how rarely an agent re-evaluates. Report
+	// freshness must not scale with spec.interval: a 24h interval must not
+	// accept a 24h-old measurement of a signal that changes on the order of
+	// minutes (#270). The agent therefore runs at min(interval, this), the
+	// operator reconciles and refreshes liveness on that same cadence, and a
+	// report is fresh for one full cycle — that cadence plus three effective
+	// timeouts (nodeHealthReportMaxAge) — so a long-interval check still
+	// detects a transition within minutes.
 	maxNodeHealthAgentInterval = fathomv1alpha1.MaxNodeHealthCheckAgentInterval
 
 	// nodeHealthHostMetricsPortMin/Max bound the metrics port an agent binds
@@ -183,10 +184,18 @@ const maxNodeHealthReportClockSkew = 30 * time.Second
 // entirely. The server's write time is the one clock both sides share, so a
 // fast node's report is exactly as fresh as its arrival, no more and no less.
 // Without managedFields (an older server, a fake client) the stamp is used.
+//
+// Only writes that touched the report payload (f:data) count. The operator's
+// own adoption write sets an owner reference and nothing else; taking its
+// time would treat adoption as report arrival and keep a stopped agent's old
+// report fresh for another maxAge.
 func nodeHealthObservedBound(observedAt time.Time, cm *corev1.ConfigMap) time.Time {
 	var latest time.Time
 	for _, mf := range cm.ManagedFields {
-		if mf.Time != nil && mf.Time.After(latest) {
+		if mf.Time == nil || mf.FieldsV1 == nil || !strings.Contains(string(mf.FieldsV1.GetRawBytes()), `"f:data"`) {
+			continue
+		}
+		if mf.Time.After(latest) {
 			latest = mf.Time.Time
 		}
 	}
@@ -659,6 +668,15 @@ func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodeh
 		nodehealth.ReportCovers(report, agentItems)
 }
 
+// nodeHealthEffectiveSocket is a ContainerRuntime item's socket with the API
+// default applied.
+func nodeHealthEffectiveSocket(c fathomv1alpha1.NodeHealthCheckItem) string {
+	if c.SocketPath != "" {
+		return c.SocketPath
+	}
+	return fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket
+}
+
 // rejectedNodeHealthItems returns the spec items the operator cannot run as
 // declared: a headroom path or runtime socket outside the approved prefixes,
 // or a critical threshold above the effective warning threshold. Admission
@@ -683,6 +701,15 @@ func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 			}
 			if critical > warn {
 				rejected = append(rejected, fmt.Sprintf("%s %s criticalPercentFree %d above warnPercentFree %d", c.Type, c.Path, critical, warn))
+			}
+			// A headroom directory mounted over a runtime socket: the kubelet
+			// rejects the socket as a directory, or creates a directory over an
+			// absent socket. Admission rejects it too; an older-CRD object must
+			// not be provisioned with a different mount set than it declares.
+			for _, other := range check.Spec.Checks {
+				if other.Type == fathomv1alpha1.NodeHealthCheckContainerRuntime && c.Path == nodeHealthEffectiveSocket(other) {
+					rejected = append(rejected, fmt.Sprintf("%s path %s collides with ContainerRuntime socketPath %s", c.Type, c.Path, c.Path))
+				}
 			}
 		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
 			if c.SocketPath != "" && !nodehealth.SocketPathAllowed(c.SocketPath) {

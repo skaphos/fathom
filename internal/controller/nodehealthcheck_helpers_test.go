@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -504,8 +505,11 @@ func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 	plain := nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"})
 	ds := r.desiredDaemonSet(plain, "sa", resolveNodeHealthItems(plain))
 	c := ds.Spec.Template.Spec.Containers[0]
-	if c.LivenessProbe == nil || c.LivenessProbe.HTTPGet == nil || c.LivenessProbe.HTTPGet.Path != "/healthz" || c.LivenessProbe.HTTPGet.Port.IntValue() != int(c.Ports[0].ContainerPort) {
-		t.Fatalf("liveness probe = %+v, want HTTP /healthz on the metrics port", c.LivenessProbe)
+	// Exec against loopback, not an HTTP probe from the kubelet: the per-check
+	// NetworkPolicy would deny a kubelet-originated probe on an enforcing CNI.
+	if c.LivenessProbe == nil || c.LivenessProbe.Exec == nil || !slices.Contains(c.LivenessProbe.Exec.Command, "--probe-healthz") ||
+		!slices.Contains(c.LivenessProbe.Exec.Command, "http://127.0.0.1:"+strconv.Itoa(int(c.Ports[0].ContainerPort))+"/healthz") {
+		t.Fatalf("liveness probe = %+v, want an exec probe of /node-agent --probe-healthz against loopback on the metrics port", c.LivenessProbe)
 	}
 	if slices.Contains(c.Args, "--fatal-metrics-bind") {
 		t.Fatal("a pod-network agent must tolerate a metrics bind failure")
@@ -524,9 +528,10 @@ func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 func TestNodeHealthObservedBoundUsesTheServerClock(t *testing.T) {
 	t.Parallel()
 	server := time.Now()
+	dataWrite := metav1.NewFieldsV1(`{"f:data":{"f:report.json":{}},"f:metadata":{"f:labels":{}}}`)
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{
-		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server.Add(-time.Hour)))},
-		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server))},
+		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server.Add(-time.Hour))), FieldsV1: dataWrite},
+		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server)), FieldsV1: dataWrite},
 	}}}
 	if got := nodeHealthObservedBound(server.Add(5*time.Minute), cm); !got.Equal(server) {
 		t.Fatalf("future stamp bound = %v, want the server write time %v", got, server)
@@ -540,7 +545,7 @@ func TestNodeHealthObservedBoundUsesTheServerClock(t *testing.T) {
 	}
 	// End to end: a stamp 5m ahead on a server write 9m ago is 9m old, so it
 	// is fresh at maxAge 10m and stale at 8m — never "fresh for 15m".
-	old := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{{Time: ptr.To(metav1.NewTime(server.Add(-9 * time.Minute)))}}}}
+	old := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{{Time: ptr.To(metav1.NewTime(server.Add(-9 * time.Minute))), FieldsV1: dataWrite}}}}
 	bound := nodeHealthObservedBound(server.Add(5*time.Minute), old)
 	if !nodeHealthReportFresh(bound, server, 10*time.Minute) || nodeHealthReportFresh(bound, server, 8*time.Minute) {
 		t.Fatal("age must follow the server write time, not the future stamp")
@@ -608,5 +613,37 @@ func TestReportCoversSpecRejectsAnEmptyDigest(t *testing.T) {
 	report.ItemsDigest = nodehealth.ItemsDigest(items)
 	if !nodeHealthReportCoversSpec(report, items) {
 		t.Fatal("a report with the current digest and matching checks must cover the spec")
+	}
+}
+
+// TestNodeHealthObservedBoundIgnoresAdoptionWrites pins that the operator's
+// own owner-reference write does not count as report arrival: only the
+// managedFields entry that wrote the payload (f:data) bounds freshness, so
+// adopting a report cannot keep a stopped agent's old report fresh.
+func TestNodeHealthObservedBoundIgnoresAdoptionWrites(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	agentWrite := now.Add(-9 * time.Minute)
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{
+		{Manager: "node-agent", Time: ptr.To(metav1.NewTime(agentWrite)), FieldsV1: metav1.NewFieldsV1(`{"f:data":{"f:report.json":{}}}`)},
+		{Manager: "manager", Time: ptr.To(metav1.NewTime(now)), FieldsV1: metav1.NewFieldsV1(`{"f:metadata":{"f:ownerReferences":{}}}`)},
+	}}}
+	if got := nodeHealthObservedBound(now.Add(time.Hour), cm); !got.Equal(agentWrite) {
+		t.Fatalf("bound = %v, want the agent's data write %v, not the adoption write", got, agentWrite)
+	}
+}
+
+// TestRejectedItemsIncludeSocketCollisions pins that a headroom path equal to
+// a ContainerRuntime socket (default included) is a rejected specification on
+// an older-CRD object, never a directory mounted over a socket.
+func TestRejectedItemsIncludeSocketCollisions(t *testing.T) {
+	t.Parallel()
+	check := nhCheck(
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+	)
+	rejected := rejectedNodeHealthItems(check)
+	if len(rejected) != 1 || !strings.Contains(rejected[0], "collides with ContainerRuntime socketPath") {
+		t.Fatalf("rejected = %v, want the socket collision", rejected)
 	}
 }

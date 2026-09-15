@@ -396,3 +396,31 @@ func TestLivenessFollowsPublication(t *testing.T) {
 		t.Fatal("a forbidden ConfigMap write must surface as a publish error")
 	}
 }
+
+// TestProbeHealthz pins the exec liveness probe: 200 passes, anything else
+// (or an unreachable listener) fails, and the flag is parsed in both forms
+// ahead of the agent's normal flag set.
+func TestProbeHealthz(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer ok.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "stale", http.StatusServiceUnavailable) }))
+	defer bad.Close()
+	if err := probeHealthz(ok.URL+"/healthz", time.Second); err != nil {
+		t.Fatalf("200 must pass: %v", err)
+	}
+	if err := probeHealthz(bad.URL+"/healthz", time.Second); err == nil {
+		t.Fatal("503 must fail the probe")
+	}
+	if err := probeHealthz("http://127.0.0.1:1/healthz", 500*time.Millisecond); err == nil {
+		t.Fatal("an unreachable listener must fail the probe")
+	}
+	if got := probeHealthzArg([]string{"--probe-healthz", "http://x/healthz"}); got != "http://x/healthz" {
+		t.Fatalf("flag form = %q", got)
+	}
+	if got := probeHealthzArg([]string{"--probe-healthz=http://y/healthz"}); got != "http://y/healthz" {
+		t.Fatalf("equals form = %q", got)
+	}
+	if got := probeHealthzArg([]string{"--mode", "health"}); got != "" {
+		t.Fatalf("absent flag = %q, want empty", got)
+	}
+}
