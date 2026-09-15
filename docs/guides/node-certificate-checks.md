@@ -315,8 +315,10 @@ The agent is built for least privilege:
   cannot be provisioned, the check fails closed before new agent provisioning,
   report collection, or roll-up: `Ready=False / AdmissionPolicyProvisioningFailed`
   and `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
-  verdict and time remain frozen. Existing agents may continue running, but
-  their reports are not consumed until enforcement recovers.
+  verdict and time remain frozen. The operator clears an existing agent's scoped
+  report permissions and removes its DaemonSet. If either revocation step fails,
+  `Ready=False / AgentRevocationFailed` records the failure while report
+  collection remains stopped.
 
   The policy also makes the managed-by, source-kind, and source-name labels and
   the node-name annotation immutable on update. Owner-reference-only adoption

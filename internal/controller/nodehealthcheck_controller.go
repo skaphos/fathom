@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -261,6 +262,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason:             reasonAuthenticityUnavailable,
 			Message:            "Report authenticity enforcement is unavailable: " + err.Error(),
 		})
+		if revokeErr := r.revokeAgent(ctx, &check); revokeErr != nil {
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", errors.Join(
+				fmt.Errorf("report authenticity enforcement is unavailable: %w", err),
+				revokeErr,
+			))
+		}
 		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
 	saName, err := r.ensureAgentRBAC(ctx, &check)
@@ -415,7 +422,8 @@ func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger,
 // nothing about what the last complete evaluation found.
 func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, reason string, cause error) (ctrl.Result, error) {
 	authentic := apiMeta.FindStatusCondition(check.Status.Conditions, nodeHealthConditionAuthentic)
-	if reason != "AdmissionPolicyProvisioningFailed" || authentic == nil || authentic.ObservedGeneration != check.Generation || authentic.Reason != reasonAuthenticityUnavailable {
+	preserveAuthenticityFailure := reason == "AdmissionPolicyProvisioningFailed" || reason == "AgentRevocationFailed"
+	if !preserveAuthenticityFailure || authentic == nil || authentic.ObservedGeneration != check.Generation || authentic.Reason != reasonAuthenticityUnavailable {
 		r.setReportsNotCollected(check)
 	}
 	r.setReady(check, metav1.ConditionFalse, reason, cause.Error())
@@ -472,19 +480,20 @@ func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr
 }
 
 // revokeAgent removes the node-agent DaemonSet for a specification the
-// operator will not run. Report update access is cleared before the agent is
-// removed, so a still-valid ServiceAccount token cannot retain its old node
-// grants. The owner-referenced ServiceAccount, bindings, empty Role, and
+// operator will not run. Clearing report update access and deleting the agent
+// are both attempted, so failure of one does not prevent the other revocation
+// step. The owner-referenced ServiceAccount, bindings, empty Role, and
 // NetworkPolicy are harmless while idle and remain for later reconciliation.
 func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
+	var revokeErrors []error
 	if err := clearScopedReportAccess(ctx, r.Client, check, nodeHealthAgentResourceName(check)); err != nil {
-		return fmt.Errorf("revoke node-agent report access for a rejected specification: %w", err)
+		revokeErrors = append(revokeErrors, fmt.Errorf("revoke node-agent report access: %w", err))
 	}
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}}
 	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("remove node-agent DaemonSet for a rejected specification: %w", err)
+		revokeErrors = append(revokeErrors, fmt.Errorf("remove node-agent DaemonSet: %w", err))
 	}
-	return nil
+	return errors.Join(revokeErrors...)
 }
 
 // invalidateAgentConditions marks the conditions that describe a provisioned
@@ -519,10 +528,13 @@ func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *
 
 	rb := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
-		rb.Labels = mergeLabels(rb.Labels, labels)
+		expectedRoleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
 		if rb.CreationTimestamp.IsZero() {
-			rb.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
+			rb.RoleRef = expectedRoleRef
+		} else if rb.RoleRef != expectedRoleRef {
+			return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", rb.Namespace, rb.Name, rb.RoleRef.Kind, rb.RoleRef.Name, r.roleName())
 		}
+		rb.Labels = mergeLabels(rb.Labels, labels)
 		rb.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: name, Namespace: check.Namespace}}
 		return controllerutil.SetControllerReference(check, rb, r.Scheme)
 	}); err != nil {

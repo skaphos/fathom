@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,8 +59,9 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 
 				now := time.Now().Truncate(time.Second)
 				check := &fathomv1alpha1.NodeCertificateCheck{
-					ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-unavailable", Namespace: "default", Generation: 2},
+					ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-unavailable", Namespace: "default", UID: "check-uid", Generation: 2},
 				}
+				objects := []client.Object{check}
 				if previouslyHealthy {
 					lastRun := metav1.NewTime(now.Add(-time.Minute))
 					check.Status = fathomv1alpha1.NodeCertificateCheckStatus{
@@ -72,6 +74,17 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 							{Type: nodeCertConditionAuthentic, Status: metav1.ConditionTrue, Reason: "AllReportsBound", ObservedGeneration: 1},
 						},
 					}
+					controller := true
+					objects = append(objects,
+						&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}},
+						&rbacv1.Role{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
+								OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+							},
+							Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{nodecert.NodeReportConfigMapName(check.Name, "node-a")}, Verbs: []string{"get", "update"}}},
+						},
+					)
 				}
 
 				report := nodecert.NodeReport{
@@ -100,7 +113,8 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 					GroupKind:        schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: unavailableKind},
 					SearchedVersions: []string{"v1"},
 				}
-				cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, cm).
+				objects = append(objects, cm)
+				cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
 					WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
 					WithInterceptorFuncs(interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 						policyUnavailable := false
@@ -152,6 +166,18 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 						t.Errorf("agent object %T exists or lookup failed: %v", obj, err)
 					}
 				}
+				role := &rbacv1.Role{}
+				roleErr := cl.Get(context.Background(), client.ObjectKey{Namespace: check.Namespace, Name: scopedReportAccessName(agentResourceName(check))}, role)
+				if previouslyHealthy {
+					if roleErr != nil {
+						t.Fatalf("get scoped report Role: %v", roleErr)
+					}
+					if len(role.Rules) != 0 {
+						t.Errorf("scoped report Role retained access after authenticity failure: %+v", role.Rules)
+					}
+				} else if !apierrors.IsNotFound(roleErr) {
+					t.Errorf("new check unexpectedly provisioned scoped report Role: %v", roleErr)
+				}
 				var reports fathomv1alpha1.HealthReportList
 				if err := cl.List(context.Background(), &reports, client.InNamespace(check.Namespace)); err != nil {
 					t.Fatal(err)
@@ -161,6 +187,172 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) {
+	t.Parallel()
+	lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
+	check := &fathomv1alpha1.NodeCertificateCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-revoke-fails", Namespace: "default", UID: "check-uid", Generation: 2},
+		Status: fathomv1alpha1.NodeCertificateCheckStatus{
+			LastRunTime: &lastRun, LastResult: string(fathomv1alpha1.HealthReportResultPass), LastReportName: "historical-report",
+			Conditions: []metav1.Condition{
+				{Type: nodeCertConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1},
+				{Type: nodeCertConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1},
+				{Type: nodeCertConditionCoverage, Status: metav1.ConditionTrue, Reason: "Complete", ObservedGeneration: 1},
+				{Type: nodeCertConditionAuthentic, Status: metav1.ConditionTrue, Reason: "AllReportsBound", ObservedGeneration: 1},
+			},
+		},
+	}
+	controller := true
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+		},
+		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
+	}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	scheme := newProvisioningScheme(t)
+	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
+	deleteDenied := apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, agent.Name, errors.New("delete denied"))
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, agent).
+		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*admissionregistrationv1.ValidatingAdmissionPolicy); ok {
+					return noMatch
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				if _, ok := obj.(*appsv1.DaemonSet); ok {
+					return deleteDenied
+				}
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).Build()
+	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img"}
+	key := client.ObjectKeyFromObject(check)
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key})
+	if !errors.Is(err, errReportAuthenticityUnavailable) || !errors.Is(err, deleteDenied) {
+		t.Fatalf("Reconcile error = %v, want joined authenticity and revocation causes", err)
+	}
+	got := &fathomv1alpha1.NodeCertificateCheck{}
+	if err := cl.Get(context.Background(), key, got); err != nil {
+		t.Fatal(err)
+	}
+	for _, typ := range []string{nodeCertConditionReady, nodeCertConditionAgentReady, nodeCertConditionCoverage} {
+		condition := apiMeta.FindStatusCondition(got.Status.Conditions, typ)
+		if condition == nil || condition.Status != metav1.ConditionFalse || condition.Reason != "AgentRevocationFailed" {
+			t.Errorf("%s = %+v, want False/AgentRevocationFailed", typ, condition)
+		}
+	}
+	authentic := apiMeta.FindStatusCondition(got.Status.Conditions, nodeCertConditionAuthentic)
+	if authentic == nil || authentic.Status != metav1.ConditionUnknown || authentic.Reason != reasonAuthenticityUnavailable {
+		t.Errorf("ReportsAuthentic = %+v, want Unknown/%s", authentic, reasonAuthenticityUnavailable)
+	}
+	if got.Status.LastResult != string(fathomv1alpha1.HealthReportResultPass) || got.Status.LastReportName != "historical-report" || got.Status.LastRunTime == nil || !got.Status.LastRunTime.Equal(&lastRun) {
+		t.Errorf("historical verdict changed: %+v", got.Status)
+	}
+	cleared := &rbacv1.Role{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(role), cleared); err != nil {
+		t.Fatal(err)
+	}
+	if len(cleared.Rules) != 0 {
+		t.Errorf("scoped Role retained rules after delete failure: %+v", cleared.Rules)
+	}
+}
+
+func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *testing.T) {
+	t.Parallel()
+	check := &fathomv1alpha1.NodeCertificateCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-role-clear-fails", Namespace: "default", UID: "check-uid", Generation: 2},
+		Status:     fathomv1alpha1.NodeCertificateCheckStatus{LastResult: string(fathomv1alpha1.HealthReportResultPass)},
+	}
+	controller := true
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+		},
+		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
+	}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	scheme := newProvisioningScheme(t)
+	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
+	updateDenied := apierrors.NewForbidden(schema.GroupResource{Group: rbacv1.GroupName, Resource: "roles"}, role.Name, errors.New("update denied"))
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, agent).
+		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*admissionregistrationv1.ValidatingAdmissionPolicy); ok {
+					return noMatch
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if _, ok := obj.(*rbacv1.Role); ok {
+					return updateDenied
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).Build()
+	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img"}
+	key := client.ObjectKeyFromObject(check)
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key})
+	if !errors.Is(err, errReportAuthenticityUnavailable) || !errors.Is(err, updateDenied) {
+		t.Fatalf("Reconcile error = %v, want joined authenticity and Role-update causes", err)
+	}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(agent), &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("DaemonSet deletion was not attempted after Role update failure: %v", err)
+	}
+	got := &fathomv1alpha1.NodeCertificateCheck{}
+	if err := cl.Get(context.Background(), key, got); err != nil {
+		t.Fatal(err)
+	}
+	ready := apiMeta.FindStatusCondition(got.Status.Conditions, nodeCertConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "AgentRevocationFailed" {
+		t.Errorf("Ready = %+v, want False/AgentRevocationFailed", ready)
+	}
+	authentic := apiMeta.FindStatusCondition(got.Status.Conditions, nodeCertConditionAuthentic)
+	if authentic == nil || authentic.Status != metav1.ConditionUnknown || authentic.Reason != reasonAuthenticityUnavailable {
+		t.Errorf("ReportsAuthentic = %+v, want Unknown/%s", authentic, reasonAuthenticityUnavailable)
+	}
+}
+
+func TestNodeCertExistingAgentRoleBindingMustReferenceSharedClusterRole(t *testing.T) {
+	t.Parallel()
+	check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-wrong-role-ref", Namespace: "default", Generation: 1}}
+	binding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace, CreationTimestamp: metav1.Now()},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "foreign-role"},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "victim", Namespace: check.Namespace}},
+	}
+	scheme := newProvisioningScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding).WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).Build()
+	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img"}
+	key := client.ObjectKeyFromObject(check)
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key}); err == nil || !strings.Contains(err.Error(), "immutable roleRef") {
+		t.Fatalf("Reconcile error = %v, want immutable roleRef failure", err)
+	}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding.RoleRef.Name != "foreign-role" || len(binding.Subjects) != 1 || binding.Subjects[0].Name != "victim" {
+		t.Errorf("foreign RoleBinding was adopted or mutated: %+v", binding)
+	}
+	if err := cl.Get(context.Background(), client.ObjectKey{Namespace: check.Namespace, Name: agentResourceName(check)}, &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("DaemonSet exists after RoleBinding validation failure: %v", err)
+	}
+	got := &fathomv1alpha1.NodeCertificateCheck{}
+	if err := cl.Get(context.Background(), key, got); err != nil {
+		t.Fatal(err)
+	}
+	ready := apiMeta.FindStatusCondition(got.Status.Conditions, nodeCertConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "RBACProvisioningFailed" {
+		t.Errorf("Ready = %+v, want False/RBACProvisioningFailed", ready)
 	}
 }
 

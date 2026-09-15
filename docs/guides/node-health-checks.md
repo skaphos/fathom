@@ -249,8 +249,11 @@ closed before provisioning agents, collecting reports, or rolling up a
 verdict: `Ready=False / AdmissionPolicyProvisioningFailed` and
 `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
 `lastResult`, `lastRunTime`, `lastReportName`, and `nodeResults` remain frozen.
-Existing agents may continue running, but their reports are not consumed until
-enforcement recovers. See the same requirement in the
+The controller attempts both clearing the existing agent's scoped report
+permissions and deleting its DaemonSet. If either step fails, `Ready=False /
+AgentRevocationFailed` reports the cleanup failure alongside the admission
+error. Reports are not consumed until enforcement recovers. See the same
+requirement in the
 [node certificate guide](node-certificate-checks.md).
 
 After the policy is available, it also makes the managed-by, source-kind, and

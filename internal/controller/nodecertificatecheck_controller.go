@@ -284,6 +284,11 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
 	if err != nil {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, false))
+		if revokeErr := r.revokeNodeCertAgent(ctx, &check); revokeErr != nil {
+			cause := errors.Join(err, fmt.Errorf("revoke node-agent after report authenticity enforcement failed: %w", revokeErr))
+			r.invalidateAgentConditions(&check, "AgentRevocationFailed", "Report authenticity enforcement failed and the existing agent could not be fully revoked; its state and coverage are unknown: "+cause.Error())
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", cause)
+		}
 		r.invalidateAgentConditions(&check, "AdmissionPolicyProvisioningFailed", "Report authenticity enforcement failed for this generation; the agent's state and report coverage are unknown: "+err.Error())
 		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
@@ -414,16 +419,8 @@ func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Lo
 }
 
 func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
-	// Revoke report updates before stopping the agent. The owner-referenced RBAC
-	// objects remain for an idempotent resume, but their scoped Role has no rules.
-	if err := clearScopedReportAccess(ctx, r.Client, check, agentResourceName(check)); err != nil {
-		return fmt.Errorf("revoke node-agent report access while paused: %w", err)
-	}
-	// Stop scanning by deleting the agent DaemonSet. Report ConfigMaps remain as
-	// bounded history and the most recent Status snapshot is preserved.
-	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
-	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
-		return err
+	if err := r.revokeNodeCertAgent(ctx, check); err != nil {
+		return fmt.Errorf("revoke node-agent while paused: %w", err)
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeCertConditionPaused,
@@ -442,6 +439,21 @@ func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, ch
 	r.setReady(check, metav1.ConditionFalse, "Paused", "NodeCertificateCheck is paused.")
 	check.Status.DesiredNodes = 0
 	return nil
+}
+
+// revokeNodeCertAgent clears update access and removes the DaemonSet without
+// changing status. Both operations are attempted so either one can still
+// reduce authority when the other fails.
+func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
+	var errs []error
+	if err := clearScopedReportAccess(ctx, r.Client, check, agentResourceName(check)); err != nil {
+		errs = append(errs, fmt.Errorf("clear scoped report access: %w", err))
+	}
+	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete node-agent DaemonSet: %w", err))
+	}
+	return errors.Join(errs...)
 }
 
 func (r *NodeCertificateCheckReconciler) roleName() string {
@@ -682,9 +694,12 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 	rb := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
 		rb.Labels = mergeLabels(rb.Labels, labels)
+		expectedRoleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
 		if rb.CreationTimestamp.IsZero() {
 			// RoleRef is immutable: set it only on create.
-			rb.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
+			rb.RoleRef = expectedRoleRef
+		} else if rb.RoleRef != expectedRoleRef {
+			return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", rb.Namespace, rb.Name, rb.RoleRef.Kind, rb.RoleRef.Name, expectedRoleRef.Name)
 		}
 		rb.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: name, Namespace: check.Namespace}}
 		return controllerutil.SetControllerReference(check, rb, r.Scheme)

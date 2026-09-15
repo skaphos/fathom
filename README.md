@@ -288,8 +288,11 @@ in resource labels. If the shared report-authenticity admission policy cannot
 be used, both node-scoped checks stop before provisioning or consuming reports
 and retain their last complete verdict (`Ready=False /
 AdmissionPolicyProvisioningFailed`, `ReportsAuthentic=Unknown /
-EnforcementUnavailable`). Existing agents may continue running, but their
-reports are not consumed until enforcement recovers.
+EnforcementUnavailable`). The controller attempts to clear scoped report
+permissions and delete any existing agent before returning the policy error.
+If either revocation step fails, `Ready=False / AgentRevocationFailed` reports
+that failure alongside the admission error; reports are not consumed until
+enforcement recovers.
 
 Node-agents receive namespace-scoped ConfigMap creation plus `get`/`update`
 only on canonical report names for their current DaemonSet pods. Admission

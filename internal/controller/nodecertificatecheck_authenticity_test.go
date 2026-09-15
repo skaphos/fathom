@@ -525,6 +525,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal("RBACRevocationFailed"))
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})).To(Succeed(), "the agent must not be deleted before its access is revoked")
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "DaemonSet deletion must still be attempted when Role revocation fails")
 	})
 })
