@@ -174,8 +174,8 @@ type NodeHealthCheckItem struct {
 // later with an error that says nothing about the specification that caused
 // it. Two ContainerRuntime items with different sockets are distinct. The
 // pathless types key on their own type name rather than an empty string:
-// gofmt rewrites a ” sequence inside a doc comment as a typographic quote,
-// which would silently break the rule at CRD install.
+// gofmt rewrites two adjacent apostrophes inside a doc comment as a
+// typographic quote, which would silently break the rule at CRD install.
 // +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? (has(o.socketPath) ? o.socketPath : '/run/containerd/containerd.sock') : o.type)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? (has(c.socketPath) ? c.socketPath : '/run/containerd/containerd.sock') : c.type))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
 type NodeHealthCheckSpec struct {
 	// Checks are the assertions made on every node in scope. At least one is
