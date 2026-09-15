@@ -135,11 +135,11 @@ func SocketPathAllowed(p string) bool {
 // MountDirs returns the host directories the agent must have mounted
 // read-only to measure every headroom item: one mount per requested
 // directory, parents first, duplicates removed, the host root never. Each
-// requested path is mounted itself — with hostPath DirectoryOrCreate — rather
-// than collapsed into a requested ancestor: a nested mount exposes nothing
-// the ancestor did not, and collapsing it left a requested child that does
-// not exist on a node unmounted and therefore Skipped instead of created and
-// measured as documented. Every headroom path is a directory by contract;
+// requested path is mounted itself — with hostPath Directory — rather than
+// collapsed into a requested ancestor: a nested mount exposes nothing the
+// ancestor did not. Exact non-creating mounts also prevent a check from
+// seeding an absent directory on the host and then measuring the filesystem
+// that would hold it. Every headroom path is a directory by contract;
 // nodecert.MinimalMountDirs is not reused because its file heuristic turns a
 // directory with a dot in its last segment (/var/log/app.v1) into its parent.
 // Socket paths are not included: the socket is mounted individually with

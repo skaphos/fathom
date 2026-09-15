@@ -14,11 +14,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -27,6 +30,17 @@ import (
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
+
+func reportWriterClient(namespace, serviceAccount, claimNode string) client.Client {
+	impersonated := rest.CopyConfig(cfg)
+	impersonated.Impersonate = rest.ImpersonationConfig{
+		UserName: "system:serviceaccount:" + namespace + ":" + serviceAccount,
+		Extra:    map[string][]string{"authentication.kubernetes.io/node-name": {claimNode}},
+	}
+	c, err := client.New(impersonated, client.Options{Scheme: k8sClient.Scheme()})
+	Expect(err).NotTo(HaveOccurred())
+	return c
+}
 
 // writeReportWithAnnotation writes a per-node report ConfigMap where the payload's
 // Node and the authenticity node-name annotation can be set independently, so a
@@ -293,6 +307,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(policy.Spec.Validations).To(HaveLen(2))
 		Expect(policy.Spec.Validations[0].Expression).To(Equal("variables.identityUnchanged"))
 		Expect(policy.Spec.Validations[1].Expression).To(ContainSubstring("variables.annotatedNode == variables.claimNode"))
+		Expect(policy.Spec.Validations[1].Expression).To(ContainSubstring("request.userInfo.username == variables.expectedWriter"))
 		// The operator's own adoption Update carries no node claim, so it passes
 		// on the content-unchanged branch rather than an identity carve-out.
 		Expect(policy.Spec.Validations[1].Expression).To(ContainSubstring("variables.contentUnchanged"))
@@ -314,9 +329,23 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		// independent of which Ginkgo example happened to create it first.
 		_, err := newNodeCertReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		Expect(err).NotTo(HaveOccurred())
-
+		healthServiceAccount := check.Name + nodeHealthAgentSuffix
+		healthWriterBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "identity-node-health-writer", Namespace: check.Namespace},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: healthServiceAccount, Namespace: check.Namespace}},
+		}
+		Expect(k8sClient.Create(ctx, healthWriterBinding)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, healthWriterBinding))).To(Succeed()) })
 		for _, sourceKind := range []string{nodecert.KindNodeCertificateCheck, nodehealth.KindNodeHealthCheck} {
 			sourceKind := sourceKind
+			serviceAccount := agentResourceName(check)
+			if sourceKind == nodehealth.KindNodeHealthCheck {
+				serviceAccount = healthServiceAccount
+			}
+			writer := func(node string) client.Client {
+				return reportWriterClient(check.Namespace, serviceAccount, node)
+			}
 			By("protecting " + sourceKind + " report identity")
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
@@ -331,7 +360,10 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 				},
 				Data: map[string]string{nodecert.ConfigMapReportKey: `{"node":"node-a","generation":1}`},
 			}
-			Expect(nodeAgentClient(check, "node-a").Create(ctx, cm)).To(Succeed())
+			// Grant this deliberately non-canonical fixture's name so every update
+			// reaches admission; these assertions exercise the policy, not RBAC.
+			Expect(ensureScopedReportRBAC(ctx, k8sClient, k8sClient.Scheme(), check, agentLabels(check), serviceAccount, []string{cm.Name})).To(Succeed())
+			Expect(writer("node-a").Create(ctx, cm)).To(Succeed())
 			DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cm))).To(Succeed()) })
 
 			mutations := []struct {
@@ -350,7 +382,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 				current := &corev1.ConfigMap{}
 				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), current)).To(Succeed())
 				mutation.mutate(current)
-				err := nodeAgentClient(check, "node-b").Update(ctx, current)
+				err := writer("node-b").Update(ctx, current)
 				Expect(err).To(HaveOccurred(), mutation.name+" must be denied for "+sourceKind)
 				Expect(apierrors.IsForbidden(err)).To(BeTrue(), "expected admission denial for %s/%s, got: %v", sourceKind, mutation.name, err)
 			}
@@ -365,7 +397,134 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 			// The genuine node may refresh report content while retaining identity.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), current)).To(Succeed())
 			current.Data[nodecert.ConfigMapReportKey] = `{"node":"node-a","generation":2}`
-			Expect(nodeAgentClient(check, "node-a").Update(ctx, current)).To(Succeed())
+			Expect(writer("node-a").Update(ctx, current)).To(Succeed())
+
+			// A different check's agent on the same node has an equally valid node
+			// claim and namespace-wide ConfigMap permission, but it is not the
+			// ServiceAccount named by this report's source identity.
+			crossCheck := cm.DeepCopy()
+			crossCheck.ResourceVersion = ""
+			crossCheck.UID = ""
+			crossCheck.OwnerReferences = nil
+			crossCheck.Name += "-cross-check"
+			crossCheck.Labels[nodecert.LabelSourceName] = check.Name + "-victim"
+			err = writer("node-a").Create(ctx, crossCheck)
+			Expect(err).To(HaveOccurred(), "one check's %s agent must not write another check's report", sourceKind)
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(), "expected cross-check admission denial for %s, got: %v", sourceKind, err)
 		}
+	})
+
+	It("limits report reads and updates to the check's active canonical report names", func() {
+		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-scoped-rbac", Namespace: "default"}}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+		Expect(err).NotTo(HaveOccurred())
+		sharedRole := &rbacv1.ClusterRole{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: defaultNodeAgentRoleName}, sharedRole)).To(Succeed())
+		Expect(sharedRole.Rules).To(HaveLen(1))
+		Expect(sharedRole.Rules[0].Verbs).To(Equal([]string{"create"}))
+		scheduleAgentPods(ctx, check, "node-a")
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+		Expect(err).NotTo(HaveOccurred())
+
+		role := &rbacv1.Role{}
+		roleKey := types.NamespacedName{Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace}
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(role.Rules).To(HaveLen(1))
+		ownName := nodecert.NodeReportConfigMapName(check.Name, "node-a")
+		Expect(role.Rules[0].ResourceNames).To(Equal([]string{ownName}))
+		Expect(role.Rules[0].Verbs).To(ConsistOf("get", "update"))
+
+		writer := reportWriterClient(check.Namespace, agentResourceName(check), "node-a")
+		own := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+			Name: ownName, Namespace: check.Namespace,
+			Labels: map[string]string{
+				nodecert.LabelManagedBy: nodecert.ManagedByValue, nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
+				nodecert.LabelSourceName: check.Name, nodecert.LabelNode: "node-a",
+			},
+			Annotations: map[string]string{nodecert.AnnotationNodeName: "node-a"},
+		}, Data: map[string]string{nodecert.ConfigMapReportKey: `{"node":"node-a"}`}}
+		Expect(writer.Create(ctx, own)).To(Succeed(), "the shared ClusterRole retains the minimum create capability")
+		Eventually(func() error { return writer.Get(ctx, client.ObjectKeyFromObject(own), &corev1.ConfigMap{}) }).Should(Succeed())
+		Expect(writer.Get(ctx, client.ObjectKeyFromObject(own), own)).To(Succeed())
+		own.Data[nodecert.ConfigMapReportKey] = `{"node":"node-a","generation":2}`
+		Expect(writer.Update(ctx, own)).To(Succeed())
+
+		ordinary := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "ordinary-config", Namespace: check.Namespace}}
+		Expect(k8sClient.Create(ctx, ordinary)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ordinary))).To(Succeed()) })
+		crossCheck := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: nodecert.NodeReportConfigMapName("another-check", "node-a"), Namespace: check.Namespace}}
+		Expect(k8sClient.Create(ctx, crossCheck)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, crossCheck))).To(Succeed()) })
+		for _, forbidden := range []*corev1.ConfigMap{ordinary, crossCheck} {
+			err = writer.Get(ctx, client.ObjectKeyFromObject(forbidden), &corev1.ConfigMap{})
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(), "GET %s must be denied, got %v", forbidden.Name, err)
+			forbidden.Data = map[string]string{"changed": "true"}
+			err = writer.Update(ctx, forbidden)
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(), "UPDATE %s must be denied, got %v", forbidden.Name, err)
+		}
+
+		scheduleAgentPods(ctx, check)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(role.Rules).To(BeEmpty(), "an empty resourceNames rule would grant every ConfigMap")
+		Eventually(func() bool {
+			err := writer.Get(ctx, client.ObjectKeyFromObject(own), &corev1.ConfigMap{})
+			return apierrors.IsForbidden(err)
+		}).Should(BeTrue(), "a departed node's report permission must be revoked")
+	})
+
+	It("revokes scoped report updates while paused and persists revocation failures", func() {
+		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-pause-rbac", Namespace: "default"}}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeCertReconciler()
+		request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)}
+		_, err := r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		scheduleAgentPods(ctx, check, "node-a")
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+
+		roleKey := types.NamespacedName{Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace}
+		role := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(role.Rules).NotTo(BeEmpty())
+		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
+		check.Spec.Paused = true
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		Expect(role.Rules).To(BeEmpty())
+
+		// A role that lost the check's controller reference is not ours to edit.
+		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
+		check.Spec.Paused = false
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		scheduleAgentPods(ctx, check, "node-a")
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
+		role.OwnerReferences = nil
+		Expect(k8sClient.Update(ctx, role)).To(Succeed())
+		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
+		check.Spec.Paused = true
+		Expect(k8sClient.Update(ctx, check)).To(Succeed())
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).To(HaveOccurred())
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, request.NamespacedName, updated)).To(Succeed())
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal("RBACRevocationFailed"))
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})).To(Succeed(), "the agent must not be deleted before its access is revoked")
 	})
 })

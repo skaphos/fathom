@@ -247,7 +247,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		// /var/lib/kubelet and /var/log: two read-only directory mounts, no socket.
 		Expect(pod.Volumes).To(HaveLen(2))
 		for _, v := range pod.Volumes {
-			Expect(*v.HostPath.Type).To(Equal(corev1.HostPathDirectoryOrCreate))
+			Expect(*v.HostPath.Type).To(Equal(corev1.HostPathDirectory), "headroom mounts must never create missing host directories")
 		}
 		for _, m := range container.VolumeMounts {
 			Expect(m.ReadOnly).To(BeTrue())
@@ -262,6 +262,26 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		rb := &rbacv1.RoleBinding{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, rb)).To(Succeed())
 		Expect(rb.RoleRef.Name).To(Equal(defaultNodeAgentRoleName), "reuses the shared node-agent ClusterRole")
+		scopedName := scopedReportAccessName(sa.Name)
+		scopedRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedRole)).To(Succeed())
+		Expect(scopedRole.Rules).To(BeEmpty(), "an unscheduled agent must not receive wildcard report access")
+		scopedBinding := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedBinding)).To(Succeed())
+		Expect(scopedBinding.RoleRef).To(Equal(rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: scopedName}))
+		Expect(scopedBinding.Subjects).To(ConsistOf(rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: sa.Name, Namespace: "default"}))
+
+		// Once the DaemonSet has a pod, the per-check Role grants get/update
+		// only on that node's deterministic report name.
+		scheduleNodeHealthAgentPods(ctx, check, "node-a")
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedRole)).To(Succeed())
+		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"},
+			ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")},
+			Verbs:         []string{"get", "update"},
+		}))
 		np := &networkingv1.NetworkPolicy{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, np)).To(Succeed())
 		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(ds.Spec.Selector.MatchLabels))
@@ -354,6 +374,14 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-idem-node-health-agent", Namespace: "default"}, ds)).To(Succeed())
 		Expect(ds.Generation).To(Equal(gen), "template rewritten without an intent change (#143 churn class)")
 		Expect(ds.Annotations[nodeAgentSpecHashAnnotation]).To(Equal(hash))
+
+		stable := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, stable)).To(Succeed())
+		statusVersion := stable.ResourceVersion
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, stable)).To(Succeed())
+		Expect(stable.ResourceVersion).To(Equal(statusVersion), "a no-op reconcile rewrote status")
 	})
 
 	It("rolls up agent reports merged with operator-graded node conditions, and writes a new HealthReport only on transition", func() {

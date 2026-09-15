@@ -99,14 +99,14 @@ func TestSnapshot_PerKind(t *testing.T) {
 			obj: &fathomv1alpha1.NodeHealthCheck{
 				Status: fathomv1alpha1.NodeHealthCheckStatus{
 					LastResult: "Fail", Summary: "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free", Conditions: ready,
-					LastRunTime: &snapLast, LastReportName: "nhc-1", LastRunTrigger: "tok-4",
+					LastRunTime: &snapLast, LastReportName: "nhc-1", LastRunTrigger: "tok-4", DesiredNodes: 2,
 				},
 			},
 			want: snapshot{
 				Verdict: "Fail", Summary: "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free", LastRun: &snapLast,
 				NextRun: ptrTime(snapLast.Add(fathomv1alpha1.DefaultNodeHealthCheckInterval)), ReportName: "nhc-1", ConsumedTrigger: "tok-4",
 			},
-			wantTimeout: 2 * fathomv1alpha1.DefaultNodeHealthCheckTimeout, // evaluation + publication
+			wantTimeout: 2 * (nodeAgentPodRolloutMargin + 2*fathomv1alpha1.DefaultNodeHealthCheckTimeout),
 		},
 		{
 			name: "NodeHealthCheck falls back to the Ready message before its first roll-up",
@@ -114,7 +114,7 @@ func TestSnapshot_PerKind(t *testing.T) {
 				Status: fathomv1alpha1.NodeHealthCheckStatus{Conditions: ready},
 			},
 			want:        snapshot{Summary: "3 of 3 checks passed"},
-			wantTimeout: 2 * fathomv1alpha1.DefaultNodeHealthCheckTimeout, // evaluation + publication
+			wantTimeout: nodeAgentPodRolloutMargin + 2*fathomv1alpha1.DefaultNodeHealthCheckTimeout,
 		},
 		{
 			name: "HealthCheck mirrors source observation and interval",
@@ -165,23 +165,23 @@ func TestSnapshot_PerKind(t *testing.T) {
 			if !samePtrTime(got.NextRun, tt.want.NextRun) {
 				t.Errorf("NextRun = %v, want %v", got.NextRun, tt.want.NextRun)
 			}
-			if to := d.DefaultTimeout(tt.obj); to != tt.wantTimeout {
-				t.Errorf("DefaultTimeout = %s, want %s", to, tt.wantTimeout)
+			if to := d.DefaultWaitEstimate(tt.obj); to != tt.wantTimeout {
+				t.Errorf("DefaultWaitEstimate = %s, want %s", to, tt.wantTimeout)
 			}
 		})
 	}
 }
 
 // TestSnapshot_EveryKindWired guards the descriptor table: a kind added
-// without a Snapshot or DefaultTimeout would panic at first use.
+// without a Snapshot or DefaultWaitEstimate would panic at first use.
 func TestSnapshot_EveryKindWired(t *testing.T) {
 	for _, k := range kinds {
-		if k.Snapshot == nil || k.DefaultTimeout == nil {
-			t.Errorf("%s: Snapshot/DefaultTimeout not wired", k.Kind)
+		if k.Snapshot == nil || k.DefaultWaitEstimate == nil {
+			t.Errorf("%s: Snapshot/DefaultWaitEstimate not wired", k.Kind)
 			continue
 		}
 		_ = k.Snapshot(k.New())
-		_ = k.DefaultTimeout(k.New())
+		_ = k.DefaultWaitEstimate(k.New())
 	}
 }
 
@@ -257,6 +257,44 @@ func TestNodeHealthCheckPassTimeoutBudgetsEvaluationAndPublication(t *testing.T)
 	plain := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Timeout: &metav1.Duration{Duration: 20 * time.Second}}}
 	if got := nodeHealthCheckPassTimeout(plain); got != 40*time.Second {
 		t.Fatalf("pass timeout = %v, want 40s (20s evaluation + 20s publication)", got)
+	}
+}
+
+func TestNodeHealthCheckWaitEstimateScalesWithDesiredNodes(t *testing.T) {
+	t.Parallel()
+	timeout := &metav1.Duration{Duration: 20 * time.Second}
+	perNode := nodeAgentPodRolloutMargin + 40*time.Second
+	for _, tt := range []struct {
+		name  string
+		nodes int32
+		want  time.Duration
+	}{
+		{name: "status absent", want: perNode},
+		{name: "one node", nodes: 1, want: perNode},
+		{name: "four nodes", nodes: 4, want: 4 * perNode},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			check := &fathomv1alpha1.NodeHealthCheck{
+				Spec:   fathomv1alpha1.NodeHealthCheckSpec{Timeout: timeout},
+				Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: tt.nodes},
+			}
+			if got := nodeHealthCheckWaitEstimate(check); got != tt.want {
+				t.Fatalf("wait estimate = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNodeHealthCheckWaitEstimateSaturates(t *testing.T) {
+	t.Parallel()
+	day := &metav1.Duration{Duration: 24 * time.Hour}
+	check := &fathomv1alpha1.NodeHealthCheck{
+		Spec:   fathomv1alpha1.NodeHealthCheckSpec{Interval: day, Timeout: day},
+		Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
+	}
+	if got := nodeHealthCheckWaitEstimate(check); got != maxDuration {
+		t.Fatalf("wait estimate = %v, want saturated duration %v", got, maxDuration)
 	}
 }
 

@@ -214,8 +214,10 @@ reports into a `HealthReport`. A `HealthCheck` can project that status into
 
 The shared report-authenticity admission policy makes the managed-by,
 source-kind, and source-name labels and the node-name annotation immutable on
-update. Owner-reference-only adoption by the operator and legitimate same-node
-report refresh remain allowed.
+update. It accepts report content only from the exact ServiceAccount derived
+from those source labels and requires the writer's node-bound token claim to
+match the node annotation. Owner-reference-only adoption by the operator and
+legitimate same-node report refresh remain allowed.
 
 Status fields to start with:
 
@@ -275,7 +277,7 @@ Freshness and coverage rules:
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. Structural invalid specs are normally rejected by the API server from CRD validation before reconciliation. | Continue to `AgentReady` and `Ready`. |
 | `Paused` | `False / RunEnabled` | The node-agent is eligible to run. | None. |
-| `Paused` | `True / Paused` | `spec.paused=true`; the operator deletes the agent DaemonSet and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
+| `Paused` | `True / Paused` | `spec.paused=true`; the operator clears the scoped report Role, deletes the agent DaemonSet, and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged: the current generation is observed and every desired pod is updated and ready. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet exists but has not fully converged: the current generation is not yet observed, or not every desired pod is updated and ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
@@ -292,7 +294,8 @@ Freshness and coverage rules:
 | `ReportsAuthentic` | `True / AllReportsBound` | Every collected report is bound to the node it claims. | None. |
 | `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `ReportsAuthentic` | `False / ForgedReportRejected` | One or more reports failed a binding only a writer passing off another node's report can fail — a payload disagreeing with the node-name annotation, or a report at a non-canonical ConfigMap name. The message names the ConfigMaps (up to five) and the reason. The rejected reports are excluded from the aggregate. | Investigate: some principal with ConfigMap write in the namespace is attempting to steer a node's verdict. Check who holds `configmaps` write there, and confirm the report-authenticity `ValidatingAdmissionPolicy` is enforced. |
-| `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
+| `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/Role/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
+| `Ready` | `False / RBACRevocationFailed` | The scoped report Role could not be cleared or the DaemonSet could not be deleted while pausing, so the agent may remain running; agent state and coverage are unknown. Role clearing is attempted first, and a failure stops deletion. | Restore Role update and DaemonSet delete access, then retry the pause. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
 | `Ready` | `False / AdmissionPolicyProvisioningFailed` | Creating/updating the report-authenticity `ValidatingAdmissionPolicy` or its binding failed. | Check operator RBAC on `admissionregistration.k8s.io` and cluster API support. |
 | `Ready` | `False / NetworkPolicyProvisioningFailed` | Creating/updating the per-check node-agent `NetworkPolicy` failed. | Check operator RBAC on `networking.k8s.io` and admission policies. |
@@ -348,16 +351,17 @@ node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. | Continue to `AgentReady` and `Ready`. |
 | `Accepted` | `True / SpecClamped` | A stored sub-floor `interval`/`timeout` is running clamped to the floors. | Raise the field to the floor. |
-| `Accepted` | `False / ItemsRejected` | An item's `path` or `socketPath` is outside the operator's allowlist, or its `criticalPercentFree` is above the effective `warnPercentFree`. Only reachable for an object stored under an older CRD (admission rejects all of these today). The node-agent DaemonSet is **removed** — an agent from the previous generation may hold the host network or root and must not keep running under a refused spec — and the last complete verdict is retained, frozen. `AgentReady`, `AgentPrivileged`, `CoverageComplete`, and `Ready` carry the same reason, and `fathomctl run --wait` fails fast. | Fix or remove the item; the message names it. The agent is re-provisioned on the next accepted generation. |
+| `Accepted` | `False / ItemsRejected` | An item's `path` or `socketPath` is outside the operator's allowlist, or its `criticalPercentFree` is above the effective `warnPercentFree`. Only reachable for an object stored under an older CRD (admission rejects all of these today). The operator clears scoped report access before removing the node-agent DaemonSet, and retains the last complete verdict. `AgentReady`, `AgentPrivileged`, `CoverageComplete`, and `Ready` carry the same reason after successful revocation, and `fathomctl run --wait` fails fast. | Fix or remove the item; the message names it. The agent is re-provisioned on the next accepted generation. |
 | `AgentReady` | `False / ItemsRejected` | The agent was revoked because the spec was rejected (see `Accepted`). | As above. |
 | `AgentPrivileged` | `False / ItemsRejected` | No agent is running: the spec was rejected. | As above. |
-| `AgentPrivileged` | `Unknown / AgentRevocationFailed` | The spec was rejected but the previous generation's DaemonSet could not be removed; that agent may still be running with its earlier privileges. `Ready` carries the error and the reconcile retries. | Fix the cluster-side cause of the failed delete (RBAC, API availability); remove the DaemonSet by hand if urgent. |
+| `AgentPrivileged` | `Unknown / AgentRevocationFailed` | The spec was rejected but scoped report access could not be cleared or the previous generation's DaemonSet could not be removed; that agent may still be running with its earlier privileges. `Ready` carries the error and the reconcile retries. | Fix Role update or DaemonSet delete access and API availability; remove the DaemonSet by hand if urgent. |
 | `AgentReady` | `False / <step>ProvisioningFailed` | Provisioning failed at `<step>` (RBAC, AdmissionPolicy, NetworkPolicy, DaemonSet) for this generation; the agent's state is unknown. `Ready` carries the error. | Read the `Ready` message; fix the cluster-side cause. |
 | `CoverageComplete` | `False / ItemsRejected` or `False / <step>ProvisioningFailed` | Coverage cannot be evaluated for this generation because no agent was provisioned. The last complete verdict is retained. | As above. |
 | `AgentPrivileged` | `False / Hardened` | The resolved items need no privilege beyond read-only `hostPath` mounts: the agent runs non-root with no host network. | None. |
 | `AgentPrivileged` | `True / HostNetwork` | A `KubeletHealthz` item put the agent on the host network. The per-check NetworkPolicy does not isolate it; the message names the host metrics port. | Confirm this is intended; drop the item to return to the hardened profile. |
 | `AgentPrivileged` | `True / RunAsRoot` | A `ContainerRuntime` item runs the agent as root with the CRI socket mounted (capabilities still dropped). | Confirm this is intended. |
 | `AgentPrivileged` | `True / HostNetworkAndRoot` | Both of the above. | Confirm this is intended. |
+| `ReportsAuthentic` | `Unknown / ReportsNotCollected` | Reconciliation stopped before reports were collected, so an earlier generation's authenticity result is no longer current. | Read `Ready` for the provisioning or evaluation failure and retry after fixing it. |
 | `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet has not fully converged. On a privileged spec, check that the namespace's Pod Security level admits host-network / root pods. | Inspect DaemonSet pods, scheduling, image pulls, Pod Security labels. |

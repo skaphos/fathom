@@ -49,23 +49,30 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	// metav1.Time serialises without sub-second digits.
 	lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
 	check := &fathomv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "nh-provisioning", Namespace: "default", Generation: 1},
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-provisioning", Namespace: "default", Generation: 2},
 		Spec: fathomv1alpha1.NodeHealthCheckSpec{
 			Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}},
 		},
 		Status: fathomv1alpha1.NodeHealthCheckStatus{
-			LastRunTime:    &lastRun,
-			LastResult:     string(fathomv1alpha1.HealthReportResultPass),
-			LastReportName: "nh-provisioning-report",
-			Summary:        "2 of 2 node(s) passed",
-			NodeResults:    []fathomv1alpha1.NodeHealthNodeResult{{Node: "node-a", Result: "Pass"}, {Node: "node-b", Result: "Pass"}},
-			Conditions: []metav1.Condition{{
-				Type:               nodeHealthConditionReady,
-				Status:             metav1.ConditionTrue,
-				Reason:             "Reporting",
-				Message:            "Node-agents are reporting and a HealthReport was rolled up.",
-				LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
-			}},
+			ObservedGeneration: 1,
+			LastRunTime:        &lastRun,
+			LastResult:         string(fathomv1alpha1.HealthReportResultPass),
+			LastReportName:     "nh-provisioning-report",
+			Summary:            "2 of 2 node(s) passed",
+			NodeResults:        []fathomv1alpha1.NodeHealthNodeResult{{Node: "node-a", Result: "Pass"}, {Node: "node-b", Result: "Pass"}},
+			Conditions: []metav1.Condition{
+				{
+					Type:               nodeHealthConditionReady,
+					Status:             metav1.ConditionTrue,
+					Reason:             "Reporting",
+					Message:            "Node-agents are reporting and a HealthReport was rolled up.",
+					LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
+				},
+				{
+					Type: nodeHealthConditionAuthentic, Status: metav1.ConditionTrue, Reason: "AllReportsBound",
+					ObservedGeneration: 1, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
+				},
+			},
 		},
 	}
 
@@ -108,8 +115,45 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	if len(persisted.Status.NodeResults) != 2 || persisted.Status.Summary == "" {
 		t.Fatalf("per-node results/summary must survive a provisioning failure: %+v", persisted.Status)
 	}
-	if persisted.Status.ObservedGeneration != 1 {
+	if persisted.Status.ObservedGeneration != check.Generation {
 		t.Fatalf("observedGeneration = %d", persisted.Status.ObservedGeneration)
+	}
+	authentic := apiMeta.FindStatusCondition(persisted.Status.Conditions, nodeHealthConditionAuthentic)
+	if authentic == nil || authentic.Status != metav1.ConditionUnknown || authentic.Reason != conditionReasonReportsNotCollected || authentic.ObservedGeneration != check.Generation {
+		t.Fatalf("ReportsAuthentic = %+v, want Unknown/%s at generation %d", authentic, conditionReasonReportsNotCollected, check.Generation)
+	}
+}
+
+// TestNodeHealthLaterProvisioningFailureClearsRecoveredAuthenticityError pins
+// that EnforcementUnavailable belongs only to the admission-policy failure
+// that observed it. If policy setup later succeeds and another provisioning
+// phase fails, the stale reason must not survive on the same generation.
+func TestNodeHealthLaterProvisioningFailureClearsRecoveredAuthenticityError(t *testing.T) {
+	t.Parallel()
+	check := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-auth-recovered", Namespace: "default", Generation: 2},
+		Status: fathomv1alpha1.NodeHealthCheckStatus{ObservedGeneration: 2, Conditions: []metav1.Condition{{
+			Type: nodeHealthConditionAuthentic, Status: metav1.ConditionUnknown,
+			Reason: reasonAuthenticityUnavailable, ObservedGeneration: 2, LastTransitionTime: metav1.Now(),
+		}}},
+	}
+	scheme := newProvisioningScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+	before := check.Status.DeepCopy()
+	injected := errors.New("network policy create failed")
+	_, err := (&NodeHealthCheckReconciler{Client: cl}).failProvisioning(
+		context.Background(), logr.Discard(), before, check, "NetworkPolicyProvisioningFailed", injected,
+	)
+	if !errors.Is(err, injected) {
+		t.Fatalf("error = %v, want original %v", err, injected)
+	}
+	persisted := &fathomv1alpha1.NodeHealthCheck{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
+		t.Fatal(err)
+	}
+	authentic := apiMeta.FindStatusCondition(persisted.Status.Conditions, nodeHealthConditionAuthentic)
+	if authentic == nil || authentic.Reason != conditionReasonReportsNotCollected || authentic.ObservedGeneration != check.Generation {
+		t.Fatalf("ReportsAuthentic = %+v, want Unknown/%s at generation %d", authentic, conditionReasonReportsNotCollected, check.Generation)
 	}
 }
 
@@ -128,7 +172,7 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 		}
 	}
 	check := &fathomv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "nh-bad", Namespace: "default", Generation: 3},
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-bad", Namespace: "default", UID: "check-uid", Generation: 3},
 		Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
 			{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"},
 			{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"},
@@ -141,11 +185,25 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 		Conditions: []metav1.Condition{
 			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
 			{Type: nodeHealthConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
+			{Type: nodeHealthConditionAuthentic, Status: metav1.ConditionTrue, Reason: "AllReportsBound", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
 		},
 	}
 	oldAgent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: "default"},
 		Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{HostNetwork: true}}}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, oldAgent).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+	oldRole := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: scopedReportAccessName(nodeHealthAgentResourceName(check)), Namespace: check.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+			}},
+		},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{""}, Resources: []string{"configmaps"},
+			ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")}, Verbs: []string{"get", "update"},
+		}},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, oldAgent, oldRole).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
 	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-bad", Namespace: "default"}}); err != nil {
 		t.Fatalf("a rejected item is a status outcome, not a reconcile error: %v", err)
@@ -164,12 +222,23 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	if err := cl.List(context.Background(), &ds); err != nil || len(ds.Items) != 0 {
 		t.Fatalf("the previous generation's agent must be revoked, not left running under a refused spec: %d DaemonSet(s), err=%v", len(ds.Items), err)
 	}
+	clearedRole := &rbacv1.Role{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(oldRole), clearedRole); err != nil {
+		t.Fatal(err)
+	}
+	if len(clearedRole.Rules) != 0 {
+		t.Fatalf("rejected check retained report update permissions: %+v", clearedRole.Rules)
+	}
 	priv := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionPrivileged)
 	if priv == nil || priv.Status != metav1.ConditionFalse || priv.Reason != conditionReasonItemsRejected || priv.ObservedGeneration != 4 {
 		t.Fatalf("AgentPrivileged = %+v, want False/ItemsRejected at the current generation (nothing is running)", priv)
 	}
 	if got.Status.LastResult != "Pass" || got.Status.DesiredNodes != 0 {
 		t.Fatalf("the last verdict is retained frozen and desiredNodes is 0: %+v", got.Status)
+	}
+	authentic := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionAuthentic)
+	if authentic == nil || authentic.Status != metav1.ConditionUnknown || authentic.Reason != conditionReasonReportsNotCollected || authentic.ObservedGeneration != got.Generation {
+		t.Fatalf("ReportsAuthentic = %+v, want Unknown/%s at generation %d", authentic, conditionReasonReportsNotCollected, got.Generation)
 	}
 }
 
@@ -389,19 +458,66 @@ func TestNodeHealthEvaluationIgnoresDepartedNodes(t *testing.T) {
 	}
 }
 
+// TestNodeHealthExpectedAgentNodesIgnoresTerminatingPods pins that a pod being
+// deleted no longer establishes fleet scope. Its still-fresh report may remain
+// collected for observability, but it cannot keep a departed node in the next
+// complete roll-up.
+func TestNodeHealthExpectedAgentNodesIgnoresTerminatingPods(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, appsv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-scope", Namespace: "default"}}
+	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: check.Namespace, UID: "daemonset-uid"}}
+	controlled := func(name, node string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: check.Namespace, Labels: nodeHealthAgentSelectorLabels(check),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1", Kind: "DaemonSet", Name: ds.Name, UID: ds.UID, Controller: ptr.To(true),
+			}},
+		}, Spec: corev1.PodSpec{NodeName: node, Containers: []corev1.Container{{Name: "node-agent", Image: "img:test"}}}}
+	}
+	live := controlled("agent-live", "node-live")
+	terminating := controlled("agent-terminating", "node-departed")
+	deletedAt := metav1.Now()
+	terminating.DeletionTimestamp = &deletedAt
+	terminating.Finalizers = []string{"test.fathom.skaphos.io/hold"}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(live, terminating).Build()
+
+	nodes, err := (&NodeHealthCheckReconciler{Client: cl, APIReader: cl}).expectedAgentNodes(context.Background(), check, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected nodes = %v, want only the live pod's node", nodes)
+	}
+	if _, ok := nodes["node-live"]; !ok {
+		t.Fatalf("expected nodes = %v, missing node-live", nodes)
+	}
+	if _, ok := nodes["node-departed"]; ok {
+		t.Fatalf("terminating pod kept departed node in scope: %v", nodes)
+	}
+}
+
 // TestNodeHealthEvaluationFailuresPersistStatus covers every API boundary
 // after the agent has been provisioned. Each failure must be observable on the
 // current generation without rewriting the last complete roll-up (COR-3).
 func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name  string
-		stage string
+		name          string
+		stage         string
+		reason        string
+		coverageState metav1.ConditionStatus
+		agentState    metav1.ConditionStatus
 	}{
-		{name: "report ConfigMap list", stage: "reports"},
-		{name: "agent pod list", stage: "pods"},
-		{name: "Node read", stage: "node"},
-		{name: "HealthReport create", stage: "healthreport"},
+		{name: "report ConfigMap list", stage: "reports", reason: "EvaluationFailed", coverageState: metav1.ConditionUnknown, agentState: metav1.ConditionTrue},
+		{name: "agent pod list", stage: "pods", reason: "RBACProvisioningFailed", coverageState: metav1.ConditionFalse, agentState: metav1.ConditionFalse},
+		{name: "Node read", stage: "node", reason: "EvaluationFailed", coverageState: metav1.ConditionUnknown, agentState: metav1.ConditionTrue},
+		{name: "HealthReport create", stage: "healthreport", reason: "EvaluationFailed", coverageState: metav1.ConditionUnknown, agentState: metav1.ConditionTrue},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -534,19 +650,19 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 			}
 			for _, typ := range []string{nodeHealthConditionReady, nodeHealthConditionCoverage} {
 				condition := apiMeta.FindStatusCondition(persisted.Status.Conditions, typ)
-				if condition == nil || condition.Reason != "EvaluationFailed" || condition.ObservedGeneration != check.Generation {
-					t.Fatalf("%s = %+v, want EvaluationFailed at generation %d", typ, condition, check.Generation)
+				if condition == nil || condition.Reason != tt.reason || condition.ObservedGeneration != check.Generation {
+					t.Fatalf("%s = %+v, want %s at generation %d", typ, condition, tt.reason, check.Generation)
 				}
 				if typ == nodeHealthConditionReady && condition.Status != metav1.ConditionFalse {
 					t.Fatalf("Ready = %+v, want False", condition)
 				}
-				if typ == nodeHealthConditionCoverage && condition.Status != metav1.ConditionUnknown {
-					t.Fatalf("CoverageComplete = %+v, want Unknown", condition)
+				if typ == nodeHealthConditionCoverage && condition.Status != tt.coverageState {
+					t.Fatalf("CoverageComplete = %+v, want %s", condition, tt.coverageState)
 				}
 			}
 			agentReady := apiMeta.FindStatusCondition(persisted.Status.Conditions, nodeHealthConditionAgentReady)
-			if agentReady == nil || agentReady.Status != metav1.ConditionTrue || agentReady.ObservedGeneration != check.Generation {
-				t.Fatalf("AgentReady = %+v, want the known rolled-out state at generation %d", agentReady, check.Generation)
+			if agentReady == nil || agentReady.Status != tt.agentState || agentReady.ObservedGeneration != check.Generation {
+				t.Fatalf("AgentReady = %+v, want %s at generation %d", agentReady, tt.agentState, check.Generation)
 			}
 			if persisted.Status.LastResult != check.Status.LastResult || persisted.Status.Summary != check.Status.Summary ||
 				persisted.Status.LastReportName != check.Status.LastReportName || persisted.Status.LastRunTime == nil ||

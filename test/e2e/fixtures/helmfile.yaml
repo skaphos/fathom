@@ -240,6 +240,10 @@ releases:
     wait: true
     timeout: 600
     values:
+      # Istio 1.30 defaults to the retiring registry.istio.io/release hub;
+      # Docker Hub is the supported image source for existing releases.
+      - global:
+          hub: docker.io/istio
       # Chart-default requests (500m CPU / 2Gi memory) are sized for real
       # clusters; shrink them so the single-node kind cluster schedules
       # istiod alongside the rest of the stack.

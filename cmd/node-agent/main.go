@@ -54,6 +54,9 @@ type mode string
 const (
 	modeCertificates mode = "certificates"
 	modeHealth       mode = "health"
+
+	publishRetryInterval = 5 * time.Second
+	pendingReportMaxAge  = 30 * time.Second
 )
 
 type config struct {
@@ -150,25 +153,9 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 	var scanOnce func() bool
 	switch cfg.mode {
 	case modeHealth:
-		scanOnce = func() bool {
-			report, err := scanAndPublishHealth(ctx, kube, cfg, time.Now())
-			if err != nil {
-				log.Printf("node-agent: publish report: %v", err)
-				return false
-			}
-			log.Printf("node-agent: evaluated %d health check(s) on %s, aggregate=%s", len(report.Checks), cfg.nodeName, report.Aggregate)
-			return true
-		}
+		scanOnce = healthPass(ctx, kube, cfg)
 	default:
-		scanOnce = func() bool {
-			report, err := scanAndPublish(ctx, kube, cfg, time.Now())
-			if err != nil {
-				log.Printf("node-agent: publish report: %v", err)
-				return false
-			}
-			log.Printf("node-agent: scanned %d certificate(s) on %s, aggregate=%s", len(report.Certs), cfg.nodeName, report.Aggregate)
-			return true
-		}
+		scanOnce = certificatePass(ctx, kube, cfg)
 	}
 
 	published := scanOnce()
@@ -189,19 +176,106 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 		return nil
 	}
 
-	ticker := time.NewTicker(cfg.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-serveErr:
-			if cfg.fatalMetricsBind {
-				return err
+	return runPassLoop(ctx, serveErr, cfg.fatalMetricsBind, cfg.interval, published, scanOnce, liveness, time.After)
+}
+
+func certificatePass(ctx context.Context, kube kubernetes.Interface, cfg config) func() bool {
+	return certificatePassWithClock(ctx, kube, cfg, time.Now)
+}
+
+func certificatePassWithClock(ctx context.Context, kube kubernetes.Interface, cfg config, now func() time.Time) func() bool {
+	var pending *nodecert.NodeReport
+	var pendingSince time.Time
+	return func() bool {
+		if pending != nil && pendingReportFresh(pendingSince, now(), cfg.interval) {
+			if err := publishCertificateReport(ctx, kube, cfg, *pending); err != nil {
+				log.Printf("node-agent: retry publish report: %v", err)
+				return false
 			}
-			log.Printf("node-agent: %v (continuing; metrics will not serve)", err)
-		case <-ticker.C:
-			liveness.record(scanOnce())
+			log.Printf("node-agent: scanned %d certificate(s) on %s, aggregate=%s", len(pending.Certs), cfg.nodeName, pending.Aggregate)
+			pending = nil
+			return true
+		}
+		pending = nil
+		report, err := scanAndPublish(ctx, kube, cfg, now())
+		if err != nil {
+			pending = &report
+			pendingSince = now()
+			log.Printf("node-agent: publish report: %v", err)
+			return false
+		}
+		log.Printf("node-agent: scanned %d certificate(s) on %s, aggregate=%s", len(report.Certs), cfg.nodeName, report.Aggregate)
+		return true
+	}
+}
+
+func healthPass(ctx context.Context, kube kubernetes.Interface, cfg config) func() bool {
+	return healthPassWithClock(ctx, kube, cfg, time.Now)
+}
+
+func healthPassWithClock(ctx context.Context, kube kubernetes.Interface, cfg config, now func() time.Time) func() bool {
+	var pending *nodehealth.NodeReport
+	var pendingSince time.Time
+	return func() bool {
+		if pending != nil && pendingReportFresh(pendingSince, now(), cfg.interval) {
+			if err := publishHealthReport(ctx, kube, cfg, *pending); err != nil {
+				log.Printf("node-agent: retry publish report: %v", err)
+				return false
+			}
+			log.Printf("node-agent: evaluated %d health check(s) on %s, aggregate=%s", len(pending.Checks), cfg.nodeName, pending.Aggregate)
+			pending = nil
+			return true
+		}
+		pending = nil
+		report, err := scanAndPublishHealth(ctx, kube, cfg, now())
+		if err != nil {
+			pending = &report
+			pendingSince = now()
+			log.Printf("node-agent: publish report: %v", err)
+			return false
+		}
+		log.Printf("node-agent: evaluated %d health check(s) on %s, aggregate=%s", len(report.Checks), cfg.nodeName, report.Aggregate)
+		return true
+	}
+}
+
+// pendingReportFresh prevents a recovered API connection from stamping an old
+// observation with a fresh ConfigMap write time. A brief outage reuses the
+// completed work; a longer one performs a new evaluation before publishing.
+func pendingReportFresh(created, now time.Time, interval time.Duration) bool {
+	maxAge := pendingReportMaxAge
+	if interval > 0 && interval < maxAge {
+		maxAge = interval
+	}
+	return now.Sub(created) <= maxAge
+}
+
+// runPassLoop retries a failed publication promptly, then returns to the
+// configured scan cadence after success. scanOnce retains the evaluated report
+// after a failed write, so a retry publishes the same observation rather than
+// repeating successful filesystem or network work.
+func runPassLoop(ctx context.Context, serveErr <-chan error, fatalMetricsBind bool, interval time.Duration, published bool, scanOnce func() bool, liveness *liveness, after func(time.Duration) <-chan time.Time) error {
+	for {
+		next := interval
+		if !published && publishRetryInterval < next {
+			next = publishRetryInterval
+		}
+		timer := after(next)
+	waitForTimer:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case err := <-serveErr:
+				if fatalMetricsBind {
+					return err
+				}
+				log.Printf("node-agent: %v (continuing; metrics will not serve)", err)
+			case <-timer:
+				published = scanOnce()
+				liveness.record(published)
+				break waitForTimer
+			}
 		}
 	}
 }
@@ -288,11 +362,6 @@ func metricsMux(l *liveness) http.Handler {
 // scanAndPublish runs one certificate scan, updates the expiry gauges, and
 // upserts the per-node report ConfigMap. It returns the report it published.
 func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, now time.Time) (nodecert.NodeReport, error) {
-	// The scan itself is filesystem-bound and bounded by depth/count limits in
-	// the nodecert package; cfg.timeout bounds the ConfigMap publish below.
-	publishCtx, cancel := boundedContext(ctx, cfg.timeout)
-	defer cancel()
-
 	results := nodecert.Scan(nodecert.ScanOptions{Paths: cfg.paths, Thresholds: cfg.thresholds, Now: now})
 	publishGauges(cfg.nodeName, results)
 
@@ -304,14 +373,20 @@ func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, 
 		Certs:      results,
 		Trigger:    cfg.trigger,
 	}
+	return report, publishCertificateReport(ctx, kube, cfg, report)
+}
+
+func publishCertificateReport(ctx context.Context, kube kubernetes.Interface, cfg config, report nodecert.NodeReport) error {
 	encoded, err := nodecert.EncodeReport(report)
 	if err != nil {
-		return report, err
+		return err
 	}
+	publishCtx, cancel := boundedContext(ctx, cfg.timeout)
+	defer cancel()
 	if err := upsertReportConfigMap(publishCtx, kube, cfg, nodecert.KindNodeCertificateCheck, encoded); err != nil {
-		return report, err
+		return err
 	}
-	return report, nil
+	return nil
 }
 
 // scanAndPublishHealth runs one node-health evaluation, updates the
@@ -343,9 +418,6 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 	observedAt := now.Add(time.Since(scanStart)).UTC()
 	publishHealthGauges(cfg.nodeName, results)
 
-	passCtx, cancel := boundedContext(ctx, cfg.timeout)
-	defer cancel()
-
 	report := nodehealth.NodeReport{
 		Node:        cfg.nodeName,
 		CheckName:   cfg.checkName,
@@ -355,14 +427,20 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 		Trigger:     cfg.trigger,
 		ItemsDigest: nodehealth.ItemsDigest(cfg.healthItems, cfg.timeout),
 	}
+	return report, publishHealthReport(ctx, kube, cfg, report)
+}
+
+func publishHealthReport(ctx context.Context, kube kubernetes.Interface, cfg config, report nodehealth.NodeReport) error {
 	encoded, err := nodehealth.EncodeReport(report)
 	if err != nil {
-		return report, err
+		return err
 	}
+	passCtx, cancel := boundedContext(ctx, cfg.timeout)
+	defer cancel()
 	if err := upsertReportConfigMap(passCtx, kube, cfg, nodehealth.KindNodeHealthCheck, encoded); err != nil {
-		return report, err
+		return err
 	}
-	return report, nil
+	return nil
 }
 
 // boundedContext derives a context limited to timeout when timeout is

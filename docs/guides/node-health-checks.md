@@ -128,17 +128,17 @@ and `/var/log`. The host root `/` is never allowed: the operator mounts the
 measured path read-only into the agent, and mounting `/` is the opposite of
 least privilege.
 
-**A path that does not exist on a node is created**, empty, by the kubelet:
-the operator mounts each measured directory with `hostPath` type
-`DirectoryOrCreate` — the same mechanism `NodeCertificateCheck` uses — so
-the measurement becomes the headroom of the filesystem that would hold the
-directory (usually the root filesystem), and the node's filesystem is
-mutated by that empty directory. That is rarely what a missing path meant.
+**A path that does not exist on a node is never created.** The operator mounts
+each measured directory with `hostPath` type `Directory`. If the required path
+is absent, Kubernetes cannot start that node's agent pod; `AgentReady=False`
+and incomplete coverage make the missing measurement visible while the last
+complete verdict remains frozen. This avoids mutating the host or silently
+measuring the filesystem that would have held a newly created directory.
 Prefer paths that exist on every node in scope, and narrow
 `spec.nodeSelector` on mixed fleets. Every requested directory is mounted in
-its own right, even one nested under another requested directory, so each
-gets that behaviour; only a location missing *beneath* a requested directory
-(a subdirectory the agent cannot `stat`) is reported `Skipped`.
+its own right, even one nested under another requested directory. Only a
+location missing *beneath* a mounted directory (a subdirectory the agent
+cannot `stat`) is reported `Skipped`.
 
 Paths are restricted to an operator-approved allowlist — `/var/lib/kubelet`,
 `/var/lib/containerd`, `/var/lib/docker`, `/var/lib/etcd`, `/var/log`,

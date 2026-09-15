@@ -175,12 +175,17 @@ writing.
 With `--wait`, `run` polls each target every 2 seconds until
 `status.lastRunTrigger` equals the token it wrote, which every controller
 sets in the same status update as the run's verdict. The default timeout is
-the largest target's effective run bound plus 30 seconds; `--timeout`
-overrides it. For most kinds that bound is the effective `spec.timeout`. For
-`NodeHealthCheck` it is twice the effective timeout — evaluation and then
-publication are each bounded by `min(spec.timeout, min(spec.interval, 5m))`
-— so a 24h/24h check gets a 10-minute default, never a day. If the annotation changes to a different value before the
-token is consumed, the run is reported as **superseded**. If the operator
+the largest target's conservative wait estimate plus 30 seconds; `--timeout`
+overrides it exactly. For most kinds that estimate is the effective
+`spec.timeout`. A `NodeHealthCheck` estimate accounts for its serial
+DaemonSet rollout: `max(status.desiredNodes, 1)` times a one-minute pod
+startup/termination allowance plus twice the effective timeout. Evaluation
+and publication are each bounded by
+`min(spec.timeout, min(spec.interval, 5m))`, so a one-node 24h/24h check gets
+an 11m30s default, never a day. The estimate cannot bound scheduler or image
+pull delays; use an explicit `--timeout` when the cluster needs more time. If
+the annotation changes to a different value before the token is consumed,
+the run is reported as **superseded**. If the operator
 reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` (a NodeHealthCheck item the operator's allowlist refuses),
 `MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
 `--wait` fails immediately with that reason instead of waiting out the
@@ -193,7 +198,8 @@ progress.
 A `NodeCertificateCheck` or `NodeHealthCheck` run restarts one node-agent pod
 per node before the token can complete; see
 [Forcing a scan](../guides/node-certificate-checks.md#forcing-a-scan) and
-give `--wait` a `--timeout` that covers the rollout on large clusters.
+give `--wait` an explicit `--timeout` if the conservative default does not
+cover the cluster's rollout conditions.
 
 ### Output
 

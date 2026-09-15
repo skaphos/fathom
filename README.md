@@ -291,6 +291,11 @@ AdmissionPolicyProvisioningFailed`, `ReportsAuthentic=Unknown /
 EnforcementUnavailable`). Existing agents may continue running, but their
 reports are not consumed until enforcement recovers.
 
+Node-agents receive namespace-scoped ConfigMap creation plus `get`/`update`
+only on canonical report names for their current DaemonSet pods. Admission
+also requires the exact ServiceAccount derived from each report's immutable
+source labels and a matching node-bound token claim.
+
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: NodeHealthCheck

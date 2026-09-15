@@ -104,13 +104,12 @@ type NodeHealthCheckItem struct {
 	// operator mounts it into the agent read-only, so it must be a traversal-free
 	// absolute path under one of the operator-approved prefixes.
 	//
-	// The mounted directory is created empty by the kubelet when it does not
-	// exist on a node (hostPath DirectoryOrCreate, as for NodeCertificateCheck),
-	// so the measurement is then the headroom of the filesystem that would hold
-	// it — usually the root filesystem — and the node's filesystem is mutated
-	// by that directory. Prefer paths that exist on every node in scope. Only a
-	// path that is missing beneath the mount (a subdirectory the agent cannot
-	// stat) is reported Skipped.
+	// The operator uses a non-creating hostPath Directory mount. If Path does
+	// not exist on a node, Kubernetes cannot start that node's agent pod;
+	// AgentReady becomes False and coverage remains incomplete while the last
+	// complete verdict is retained. This avoids mutating the host or measuring
+	// the filesystem that would have held a newly created directory. Only a path
+	// missing beneath a mounted directory is reported Skipped by the agent.
 	// +optional
 	// +kubebuilder:validation:MaxLength=512
 	Path string `json:"path,omitempty"`
@@ -186,7 +185,7 @@ type NodeHealthCheckItem struct {
 // typographic quote, which would silently break the rule at CRD install.
 // +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? ((has(o.socketPath) && size(o.socketPath) > 0) ? o.socketPath : '/run/containerd/containerd.sock') : o.type)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? ((has(c.socketPath) && size(c.socketPath) > 0) ? c.socketPath : '/run/containerd/containerd.sock') : c.type))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
 // A headroom path that is also a ContainerRuntime socket would be mounted
-// twice at one mountPath — as a DirectoryOrCreate directory and as a Socket —
+// twice at one mountPath — as a Directory and as a Socket —
 // which the kubelet rejects, and a directory mount over a socket is
 // meaningless anyway. The socket's default counts as a value.
 // +kubebuilder:validation:XValidation:rule="!self.checks.exists(h, (h.type == 'DiskHeadroom' || h.type == 'InodeHeadroom') && self.checks.exists(r, r.type == 'ContainerRuntime' && (has(r.socketPath) ? r.socketPath : '/run/containerd/containerd.sock') == h.path))",message="a headroom path must not be a ContainerRuntime socket path"

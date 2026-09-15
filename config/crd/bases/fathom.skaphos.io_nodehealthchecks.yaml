@@ -83,7 +83,7 @@ spec:
               gofmt rewrites two adjacent apostrophes inside a doc comment as a
               typographic quote, which would silently break the rule at CRD install.
               A headroom path that is also a ContainerRuntime socket would be mounted
-              twice at one mountPath — as a DirectoryOrCreate directory and as a Socket —
+              twice at one mountPath — as a Directory and as a Socket —
               which the kubelet rejects, and a directory mount over a socket is
               meaningless anyway. The socket's default counts as a value.
             properties:
@@ -138,13 +138,12 @@ spec:
                         operator mounts it into the agent read-only, so it must be a traversal-free
                         absolute path under one of the operator-approved prefixes.
 
-                        The mounted directory is created empty by the kubelet when it does not
-                        exist on a node (hostPath DirectoryOrCreate, as for NodeCertificateCheck),
-                        so the measurement is then the headroom of the filesystem that would hold
-                        it — usually the root filesystem — and the node's filesystem is mutated
-                        by that directory. Prefer paths that exist on every node in scope. Only a
-                        path that is missing beneath the mount (a subdirectory the agent cannot
-                        stat) is reported Skipped.
+                        The operator uses a non-creating hostPath Directory mount. If Path does
+                        not exist on a node, Kubernetes cannot start that node's agent pod;
+                        AgentReady becomes False and coverage remains incomplete while the last
+                        complete verdict is retained. This avoids mutating the host or measuring
+                        the filesystem that would have held a newly created directory. Only a path
+                        missing beneath a mounted directory is reported Skipped by the agent.
                       maxLength: 512
                       type: string
                     socketPath:

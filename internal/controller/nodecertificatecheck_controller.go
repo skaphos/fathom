@@ -47,6 +47,7 @@ import (
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 const (
@@ -188,7 +189,7 @@ func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
 // get;list;watch;update) on configmaps.
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
 // The per-check node-agent NetworkPolicy (#153) is owner-referenced, so
 // deletion rides garbage collection — no delete verb.
@@ -263,7 +264,8 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	if check.Spec.Paused {
 		if err := r.reconcilePaused(ctx, &check); err != nil {
-			return ctrl.Result{}, err
+			r.invalidateAgentConditions(&check, "RBACRevocationFailed", "Report access could not be revoked while pausing; agent state and coverage are unknown: "+err.Error())
+			return r.failProvisioning(ctx, log, before, &check, "RBACRevocationFailed", err)
 		}
 		return r.finish(ctx, log, before, &check, 0)
 	}
@@ -303,6 +305,22 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
+
+	reportNames, err := activeAgentReportNames(ctx, r.apiReader(), check.Namespace, map[string]string{
+		nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
+		nodecert.LabelSourceName: check.Name,
+		nodeAgentComponentLabel:  nodeAgentComponentValue,
+	}, ds, func(node string) string {
+		return nodecert.NodeReportConfigMapName(check.Name, node)
+	})
+	if err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "The current agent fleet could not be read, so report permissions and coverage are unknown: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
+	if err := ensureScopedReportRBAC(ctx, r.Client, r.Scheme, &check, agentLabels(&check), saName, reportNames); err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "Per-node report permissions could not be provisioned for this generation: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
 
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, time.Now(), nodeCertReportMaxAge(&check))
 	if err != nil {
@@ -396,9 +414,13 @@ func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Lo
 }
 
 func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
-	// Stop scanning: delete the agent DaemonSet. RBAC and report ConfigMaps are
-	// owner-referenced and harmless while idle, so they are left in place; the
-	// most recent Status snapshot is preserved.
+	// Revoke report updates before stopping the agent. The owner-referenced RBAC
+	// objects remain for an idempotent resume, but their scoped Role has no rules.
+	if err := clearScopedReportAccess(ctx, r.Client, check, agentResourceName(check)); err != nil {
+		return fmt.Errorf("revoke node-agent report access while paused: %w", err)
+	}
+	// Stop scanning by deleting the agent DaemonSet. Report ConfigMaps remain as
+	// bounded history and the most recent Status snapshot is preserved.
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
 		return err
@@ -434,8 +456,8 @@ func (r *NodeCertificateCheckReconciler) roleName() string {
 // created at runtime (rather than shipped statically) so the name stays stable
 // across deploy tooling — kustomize's namePrefix and OLM bundle transforms would
 // otherwise rename a static ClusterRole and break the binding. The role grants
-// only namespaced ConfigMap access (the verbs never apply cluster-wide because
-// they are only ever bound via the per-check RoleBinding). The operator already
+// only ConfigMap creation. Per-check Roles separately grant get/update on the
+// canonical reports for that check's current agent pods. The operator already
 // holds these ConfigMap verbs, so creating the role does not escalate privilege.
 func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.Context) error {
 	return ensureNodeAgentClusterRole(ctx, r.Client, r.roleName())
@@ -449,14 +471,13 @@ func ensureNodeAgentClusterRole(ctx context.Context, c client.Client, name strin
 	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	_, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
 		role.Labels = mergeLabels(role.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
-		// Exactly the verbs the node-agent uses on its own report ConfigMap
-		// (Get, Create, Update — see cmd/node-agent upsertReportConfigMap). No
-		// list/watch/patch: the agent runs on every node and must not be able to
-		// enumerate or tamper with other ConfigMaps in the namespace.
+		// Kubernetes cannot restrict create by resourceNames. Admission authenticates
+		// every managed report create; per-check namespaced Roles grant get/update
+		// only for reports belonging to current agent pods.
 		role.Rules = []rbacv1.PolicyRule{{
 			APIGroups: []string{""},
 			Resources: []string{"configmaps"},
-			Verbs:     []string{"create", "get", "update"},
+			Verbs:     []string{"create"},
 		}}
 		return nil
 	})
@@ -584,6 +605,20 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				Expression: `request.userInfo.extra[?'authentication.kubernetes.io/node-name'].orValue([''])[0]`,
 			},
 			{
+				Name:       "sourceKind",
+				Expression: `has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceKind + `'].orValue('') : ''`,
+			},
+			{
+				Name:       "sourceName",
+				Expression: `has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceName + `'].orValue('') : ''`,
+			},
+			{
+				Name: "expectedWriter",
+				Expression: `variables.sourceKind == '` + nodecert.KindNodeCertificateCheck + `' ? ` +
+					`'system:serviceaccount:' + request.namespace + ':' + variables.sourceName + '-node-agent' : ` +
+					`(variables.sourceKind == '` + nodehealth.KindNodeHealthCheck + `' ? 'system:serviceaccount:' + request.namespace + ':' + variables.sourceName + '` + nodeHealthAgentSuffix + `' : '')`,
+			},
+			{
 				Name:       "annotatedNode",
 				Expression: `has(object.metadata.annotations) ? object.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
 			},
@@ -619,8 +654,8 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				Reason:     &forbidden,
 			},
 			{
-				Expression: `variables.contentUnchanged || (variables.claimNode != '' && variables.annotatedNode == variables.claimNode)`,
-				Message:    "a node-report ConfigMap's fathom.skaphos.io/node-name annotation must match the writing identity's ServiceAccount-token node claim (authentication.kubernetes.io/node-name); only metadata-only updates that leave the report payload and annotation unchanged are exempt",
+				Expression: `variables.contentUnchanged || (variables.expectedWriter != '' && request.userInfo.username == variables.expectedWriter && variables.claimNode != '' && variables.annotatedNode == variables.claimNode)`,
+				Message:    "a node-report ConfigMap must be written by the managed ServiceAccount for its source-kind and source-name, and its fathom.skaphos.io/node-name annotation must match that identity's ServiceAccount-token node claim; only metadata-only updates that leave report content and identity unchanged are exempt",
 				Reason:     &forbidden,
 			},
 		},
@@ -629,7 +664,9 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 
 // ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding (both
 // owner-referenced, in the check namespace) that grant the node-agent its
-// least-privilege, namespaced ConfigMap access. It returns the ServiceAccount name.
+// least-privilege ConfigMap-create access. A separate namespaced Role grants
+// get/update only on canonical reports for the current agent pods. It returns
+// the ServiceAccount name.
 func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (string, error) {
 	name := agentResourceName(check)
 	labels := agentLabels(check)
@@ -1408,7 +1445,7 @@ func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCert
 }
 
 // SetupWithManager wires the reconciler. It owns the DaemonSet, ServiceAccount,
-// and RoleBinding it creates, and watches report ConfigMaps by label so a fresh
+// Role, and RoleBindings it creates, and watches report ConfigMaps by label so a fresh
 // node report (which may not yet carry the owner reference) triggers a roll-up.
 func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.NodeAgentRoleName == "" {
@@ -1421,6 +1458,7 @@ func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		For(&fathomv1alpha1.NodeCertificateCheck{}).
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(

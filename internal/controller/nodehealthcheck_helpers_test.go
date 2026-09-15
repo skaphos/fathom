@@ -459,6 +459,12 @@ func TestDesiredDaemonSetNeverMountsOnePathTwice(t *testing.T) {
 	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
 	ds := r.desiredDaemonSet(check, "sa", resolveNodeHealthItems(check))
 	seen := map[string]int{}
+	for _, volume := range ds.Spec.Template.Spec.Volumes {
+		if volume.HostPath != nil && volume.HostPath.Path == "/run/containerd/containerd.sock" &&
+			(volume.HostPath.Type == nil || *volume.HostPath.Type != corev1.HostPathDirectory) {
+			t.Fatalf("headroom hostPath type = %v, want non-creating Directory", volume.HostPath.Type)
+		}
+	}
 	for _, m := range ds.Spec.Template.Spec.Containers[0].VolumeMounts {
 		seen[m.MountPath]++
 	}

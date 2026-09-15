@@ -46,9 +46,9 @@ type kindDescriptor struct {
 	Paused func(client.Object) bool
 	// Snapshot is the kind's verdict normalisation (see snapshot.go).
 	Snapshot func(client.Object) snapshot
-	// DefaultTimeout is the effective spec.timeout the controller would apply,
-	// used to size `run --wait`. Zero for derived kinds, which never run.
-	DefaultTimeout func(client.Object) time.Duration
+	// DefaultWaitEstimate conservatively sizes `run --wait` from the work the
+	// target is expected to perform. Zero for derived kinds, which never run.
+	DefaultWaitEstimate func(client.Object) time.Duration
 	// Sources resolves the executable checks behind a derived kind (see
 	// run.go). Nil for executable kinds, which are their own source.
 	Sources func(context.Context, client.Client, client.Object) ([]sourceResolution, error)
@@ -77,9 +77,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.AddonCheck).Spec.Paused },
-		Snapshot:       addonCheckSnapshot,
-		DefaultTimeout: addonCheckTimeout,
+		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.AddonCheck).Spec.Paused },
+		Snapshot:            addonCheckSnapshot,
+		DefaultWaitEstimate: addonCheckTimeout,
 	},
 	{
 		Kind: "DNSCheck", Resource: "dnschecks", Aliases: []string{"dns"},
@@ -94,9 +94,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(client.Object) bool { return false },
-		Snapshot:       dnsCheckSnapshot,
-		DefaultTimeout: dnsCheckTimeout,
+		Paused:              func(client.Object) bool { return false },
+		Snapshot:            dnsCheckSnapshot,
+		DefaultWaitEstimate: dnsCheckTimeout,
 	},
 	{
 		Kind: "NodeCertificateCheck", Resource: "nodecertificatechecks", Aliases: []string{"ncc"},
@@ -111,9 +111,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.NodeCertificateCheck).Spec.Paused },
-		Snapshot:       nodeCertificateCheckSnapshot,
-		DefaultTimeout: nodeCertificateCheckTimeout,
+		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.NodeCertificateCheck).Spec.Paused },
+		Snapshot:            nodeCertificateCheckSnapshot,
+		DefaultWaitEstimate: nodeCertificateCheckTimeout,
 	},
 	{
 		Kind: "NodeHealthCheck", Resource: "nodehealthchecks", Aliases: []string{"nhc"},
@@ -128,9 +128,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(client.Object) bool { return false },
-		Snapshot:       nodeHealthCheckSnapshot,
-		DefaultTimeout: nodeHealthCheckPassTimeout,
+		Paused:              func(client.Object) bool { return false },
+		Snapshot:            nodeHealthCheckSnapshot,
+		DefaultWaitEstimate: nodeHealthCheckWaitEstimate,
 	},
 	{
 		Kind: "HealthCheck", Resource: "healthchecks", Aliases: []string{"hc"},
@@ -145,9 +145,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
-		Snapshot:       healthCheckSnapshot,
-		DefaultTimeout: noTimeout,
+		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
+		Snapshot:            healthCheckSnapshot,
+		DefaultWaitEstimate: noWaitEstimate,
 		// Sources is wired in run.go's init: the resolvers look kinds up by
 		// name, which would be an initialization cycle here.
 	},
@@ -163,9 +163,9 @@ var kinds = []*kindDescriptor{
 			}
 			return out
 		},
-		Paused:         func(client.Object) bool { return false },
-		Snapshot:       clusterHealthSnapshot,
-		DefaultTimeout: noTimeout,
+		Paused:              func(client.Object) bool { return false },
+		Snapshot:            clusterHealthSnapshot,
+		DefaultWaitEstimate: noWaitEstimate,
 	},
 }
 

@@ -235,7 +235,8 @@ adapter level is forced to `Error`.
 `internal/controller/nodecertificatecheck_controller.go`
 
 - **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
-  `RoleBinding`, and `NetworkPolicy` (metrics-only ingress and TCP 443/6443
+  report-access `Role` and `RoleBinding`s, and `NetworkPolicy` (metrics-only
+  ingress and TCP 443/6443
   egress by destination port — see [Network policies](reference/network-policies.md)), and the
   `fathom-node-agent-role` `ClusterRole` (created at
   runtime so its name survives kustomize/OLM name prefixing); creates
@@ -243,7 +244,7 @@ adapter level is forced to `Error`.
   objects live in the check's namespace and are owner-referenced for cascading
   garbage collection.
 - **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
-  `ServiceAccount` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
+  `ServiceAccount` / `Role` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
   report `ConfigMap`s by label (`Watches`), so a fresh node report triggers a
   roll-up.
 - **Execution model:** unlike the in-process adapters, on-disk certificate
@@ -259,8 +260,11 @@ adapter level is forced to `Error`.
   expiry — or already expired — is `Fail`; within `spec.warnDays` (default `30`)
   is `Warn`. Each agent also exports a `fathom_node_certificate_expiry_days`
   gauge for alerting.
-- **Paused:** when `spec.paused`, the agent `DaemonSet` is removed and the last
-  status snapshot is preserved (`Ready=False / Paused`).
+- **Paused:** when `spec.paused`, the scoped report Role is emptied before the
+  agent `DaemonSet` is removed, and the last status snapshot is preserved
+  (`Ready=False / Paused`). Failure to clear access stops deletion; failure in
+  either revocation step reports `Ready=False / RBACRevocationFailed`, and the
+  agent may remain running.
 
 ### NodeHealthCheckReconciler
 
@@ -268,13 +272,16 @@ adapter level is forced to `Error`.
 
 - **Owns / produces:** the same object shapes as `NodeCertificateCheckReconciler`
   — a node-agent `DaemonSet` (`<check>-node-health-agent`), a per-check
-  `ServiceAccount`, `RoleBinding`, and `NetworkPolicy` — plus `HealthReport`
+  `ServiceAccount`, report-access `Role` and `RoleBinding`s, and
+  `NetworkPolicy` — plus `HealthReport`
   objects and `NodeHealthCheck.status`. It converges the *same* runtime
   singletons (`fathom-node-agent-role` ClusterRole, the report-authenticity
   `ValidatingAdmissionPolicy`) through shared helpers rather than a second copy.
-  The policy makes managed-by, source-kind, and source-name labels and the
-  node-name annotation immutable on update, while allowing owner-reference-only
-  adoption and legitimate same-node report refresh.
+  The shared ClusterRole grants ConfigMap creation only; a per-check Role grants
+  `get`/`update` only on canonical reports for current, nonterminating owned
+  pods. The policy requires the exact ServiceAccount derived from immutable
+  source labels and a matching node-bound token claim, while allowing
+  owner-reference-only adoption and legitimate same-node report refresh.
 - **Watches:** `NodeHealthCheck` (`For`), the owned objects (`Owns`), and
   per-node report `ConfigMap`s by label (`source-kind=NodeHealthCheck`).
 - **Execution model:** the agent runs `cmd/node-agent --mode health` with the
@@ -294,7 +301,8 @@ adapter level is forced to `Error`.
   If report-authenticity admission cannot be provisioned, reconciliation stops
   before agent provisioning or report collection with
   `Ready=False / AdmissionPolicyProvisioningFailed` and
-  `ReportsAuthentic=Unknown / EnforcementUnavailable`; the last complete
+  `ReportsAuthentic=Unknown / EnforcementUnavailable`; other failures before
+  collection use `ReportsAuthentic=Unknown / ReportsNotCollected`. The last complete
   verdict and time remain frozen. API errors while evaluating reports, Pods,
   Nodes, or HealthReports produce `Ready=False / EvaluationFailed` and
   `CoverageComplete=Unknown / EvaluationFailed`, while historical roll-up
@@ -307,6 +315,9 @@ adapter level is forced to `Error`.
   effective timeouts plus a 30s latency allowance, measured from the API
   server's write of the report — so a 24h interval never accepts a 24h-old
   measurement (#270).
+- **Rejected specs:** before deleting the previous DaemonSet, the reconciler
+  empties its scoped report Role. A failure in either step reports
+  `Ready=False / AgentRevocationFailed`; the earlier agent may remain running.
 - **No pause field** (#262): stopping the check means deleting it.
 
 ### Requeue / interval handling

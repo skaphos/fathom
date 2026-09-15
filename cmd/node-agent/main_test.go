@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -20,8 +21,12 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
@@ -139,6 +144,133 @@ func TestScanAndPublishCreatesAndUpdatesConfigMap(t *testing.T) {
 	}
 	if len(list.Items) != 1 {
 		t.Errorf("want exactly 1 ConfigMap after re-publish, got %d", len(list.Items))
+	}
+}
+
+func TestCertificatePassRetriesPublishWithoutRescanning(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "apiserver.crt")
+	writeCert(t, certPath, time.Now().Add(20*24*time.Hour))
+
+	kube := fake.NewSimpleClientset()
+	getCalls := 0
+	kube.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		getCalls++
+		if getCalls == 1 {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "report", errors.New("scoped role not ready"))
+		}
+		return false, nil, nil
+	})
+	cfg := config{
+		checkName: "nc", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodecert.NodeReportConfigMapName("nc", "node-1"),
+		paths:         []string{certPath}, thresholds: nodecert.Thresholds{WarnDays: 30, CriticalDays: 7},
+		timeout: time.Second,
+	}
+	pass := certificatePass(context.Background(), kube, cfg)
+	if pass() {
+		t.Fatal("initial publish must fail while the scoped get grant is unavailable")
+	}
+	if err := os.Remove(certPath); err != nil {
+		t.Fatal(err)
+	}
+	if !pass() {
+		t.Fatal("retry must publish after the scoped grant becomes available")
+	}
+	cm, err := kube.CoreV1().ConfigMaps("ns").Get(context.Background(), cfg.configMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := nodecert.DecodeReport(cm.Data[nodecert.ConfigMapReportKey])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Certs) != 1 {
+		t.Fatalf("retry rescanned after the certificate was removed: got %d certificate(s), want cached report with 1", len(report.Certs))
+	}
+}
+
+func TestCertificatePassRescansWhenPendingReportExpires(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "apiserver.crt")
+	writeCert(t, certPath, time.Now().Add(20*24*time.Hour))
+
+	kube := fake.NewSimpleClientset()
+	getCalls := 0
+	kube.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		getCalls++
+		if getCalls == 1 {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "report", errors.New("scoped role not ready"))
+		}
+		return false, nil, nil
+	})
+	cfg := config{
+		checkName: "nc", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodecert.NodeReportConfigMapName("nc", "node-1"),
+		paths:         []string{certPath}, thresholds: nodecert.Thresholds{WarnDays: 30, CriticalDays: 7},
+		interval: time.Hour, timeout: time.Second,
+	}
+	now := time.Now()
+	pass := certificatePassWithClock(context.Background(), kube, cfg, func() time.Time { return now })
+	if pass() {
+		t.Fatal("initial publish must fail while the scoped get grant is unavailable")
+	}
+	if err := os.Remove(certPath); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(pendingReportMaxAge + time.Second)
+	if !pass() {
+		t.Fatal("pass must rescan and publish after the cached observation expires")
+	}
+	cm, err := kube.CoreV1().ConfigMaps("ns").Get(context.Background(), cfg.configMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := nodecert.DecodeReport(cm.Data[nodecert.ConfigMapReportKey])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Certs) != 0 {
+		t.Fatalf("expired report was published without a rescan: got %d certificate(s), want 0", len(report.Certs))
+	}
+}
+
+func TestRunPassLoopRetriesPromptlyThenUsesNormalCadence(t *testing.T) {
+	type timerRequest struct {
+		delay time.Duration
+		fire  chan time.Time
+	}
+	requests := make(chan timerRequest, 2)
+	after := func(delay time.Duration) <-chan time.Time {
+		req := timerRequest{delay: delay, fire: make(chan time.Time, 1)}
+		requests <- req
+		return req.fire
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	scans := 0
+	go func() {
+		done <- runPassLoop(ctx, nil, false, time.Hour, false, func() bool {
+			scans++
+			return true
+		}, newLiveness(time.Hour, time.Second), after)
+	}()
+
+	retry := <-requests
+	if retry.delay != publishRetryInterval {
+		t.Fatalf("failed publish delay = %s, want %s", retry.delay, publishRetryInterval)
+	}
+	retry.fire <- time.Now()
+	normal := <-requests
+	if scans != 1 {
+		t.Fatalf("scan calls after retry = %d, want 1", scans)
+	}
+	if normal.delay != time.Hour {
+		t.Fatalf("successful publish delay = %s, want 1h", normal.delay)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("cancelled loop = %v, want nil", err)
 	}
 }
 

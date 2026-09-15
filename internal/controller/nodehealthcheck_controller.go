@@ -61,7 +61,8 @@ const (
 
 	// conditionReasonItemsRejected marks a spec carrying an item the operator's
 	// allowlist refuses — never silently filtered (see rejectedNodeHealthItems).
-	conditionReasonItemsRejected = "ItemsRejected"
+	conditionReasonItemsRejected       = "ItemsRejected"
+	conditionReasonReportsNotCollected = "ReportsNotCollected"
 )
 
 // NodeHealthCheckReconciler reconciles a NodeHealthCheck object. It manages a
@@ -134,7 +135,7 @@ func (r *NodeHealthCheckReconciler) now() time.Time {
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
@@ -214,6 +215,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// retained, frozen, exactly as for any other incomplete window.
 	if rejected := rejectedNodeHealthItems(&check); len(rejected) > 0 {
 		message := fmt.Sprintf("Rejected %d item(s) the operator cannot run: %s.", len(rejected), strings.Join(rejected, ", "))
+		r.setReportsNotCollected(&check)
 		// The generation is rejected whether or not revocation succeeds, so
 		// Accepted=False is written first: a failed Delete must never persist
 		// Accepted=True for a refused spec.
@@ -278,9 +280,27 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
 
+	reportNames, err := activeAgentReportNames(
+		ctx,
+		r.apiReader(),
+		check.Namespace,
+		nodeHealthAgentSelectorLabels(&check),
+		ds,
+		func(node string) string { return nodehealth.ReportConfigMapName(check.Name, node) },
+	)
+	if err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "The current agent fleet could not be read, so report permissions and coverage are unknown: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
+	if err := ensureScopedReportRBAC(ctx, r.Client, r.Scheme, &check, nodeHealthAgentLabels(&check), saName, reportNames); err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "Report permissions could not be provisioned, so agent readiness and coverage are unknown: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
+
 	now := r.now()
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, nodeHealthAgentItems(items), now, nodeHealthReportMaxAge(&check))
 	if err != nil {
+		r.setReportsNotCollected(&check)
 		return r.failEvaluation(ctx, log, before, &check, "collect node reports", err)
 	}
 	check.Status.ReportingNodes = int32(len(reports))
@@ -394,6 +414,10 @@ func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger,
 // succeeded with. The verdict itself is not cleared — provisioning failing says
 // nothing about what the last complete evaluation found.
 func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, reason string, cause error) (ctrl.Result, error) {
+	authentic := apiMeta.FindStatusCondition(check.Status.Conditions, nodeHealthConditionAuthentic)
+	if reason != "AdmissionPolicyProvisioningFailed" || authentic == nil || authentic.ObservedGeneration != check.Generation || authentic.Reason != reasonAuthenticityUnavailable {
+		r.setReportsNotCollected(check)
+	}
 	r.setReady(check, metav1.ConditionFalse, reason, cause.Error())
 	r.invalidateAgentConditions(check, reason, "Provisioning failed for this generation; the agent's state and coverage are unknown: "+cause.Error())
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
@@ -402,6 +426,18 @@ func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log lo
 		}
 	}
 	return ctrl.Result{}, cause
+}
+
+// setReportsNotCollected prevents an earlier generation's authenticity result
+// from being advertised when reconciliation stops before report collection.
+func (r *NodeHealthCheckReconciler) setReportsNotCollected(check *fathomv1alpha1.NodeHealthCheck) {
+	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+		Type:               nodeHealthConditionAuthentic,
+		Status:             metav1.ConditionUnknown,
+		ObservedGeneration: check.Generation,
+		Reason:             conditionReasonReportsNotCollected,
+		Message:            "Node reports have not been collected for this generation.",
+	})
 }
 
 // failEvaluation persists that the current evaluation is unavailable while
@@ -436,10 +472,14 @@ func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr
 }
 
 // revokeAgent removes the node-agent DaemonSet for a specification the
-// operator will not run. The owner-referenced ServiceAccount, RoleBinding and
-// NetworkPolicy are harmless while idle and are left in place, as the paused
-// path of the certificate kind does; the report ConfigMaps age out.
+// operator will not run. Report update access is cleared before the agent is
+// removed, so a still-valid ServiceAccount token cannot retain its old node
+// grants. The owner-referenced ServiceAccount, bindings, empty Role, and
+// NetworkPolicy are harmless while idle and remain for later reconciliation.
 func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
+	if err := clearScopedReportAccess(ctx, r.Client, check, nodeHealthAgentResourceName(check)); err != nil {
+		return fmt.Errorf("revoke node-agent report access for a rejected specification: %w", err)
+	}
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}}
 	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("remove node-agent DaemonSet for a rejected specification: %w", err)
@@ -588,7 +628,7 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
-	dirType := corev1.HostPathDirectoryOrCreate
+	dirType := corev1.HostPathDirectory
 	for i, dir := range nodehealth.MountDirs(agentItems) {
 		volName := "host-" + strconv.Itoa(i)
 		volumes = append(volumes, corev1.Volume{
@@ -833,9 +873,9 @@ const nodeHealthAdopterFieldManager = "fathom-report-adopter"
 
 // expectedAgentNodes returns the identities of the nodes the agent DaemonSet
 // is currently scheduled on, read from the agent pods themselves (the source of
-// truth for scope without a cluster-wide Node read). Every agent pod carrying a
-// node name counts, including one that is terminating, so coverage fails
-// closed mid-rollout.
+// truth for scope without a cluster-wide Node read). Terminating pods no longer
+// establish scope: their nodes have departed this DaemonSet's current fleet,
+// and their still-fresh reports must not shape the next complete roll-up.
 //
 // Only pods the managed DaemonSet controls count. Labels are public: any
 // principal with pod create in the namespace could otherwise plant a labelled
@@ -853,6 +893,9 @@ func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, chec
 	nodes := make(map[string]struct{}, len(pods.Items))
 	for i := range pods.Items {
 		pod := &pods.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
 		if !metav1.IsControlledBy(pod, ds) {
 			continue
 		}
@@ -1102,8 +1145,8 @@ func (r *NodeHealthCheckReconciler) setReady(check *fathomv1alpha1.NodeHealthChe
 }
 
 // SetupWithManager wires the reconciler. It owns the DaemonSet, ServiceAccount,
-// RoleBinding, and NetworkPolicy it creates, and watches report ConfigMaps by
-// label so a fresh node report triggers a roll-up.
+// Role, RoleBindings, and NetworkPolicy it creates, and watches report
+// ConfigMaps by label so a fresh node report triggers a roll-up.
 func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.NodeAgentRoleName == "" {
 		r.NodeAgentRoleName = defaultNodeAgentRoleName
@@ -1115,6 +1158,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&fathomv1alpha1.NodeHealthCheck{}).
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(

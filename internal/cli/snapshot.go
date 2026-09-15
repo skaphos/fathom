@@ -22,6 +22,14 @@ import (
 // NodeHealthCheck falls back to it until its own summary is populated.
 const readyCondition = "Ready"
 
+const (
+	// nodeAgentPodRolloutMargin estimates serial DaemonSet termination,
+	// scheduling, image startup, and readiness for one node. It is deliberately
+	// conservative, but cannot guarantee a finite scheduler or image-pull bound.
+	nodeAgentPodRolloutMargin = time.Minute
+	maxDuration               = time.Duration(1<<63 - 1)
+)
+
 // snapshot is the normalised view of a check that ls, describe, and
 // run --wait all render. There is exactly one extractor per kind (below), so
 // the three verbs can never disagree about what a check's verdict is.
@@ -176,6 +184,34 @@ func nodeHealthCheckPassTimeout(o client.Object) time.Duration {
 	return 2 * nodeHealthCheckTimeout(o)
 }
 
+// nodeHealthCheckWaitEstimate accounts for the controller's serial
+// DaemonSet rollout: each desired node may consume a pod-rollout margin and a
+// complete evaluation-and-publication pass. Before status is populated, one
+// node is the least surprising estimate for a newly created check.
+func nodeHealthCheckWaitEstimate(o client.Object) time.Duration {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	nodes := max(int64(c.Status.DesiredNodes), 1)
+	perNode := saturatingDurationAdd(nodeAgentPodRolloutMargin, nodeHealthCheckPassTimeout(c))
+	return saturatingDurationMultiply(perNode, nodes)
+}
+
+func saturatingDurationAdd(a, b time.Duration) time.Duration {
+	if a >= maxDuration-b {
+		return maxDuration
+	}
+	return a + b
+}
+
+func saturatingDurationMultiply(d time.Duration, n int64) time.Duration {
+	if d == 0 || n == 0 {
+		return 0
+	}
+	if n > int64(maxDuration/d) {
+		return maxDuration
+	}
+	return d * time.Duration(n)
+}
+
 func healthCheckSnapshot(o client.Object) snapshot {
 	c := o.(*fathomv1alpha1.HealthCheck)
 	var interval time.Duration
@@ -204,5 +240,5 @@ func clusterHealthSnapshot(o client.Object) snapshot {
 	}
 }
 
-// noTimeout is the DefaultTimeout of derived kinds, which never run.
-func noTimeout(client.Object) time.Duration { return 0 }
+// noWaitEstimate is used by derived kinds, which never run themselves.
+func noWaitEstimate(client.Object) time.Duration { return 0 }

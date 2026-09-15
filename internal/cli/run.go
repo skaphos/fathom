@@ -36,9 +36,8 @@ const (
 	// carries no caller identity.
 	fieldManager = "fathomctl"
 
-	// waitMargin is added to a check's effective timeout to form the default
-	// --wait bound: room for the operator to notice the annotation and write
-	// status, on top of the run itself.
+	// waitMargin is added to a check's conservative wait estimate: room for the
+	// operator to notice the annotation and write status after the run itself.
 	waitMargin = 30 * time.Second
 )
 
@@ -99,7 +98,7 @@ triggers the source behind every HealthCheck it selects. --all and -l select
 executable checks only, within the namespace scope.
 
 A NodeCertificateCheck or NodeHealthCheck run restarts one node-agent pod per
-node; on a large cluster give --wait a longer --timeout. Exit codes follow kubectl: 0 when every
+node. Exit codes follow kubectl: 0 when every
 trigger was accepted and, with --wait, every verdict is Pass, Warn, or
 Skipped; 1 otherwise.`,
 		Args: cobra.MaximumNArgs(2),
@@ -108,7 +107,7 @@ Skipped; 1 otherwise.`,
 		},
 	}
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for the run to complete and print its verdict.")
-	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "How long --wait may take. Defaults to the check's timeout plus 30s (the largest, for several checks).")
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "How long --wait may take. Defaults to a conservative estimate plus 30s (the largest, for several checks).")
 	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip the confirmation prompt when more than 10 checks would be triggered.")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Print the checks that would be triggered and exit without writing anything.")
 	cmd.Flags().BoolVar(&opts.all, "all", false, "Trigger every executable check in the namespace scope.")
@@ -375,11 +374,7 @@ func writeTrigger(ctx context.Context, c client.Client, obj client.Object, token
 // waitForOutcomes waits on every triggered target concurrently and fills the
 // verdict fields of its outcome.
 func waitForOutcomes(ctx context.Context, c client.Client, f *factory, targets []runTarget, outcomes []runOutcome, token string, timeout time.Duration) {
-	if timeout <= 0 {
-		for _, t := range targets {
-			timeout = max(timeout, t.ref.Kind.DefaultTimeout(t.obj)+waitMargin)
-		}
-	}
+	timeout = runWaitTimeout(targets, timeout)
 	var wg sync.WaitGroup
 	for i := range targets {
 		if !outcomes[i].Triggered {
@@ -403,6 +398,20 @@ func waitForOutcomes(ctx context.Context, c client.Client, f *factory, targets [
 		}(i)
 	}
 	wg.Wait()
+}
+
+// runWaitTimeout preserves a positive user override exactly. Otherwise it
+// uses the largest target estimate because all waits run concurrently, then
+// adds one shared margin for operator observation and status publication.
+func runWaitTimeout(targets []runTarget, requested time.Duration) time.Duration {
+	if requested > 0 {
+		return requested
+	}
+	var estimate time.Duration
+	for _, t := range targets {
+		estimate = max(estimate, t.ref.Kind.DefaultWaitEstimate(t.obj))
+	}
+	return saturatingDurationAdd(estimate, waitMargin)
 }
 
 func confirm(in io.Reader, prompt io.Writer, n int) bool {
