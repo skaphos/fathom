@@ -130,8 +130,11 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			wantReject: true, wantInMsg: "warnPercentFree",
 		},
 		{
-			name:   "13 zero thresholds are legal (never warn)",
-			mutate: func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.Checks[0].WarnPercentFree = ptr.To[int32](0) },
+			name: "13 zero thresholds are legal (never warn; critical must be 0 too)",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks[0].WarnPercentFree = ptr.To[int32](0)
+				c.Spec.Checks[0].CriticalPercentFree = ptr.To[int32](0)
+			},
 		},
 		{
 			name: "14 conditions on a headroom type",
@@ -302,12 +305,6 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](0)})
 			},
 			wantReject: true, wantInMsg: "greater than or equal",
-		},
-		{
-			name: "38 warn 0 with critical 0 is accepted (never warn)",
-			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
-				c.Spec.Checks = items(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](0), CriticalPercentFree: ptr.To[int32](0)})
-			},
 		},
 		{
 			name: "39 criticalPercentFree at the default warn is accepted",
