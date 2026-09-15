@@ -1,7 +1,7 @@
 # This role is not used by the operator itself.
 # It is provided so cluster admins can grant people and CI jobs everything the
 # fathomctl CLI needs, including `fathomctl run`: the viewer rules plus patch on
-# the three executable check kinds, which is how the CLI writes the
+# the four executable check kinds, which is how the CLI writes the
 # fathom.skaphos.io/run-now trigger annotation. RBAC cannot scope patch to
 # metadata alone, so this grant also permits spec edits; bind it only to
 # subjects that are trusted to trigger runs. See docs/reference/fathomctl.md.
@@ -20,6 +20,7 @@ rules:
   - addonchecks
   - dnschecks
   - nodecertificatechecks
+  - nodehealthchecks
   - healthchecks
   - clusterhealths
   - healthreports
@@ -33,6 +34,7 @@ rules:
   - addonchecks/status
   - dnschecks/status
   - nodecertificatechecks/status
+  - nodehealthchecks/status
   - healthchecks/status
   - clusterhealths/status
   verbs:
@@ -43,6 +45,7 @@ rules:
   - addonchecks
   - dnschecks
   - nodecertificatechecks
+  - nodehealthchecks
   verbs:
   - patch
 - apiGroups:

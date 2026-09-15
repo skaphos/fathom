@@ -22,12 +22,13 @@ the canonical resource list.
 - `api/v1alpha1/`: CRD type definitions. `zz_generated.deepcopy.go` is produced by `controller-gen`; never hand-edit it.
 - `cmd/main.go`: thin entrypoint. Constructs the cobra root command via `internal/app` and runs it.
 - `cmd/probe/`: the tiny in-cluster network probe binary (`Dockerfile.probe`).
-- `cmd/node-agent/`: the node-agent DaemonSet binary that scans on-disk certificates (`Dockerfile.node-agent`); its own dedicated image, never the operator or probe image.
+- `cmd/node-agent/`: the node-agent DaemonSet binary (`Dockerfile.node-agent`); its own dedicated image, never the operator or probe image. `--mode certificates` scans on-disk certificates for `NodeCertificateCheck`; `--mode health` measures filesystem headroom and probes the kubelet and CRI socket for `NodeHealthCheck`.
 - `cmd/fathomctl/`: thin entrypoint for the `fathomctl` CLI. Ships as per-platform release archives (`scripts/fathomctl-dist.sh`), never as an image.
 - `internal/app/`: cobra/viper plumbing, options parsing, manager construction, controller registration. The unit-testable seam.
 - `internal/cli/`: the `fathomctl` command tree (`ls`, `describe`, `reports`, `run`, `version`), client factory with injectable seams, the kind-descriptor table, and the shared verdict normalisation. Tests are in-package stdlib `testing` over the controller-runtime fake client. Must not import `internal/app`, `internal/adapter`, or `internal/controller`.
-- `internal/controller/`: reconciler implementations (`AddonCheckReconciler`, `HealthCheckReconciler`, `ClusterHealthReconciler`, `NodeCertificateCheckReconciler`).
-- `internal/nodecert/`: the on-disk X.509 scan engine and the node-agent↔operator wire contract (no Kubernetes-client deps, so the agent binary stays small).
+- `internal/controller/`: reconciler implementations (`AddonCheckReconciler`, `HealthCheckReconciler`, `ClusterHealthReconciler`, `NodeCertificateCheckReconciler`, `NodeHealthCheckReconciler`, `DNSCheckReconciler`).
+- `internal/nodecert/`: the on-disk X.509 scan engine and the node-agent↔operator wire contract (no Kubernetes-client deps, so the agent binary stays small). Also hosts the report-authenticity bindings and the kind-qualified report naming both node-scoped kinds share.
+- `internal/nodehealth/`: the node-local health engine (`statfs` headroom, kubelet `/healthz`, CRI socket dial) and `NodeHealthCheck`'s wire contract, under the same no-Kubernetes-client discipline. Node conditions are graded by the operator, never here.
 - `config/`: kustomize overlays, RBAC, CRDs, OLM scaffolding (`config/crd`, `config/manager`, `config/rbac`, `config/manifests`, …).
 - `test/e2e/`: Ginkgo suites that run against a Kind cluster.
 - `test/utils/`: shared helpers used by the e2e suite.
@@ -120,7 +121,7 @@ Changes that **require** an e2e run before the PR is considered ready:
 - `pkg/adapter/*` — adapter contract surface.
 - `api/v1alpha1/*_types.go` — CRD schema changes.
 - `internal/probe/*` — probe pod lifecycle / pod-builder changes.
-- `internal/nodecert/*` and `cmd/node-agent/*` — the on-disk cert scan engine and node-agent DaemonSet binary; reads real host certs over hostPath, which only e2e exercises.
+- `internal/nodecert/*`, `internal/nodehealth/*`, and `cmd/node-agent/*` — the on-disk cert scan and node-health engines and the node-agent DaemonSet binary; they read real host paths, the kubelet, and the CRI socket over hostPath/hostNetwork, which only e2e exercises.
 - `test/e2e/fixtures/*` — addon stack itself; the fixture change is the test.
 - Bumping `ENVTEST_K8S_VERSION`, the `kindest/node` image, or the `kubernetesVersion` used for CRD docs — these must stay aligned with `go.mod` k8s.io modules (see Testing Guidelines).
 

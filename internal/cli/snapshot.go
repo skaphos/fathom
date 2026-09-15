@@ -18,8 +18,17 @@ import (
 
 // readyCondition is the condition every kind uses for its operational
 // summary. AddonCheck and NodeCertificateCheck carry no summary field, so the
-// Ready message is the bounded one-line explanation the operator writes.
+// Ready message is the bounded one-line explanation the operator writes;
+// NodeHealthCheck falls back to it until its own summary is populated.
 const readyCondition = "Ready"
+
+const (
+	// nodeAgentPodRolloutMargin estimates serial DaemonSet termination,
+	// scheduling, image startup, and readiness for one node. It is deliberately
+	// conservative, but cannot guarantee a finite scheduler or image-pull bound.
+	nodeAgentPodRolloutMargin = time.Minute
+	maxDuration               = time.Duration(1<<63 - 1)
+)
 
 // snapshot is the normalised view of a check that ls, describe, and
 // run --wait all render. There is exactly one extractor per kind (below), so
@@ -127,6 +136,82 @@ func nodeCertificateCheckTimeout(o client.Object) time.Duration {
 	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
 }
 
+// nodeHealthCheckCadence is the cadence the controller actually runs a
+// NodeHealthCheck at: spec.interval capped at the agent cadence. Status is
+// refreshed and the agent re-evaluates on it, so "next run" follows it, not
+// a 24h spec.interval.
+func nodeHealthCheckCadence(c *fathomv1alpha1.NodeHealthCheck) time.Duration {
+	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+	return min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+}
+
+func nodeHealthCheckSnapshot(o client.Object) snapshot {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	interval := nodeHealthCheckCadence(c)
+	// NodeHealthCheck writes its own bounded summary once it has rolled up;
+	// before that the Ready message is the best one-line explanation.
+	summary := c.Status.Summary
+	if summary == "" {
+		summary = readyMessage(c.Status.Conditions)
+	}
+	return snapshot{
+		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Summary:         summary,
+		LastRun:         c.Status.LastRunTime,
+		NextRun:         nextRun(c.Status.LastRunTime, interval),
+		ReportName:      c.Status.LastReportName,
+		ConsumedTrigger: c.Status.LastRunTrigger,
+	}
+}
+
+// nodeHealthCheckTimeout mirrors the controller's effective agent timeout:
+// the agent re-evaluates at min(interval, MaxNodeHealthCheckAgentInterval)
+// and a pass is bounded by min(timeout, that cadence). Reporting the raw
+// spec.timeout made `run --wait` on a 24h/24h check wait a day for a pass the
+// agent stops at five minutes.
+func nodeHealthCheckTimeout(o client.Object) time.Duration {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	timeout := effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+	return min(timeout, nodeHealthCheckCadence(c))
+}
+
+// nodeHealthCheckPassTimeout is the bound on one whole agent pass — the
+// evaluation and then the publication of its report, each bounded by the
+// effective timeout — which is what `run --wait` must budget for. Budgeting a
+// single timeout let a pass whose API write was merely slow be reported as a
+// timed-out run.
+func nodeHealthCheckPassTimeout(o client.Object) time.Duration {
+	return 2 * nodeHealthCheckTimeout(o)
+}
+
+// nodeHealthCheckWaitEstimate accounts for the controller's serial
+// DaemonSet rollout: each desired node may consume a pod-rollout margin and a
+// complete evaluation-and-publication pass. Before status is populated, one
+// node is the least surprising estimate for a newly created check.
+func nodeHealthCheckWaitEstimate(o client.Object) time.Duration {
+	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	nodes := max(int64(c.Status.DesiredNodes), 1)
+	perNode := saturatingDurationAdd(nodeAgentPodRolloutMargin, nodeHealthCheckPassTimeout(c))
+	return saturatingDurationMultiply(perNode, nodes)
+}
+
+func saturatingDurationAdd(a, b time.Duration) time.Duration {
+	if a >= maxDuration-b {
+		return maxDuration
+	}
+	return a + b
+}
+
+func saturatingDurationMultiply(d time.Duration, n int64) time.Duration {
+	if d == 0 || n == 0 {
+		return 0
+	}
+	if n > int64(maxDuration/d) {
+		return maxDuration
+	}
+	return d * time.Duration(n)
+}
+
 func healthCheckSnapshot(o client.Object) snapshot {
 	c := o.(*fathomv1alpha1.HealthCheck)
 	var interval time.Duration
@@ -155,5 +240,5 @@ func clusterHealthSnapshot(o client.Object) snapshot {
 	}
 }
 
-// noTimeout is the DefaultTimeout of derived kinds, which never run.
-func noTimeout(client.Object) time.Duration { return 0 }
+// noWaitEstimate is used by derived kinds, which never run themselves.
+func noWaitEstimate(client.Object) time.Duration { return 0 }

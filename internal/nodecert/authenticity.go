@@ -79,19 +79,28 @@ func (r ReportRejection) IndicatesForgery() bool {
 // own name. Checks run cheapest-and-most-benign first so the returned reason
 // names the most specific problem.
 func VerifyReportBinding(cmName, annotatedNode, checkName string, report NodeReport) ReportRejection {
-	if report.CheckName != checkName {
+	return VerifyReportIdentity(cmName, annotatedNode, checkName, report.CheckName, report.Node, NodeReportConfigMapName(checkName, report.Node))
+}
+
+// VerifyReportIdentity is the kind-agnostic core of VerifyReportBinding, so a
+// second node-scoped kind (NodeHealthCheck, #206) applies exactly the same
+// bindings to its own report payload rather than a drifting copy. reportCheckName
+// and reportNode come from the decoded payload; canonicalName is the ConfigMap
+// name a genuine agent for (checkName, reportNode) writes to.
+func VerifyReportIdentity(cmName, annotatedNode, checkName, reportCheckName, reportNode, canonicalName string) ReportRejection {
+	if reportCheckName != checkName {
 		return RejectWrongCheck
 	}
-	if report.Node == "" {
+	if reportNode == "" {
 		return RejectMissingNode
 	}
 	if annotatedNode == "" {
 		return RejectMissingNodeAnnotation
 	}
-	if annotatedNode != report.Node {
+	if annotatedNode != reportNode {
 		return RejectNodeMismatch
 	}
-	if cmName != NodeReportConfigMapName(checkName, report.Node) {
+	if cmName != canonicalName {
 		return RejectNonCanonicalName
 	}
 	return ReportAccepted

@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -166,6 +167,7 @@ func conventionalAgentNodes(desired int32) []string {
 // identities are in scope.
 func scheduleAgentPods(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, nodes ...string) {
 	labels := map[string]string{
+		nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
 		nodecert.LabelSourceName: check.Name,
 		nodeAgentComponentLabel:  nodeAgentComponentValue,
 	}
@@ -186,6 +188,10 @@ func scheduleAgentPods(ctx context.Context, check *fathomv1alpha1.NodeCertificat
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)))).To(Succeed())
 	}
 
+	// The real DaemonSet controller sets a controller owner reference on every
+	// pod it creates; expectedAgentNodes counts only such pods.
+	ds := &appsv1.DaemonSet{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, ds)).To(Succeed())
 	for _, node := range nodes {
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -198,6 +204,7 @@ func scheduleAgentPods(ctx context.Context, check *fathomv1alpha1.NodeCertificat
 				Containers: []corev1.Container{{Name: "node-agent", Image: "ghcr.io/skaphos/fathom-node-agent:test"}},
 			},
 		}
+		Expect(controllerutil.SetControllerReference(ds, pod, k8sClient.Scheme())).To(Succeed())
 		err := k8sClient.Create(ctx, pod)
 		if apierrors.IsAlreadyExists(err) {
 			continue

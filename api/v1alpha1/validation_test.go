@@ -31,6 +31,7 @@ func TestGeneratedCRDsEmbedCadenceFloors(t *testing.T) {
 	crds := []string{
 		"fathom.skaphos.io_addonchecks.yaml",
 		"fathom.skaphos.io_nodecertificatechecks.yaml",
+		"fathom.skaphos.io_nodehealthchecks.yaml",
 	}
 	for _, name := range crds {
 		path := filepath.Join("..", "..", "config", "crd", "bases", name)
@@ -76,6 +77,7 @@ func TestGeneratedCRDsDeclareTheFathomCategory(t *testing.T) {
 		"fathom.skaphos.io_healthchecks.yaml":          true,
 		"fathom.skaphos.io_clusterhealths.yaml":        true,
 		"fathom.skaphos.io_nodecertificatechecks.yaml": true,
+		"fathom.skaphos.io_nodehealthchecks.yaml":      true,
 		"fathom.skaphos.io_dnschecks.yaml":             true,
 		"fathom.skaphos.io_healthreports.yaml":         false,
 	}
@@ -117,6 +119,7 @@ func TestEveryGeneratedCRDIsCategorised(t *testing.T) {
 		"fathom.skaphos.io_healthchecks.yaml":          true,
 		"fathom.skaphos.io_clusterhealths.yaml":        true,
 		"fathom.skaphos.io_nodecertificatechecks.yaml": true,
+		"fathom.skaphos.io_nodehealthchecks.yaml":      true,
 		"fathom.skaphos.io_dnschecks.yaml":             true,
 		"fathom.skaphos.io_healthreports.yaml":         true,
 	}

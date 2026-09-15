@@ -87,3 +87,23 @@ func TestAllowedPathPrefixesMatchCRDRule(t *testing.T) {
 		t.Fatalf("AllowedPathPrefixes() = %v, want %v (keep in sync with the CRD CEL rule)", got, want)
 	}
 }
+
+// TestKindQualifiedReportNamesAreDisjoint pins that folding the kind into the
+// hash — not only into the readable base — keeps the two node-scoped kinds'
+// report names apart for any check names: a NodeHealthCheck "foo" and a
+// NodeCertificateCheck "nodehealth-foo" share a base but not a name.
+func TestKindQualifiedReportNamesAreDisjoint(t *testing.T) {
+	t.Parallel()
+	health := NodeReportConfigMapNameFor("nodehealth", "foo", "node-1")
+	cert := NodeReportConfigMapName("nodehealth-foo", "node-1")
+	if health == cert {
+		t.Fatalf("collision: %q", health)
+	}
+	if !strings.HasPrefix(health, "nodehealth-foo-node-1-") || !strings.HasPrefix(cert, "nodehealth-foo-node-1-") {
+		t.Fatalf("both should share the readable base: %q vs %q", health, cert)
+	}
+	// The certificate name is unchanged from the first release: node-only hash.
+	if cert != NodeReportConfigMapName("nodehealth-foo", "node-1") || NodeReportConfigMapName("a", "n") == NodeReportConfigMapName("b", "n") {
+		t.Fatal("certificate naming must stay deterministic per (check, node)")
+	}
+}

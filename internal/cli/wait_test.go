@@ -7,6 +7,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -37,7 +38,7 @@ func fakeFactory(t *testing.T, objs ...client.Object) (*factory, client.Client) 
 		WithScheme(scheme).
 		WithObjects(objs...).
 		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}, &fathomv1alpha1.DNSCheck{}, &fathomv1alpha1.NodeCertificateCheck{},
-			&fathomv1alpha1.HealthCheck{}, &fathomv1alpha1.ClusterHealth{}).
+			&fathomv1alpha1.NodeHealthCheck{}, &fathomv1alpha1.HealthCheck{}, &fathomv1alpha1.ClusterHealth{}).
 		Build()
 	f := newFactory()
 	f.clientConfig = func(*globalOptions) clientcmd.ClientConfig {
@@ -126,6 +127,149 @@ func TestWaitForRun_TimesOut(t *testing.T) {
 	}
 }
 
+func TestWaitForRun_GrowsImplicitNodeHealthDeadlineFromObservedFleet(t *testing.T) {
+	for _, staleNodes := range []int32{0, 1} {
+		t.Run(fmt.Sprintf("stale-%d", staleNodes), func(t *testing.T) {
+			nhc := &fathomv1alpha1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Generation: 2, Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+				Status: fathomv1alpha1.NodeHealthCheckStatus{
+					DesiredNodes: staleNodes,
+					Conditions:   []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "NoMatchingNodes", ObservedGeneration: 1}},
+				},
+			}
+			target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
+			initialBudget := saturatingDurationAdd(nodeHealthCheckWaitEstimate(nhc), waitMargin)
+			started := time.Now()
+			now := started
+			getCalls := 0
+			scheme, _ := newScheme()
+			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
+				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := c.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						current := obj.(*fathomv1alpha1.NodeHealthCheck)
+						current.Status.DesiredNodes = 500
+						getCalls++
+						if getCalls > 1 {
+							current.Status.LastRunTrigger = "tok-1"
+						}
+						now = started.Add(initialBudget + time.Second)
+						return nil
+					},
+				}).Build()
+			f := newFactory()
+			f.pollInterval = time.Millisecond
+
+			res := f.waitForRunWithDeadlineGrowth(context.Background(), fc, target, "tok-1", initialBudget, true, func() time.Time { return now })
+			if res.err != nil || res.timedOut || res.superseded || res.snap.ConsumedTrigger != "tok-1" {
+				t.Fatalf("observed 500-node fleet must extend the stale %d-node budget: %+v", staleNodes, res)
+			}
+		})
+	}
+}
+
+func TestWaitForRun_ExplicitDeadlineDoesNotGrow(t *testing.T) {
+	nhc := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+	}
+	target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
+	scheme, _ := newScheme()
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
+		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if err := c.Get(ctx, key, obj, opts...); err != nil {
+					return err
+				}
+				current := obj.(*fathomv1alpha1.NodeHealthCheck)
+				current.Status.DesiredNodes = 500
+				return nil
+			},
+		}).Build()
+	f := newFactory()
+	f.pollInterval = 5 * time.Millisecond
+	res := f.waitForRunWithDeadlineGrowth(context.Background(), fc, target, "tok-1", 30*time.Millisecond, false, time.Now)
+	if !res.timedOut || res.err != nil {
+		t.Fatalf("explicit deadline must remain absolute after observing a larger fleet: %+v", res)
+	}
+}
+
+func TestWaitForRun_DeadlineCancelsBlockedRead(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dynamic-%t", dynamic), func(t *testing.T) {
+			nhc := &fathomv1alpha1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+			}
+			target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
+			scheme, _ := newScheme()
+			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
+				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+						<-ctx.Done()
+						return ctx.Err()
+					},
+				}).Build()
+			f := newFactory()
+			start := time.Now()
+			res := f.waitForRunWithDeadlineGrowth(context.Background(), fc, target, "tok-1", 30*time.Millisecond, dynamic, time.Now)
+			if !res.timedOut || res.err != nil {
+				t.Fatalf("blocked read must be cancelled at the deadline: %+v", res)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("blocked read exceeded deadline: %s", elapsed)
+			}
+		})
+	}
+}
+
+func TestWaitForRun_UnchangedFleetDoesNotResetDeadline(t *testing.T) {
+	nhc := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+	}
+	target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
+	started := time.Now()
+	var calls atomic.Int32
+	scheme, _ := newScheme()
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
+		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if err := c.Get(ctx, key, obj, opts...); err != nil {
+					return err
+				}
+				obj.(*fathomv1alpha1.NodeHealthCheck).Status.DesiredNodes = 2
+				calls.Add(1)
+				return nil
+			},
+		}).Build()
+	f := newFactory()
+	f.pollInterval = time.Millisecond
+	res := f.waitForRunWithDeadlineGrowth(context.Background(), fc, target, "tok-1", time.Minute, true, func() time.Time {
+		return started.Add(time.Duration(calls.Load()) * time.Minute)
+	})
+	if !res.timedOut || calls.Load() != 5 {
+		t.Fatalf("deadline must stay anchored after observing the same fleet: result=%+v calls=%d", res, calls.Load())
+	}
+}
+
+func TestWaitForRun_CancellationStillStopsDynamicWait(t *testing.T) {
+	nhc := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{
+		Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"},
+	}}
+	f, fc := fakeFactory(t, nhc)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
+	res := f.waitForRunWithDeadlineGrowth(ctx, fc, target, "tok-1", time.Hour, true, time.Now)
+	if !res.timedOut || res.err != nil {
+		t.Fatalf("cancelled dynamic wait must stop promptly with the existing interrupted result: %+v", res)
+	}
+}
+
 func TestWaitForRun_ReadErrorIsReported(t *testing.T) {
 	f, fc := fakeFactory(t) // object does not exist
 	res := f.waitForRun(context.Background(), fc, addonTarget("team-a", "missing", addonCheck("team-a", "missing")), "tok-1", time.Second)
@@ -190,5 +334,15 @@ func TestWaitForRun_FailsFastWhenOperatorCannotRun(t *testing.T) {
 	res = f2.waitForRun(context.Background(), fc2, addonTarget("team-a", "flaky", ac2), "tok-2", 30*time.Millisecond)
 	if !res.timedOut {
 		t.Fatalf("a recoverable Ready=False must keep waiting, got %+v", res)
+	}
+}
+
+// TestBlockingReasonsIncludeItemsRejected pins that a NodeHealthCheck whose
+// spec the operator rejected fails `run --wait` fast instead of waiting for a
+// trigger the controller will never consume.
+func TestBlockingReasonsIncludeItemsRejected(t *testing.T) {
+	t.Parallel()
+	if !blockingReasons["ItemsRejected"] {
+		t.Fatal("ItemsRejected must be a blocking Ready=False reason for run --wait")
 	}
 }

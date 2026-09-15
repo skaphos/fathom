@@ -23,6 +23,7 @@ func TestParseKind_AcceptedSpellings(t *testing.T) {
 		"AddonCheck":           {"AddonCheck", "addoncheck", "addonchecks", "ac", "AC"},
 		"DNSCheck":             {"DNSCheck", "dnscheck", "dnschecks", "dns"},
 		"NodeCertificateCheck": {"NodeCertificateCheck", "nodecertificatecheck", "nodecertificatechecks", "ncc"},
+		"NodeHealthCheck":      {"NodeHealthCheck", "nodehealthcheck", "nodehealthchecks", "nhc", "NHC"},
 		"HealthCheck":          {"HealthCheck", "healthcheck", "healthchecks", "hc"},
 		"ClusterHealth":        {"ClusterHealth", "clusterhealth", "clusterhealths", "ch"},
 	}
@@ -49,12 +50,12 @@ func TestParseKind_AcceptedSpellings(t *testing.T) {
 }
 
 func TestKindTable_Invariants(t *testing.T) {
-	if got := len(kinds); got != 5 {
-		t.Fatalf("expected 5 kinds, got %d", got)
+	if got := len(kinds); got != 6 {
+		t.Fatalf("expected 6 kinds, got %d", got)
 	}
 	exec := executableKinds()
-	if len(exec) != 3 {
-		t.Fatalf("expected 3 executable kinds, got %d", len(exec))
+	if len(exec) != 4 {
+		t.Fatalf("expected 4 executable kinds, got %d", len(exec))
 	}
 	for _, k := range kinds {
 		if k.Executable != k.WritesReports {
@@ -106,7 +107,7 @@ func TestKindTable_ItemsAndPaused(t *testing.T) {
 	if !ncc.Paused(&fathomv1alpha1.NodeCertificateCheck{Spec: fathomv1alpha1.NodeCertificateCheckSpec{Paused: true}}) {
 		t.Error("NodeCertificateCheck Paused should read spec.paused")
 	}
-	for _, k := range []string{"DNSCheck", "ClusterHealth"} {
+	for _, k := range []string{"DNSCheck", "NodeHealthCheck", "ClusterHealth"} {
 		d := kindByName(k)
 		if d.Paused(d.New()) {
 			t.Errorf("%s has no paused field; Paused must be false", k)

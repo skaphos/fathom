@@ -221,3 +221,26 @@ func TestReportChange(t *testing.T) {
 		t.Errorf("summary with no checks = %q", got)
 	}
 }
+
+// TestChangedCheckCountKeysPerItem pins that report history compares the
+// node-scoped kinds per item: two checks for one node share family and target
+// and differ only in their type/path details, and a change in the first must
+// not be masked by an unchanged second.
+func TestChangedCheckCountKeysPerItem(t *testing.T) {
+	t.Parallel()
+	node := fathomv1alpha1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: "node-a"}
+	mk := func(disk, inode fathomv1alpha1.HealthReportResult) *fathomv1alpha1.HealthReport {
+		return &fathomv1alpha1.HealthReport{Spec: fathomv1alpha1.HealthReportSpec{Checks: []fathomv1alpha1.HealthReportCheck{
+			{Family: "node_health", TargetRef: node, Result: disk, Details: map[string]string{"type": "DiskHeadroom", "path": "/var/lib/kubelet"}},
+			{Family: "node_health", TargetRef: node, Result: inode, Details: map[string]string{"type": "InodeHeadroom", "path": "/var/lib/kubelet"}},
+		}}}
+	}
+	older := mk(fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass)
+	newer := mk(fathomv1alpha1.HealthReportResultFail, fathomv1alpha1.HealthReportResultPass)
+	if got := changedCheckCount(newer, older); got != 1 {
+		t.Fatalf("changed checks = %d, want 1 (DiskHeadroom changed, InodeHeadroom did not)", got)
+	}
+	if got := changedCheckCount(older, older); got != 0 {
+		t.Fatalf("identical reports = %d changes, want 0", got)
+	}
+}

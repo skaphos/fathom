@@ -40,7 +40,7 @@ func newLsCommand(f *factory) *cobra.Command {
 		Long: `ls lists Fathom checks with the verdict the operator last published.
 
 With no kind it lists every kind, grouped: AddonCheck, DNSCheck,
-NodeCertificateCheck, HealthCheck, then ClusterHealth. ClusterHealth is
+NodeCertificateCheck, NodeHealthCheck, HealthCheck, then ClusterHealth. ClusterHealth is
 cluster-scoped and is always included regardless of --namespace. With a kind
 (any of its spellings, e.g. dnschecks or dns) only that kind is listed.
 

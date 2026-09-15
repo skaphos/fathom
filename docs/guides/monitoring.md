@@ -81,16 +81,16 @@ controller-runtime and Go metrics are exposed alongside them):
 | --- | --- | --- | --- |
 | `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
 | `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
-| `fathom_check_interval_seconds` | gauge | `kind`, `name`, `namespace` | The cadence a check is currently expected to run at, after per-resource override and floor clamping. Join it against the last-run timestamp to express staleness relative to cadence instead of a fixed threshold. **Absent** — not zero — when the cadence cannot be resolved. |
+| `fathom_check_interval_seconds` | gauge | `kind`, `name`, `namespace` | The cadence a check is currently expected to run at, after per-resource override and floor clamping. For `NodeHealthCheck` this is the **capped agent cadence** (`min(spec.interval, 5m)`), not `spec.interval`: a frozen verdict must read as stale within minutes even on a daily check. Join it against the last-run timestamp to express staleness relative to cadence instead of a fixed threshold. **Absent** — not zero — when the cadence cannot be resolved. |
 | `fathom_dnscheck_target_result` | gauge | `namespace`, `check`, `name`, `record_type`, `resolver`, `result` | **`fathom_check_result` one level down**, for `DNSCheck` only: one-hot per (target, vantage point) pair, so you can alert on the single name that broke rather than on the check as a whole. See [Per-target DNS results](#per-target-dns-results) for the cardinality budget. |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
 | `fathom_reconcile_duration_seconds` | histogram | `kind` | Reconcile latency per kind. |
 | `fathom_adapter_run_duration_seconds` | histogram | `adapter`, `family`, `outcome` | How long adapter runs take, and their outcome distribution. |
 | `fathom_adapter_registered` | gauge | `adapter` | `1` for each adapter registered at startup — confirms the operator loaded the adapters you expect. |
 
-The check gauges cover all four check kinds (`AddonCheck`, `HealthCheck`,
-`ClusterHealth`, `NodeCertificateCheck`; `ClusterHealth` is cluster-scoped, so
-its `namespace` label is empty). Series exist from the moment the operator
+The check gauges cover every check kind (`AddonCheck`, `DNSCheck`,
+`NodeCertificateCheck`, `NodeHealthCheck`, `HealthCheck`, `ClusterHealth`;
+`ClusterHealth` is cluster-scoped, so its `namespace` label is empty). Series exist from the moment the operator
 first observes a check — reporting `result="Unknown"` and last-run `0` until
 the first evaluation completes — and are removed when the check is deleted.
 For the wrapper kinds the last-run timestamp follows the staleness of the
@@ -188,6 +188,40 @@ that admits metrics ingress **only from namespaces labeled
 monitoring namespace (`kubectl label namespace <ns> metrics=enabled`) or the
 scrape will be dropped — see
 [Network policies](../reference/network-policies.md).
+
+### Node-health metrics
+
+> Applies only to builds that include the `NodeHealthCheck` kind — see
+> [Node health checks → Availability](node-health-checks.md#availability).
+
+Each node-agent running for a `NodeHealthCheck` exports two gauges on its own
+metrics endpoint:
+
+| Metric | Type | Labels | Use |
+| --- | --- | --- | --- |
+| `fathom_node_health_check_result` | gauge (one-hot) | `node`, `type`, `path`, `result` | **Per-check result on each node, for the agent-evaluated types only** (`DiskHeadroom`, `InodeHeadroom`, `KubeletHealthz`, `ContainerRuntime`). `NodeCondition` is graded by the operator, not the agent, so it has no series here; it is visible in the check-level `fathom_check_result`, `status.nodeResults`, and the HealthReport. Exactly one `result` series per `(node, type, path)` is 1. Alert on the node and check that broke rather than on the check as a whole. Series are bounded by the schema: 16 items × 6 results per node. |
+| `fathom_node_health_filesystem_free_percent` | gauge | `node`, `path`, `resource` (`bytes` \| `inodes`) | **The measured headroom behind a `DiskHeadroom`/`InodeHeadroom` verdict**, so you can graph the trend and alert ahead of the threshold. |
+
+```yaml
+      - alert: NodeHealthCheckFailing
+        expr: fathom_node_health_check_result{result="Fail"} == 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: >-
+            {{ $labels.type }} {{ $labels.path }} is failing on {{ $labels.node }}
+      - alert: NodeFilesystemHeadroomLow
+        expr: fathom_node_health_filesystem_free_percent{resource="bytes"} < 15
+        for: 15m
+        labels: {severity: warning}
+```
+
+Scrape these agents the same way as the certificate agents (a `PodMonitor` on
+the agent pods, or scrape annotations). Note that a `KubeletHealthz` item puts
+the agent on the **host network**: its metrics then bind on a per-check host
+port (20000–22767 by default; the check's `AgentPrivileged` condition names it) and the
+per-check NetworkPolicy does not gate them — see
+[Network policies](../reference/network-policies.md#node-agent-daemonset-runtime-managed-always-on).
 
 ## 3. Tracing
 

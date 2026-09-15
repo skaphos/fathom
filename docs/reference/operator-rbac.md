@@ -22,10 +22,11 @@ radius is its own declared rules, not the operator's.
 ## Why these grants are cluster-scoped
 
 Fathom's check resources (`HealthCheck`, `AddonCheck`, `NodeCertificateCheck`,
-`ClusterHealth`, `HealthReport`) are **namespaced CRDs that may be created in
-any namespace**. Everything the operator provisions at runtime follows the
+`NodeHealthCheck`, `ClusterHealth`, `HealthReport`) are **namespaced CRDs that
+may be created in any namespace**. Everything the operator provisions at runtime follows the
 check into its namespace: the node-agent DaemonSet, its ServiceAccount and
-RoleBinding, its NetworkPolicy, and the per-node report ConfigMaps the agents
+report-access Roles and RoleBindings, its NetworkPolicy, and the per-node report
+ConfigMaps the agents
 publish. A namespaced Role in `fathom-system` would silently break every check
 created outside `fathom-system`, so the grants on those kinds must be
 cluster-scoped. The [namespace-scoping analysis](#namespace-scoping-analysis)
@@ -41,18 +42,19 @@ rule in `config/rbac/role.yaml`.
 
 | API group | Resources | Verbs | Justification (why this, and why not less) |
 | --- | --- | --- | --- |
-| core | configmaps, serviceaccounts | create, get, list, update, watch | ConfigMaps: node-agents publish one report ConfigMap per node in the check's namespace; the controller lists and watches them **by Fathom labels only** to roll reports up into a HealthReport, and updates them to stamp the owner reference that garbage-collects them with the check. The operator never creates a report ConfigMap itself — `create` is forced by RBAC escalation prevention: the operator creates the `fathom-node-agent-role` ClusterRole conferring `create`/`get`/`update` on ConfigMaps, and the API server requires a grantor to hold every verb it confers. ServiceAccounts: the per-check node-agent ServiceAccount is created/converged via CreateOrUpdate (owner-referenced; deletion rides garbage collection), and AddonCheck reconciliation lists the static per-addon impersonation ServiceAccounts by label. No `patch`, no `delete` on either kind; the shared informer only caches objects labeled `fathom.skaphos.io/managed-by=fathom`, so foreign ConfigMaps are never cached or read in practice. ConfigMaps are not Secrets — the operator holds no Secret grant anywhere. |
-| core | pods | create, delete, get, list | Two distinct consumers. **The leader-elected probe sweeper** (ADR-0003, #163) lists pods cluster-wide by the reserved probe labels and deletes only pods that also match the probe pod shape (single `probe` container); `list` cannot be namespaced because probes follow the addon under check. **`DNSCheck` resolution** (#266) needs `create` and `get`: a `DNSCheck` resolves from its own namespace so that a check author's reach is exactly their existing reach and the namespace's own NetworkPolicy governs the query — running it from the operator's namespace would let the author borrow that namespace's egress posture. The operator must therefore place a pod in a namespace it does not own, and `get` is required because the launcher polls the pod it created. **Why nothing narrower:** the grant cannot be namespaced — a `DNSCheck` may be created in any namespace and the set is unknown when this manifest is rendered. Per-namespace Roles would be strictly *worse*: minting a Role and RoleBinding in each namespace requires cluster-wide **write** on `roles`/`rolebindings`, trading a small privilege for a larger one. The AddonCheck impersonation pattern does not transfer either: it needs a ServiceAccount in the target namespace, which the operator would have to create — the same class of cluster-wide write. This cost is **inherited, not introduced**: the planned reachability checks (#181, #208) require the identical grant with neither endpoint in the operator's namespace; DNSCheck is the first consumer, not the reason. Adapter probe pods are unchanged and still created by the impersonated per-addon ServiceAccounts, never by the operator. **Not granted:** no `watch` (the launcher polls, and a cluster-wide Pod watch would expose far more than placement requires — it is also why the manager's informer cache carries no Pod, see #164), no `update`/`patch`, and none of `pods/exec`, `pods/log`, or `pods/portforward`. |
+| core | configmaps, serviceaccounts | create, get, list, update, watch | ConfigMaps: node-agents publish one report ConfigMap per node in the check's namespace; the controller lists and watches them **by Fathom labels only** to roll reports up into a HealthReport, and updates them to stamp the owner reference that garbage-collects them with the check. The operator never creates a report ConfigMap itself — `create` is forced by RBAC escalation prevention because the operator creates the `fathom-node-agent-role` ClusterRole conferring `create`, and the API server requires a grantor to hold every verb it confers. The operator also creates per-check Roles conferring `get`/`update` only on canonical report names for current agent pods. ServiceAccounts: the per-check node-agent ServiceAccount is created/converged via CreateOrUpdate (owner-referenced; deletion rides garbage collection), and AddonCheck reconciliation lists the static per-addon impersonation ServiceAccounts by label. No `patch`, no `delete` on either kind; the shared informer only caches objects labeled `fathom.skaphos.io/managed-by=fathom`, so foreign ConfigMaps are never cached or read in practice. ConfigMaps are not Secrets — the operator holds no Secret grant anywhere. |
+| core | pods | create, delete, get, list | Two distinct consumers. **The leader-elected probe sweeper** (ADR-0003, #163) lists pods cluster-wide by the reserved probe labels and deletes only pods that also match the probe pod shape (single `probe` container); `list` cannot be namespaced because probes follow the addon under check. **`DNSCheck` resolution** (#266) needs `create` and `get`: a `DNSCheck` resolves from its own namespace so that a check author's reach is exactly their existing reach and the namespace's own NetworkPolicy governs the query — running it from the operator's namespace would let the author borrow that namespace's egress posture. The operator must therefore place a pod in a namespace it does not own, and `get` is required because the launcher polls the pod it created. **Why nothing narrower:** the grant cannot be namespaced — a `DNSCheck` may be created in any namespace and the set is unknown when this manifest is rendered. Distributing narrower Roles would require provisioning and binding access in every unknown target namespace while preserving equivalent lifecycle cleanup. The AddonCheck impersonation pattern does not transfer either: it needs a ServiceAccount in the target namespace, which the operator would also have to create. This cost is **inherited, not introduced**: the planned reachability checks (#181, #208) require the identical grant with neither endpoint in the operator's namespace; DNSCheck is the first consumer, not the reason. Adapter probe pods are unchanged and still created by the impersonated per-addon ServiceAccounts, never by the operator. **Not granted:** no `watch` (the launcher polls, and a cluster-wide Pod watch would expose far more than placement requires — it is also why the manager's informer cache carries no Pod, see #164), no `update`/`patch`, and none of the `pods/exec`, `pods/log`, or `pods/portforward` subresources. |
+| core | nodes | get | `NodeHealthCheck` `NodeCondition` items (#206) grade a node's own status conditions (Ready, MemoryPressure, DiskPressure, PIDPressure, …), which live only on the cluster-scoped Node object. The operator reads **one node at a time, by name, through an uncached reader**, and only the nodes its agent pods are actually scheduled on — so the read surface is exactly the fleet a check already covers. **Why not less:** the condition values exist nowhere else, and the node-agent must not carry a Node grant of its own (it runs on every node with a ServiceAccount token; a per-agent read would be a cluster-wide read from the least-trusted process). **Why not more:** no `list` and no `watch` — the operator never enumerates nodes and never starts a Node informer, so a compromised operator token gains no fleet reconnaissance through this grant (compare the deliberate refusal of a node read for `NodeCertificateCheck` coverage, which uses agent pods instead). A `Forbidden` read produces `Ready=False / EvaluationFailed` and `CoverageComplete=Unknown / EvaluationFailed`; the last complete verdict remains frozen until evaluation succeeds. |
 | core, events.k8s.io | events | create, patch | The Kubernetes Events contract (#154): check-result transitions and operational failures are recorded as Events on the check resources. `patch` is how the recorder folds repeats into an EventSeries instead of minting a new object per occurrence. Both API groups are required because the events.k8s.io recorder resolves through either depending on cluster version (#243). |
-| admissionregistration.k8s.io | validatingadmissionpolicies, validatingadmissionpolicybindings | create, get, list, update, watch | The report-authenticity policy (#155): a cluster-scoped CEL policy binding each node-report ConfigMap to the writing node-agent's ServiceAccount-token node claim, so a compromised node cannot forge or suppress another node's certificate verdict. Created at runtime (not shipped statically) so kustomize namePrefix and OLM transforms cannot rename the policy out from under its binding. Creating a VAP confers no privilege of its own, so this does not trip the RBAC escalation check. No `delete`: the policy is a stable singleton that stays correct across check churn. |
+| admissionregistration.k8s.io | validatingadmissionpolicies, validatingadmissionpolicybindings | create, get, list, update, watch | The report-authenticity policy (#155): a cluster-scoped CEL policy requires the exact ServiceAccount derived from each report's immutable source kind/name labels and binds the report's node annotation to that writer's ServiceAccount-token node claim. A different principal cannot impersonate a check, and a compromised node cannot forge or suppress another node's verdict. Created at runtime (not shipped statically) so kustomize namePrefix and OLM transforms cannot rename the policy out from under its binding. Creating a VAP confers no privilege of its own, so this does not trip the RBAC escalation check. No `delete`: the policy is a stable singleton that stays correct across check churn. |
 | apps | daemonsets | create, delete, get, list, update, watch | The per-check node-agent DaemonSet is provisioned and converged at runtime in the check's namespace. `delete` is used exactly once: a paused check tears its DaemonSet down while leaving RBAC and reports in place. `watch` (via Owns) repairs drift and deletion; no `patch` — all writes are CreateOrUpdate. The informer cache is label-scoped to `fathom.skaphos.io/managed-by=fathom`, so only Fathom's own DaemonSets are cached. |
 | fathom.skaphos.io | addonchecks, clusterhealths, healthchecks | get, list, watch | The operator's own primary resources. The reconcilers read these objects and write only their `/status` subresource (granted separately below); they never create, update, patch, or delete the objects themselves (AddonChecks and ClusterHealths are authored by users/GitOps, not materialized by the operator). Read-only access plus the status grant is the full set the controllers exercise. |
-| fathom.skaphos.io | addonchecks/finalizers, clusterhealths/finalizers, dnschecks/finalizers, healthchecks/finalizers, nodecertificatechecks/finalizers | update | Finalizer maintenance on the operator's own kinds, required for owner-reference and deletion-flow correctness. `update` is the only verb the finalizer subresource supports. |
-| fathom.skaphos.io | addonchecks/status, clusterhealths/status, dnschecks/status, healthchecks/status, nodecertificatechecks/status | get, patch, update | Status subresource writes for the operator's own kinds — conditions, observedGeneration, and roll-up state. Status is written through the dedicated subresource so spec and status authority stay separate. |
+| fathom.skaphos.io | addonchecks/finalizers, clusterhealths/finalizers, dnschecks/finalizers, healthchecks/finalizers, nodecertificatechecks/finalizers, nodehealthchecks/finalizers | update | Finalizer maintenance on the operator's own kinds, required for owner-reference and deletion-flow correctness. `update` is the only verb the finalizer subresource supports. |
+| fathom.skaphos.io | addonchecks/status, clusterhealths/status, dnschecks/status, healthchecks/status, nodecertificatechecks/status, nodehealthchecks/status | get, patch, update | Status subresource writes for the operator's own kinds — conditions, observedGeneration, and roll-up state. Status is written through the dedicated subresource so spec and status authority stay separate. |
 | fathom.skaphos.io | healthreports | create, delete, get, list, watch | HealthReport history (ADR-0002): reports are created on result transitions and deleted only by retention pruning (`historyLimit`). Deliberately **no `update`/`patch`** — a persisted report is immutable evidence. |
-| fathom.skaphos.io | dnschecks, nodecertificatechecks | get, list, patch, update, watch | Reconciling user-created NodeCertificateChecks and DNSChecks: spec reads plus metadata writes (owner references, finalizer bookkeeping). Deliberately **no `create`/`delete`** — the operator never creates or removes user checks. |
-| networking.k8s.io | networkpolicies | create, get, list, update, watch | The per-check NetworkPolicy that isolates node-agent pods (#153): metrics ingress only from namespaces labeled `metrics: enabled`, egress only to the API server. It must be authored at runtime because it lives in the check's namespace, which is known only when the check is created. The policy's pod selector is fixed by the controller to the agent labels, so the operator only ever isolates its own pods. No `delete` — the policy is owner-referenced and garbage-collected with the check. |
-| rbac.authorization.k8s.io | clusterroles, rolebindings | create, get, list, update, watch | Node-agent provisioning: the operator creates the `fathom-node-agent-role` ClusterRole at runtime (a static manifest would be renamed by kustomize namePrefix/OLM transforms, breaking every RoleBinding that references it) and one RoleBinding per check in the check's namespace. The ClusterRole grants only `create`/`get`/`update` on ConfigMaps and is only ever bound via namespaced RoleBindings, so its verbs never apply cluster-wide. Escalation prevention holds because the operator already possesses every verb it confers. **No ClusterRoleBinding grant, no `bind`, no `escalate`, no `delete`** — the RoleBinding is garbage-collected with its check and the ClusterRole is a stable singleton. |
+| fathom.skaphos.io | dnschecks, nodecertificatechecks, nodehealthchecks | get, list, patch, update, watch | Reconciling user-created NodeCertificateChecks, NodeHealthChecks, and DNSChecks: spec reads plus metadata writes (owner references, finalizer bookkeeping). Deliberately **no `create`/`delete`** — the operator never creates or removes user checks. |
+| networking.k8s.io | networkpolicies | create, get, list, update, watch | The per-check NetworkPolicy for node-agent pods (#153): metrics ingress only from namespaces labeled `metrics: enabled`, and egress limited to destination ports TCP 443 and 6443. The egress rule is deliberately port-only; it does not restrict destination addresses (#274 follow-up). It must be authored at runtime because it lives in the check's namespace, which is known only when the check is created. The policy's pod selector is fixed by the controller to the agent labels, so the operator only ever isolates its own pods. No `delete` — the policy is owner-referenced and garbage-collected with the check. |
+| rbac.authorization.k8s.io | clusterroles, roles, rolebindings | create, get, list, update, watch | Node-agent provisioning: the operator creates the `fathom-node-agent-role` ClusterRole at runtime (a static manifest would be renamed by kustomize namePrefix/OLM transforms) and binds it to each check's ServiceAccount in that namespace. It grants ConfigMap `create` only; Kubernetes cannot constrain `create` by `resourceNames`. A second per-check Role and RoleBinding grant `get`/`update` only on canonical report ConfigMap names derived from scheduled, nonterminating pods owned by that check's DaemonSet; an empty fleet produces an empty Role, and departed names are revoked. Escalation prevention holds because the operator possesses every verb it confers. **No ClusterRoleBinding grant, no `bind`, no `escalate`, no `delete`** — namespaced objects are owner-referenced and the ClusterRole is a stable singleton. |
 
 <!-- operator-clusterrole-table:end -->
 
@@ -63,8 +65,8 @@ cluster-wide grants could be replaced by a namespaced Role in `fathom-system`,
 and what bounds the ones that cannot.
 
 **Why not a namespaced Role.** The ConfigMap, ServiceAccount, RoleBinding,
-DaemonSet, and NetworkPolicy grants exist for `NodeCertificateCheck`
-provisioning, and that CRD is namespaced by design — the managed resources are
+DaemonSet, and NetworkPolicy grants exist for `NodeCertificateCheck` and
+`NodeHealthCheck` provisioning, and those CRDs are namespaced by design — the managed resources are
 created in `check.Namespace` so they are garbage-collected with the check and
 so multiple teams can own their own checks. Scoping those grants to
 `fathom-system` would make every check outside `fathom-system` fail RBAC at
@@ -94,10 +96,12 @@ borrow the operator namespace's egress posture.
   `fathom.skaphos.io/managed-by=fathom` (`internal/app/run.go`,
   `scopedCacheOptions`), so the operator neither holds foreign objects in
   memory nor reads them on its cached paths (SKA-581 / #164).
-- **Report authenticity.** The cluster-wide ConfigMap write surface for
+- **Report authenticity.** The namespace-scoped ConfigMap creation surface for
   node-agents is policed by the report-authenticity
   ValidatingAdmissionPolicy (#155, #272): a writer can only publish a report
-  attributed to the node its own ServiceAccount-token claim names; principals
+  attributed to the node its own ServiceAccount-token claim names, and its
+  username must be the exact ServiceAccount derived from the immutable source
+  kind and source name labels; principals
   without a node claim are denied when creating or mutating the report payload or node-name annotation. The policy selects node-report ConfigMaps by
   `fathom.skaphos.io/managed-by` alone and carries no writer-name match
   condition, so it covers every principal and every node-scoped kind rather than
@@ -137,16 +141,16 @@ ClusterRole:
 - **Per-addon ServiceAccounts and roles** (`config/rbac/addons/`): generated
   from adapter declarations; every grant is justified in
   [Addon adapter RBAC](rbac.md).
-- **`{clusterhealth,healthcheck,healthreport,nodecertificatecheck}-{admin,editor,viewer}`**
+- **`{clusterhealth,healthcheck,healthreport,nodecertificatecheck,nodehealthcheck}-{admin,editor,viewer}`**
   ClusterRoles: aggregation-label convenience roles for cluster admins to hand
   out. Not bound by default and not used by the operator.
 - **`fathomctl-viewer-role`** and **`fathomctl-runner-role`** (ClusterRoles):
   what a person or CI job needs to use the `fathomctl` CLI. The viewer grants
-  `get`/`list`/`watch` on the five check kinds and `healthreports` (plus
+  `get`/`list`/`watch` on the six check kinds and `healthreports` (plus
   `/status`) and `get`/`list` on `apps/deployments`, the last only so
   `fathomctl version` can read the operator's version from its Deployment.
-  The runner adds `patch` on `addonchecks`, `dnschecks`, and
-  `nodecertificatechecks`, which is how `fathomctl run` writes the
+  The runner adds `patch` on `addonchecks`, `dnschecks`,
+  `nodecertificatechecks`, and `nodehealthchecks`, which is how `fathomctl run` writes the
   `fathom.skaphos.io/run-now` trigger; RBAC cannot scope `patch` to metadata,
   so the runner also permits spec edits and should be bound only to subjects
   trusted to trigger runs. Neither role is bound by default, neither is used
@@ -155,15 +159,32 @@ ClusterRole:
 
 ## Runtime-created RBAC
 
-The operator creates exactly one RBAC object kind pair at runtime, both for the
-node-agent:
+The operator creates the following RBAC objects at runtime for node-agents:
 
-- **`fathom-node-agent-role`** (ClusterRole, singleton): `create`, `get`,
-  `update` on ConfigMaps — the exact verbs `cmd/node-agent` uses to upsert its
-  own report ConfigMap. No `list`/`watch`/`patch`/`delete`, so an agent (which
-  runs on every node) cannot enumerate or tamper with other ConfigMaps even
-  within its check's namespace. Created at runtime so its name survives
-  kustomize/OLM name rewriting.
-- **`<check>-node-agent`** (RoleBinding, per check): binds the ClusterRole to
-  the per-check agent ServiceAccount **in the check's namespace only** — the
-  ClusterRole's verbs never apply cluster-wide.
+- **`fathom-node-agent-role`** (ClusterRole, singleton): `create` on
+  ConfigMaps. Kubernetes cannot constrain `create` with `resourceNames`, so
+  admission authenticates every managed report creation. The ClusterRole is
+  bound only inside each check's namespace and grants no read or enumeration.
+  It is created at runtime so its name survives kustomize/OLM name rewriting.
+- **`<check>-node-agent`** / **`<check>-node-health-agent`** (RoleBinding, per
+  check): binds the create-only ClusterRole to the per-check agent
+  ServiceAccount **in the check's namespace only**.
+- **`<service-account>-report-access`** (Role and RoleBinding, per check):
+  grants that ServiceAccount `get` and `update` only on canonical report
+  ConfigMap names for scheduled, nonterminating pods owned by its DaemonSet.
+  The Role has no rules before a pod is observed and drops names when pods
+  leave. Very long names use a deterministic `fathom-report-access-<hash>`
+  fallback so the RBAC object name remains valid.
+
+`NodeHealthCheck` and `NodeCertificateCheck` share this model. Admission derives
+the only accepted writer from the report's immutable source labels:
+`<source-name>-node-health-agent` or `<source-name>-node-agent`, respectively,
+in the report namespace, and also requires the writer's node-bound token claim
+to match the report's node annotation.
+
+`NodeHealthCheck` agents can additionally run with **host network**
+(`KubeletHealthz`) or **as root with the CRI socket mounted**
+(`ContainerRuntime`). Neither is an RBAC grant — they are pod-spec privileges
+the operator applies only when a check of that type is present, and the check's
+`AgentPrivileged` condition reports exactly which are in effect. See
+[Node health checks](../guides/node-health-checks.md#what-each-check-costs).

@@ -363,12 +363,36 @@ func TestRun_DefaultWaitTimeoutUsesLargestCheckTimeout(t *testing.T) {
 	long := addonCheck("team-a", "long")
 	long.Spec.Timeout = &metav1.Duration{Duration: 2 * time.Minute}
 	targets := []runTarget{addonTarget("team-a", "short", short), addonTarget("team-a", "long", long)}
-	var got time.Duration
-	for _, tr := range targets {
-		got = max(got, tr.ref.Kind.DefaultTimeout(tr.obj)+waitMargin)
-	}
+	got := runWaitTimeout(targets, 0)
 	if got != 2*time.Minute+waitMargin {
 		t.Fatalf("default wait = %s, want 2m30s", got)
+	}
+}
+
+func TestRun_WaitTimeoutPreservesExplicitOverride(t *testing.T) {
+	check := &fathomv1alpha1.NodeHealthCheck{
+		Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
+	}
+	targets := []runTarget{{
+		ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"},
+		obj: check,
+	}}
+	const explicit = 17 * time.Second
+	if got := runWaitTimeout(targets, explicit); got != explicit {
+		t.Fatalf("explicit wait timeout = %s, want %s", got, explicit)
+	}
+}
+
+func TestRun_DefaultWaitTimeoutSaturatesWhenAddingMargin(t *testing.T) {
+	check := &fathomv1alpha1.NodeHealthCheck{
+		Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
+	}
+	targets := []runTarget{{
+		ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"},
+		obj: check,
+	}}
+	if got := runWaitTimeout(targets, 0); got != maxDuration {
+		t.Fatalf("default wait timeout = %s, want saturated duration %s", got, maxDuration)
 	}
 }
 

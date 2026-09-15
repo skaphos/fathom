@@ -1,5 +1,6 @@
 # Binaries
 bin/
+/node-agent
 *.exe
 *.exe~
 *.dll

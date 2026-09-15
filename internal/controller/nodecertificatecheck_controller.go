@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -46,6 +47,7 @@ import (
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 const (
@@ -147,6 +149,13 @@ type NodeCertificateCheckReconciler struct {
 	// the node-agent ServiceAccount. Defaults to defaultNodeAgentRoleName.
 	NodeAgentRoleName string
 
+	// APIReader lists the agent pods for coverage. It MUST be an uncached
+	// reader: Pods are deliberately absent from the manager's informer cache
+	// (scopedCacheOptions, #164), so a cached List would start an unfiltered
+	// cluster-wide Pod informer. Nil falls back to Client, which is only
+	// appropriate in tests with an uncached client.
+	APIReader client.Reader
+
 	// Tracer creates the per-Reconcile span. Optional; a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
@@ -155,6 +164,13 @@ type NodeCertificateCheckReconciler struct {
 	// operational failures) on NodeCertificateCheck resources. Optional: nil
 	// disables event recording; the check gauges are unaffected.
 	Recorder events.EventRecorder
+}
+
+func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks,verbs=get;list;watch;update;patch
@@ -173,7 +189,7 @@ type NodeCertificateCheckReconciler struct {
 // get;list;watch;update) on configmaps.
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
 // The per-check node-agent NetworkPolicy (#153) is owner-referenced, so
 // deletion rides garbage collection — no delete verb.
@@ -248,7 +264,8 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	if check.Spec.Paused {
 		if err := r.reconcilePaused(ctx, &check); err != nil {
-			return ctrl.Result{}, err
+			r.invalidateAgentConditions(&check, "RBACRevocationFailed", "Report access could not be revoked while pausing; agent state and coverage are unknown: "+err.Error())
+			return r.failProvisioning(ctx, log, before, &check, "RBACRevocationFailed", err)
 		}
 		return r.finish(ctx, log, before, &check, 0)
 	}
@@ -264,7 +281,15 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 
-	if err := r.ensureReportAuthenticityPolicy(ctx, log); err != nil {
+	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
+	if err != nil {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, false))
+		if revokeErr := r.revokeNodeCertAgent(ctx, &check); revokeErr != nil {
+			cause := errors.Join(err, fmt.Errorf("revoke node-agent after report authenticity enforcement failed: %w", revokeErr))
+			r.invalidateAgentConditions(&check, "AgentRevocationFailed", "Report authenticity enforcement failed and the existing agent could not be fully revoked; its state and coverage are unknown: "+cause.Error())
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", cause)
+		}
+		r.invalidateAgentConditions(&check, "AdmissionPolicyProvisioningFailed", "Report authenticity enforcement failed for this generation; the agent's state and report coverage are unknown: "+err.Error())
 		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
 
@@ -286,14 +311,30 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
 
+	reportNames, err := activeAgentReportNames(ctx, r.apiReader(), check.Namespace, map[string]string{
+		nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
+		nodecert.LabelSourceName: check.Name,
+		nodeAgentComponentLabel:  nodeAgentComponentValue,
+	}, ds, func(node string) string {
+		return nodecert.NodeReportConfigMapName(check.Name, node)
+	})
+	if err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "The current agent fleet could not be read, so report permissions and coverage are unknown: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
+	if err := ensureScopedReportRBAC(ctx, r.Client, r.Scheme, &check, agentLabels(&check), saName, reportNames); err != nil {
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "Per-node report permissions could not be provisioned for this generation: "+err.Error())
+		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
+	}
+
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, time.Now(), nodeCertReportMaxAge(&check))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	check.Status.ReportingNodes = int32(len(reports))
-	r.setReportsAuthentic(&check, rejections)
+	r.setReportsAuthentic(&check, rejections, authenticityEnforced)
 
-	expected, err := r.expectedAgentNodes(ctx, &check)
+	expected, err := r.expectedAgentNodes(ctx, &check, ds)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -378,12 +419,8 @@ func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Lo
 }
 
 func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
-	// Stop scanning: delete the agent DaemonSet. RBAC and report ConfigMaps are
-	// owner-referenced and harmless while idle, so they are left in place; the
-	// most recent Status snapshot is preserved.
-	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
-	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
-		return err
+	if err := r.revokeNodeCertAgent(ctx, check); err != nil {
+		return fmt.Errorf("revoke node-agent while paused: %w", err)
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeCertConditionPaused,
@@ -404,6 +441,21 @@ func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, ch
 	return nil
 }
 
+// revokeNodeCertAgent clears update access and removes the DaemonSet without
+// changing status. Both operations are attempted so either one can still
+// reduce authority when the other fails.
+func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
+	var errs []error
+	if err := clearNodeAgentAccess(ctx, r.Client, check, agentResourceName(check), r.roleName()); err != nil {
+		errs = append(errs, fmt.Errorf("clear node-agent report access: %w", err))
+	}
+	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("delete node-agent DaemonSet: %w", err))
+	}
+	return errors.Join(errs...)
+}
+
 func (r *NodeCertificateCheckReconciler) roleName() string {
 	if r.NodeAgentRoleName == "" {
 		return defaultNodeAgentRoleName
@@ -416,26 +468,37 @@ func (r *NodeCertificateCheckReconciler) roleName() string {
 // created at runtime (rather than shipped statically) so the name stays stable
 // across deploy tooling — kustomize's namePrefix and OLM bundle transforms would
 // otherwise rename a static ClusterRole and break the binding. The role grants
-// only namespaced ConfigMap access (the verbs never apply cluster-wide because
-// they are only ever bound via the per-check RoleBinding). The operator already
+// only ConfigMap creation. Per-check Roles separately grant get/update on the
+// canonical reports for that check's current agent pods. The operator already
 // holds these ConfigMap verbs, so creating the role does not escalate privilege.
 func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.Context) error {
-	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: r.roleName()}}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
+	return ensureNodeAgentClusterRole(ctx, r.Client, r.roleName())
+}
+
+// ensureNodeAgentClusterRole is the shared implementation behind both
+// node-scoped reconcilers: the ClusterRole is a runtime singleton, so the two
+// controllers must converge it to one identical spec rather than fight over it
+// (#206).
+func ensureNodeAgentClusterRole(ctx context.Context, c client.Client, name string) error {
+	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	_, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
 		role.Labels = mergeLabels(role.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
-		// Exactly the verbs the node-agent uses on its own report ConfigMap
-		// (Get, Create, Update — see cmd/node-agent upsertReportConfigMap). No
-		// list/watch/patch: the agent runs on every node and must not be able to
-		// enumerate or tamper with other ConfigMaps in the namespace.
+		// Kubernetes cannot restrict create by resourceNames. Admission authenticates
+		// every managed report create; per-check namespaced Roles grant get/update
+		// only for reports belonging to current agent pods.
 		role.Rules = []rbacv1.PolicyRule{{
 			APIGroups: []string{""},
 			Resources: []string{"configmaps"},
-			Verbs:     []string{"create", "get", "update"},
+			Verbs:     []string{"create"},
 		}}
 		return nil
 	})
 	return err
 }
+
+// errReportAuthenticityUnavailable identifies a cluster that does not serve
+// one of the admission APIs required to authenticate node reports.
+var errReportAuthenticityUnavailable = errors.New("node-report authenticity enforcement is unavailable")
 
 // ensureReportAuthenticityPolicy converges the cluster-scoped
 // ValidatingAdmissionPolicy and binding that authenticate per-node report
@@ -445,12 +508,20 @@ func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.
 // (authentication.kubernetes.io/node-name). A node-agent token therefore can
 // only publish a report attributed to its own node, closing the report-spoofing
 // gap where the shared, namespace-wide ConfigMap write let one node forge or
-// suppress another node's verdict (#155). It fails closed. On a cluster that does
-// not serve ValidatingAdmissionPolicy the ensure is skipped — the operator's
-// collect-time cross-check in collectNodeReports still rejects mismatched reports.
-func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx context.Context, log logr.Logger) error {
+// suppress another node's verdict (#155). It fails closed: reconciliation does
+// not provision an agent or consume reports unless both admission resources can
+// be enforced by the API server. It is the shared implementation behind both
+// node-scoped reconcilers. The policy selects node-report ConfigMaps by
+// managed-by alone, so one converged singleton authenticates every kind's
+// reports (#206, SEC-1).
+//
+// It returns whether enforcement is active. A cluster that does not serve the
+// policy or binding API returns errReportAuthenticityUnavailable: collect-time
+// bindings only corroborate a report's shape and are forgeable by any ConfigMap
+// writer in the namespace, so callers must stop before provisioning or rollup.
+func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log logr.Logger) (bool, error) {
 	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, policy, func() error {
 		policy.Labels = mergeLabels(policy.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
 		policy.Spec = reportAuthenticityPolicySpec()
 		return nil
@@ -459,14 +530,14 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 			// Security-significant degradation: without the policy, a compromised
 			// node-agent token can forge or suppress another node's report. Log at
 			// the default level (not V(1)) so it is visible in normal operator logs.
-			log.Info("ValidatingAdmissionPolicy is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
-			return nil
+			log.Info("ValidatingAdmissionPolicy is not served by this cluster: refusing to provision node-report agents", "error", err.Error())
+			return false, fmt.Errorf("%w: ValidatingAdmissionPolicy API: %v", errReportAuthenticityUnavailable, err)
 		}
-		return err
+		return false, err
 	}
 
 	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, binding, func() error {
 		binding.Labels = mergeLabels(binding.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
 		binding.Spec = admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{
 			PolicyName:        reportAuthenticityPolicyName,
@@ -475,12 +546,12 @@ func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx cont
 		return nil
 	}); err != nil {
 		if admissionPolicyUnsupported(err) {
-			log.Info("ValidatingAdmissionPolicyBinding is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
-			return nil
+			log.Info("ValidatingAdmissionPolicyBinding is not served by this cluster: refusing to provision node-report agents", "error", err.Error())
+			return false, fmt.Errorf("%w: ValidatingAdmissionPolicyBinding API: %v", errReportAuthenticityUnavailable, err)
 		}
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // admissionPolicyUnsupported reports whether err means the API server does not
@@ -546,12 +617,34 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				Expression: `request.userInfo.extra[?'authentication.kubernetes.io/node-name'].orValue([''])[0]`,
 			},
 			{
+				Name:       "sourceKind",
+				Expression: `has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceKind + `'].orValue('') : ''`,
+			},
+			{
+				Name:       "sourceName",
+				Expression: `has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceName + `'].orValue('') : ''`,
+			},
+			{
+				Name: "expectedWriter",
+				Expression: `variables.sourceKind == '` + nodecert.KindNodeCertificateCheck + `' ? ` +
+					`'system:serviceaccount:' + request.namespace + ':' + variables.sourceName + '-node-agent' : ` +
+					`(variables.sourceKind == '` + nodehealth.KindNodeHealthCheck + `' ? 'system:serviceaccount:' + request.namespace + ':' + variables.sourceName + '` + nodeHealthAgentSuffix + `' : '')`,
+			},
+			{
 				Name:       "annotatedNode",
 				Expression: `has(object.metadata.annotations) ? object.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
 			},
 			{
 				Name:       "oldAnnotatedNode",
 				Expression: `(request.operation == 'UPDATE' && oldObject != null && has(oldObject.metadata.annotations)) ? oldObject.metadata.annotations[?'` + nodecert.AnnotationNodeName + `'].orValue('') : ''`,
+			},
+			{
+				Name: "identityUnchanged",
+				Expression: `request.operation != 'UPDATE' || (` +
+					`variables.annotatedNode == variables.oldAnnotatedNode && ` +
+					`(has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelManagedBy + `'].orValue('') : '') == (has(oldObject.metadata.labels) ? oldObject.metadata.labels[?'` + nodecert.LabelManagedBy + `'].orValue('') : '') && ` +
+					`(has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceKind + `'].orValue('') : '') == (has(oldObject.metadata.labels) ? oldObject.metadata.labels[?'` + nodecert.LabelSourceKind + `'].orValue('') : '') && ` +
+					`(has(object.metadata.labels) ? object.metadata.labels[?'` + nodecert.LabelSourceName + `'].orValue('') : '') == (has(oldObject.metadata.labels) ? oldObject.metadata.labels[?'` + nodecert.LabelSourceName + `'].orValue('') : ''))`,
 			},
 			{
 				Name:       "reportData",
@@ -566,17 +659,26 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 				Expression: `request.operation == 'UPDATE' && oldObject != null && variables.annotatedNode == variables.oldAnnotatedNode && variables.reportData == variables.oldReportData`,
 			},
 		},
-		Validations: []admissionregistrationv1.Validation{{
-			Expression: `variables.contentUnchanged || (variables.claimNode != '' && variables.annotatedNode == variables.claimNode)`,
-			Message:    "a node-report ConfigMap's fathom.skaphos.io/node-name annotation must match the writing identity's ServiceAccount-token node claim (authentication.kubernetes.io/node-name); only metadata-only updates that leave the report payload and annotation unchanged are exempt",
-			Reason:     &forbidden,
-		}},
+		Validations: []admissionregistrationv1.Validation{
+			{
+				Expression: `variables.identityUnchanged`,
+				Message:    "a node-report ConfigMap's managed-by, source-kind, source-name, and node-name identity must not change after creation",
+				Reason:     &forbidden,
+			},
+			{
+				Expression: `variables.contentUnchanged || (variables.expectedWriter != '' && request.userInfo.username == variables.expectedWriter && variables.claimNode != '' && variables.annotatedNode == variables.claimNode)`,
+				Message:    "a node-report ConfigMap must be written by the managed ServiceAccount for its source-kind and source-name, and its fathom.skaphos.io/node-name annotation must match that identity's ServiceAccount-token node claim; only metadata-only updates that leave report content and identity unchanged are exempt",
+				Reason:     &forbidden,
+			},
+		},
 	}
 }
 
 // ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding (both
 // owner-referenced, in the check namespace) that grant the node-agent its
-// least-privilege, namespaced ConfigMap access. It returns the ServiceAccount name.
+// least-privilege ConfigMap-create access. A separate namespaced Role grants
+// get/update only on canonical reports for the current agent pods. It returns
+// the ServiceAccount name.
 func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (string, error) {
 	name := agentResourceName(check)
 	labels := agentLabels(check)
@@ -592,9 +694,12 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 	rb := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
 		rb.Labels = mergeLabels(rb.Labels, labels)
+		expectedRoleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
 		if rb.CreationTimestamp.IsZero() {
 			// RoleRef is immutable: set it only on create.
-			rb.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
+			rb.RoleRef = expectedRoleRef
+		} else if rb.RoleRef != expectedRoleRef {
+			return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", rb.Namespace, rb.Name, rb.RoleRef.Kind, rb.RoleRef.Name, expectedRoleRef.Name)
 		}
 		rb.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: name, Namespace: check.Namespace}}
 		return controllerutil.SetControllerReference(check, rb, r.Scheme)
@@ -609,10 +714,12 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 // namespaces labeled metrics=enabled — the same label contract that guards the
 // operator's own metrics endpoint — so the unauthenticated plaintext
 // cert-inventory gauges are not scrapeable from every pod on every node.
-// Egress: only the API server ports; the agent talks to nothing else (it
-// reaches the API server via KUBERNETES_SERVICE_HOST, an IP, so it needs no
-// DNS egress either). Owner-referenced, so it is garbage-collected with the
-// check; like the agent RBAC it is deliberately left in place while paused.
+// Egress: TCP ports 443 and 6443 to any destination; Kubernetes NetworkPolicy
+// cannot port-filter a Service while restricting both its pre-DNAT ClusterIP
+// and implementation-specific post-DNAT endpoints. The agent reaches the API
+// server via KUBERNETES_SERVICE_HOST, an IP, so it needs no DNS egress.
+// Owner-referenced, so it is garbage-collected with the check; like the agent
+// RBAC it is deliberately left in place while paused.
 // Enforcement requires a NetworkPolicy-capable CNI — on clusters without one
 // this object is inert, which is also why creating it is safe unconditionally.
 func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
@@ -1078,11 +1185,21 @@ func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
 // (compare #255). Every agent pod carrying a node name counts, including one
 // that is terminating — a node mid-rollout is still in scope, and counting it
 // keeps coverage failing closed until its replacement reports.
-func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (map[string]struct{}, error) {
+//
+// Only pods the managed DaemonSet controls count: labels are public, so a
+// planted pod naming a node that never reports could otherwise pin coverage
+// incomplete indefinitely.
+func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
+	// The kind label is part of the match: a NodeHealthCheck that shares this
+	// check's name runs its own agent pods under the same component and
+	// source-name labels, and those must never count as this check's coverage
+	// (#206).
+	// Uncached on purpose — see APIReader.
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods,
+	if err := r.apiReader().List(ctx, &pods,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
+			nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
 			nodecert.LabelSourceName: check.Name,
 			nodeAgentComponentLabel:  nodeAgentComponentValue,
 		},
@@ -1091,7 +1208,11 @@ func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context,
 	}
 	nodes := make(map[string]struct{}, len(pods.Items))
 	for i := range pods.Items {
-		if node := pods.Items[i].Spec.NodeName; node != "" {
+		pod := &pods.Items[i]
+		if !metav1.IsControlledBy(pod, ds) {
+			continue
+		}
+		if node := pod.Spec.NodeName; node != "" {
 			nodes[node] = struct{}{}
 		}
 	}
@@ -1256,21 +1377,50 @@ func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, l
 	return ctrl.Result{}, cause
 }
 
+// invalidateAgentConditions prevents a failure before agent inspection from
+// leaving a prior generation's AgentReady and CoverageComplete conditions
+// advertised as current. The last completed verdict and report remain frozen.
+func (r *NodeCertificateCheckReconciler) invalidateAgentConditions(check *fathomv1alpha1.NodeCertificateCheck, reason, message string) {
+	for _, conditionType := range []string{nodeCertConditionAgentReady, nodeCertConditionCoverage} {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type: conditionType, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
+			Reason: reason, Message: message,
+		})
+	}
+}
+
+// reportsAuthenticCondition is the ReportsAuthentic condition when no report
+// failed its bindings. With admission enforcing the binding it is True; when
+// the policy or binding cannot be enforced it is Unknown, because collect-time
+// bindings corroborate a report's shape but are forgeable by any ConfigMap
+// writer in the namespace and prove nothing about the writer.
+func reportsAuthenticCondition(conditionType string, generation int64, enforced bool) metav1.Condition {
+	if enforced {
+		return metav1.Condition{
+			Type: conditionType, Status: metav1.ConditionTrue, ObservedGeneration: generation,
+			Reason: "AllReportsBound", Message: "Every collected node report is bound to the node it claims.",
+		}
+	}
+	return metav1.Condition{
+		Type: conditionType, Status: metav1.ConditionUnknown, ObservedGeneration: generation,
+		Reason:  reasonAuthenticityUnavailable,
+		Message: "The required ValidatingAdmissionPolicy and binding could not be enforced, so node-report writers cannot be authenticated; reconciliation stopped before provisioning agents or consuming reports.",
+	}
+}
+
+// reasonAuthenticityUnavailable marks ReportsAuthentic=Unknown when the
+// cluster cannot enforce the report-authenticity admission policy and binding.
+const reasonAuthenticityUnavailable = "EnforcementUnavailable"
+
 // setReportsAuthentic records whether any collected report failed its
 // authenticity bindings, and raises a Warning event when one did. A forgery
 // signal means some principal with ConfigMap write in the namespace is actively
 // trying to steer a node's verdict, which must not be a V(1) log line nobody
 // reads (SEC-1).
-func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeCertificateCheck, rejections []reportRejection) {
+func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeCertificateCheck, rejections []reportRejection, authenticityEnforced bool) {
 	forged := forgeryRejections(rejections)
 	if len(forged) == 0 {
-		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-			Type:               nodeCertConditionAuthentic,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: check.Generation,
-			Reason:             "AllReportsBound",
-			Message:            "Every collected node report is bound to the node it claims.",
-		})
+		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, authenticityEnforced))
 		return
 	}
 
@@ -1310,16 +1460,20 @@ func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCert
 }
 
 // SetupWithManager wires the reconciler. It owns the DaemonSet, ServiceAccount,
-// and RoleBinding it creates, and watches report ConfigMaps by label so a fresh
+// Role, and RoleBindings it creates, and watches report ConfigMaps by label so a fresh
 // node report (which may not yet carry the owner reference) triggers a roll-up.
 func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.NodeAgentRoleName == "" {
 		r.NodeAgentRoleName = defaultNodeAgentRoleName
 	}
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.NodeCertificateCheck{}).
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(

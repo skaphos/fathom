@@ -22,7 +22,7 @@ relevant sections rather than restated here:
 
 Fathom is a Kubernetes operator (API group `fathom.skaphos.io`) that validates
 the health of platform add-ons — cert-manager, CoreDNS, External Secrets
-Operator, and others reachable through an adapter. It reconciles five custom
+Operator, and others reachable through an adapter. It reconciles six custom
 resources, runs adapter-defined checks against the cluster, persists the
 results as history, and rolls those results up into a single cluster-wide
 verdict that dashboards, alerting, and deployment gates can consume.
@@ -53,14 +53,16 @@ section is the conceptual overview.
 | --- | --- | --- | --- |
 | `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
 | `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
+| `NodeHealthCheck` | `api/v1alpha1/nodehealthcheck_types.go` | Declares node-local health assertions (filesystem headroom, node conditions, kubelet, container runtime); the operator runs the agent-side ones via the node-agent in health mode and grades node conditions itself. | Yes (via the node-agent + operator) |
 | `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. See [DNS checks](guides/dns-checks.md). | Yes (via probe Pods) |
 | `HealthCheck` | `api/v1alpha1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
 | `ClusterHealth` | `api/v1alpha1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
 | `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
 
-`AddonCheck`, `NodeCertificateCheck`, and `DNSCheck` are the kinds that drive
-work — `AddonCheck` in-process via an adapter, `NodeCertificateCheck` on each
-node via the node-agent DaemonSet, and `DNSCheck` from short-lived probe Pods in
+`AddonCheck`, `NodeCertificateCheck`, `NodeHealthCheck`, and `DNSCheck` are the
+kinds that drive work — `AddonCheck` in-process via an adapter,
+`NodeCertificateCheck` and `NodeHealthCheck` on each node via the node-agent
+DaemonSet, and `DNSCheck` from short-lived probe Pods in
 the check's own namespace. `HealthCheck` and `ClusterHealth` are
 projection/aggregation layers; `HealthReport` is the audit trail.
 
@@ -190,8 +192,9 @@ adapter level is forced to `Error`.
 `internal/controller/healthcheck_controller.go`
 
 - **Owns / produces:** `HealthCheck.status` only. It creates nothing.
-- **Watches:** `HealthCheck` (`For`) plus typed `AddonCheck`, `DNSCheck`, and
-  `NodeCertificateCheck` watches from the target-handler registry. A shared
+- **Watches:** `HealthCheck` (`For`) plus typed `AddonCheck`, `DNSCheck`,
+  `NodeCertificateCheck`, and `NodeHealthCheck` watches from the
+  target-handler registry. A shared
   mapper enqueues only wrappers whose normalized API version, kind, effective
   namespace, and name exactly match the source. A
   `ResourceVersionChangedPredicate` filters no-op events.
@@ -200,7 +203,7 @@ adapter level is forced to `Error`.
   `lastReportName`, `sourceInterval`). An empty `checkRef.apiVersion` defaults
   to `fathom.skaphos.io/v1alpha1`; other nonempty versions yield
   `Ready=False / UnsupportedAPIVersion`. Supported kinds are `AddonCheck`,
-  `DNSCheck`, and `NodeCertificateCheck`; any other kind yields
+  `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck`; any other kind yields
   `Ready=False / UnsupportedKind`. Missing targets clear the snapshot with
   `TargetNotFound`; transient lookup failures preserve it with
   `TargetLookupFailed` and return the error for retry. An omitted
@@ -232,15 +235,16 @@ adapter level is forced to `Error`.
 `internal/controller/nodecertificatecheck_controller.go`
 
 - **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
-  `RoleBinding`, and `NetworkPolicy` (metrics-only ingress, API-server-only
-  egress — see [Network policies](reference/network-policies.md)), and the
+  report-access `Role` and `RoleBinding`s, and `NetworkPolicy` (metrics-only
+  ingress and TCP 443/6443
+  egress by destination port — see [Network policies](reference/network-policies.md)), and the
   `fathom-node-agent-role` `ClusterRole` (created at
   runtime so its name survives kustomize/OLM name prefixing); creates
   `HealthReport` objects and writes `NodeCertificateCheck.status`. All owned
   objects live in the check's namespace and are owner-referenced for cascading
   garbage collection.
 - **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
-  `ServiceAccount` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
+  `ServiceAccount` / `Role` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
   report `ConfigMap`s by label (`Watches`), so a fresh node report triggers a
   roll-up.
 - **Execution model:** unlike the in-process adapters, on-disk certificate
@@ -256,18 +260,83 @@ adapter level is forced to `Error`.
   expiry — or already expired — is `Fail`; within `spec.warnDays` (default `30`)
   is `Warn`. Each agent also exports a `fathom_node_certificate_expiry_days`
   gauge for alerting.
-- **Paused:** when `spec.paused`, the agent `DaemonSet` is removed and the last
-  status snapshot is preserved (`Ready=False / Paused`).
+- **Paused:** when `spec.paused`, the scoped report Role is emptied before the
+  agent `DaemonSet` is removed, and the last status snapshot is preserved
+  (`Ready=False / Paused`). Failure to clear access stops deletion; failure in
+  either revocation step reports `Ready=False / RBACRevocationFailed`, and the
+  agent may remain running.
+
+### NodeHealthCheckReconciler
+
+`internal/controller/nodehealthcheck_controller.go`
+
+- **Owns / produces:** the same object shapes as `NodeCertificateCheckReconciler`
+  — a node-agent `DaemonSet` (`<check>-node-health-agent`), a per-check
+  `ServiceAccount`, report-access `Role` and `RoleBinding`s, and
+  `NetworkPolicy` — plus `HealthReport`
+  objects and `NodeHealthCheck.status`. It converges the *same* runtime
+  singletons (`fathom-node-agent-role` ClusterRole, the report-authenticity
+  `ValidatingAdmissionPolicy`) through shared helpers rather than a second copy.
+  The shared ClusterRole grants ConfigMap creation only; a per-check Role grants
+  `get`/`update` only on canonical reports for current, nonterminating owned
+  pods. The policy requires the exact ServiceAccount derived from immutable
+  source labels and a matching node-bound token claim, while allowing
+  owner-reference-only adoption and legitimate same-node report refresh.
+- **Watches:** `NodeHealthCheck` (`For`), the owned objects (`Owns`), and
+  per-node report `ConfigMap`s by label (`source-kind=NodeHealthCheck`).
+- **Execution model:** the agent runs `cmd/node-agent --mode health` with the
+  resolved check items in its arguments. `DiskHeadroom` / `InodeHeadroom` are a
+  `statfs` over a read-only `hostPath` mount; `KubeletHealthz` probes
+  `127.0.0.1:10248/healthz` and therefore needs `hostNetwork`;
+  `ContainerRuntime` dials the CRI socket (mounted as `hostPath` type `Socket`)
+  and therefore runs as root. **Each privilege is granted only when an item of
+  that type is present** and reported on the `AgentPrivileged` condition.
+  `NodeCondition` is graded by the **operator** from the Node object, read one
+  node at a time through the uncached API reader (`get` only — no informer, no
+  `list`/`watch`), so the agent never carries a Node grant.
+- **Roll-up:** per node, the agent report is merged with the graded conditions
+  and folded to one outcome; nodes fold into the check verdict via the shared
+  `WorstResult`. `status.nodeResults` (capped at 100, folded before the cap)
+  and `status.summary` name the worst node and check.
+  If report-authenticity admission cannot be provisioned, reconciliation stops
+  before agent provisioning or report collection with
+  `Ready=False / AdmissionPolicyProvisioningFailed` and
+  `ReportsAuthentic=Unknown / EnforcementUnavailable`; other failures before
+  collection use `ReportsAuthentic=Unknown / ReportsNotCollected`. The last complete
+  verdict and time remain frozen. API errors while evaluating reports, Pods,
+  Nodes, or HealthReports produce `Ready=False / EvaluationFailed` and
+  `CoverageComplete=Unknown / EvaluationFailed`, while historical roll-up
+  fields remain unchanged and `AgentReady` is left unchanged.
+- **Correctness properties** (written against the v0.5.0 review findings, not
+  inherited): provisioning failures persist `Ready=False` (COR-2), an
+  incomplete window freezes the verdict (COR-3), coverage is per node identity
+  (COR-4), and report freshness follows the agent's **capped** cadence rather
+  than `spec.interval` — one full agent cycle, `min(interval, 5m)` plus three
+  effective timeouts plus a 30s latency allowance, measured from the API
+  server's write of the report — so a 24h interval never accepts a 24h-old
+  measurement (#270).
+- **Rejected specs:** before deleting the previous DaemonSet, the reconciler
+  empties its scoped report Role. A failure in either step reports
+  `Ready=False / AgentRevocationFailed`; the earlier agent may remain running.
+- **No pause field** (#262): stopping the check means deleting it.
 
 ### Requeue / interval handling
 
-`AddonCheckReconciler` and `NodeCertificateCheckReconciler` both return
-`RequeueAfter` based on their effective `spec.interval` (`5m` and `1h` defaults,
-respectively). `AddonCheck` uses that cadence to re-run the adapter and refresh
+`AddonCheckReconciler` and `NodeCertificateCheckReconciler` return
+`RequeueAfter` based on their effective `spec.interval` (`5m` and `1h`
+defaults). `AddonCheck` uses that cadence to re-run the adapter and refresh
 `status.lastRunTime`; it creates a new `HealthReport` only for the first run or
 an aggregate-result transition. `NodeCertificateCheck` uses the cadence to
 refresh the rolled-up node-agent report, in addition to the ConfigMap-watch
 events its agents generate.
+
+`NodeHealthCheckReconciler` deliberately requeues, refreshes
+`status.lastRunTime`, and publishes its interval on the **capped agent
+cadence**, `min(spec.interval, 5m)`, not on `spec.interval`: report freshness
+is bounded by that cadence, a silently dead agent raises no watch event, so a
+24h interval must not mean a daily look, and a healthy check must never read
+as stale. `HealthReports` remain transition-only whatever the interval; a
+`spec.interval` above `5m` has no further runtime effect.
 
 `HealthCheckReconciler` and `ClusterHealthReconciler` are projection/
 aggregation controllers with no timer; they are event-driven by spec edits and
@@ -446,9 +515,9 @@ layout is in [code-map.md](code-map.md).
 
 ## Known Limitations
 
-- **Compiled-in wrapper targets.** `HealthCheck` supports the three specialized
-  resources in this release: `AddonCheck`, `DNSCheck`, and
-  `NodeCertificateCheck`. It is not a runtime target-plugin API; other kinds
+- **Compiled-in wrapper targets.** `HealthCheck` supports the four specialized
+  resources in this release: `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`,
+  and `NodeHealthCheck`. It is not a runtime target-plugin API; other kinds
   are rejected with `Ready=False / UnsupportedKind`.
 - **Cluster-wide wrapper selection.** `ClusterHealth` is cluster-scoped and
   selects `HealthCheck`s under the allowlist / denylist / open namespace filter

@@ -21,6 +21,8 @@ Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API gro
 - [HealthReportList](#healthreportlist)
 - [NodeCertificateCheck](#nodecertificatecheck)
 - [NodeCertificateCheckList](#nodecertificatechecklist)
+- [NodeHealthCheck](#nodehealthcheck)
+- [NodeHealthCheckList](#nodehealthchecklist)
 
 
 
@@ -130,8 +132,8 @@ _Appears in:_
 
 
 CheckTargetRef references a supported specialized check resource
-(AddonCheck, DNSCheck, or NodeCertificateCheck) whose status a HealthCheck
-mirrors and surfaces for ClusterHealth aggregation.
+(AddonCheck, DNSCheck, NodeCertificateCheck, or NodeHealthCheck) whose status
+a HealthCheck mirrors and surfaces for ClusterHealth aggregation.
 
 
 
@@ -141,7 +143,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | APIVersion of the target check resource. When empty, defaults to<br />fathom.skaphos.io/v1alpha1. |  | MaxLength: 317 <br />Optional: \{\} <br /> |
-| `kind` _string_ | Kind of the target check resource: AddonCheck, DNSCheck, or<br />NodeCertificateCheck. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `kind` _string_ | Kind of the target check resource: AddonCheck, DNSCheck,<br />NodeCertificateCheck, or NodeHealthCheck. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
 | `name` _string_ | Name of the target check resource. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
 | `namespace` _string_ | Namespace of the target check resource. When empty, the HealthCheck's<br />own namespace is used. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
 
@@ -789,6 +791,205 @@ _Appears in:_
 | `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
 | `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
 | `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every desired<br />node's fresh report carries it. Until then the previous verdict is kept.<br />A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheck
+
+
+
+NodeHealthCheck is the Schema for the nodehealthchecks API.
+
+
+
+_Appears in:_
+- [NodeHealthCheckList](#nodehealthchecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `NodeHealthCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[NodeHealthCheckSpec](#nodehealthcheckspec)_ |  |  |  |
+| `status` _[NodeHealthCheckStatus](#nodehealthcheckstatus)_ |  |  |  |
+
+
+#### NodeHealthCheckItem
+
+
+
+NodeHealthCheckItem is one assertion made on every node in scope. Which
+fields are legal depends on Type; the rules below reject a field on a type
+that does not use it, so a misapplied threshold is a write-time error and
+not a silently ignored one.
+The relation is checked on the effective values: an omitted threshold
+counts as its runtime default, so criticalPercentFree: 30 with warn omitted
+(effective warn 20) and warnPercentFree: 0 with critical omitted (effective
+critical 10) are rejected here rather than silently clamped at run time.
+The path allowlist stops a namespaced tenant from turning the node-agent into
+a confused deputy that mounts arbitrary host directories; it is mirrored in
+internal/nodehealth so the operator re-checks it on clusters running an older
+CRD. The host root is never allowed: statfs of /var/lib/kubelet reports the
+root filesystem on any node where it is not a separate mount.
+
+
+
+_Appears in:_
+- [NodeHealthCheckSpec](#nodehealthcheckspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[NodeHealthCheckType](#nodehealthchecktype)_ | Type is the assertion this item makes. See NodeHealthCheckType for the<br />privilege each type costs the node-agent. |  | Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime] <br /> |
+| `path` _string_ | Path is an existing directory on every selected node whose headroom is<br />measured. Regular files are not supported. Required for DiskHeadroom and<br />InodeHeadroom and rejected for every other type. The operator mounts it<br />into the agent read-only, so it must be a traversal-free absolute path<br />under one of the operator-approved prefixes. Admission validates the path's<br />syntax and prefix but cannot inspect a node's host filesystem.<br />The operator uses a non-creating hostPath Directory mount. If Path does<br />not exist or is not a directory on a node, Kubernetes cannot start<br />that node's agent pod;<br />AgentReady becomes False and coverage remains incomplete while the last<br />complete verdict is retained. This avoids mutating the host or measuring<br />the filesystem that would have held a newly created directory. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+| `warnPercentFree` _integer_ | WarnPercentFree is the percentage of free space (or inodes) at or below<br />which the check is Warn. Applies only to the headroom types. Defaults to<br />20 (DefaultNodeHealthWarnPercentFree) when unset. Must be greater than or<br />equal to CriticalPercentFree. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `criticalPercentFree` _integer_ | CriticalPercentFree is the percentage of free space (or inodes) at or<br />below which the check is Fail. Applies only to the headroom types.<br />Defaults to 10 (DefaultNodeHealthCriticalPercentFree) when unset. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `conditions` _string array_ | Conditions names the node condition types a NodeCondition check asserts.<br />Ready is expected True; every other listed condition is expected False,<br />which is the healthy value for every pressure and unavailability<br />condition Kubernetes and the cloud providers define. Defaults to Ready,<br />MemoryPressure, DiskPressure, and PIDPressure when unset. A condition the<br />node does not report is Skipped, not Fail. Applies only to NodeCondition. |  | MaxItems: 16 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `socketPath` _string_ | SocketPath is the CRI socket a ContainerRuntime check dials. Defaults to<br />/run/containerd/containerd.sock when unset. The operator mounts the socket<br />itself (hostPath type Socket), so a node without a socket at this path<br />cannot schedule the agent and surfaces as incomplete coverage rather than<br />as a verdict. Applies only to ContainerRuntime. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckList
+
+
+
+NodeHealthCheckList contains a list of NodeHealthCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `NodeHealthCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[NodeHealthCheck](#nodehealthcheck) array_ |  |  |  |
+
+
+#### NodeHealthCheckSpec
+
+
+
+NodeHealthCheckSpec defines the desired state of NodeHealthCheck.
+
+A NodeHealthCheck asserts a set of node-local health signals on every
+selected node — filesystem headroom, the node's own conditions, kubelet
+health, and container-runtime liveness — and reports one verdict per node
+plus a single folded verdict for the check. The node-local signals are
+collected by the same hardened node-agent DaemonSet NodeCertificateCheck
+uses; the operator rolls the per-node reports into a HealthReport and
+mirrors the aggregate into Status.
+
+There is no field to pause a NodeHealthCheck. Stopping a check means
+deleting it (#262).
+The comparison uses the effective interval: an omitted interval is 5m at
+runtime, so timeout: 10m without an interval is rejected here rather than
+admitted and silently capped. Keep the literal in step with
+DefaultNodeHealthCheckInterval.
+Per-node results and HealthReport checks are keyed by the item's identity —
+its type plus what it measures: the path for the headroom types, the socket
+for ContainerRuntime (its default counts as a value), nothing for the
+rest — so two items with the same identity would collide there. Rejecting
+the duplicate at write time is far kinder than a status update failing
+later with an error that says nothing about the specification that caused
+it. Two ContainerRuntime items with different sockets are distinct. The
+pathless types key on their own type name rather than an empty string:
+gofmt rewrites two adjacent apostrophes inside a doc comment as a
+typographic quote, which would silently break the rule at CRD install.
+A headroom path that is also a ContainerRuntime socket would be mounted
+twice at one mountPath — as a Directory and as a Socket —
+which the kubelet rejects, and a directory mount over a socket is
+meaningless anyway. The socket's default counts as a value.
+
+
+
+_Appears in:_
+- [NodeHealthCheck](#nodehealthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `checks` _[NodeHealthCheckItem](#nodehealthcheckitem) array_ | Checks are the assertions made on every node in scope. At least one is<br />required — a check with no items would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
+| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. Control-plane tolerations are NOT<br />added here — use IncludeControlPlaneNodes for that, so scheduling the<br />agent onto control-plane nodes is always an explicit, auditable opt-in.<br />An omitted list and an empty list mean the same thing: no tolerations.<br />The operator never distinguishes the two, so the nil-vs-empty round-trip<br />the sibling kind carries (#150) has no effect here. |  | Optional: \{\} <br /> |
+| `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on<br />control-plane nodes by adding tolerations for the standard control-plane<br />and legacy master taints on top of any Tolerations. It defaults to false:<br />a KubeletHealthz or ContainerRuntime check runs the agent with host<br />network or as root, so landing it on a control-plane node is a decision<br />the author makes, not a default. | false | Optional: \{\} <br /> |
+| `metricsHostPort` _integer_ | MetricsHostPort is the host port a host-network agent (one running a<br />KubeletHealthz item) serves its metrics on. When unset, the operator<br />derives a port in 20000–22767 from the check's namespaced name; that<br />derivation is a hash, so two host-network checks scheduled on the same<br />node can collide, which surfaces as the second agent crash-looping<br />(AgentReady=False) and is reported on the AgentPrivileged condition. Set<br />this to resolve such a collision, or to avoid an unrelated host listener.<br />Ignored for a check without a host-network item. |  | Maximum: 65535 <br />Minimum: 1024 <br />Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the operator refreshes the rolled-up<br />HealthReport (the roll-up transition cadence). Defaults to 5m when<br />unset. Must be at least 10s (MinCheckInterval); the operator clamps<br />stored objects that predate this floor to it at runtime.<br />The runtime cadence is capped: the node-agent re-evaluates at<br />min(interval, 5m), the operator reconciles and refreshes<br />status.lastRunTime on that same cadence (so a silently dead agent is<br />noticed within minutes and a healthy check never reads as stale), and a<br />report counts as fresh for one full agent cycle — that cadence plus<br />three times the capped Timeout. A value above 5m therefore has no<br />further runtime effect; HealthReports are written only when the verdict<br />transitions, whatever the interval.<br />Headroom, kubelet, and runtime liveness change on the order of minutes,<br />so a long interval must not accept a measurement that old: a 24h<br />interval still detects a disk filling up within minutes. Unchanged<br />evaluations refresh only status liveness (LastRunTime); a new<br />HealthReport is written only when the verdict transitions. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent evaluation pass, including the kubelet<br />and runtime-socket probes. Defaults to 30s when unset. Must be at least 1s<br />(MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
+| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckStatus
+
+
+
+NodeHealthCheckStatus defines the observed state of NodeHealthCheck.
+
+
+
+_Appears in:_
+- [NodeHealthCheck](#nodehealthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec, whether<br />the agent DaemonSet is rolled out and reporting, and whether the current<br />verdict was computed from a complete scan of the fleet. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results. It is refreshed on the capped agent cadence, min(interval, 5m),<br />even when the aggregate is unchanged, so downstream liveness stays<br />fresh, and never moves backward: an incomplete window freezes it along<br />with the verdict. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the aggregate result across every node in scope as of the<br />most recent complete evaluation. An incomplete window (a rollout, a node<br />joining, an agent restart) freezes it rather than clearing it; the<br />CoverageComplete condition says which. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `summary` _string_ | Summary is a human-readable one-line outcome naming how many nodes<br />passed and, when some did not, the worst of them. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions,<br />so this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every node in<br />scope has a fresh report carrying it. Until then the previous verdict is<br />kept. A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
+| `reportingNodes` _integer_ | ReportingNodes is the number of fresh, well-formed reports the operator<br />found at its latest reconcile, including surplus reports from nodes that<br />have since left scope. It is refreshed every reconcile, so it can change<br />while LastResult and NodeResults are frozen across an incomplete window;<br />it is a liveness count, not the coverage signal — CoverageComplete is. |  | Optional: \{\} <br /> |
+| `nodeResults` _[NodeHealthNodeResult](#nodehealthnoderesult) array_ | NodeResults holds one entry per node in the most recent complete<br />evaluation, sorted by node name, as bounded per-node detail. Capped at<br />100 entries, so in a larger fleet a node can be absent here although it<br />reported; the fleet-wide coverage signal is the CoverageComplete<br />condition, which names the nodes that have not reported. The verdict and<br />coverage are computed across every node before truncation. Like<br />LastResult it is frozen, not cleared, across an incomplete window. |  | MaxItems: 100 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckType
+
+_Underlying type:_ _string_
+
+NodeHealthCheckType selects what a NodeHealthCheck asserts on each node.
+
+The five types are not equal in what they cost the agent. DiskHeadroom and
+InodeHeadroom are a statfs over a read-only hostPath mount and keep the
+hardened default profile. NodeCondition is evaluated by the operator, not
+the agent, and needs a cluster-wide read on Node objects. KubeletHealthz
+needs hostNetwork, because the kubelet's health endpoint binds to
+localhost. ContainerRuntime needs the runtime socket mounted and the agent
+running as root to open it. The operator grants each privilege only when a
+check of that type is present, so a spec that declares only headroom checks
+never pays for the others (#206).
+
+_Validation:_
+- Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime]
+
+_Appears in:_
+- [NodeHealthCheckItem](#nodehealthcheckitem)
+
+| Field | Description |
+| --- | --- |
+| `DiskHeadroom` | NodeHealthCheckDiskHeadroom asserts the percentage of free bytes on the<br />filesystem holding Path stays above the thresholds.<br /> |
+| `InodeHeadroom` | NodeHealthCheckInodeHeadroom asserts the percentage of free inodes on the<br />filesystem holding Path stays above the thresholds.<br /> |
+| `NodeCondition` | NodeHealthCheckNodeCondition asserts the node's own status conditions<br />carry their healthy value (Ready=True; every pressure condition False).<br /> |
+| `KubeletHealthz` | NodeHealthCheckKubeletHealthz asserts the kubelet answers its localhost<br />/healthz endpoint.<br /> |
+| `ContainerRuntime` | NodeHealthCheckContainerRuntime asserts the container runtime accepts<br />connections on its CRI socket.<br /> |
+
+
+#### NodeHealthNodeResult
+
+
+
+NodeHealthNodeResult is the folded verdict for one node on the most recent
+complete evaluation.
+
+
+
+_Appears in:_
+- [NodeHealthCheckStatus](#nodehealthcheckstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `node` _string_ | Node is the node the result belongs to. |  | MaxLength: 253 <br /> |
+| `result` _string_ | Result is the worst outcome across every check evaluated on this node. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
+| `message` _string_ | Message summarises the worst check on the node, so a failing node is<br />triaged without opening the HealthReport. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the node's report was produced. |  | Optional: \{\} <br /> |
 
 
 #### ThresholdValue

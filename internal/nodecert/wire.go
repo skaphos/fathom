@@ -67,18 +67,39 @@ func DecodeReport(data string) (NodeReport, error) {
 
 // NodeReportConfigMapName returns the deterministic, DNS-1123-subdomain name a
 // node-agent uses for its per-node report ConfigMap. It combines the check
-// name, a sanitized node name, and a short hash of the raw node name so the
-// name is stable per (check, node), unique across nodes even after
-// sanitization, and always a legal object name (<=253 chars). The operator does
-// not need this name — it discovers report ConfigMaps by label — but a
-// deterministic name lets the agent upsert the same object every scan.
+// name, a sanitized node name, and a short hash so the name is stable per
+// (check, node), unique across nodes even after sanitization, and always a
+// legal object name (<=253 chars). The operator does not need this name — it
+// discovers report ConfigMaps by label — but a deterministic name lets the
+// agent upsert the same object every scan, and it is the canonical name the
+// authenticity bindings require.
+//
+// NodeCertificateCheck hashes the node alone, unchanged from the first
+// release so reports already on clusters keep their names.
 func NodeReportConfigMapName(checkName, node string) string {
-	h := sha256.Sum256([]byte(node))
+	return reportConfigMapName(checkName, "nodecertificatecheck", node, node)
+}
+
+// NodeReportConfigMapNameFor returns the deterministic report ConfigMap name
+// for a node-scoped kind other than NodeCertificateCheck. The kind is folded
+// into both the readable base and the hash: a base prefix alone is not a
+// namespace — a NodeHealthCheck named "foo" and a NodeCertificateCheck named
+// "nodehealth-foo" would share every per-node name — whereas hashing
+// (kind, check, node) makes the two kinds' names disjoint for any check
+// names, while NodeCertificateCheck keeps its unqualified, node-only hash.
+func NodeReportConfigMapNameFor(kindSlug, checkName, node string) string {
+	return reportConfigMapName(kindSlug+"-"+checkName, kindSlug, node, kindSlug+"\x00"+checkName+"\x00"+node)
+}
+
+// reportConfigMapName builds "<base>-<node>-<hash>" (or "<base>-<hash>" when
+// the sanitized node would push the name past 253 characters), hashing seed.
+func reportConfigMapName(rawBase, fallback, node, seed string) string {
+	h := sha256.Sum256([]byte(seed))
 	suffix := hex.EncodeToString(h[:])[:8]
 
-	base := dnsSafe(checkName)
+	base := dnsSafe(rawBase)
 	if base == "" {
-		base = "nodecertificatecheck"
+		base = fallback
 	}
 	if len(base) > 200 {
 		base = strings.Trim(base[:200], "-.")

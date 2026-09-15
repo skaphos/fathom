@@ -52,6 +52,36 @@ spec:
 		Expect(out).To(ContainSubstring("timeout must be at least 1s"))
 	})
 
+	It("rejects a NodeHealthCheck item whose fields do not match its type at admission", func() {
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: crd-validation-union-e2e
+  namespace: default
+spec:
+  checks:
+    - type: KubeletHealthz
+      path: /var/lib/kubelet
+`)
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring("must be omitted for every other type"))
+	})
+
+	It("rejects a NodeHealthCheck headroom path outside the allowlist at admission", func() {
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: crd-validation-path-e2e
+  namespace: default
+spec:
+  checks:
+    - type: DiskHeadroom
+      path: /
+`)
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring("allowed prefix"))
+	})
+
 	It("rejects a non-numeric warnDays threshold at admission", func() {
 		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
 kind: AddonCheck

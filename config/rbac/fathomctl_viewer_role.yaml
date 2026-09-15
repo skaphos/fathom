@@ -20,6 +20,7 @@ rules:
   - addonchecks
   - dnschecks
   - nodecertificatechecks
+  - nodehealthchecks
   - healthchecks
   - clusterhealths
   - healthreports
@@ -33,6 +34,7 @@ rules:
   - addonchecks/status
   - dnschecks/status
   - nodecertificatechecks/status
+  - nodehealthchecks/status
   - healthchecks/status
   - clusterhealths/status
   verbs:

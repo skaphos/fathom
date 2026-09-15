@@ -36,4 +36,20 @@ const (
 	// DefaultNodeCertificateCheckTimeout bounds a node-agent scan when
 	// Spec.Timeout is unset.
 	DefaultNodeCertificateCheckTimeout = 30 * time.Second
+
+	// DefaultNodeHealthCheckInterval is the node-agent re-evaluation cadence
+	// and the operator's rollup cadence for a NodeHealthCheck when
+	// Spec.Interval is unset. Shorter than the certificate scan: headroom,
+	// kubelet, and runtime liveness change on the order of minutes, not days.
+	DefaultNodeHealthCheckInterval = 5 * time.Minute
+	// MaxNodeHealthCheckAgentInterval caps how rarely a NodeHealthCheck agent
+	// re-evaluates its node, whatever spec.interval says: the agent runs at
+	// min(interval, this), and its pass timeout is min(timeout, that cadence).
+	// It lives here so fathomctl computes the same effective timeout the
+	// controller enforces (run --wait) without importing the controller.
+	MaxNodeHealthCheckAgentInterval = 5 * time.Minute
+	// DefaultNodeHealthCheckTimeout bounds one node-agent evaluation pass
+	// (every check, including the kubelet and runtime-socket probes) when
+	// Spec.Timeout is unset.
+	DefaultNodeHealthCheckTimeout = 30 * time.Second
 )

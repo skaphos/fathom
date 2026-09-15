@@ -56,6 +56,7 @@ worst-case aggregation.
 | `HealthCheck` | `status.result` | `status.sourceObservedAt` | `status.lastReportName` |
 | `ClusterHealth` | `status.result` | `status.observedAt` | `status.children` |
 | `NodeCertificateCheck` | `status.lastResult` | `status.lastRunTime` | `status.lastReportName` |
+| `NodeHealthCheck` | `status.lastResult` | `status.lastRunTime` | `status.lastReportName`, `status.nodeResults` |
 | `HealthReport` | `spec.result` | `spec.observedAt` | `spec.checks` |
 
 `ClusterHealth.status.observedAt` is the newest input observation time from its
@@ -64,8 +65,8 @@ selected `HealthCheck`s, not wall-clock time. It intentionally does not read
 
 ## On-demand runs
 
-Every executable kind (`AddonCheck`, `DNSCheck`, `NodeCertificateCheck`)
-honours the same on-demand trigger. Write a fresh, non-empty value to the
+Every executable kind (`AddonCheck`, `DNSCheck`, `NodeCertificateCheck`,
+`NodeHealthCheck`) honours the same on-demand trigger. Write a fresh, non-empty value to the
 `fathom.skaphos.io/run-now` annotation and the controller runs the check
 regardless of `spec.interval`; when that run completes it records the value in
 `status.lastRunTrigger`. The rules are identical across kinds:
@@ -86,8 +87,9 @@ regardless of `spec.interval`; when that run completes it records the value in
   update fail validation. No supported writer produces one.
 - A paused check does not consume the trigger. It stays pending until the
   check is unpaused, and `run --wait` would only time out.
-- `NodeCertificateCheck` completes the trigger differently from the other
-  two: the operator stamps the value onto the node-agent DaemonSet's pod
+- `NodeCertificateCheck` and `NodeHealthCheck` complete the trigger
+  differently from the other two: the operator stamps the value onto the
+  node-agent DaemonSet's pod
   template, which restarts every agent, each agent scans on start and
   reports the value it started with, and the operator records the value only
   once every desired node's fresh report carries it. Until then the previous
@@ -146,7 +148,8 @@ kubectl -n fathom-system annotate addoncheck cert-manager-system-health \
 ## HealthCheck
 
 `HealthCheck` is a projection layer. It mirrors one `AddonCheck`, `DNSCheck`,
-or `NodeCertificateCheck` into a uniform status shape for `ClusterHealth`.
+`NodeCertificateCheck`, or `NodeHealthCheck` into a uniform status shape for
+`ClusterHealth`.
 `spec.checkRef` is immutable — retargeting a wrapper would silently repoint its
 mirrored status snapshot at a different check, so replace the wrapper instead.
 
@@ -165,7 +168,7 @@ Status fields to start with:
 | `Paused` | `True / Paused` | `spec.paused=true`; mirroring is suspended and the previous mirrored snapshot is preserved. | Unset `spec.paused` to resume. |
 | `Ready` | `True / TargetMirrored` | The referenced specialized check was read and mirrored. | Check `status.result` and `sourceObservedAt`. |
 | `Ready` | `False / UnsupportedAPIVersion` | A nonempty `spec.checkRef.apiVersion` is not the current `fathom.skaphos.io/v1alpha1` contract. Mirrored fields are cleared without reading a target. | Replace the immutable wrapper with the current API version, or omit `apiVersion` to use the current default. |
-| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not `AddonCheck`, `DNSCheck`, or `NodeCertificateCheck`. Mirrored fields are cleared. | Replace the immutable wrapper with one of the supported kinds. |
+| `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, or `NodeHealthCheck`. Mirrored fields are cleared. | Replace the immutable wrapper with one of the supported kinds. |
 | `Ready` | `False / TargetNotFound` | The referenced target does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the immutable reference is wrong. |
 | `Ready` | `False / TargetLookupFailed` | Reading a supported target failed with a transient API error. The last readable mirrored snapshot is preserved and the controller returns the error for retry. | Check controller logs, API-server availability, and RBAC; do not treat the retained snapshot as new evidence. |
 | `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
@@ -208,6 +211,13 @@ available to aggregate.
 `NodeCertificateCheck` manages a node-agent DaemonSet and rolls fresh per-node
 reports into a `HealthReport`. A `HealthCheck` can project that status into
 `ClusterHealth`.
+
+The shared report-authenticity admission policy makes the managed-by,
+source-kind, and source-name labels and the node-name annotation immutable on
+update. It accepts report content only from the exact ServiceAccount derived
+from those source labels and requires the writer's node-bound token claim to
+match the node annotation. Owner-reference-only adoption by the operator and
+legitimate same-node report refresh remain allowed.
 
 Status fields to start with:
 
@@ -267,7 +277,7 @@ Freshness and coverage rules:
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. Structural invalid specs are normally rejected by the API server from CRD validation before reconciliation. | Continue to `AgentReady` and `Ready`. |
 | `Paused` | `False / RunEnabled` | The node-agent is eligible to run. | None. |
-| `Paused` | `True / Paused` | `spec.paused=true`; the operator deletes the agent DaemonSet and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
+| `Paused` | `True / Paused` | `spec.paused=true`; the operator clears the scoped report Role, deletes the agent DaemonSet, and preserves the last status snapshot. | Unset `spec.paused` to recreate the DaemonSet. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged: the current generation is observed and every desired pod is updated and ready. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet exists but has not fully converged: the current generation is not yet observed, or not every desired pod is updated and ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
@@ -282,8 +292,10 @@ Freshness and coverage rules:
 | `CoverageComplete` | `False / AgentRollingOut` | The DaemonSet has not fully converged, so no roll-up was computed. `lastResult` is frozen. | Wait for rollout or inspect pod scheduling/image pulls. |
 | `CoverageComplete` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes; there is nothing to scan. | Check `spec.nodeSelector` and cluster labels. |
 | `ReportsAuthentic` | `True / AllReportsBound` | Every collected report is bound to the node it claims. | None. |
+| `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `ReportsAuthentic` | `False / ForgedReportRejected` | One or more reports failed a binding only a writer passing off another node's report can fail — a payload disagreeing with the node-name annotation, or a report at a non-canonical ConfigMap name. The message names the ConfigMaps (up to five) and the reason. The rejected reports are excluded from the aggregate. | Investigate: some principal with ConfigMap write in the namespace is attempting to steer a node's verdict. Check who holds `configmaps` write there, and confirm the report-authenticity `ValidatingAdmissionPolicy` is enforced. |
-| `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
+| `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/Role/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
+| `Ready` | `False / RBACRevocationFailed` | The scoped report Role could not be cleared or the DaemonSet could not be deleted while pausing, so the agent may remain running; agent state and coverage are unknown. Role clearing is attempted first, and a failure stops deletion. | Restore Role update and DaemonSet delete access, then retry the pause. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
 | `Ready` | `False / AdmissionPolicyProvisioningFailed` | Creating/updating the report-authenticity `ValidatingAdmissionPolicy` or its binding failed. | Check operator RBAC on `admissionregistration.k8s.io` and cluster API support. |
 | `Ready` | `False / NetworkPolicyProvisioningFailed` | Creating/updating the per-check node-agent `NetworkPolicy` failed. | Check operator RBAC on `networking.k8s.io` and admission policies. |
@@ -297,6 +309,83 @@ kubectl -n fathom-system get configmap \
 
 kubectl -n fathom-system get healthreport \
   -l 'fathom.skaphos.io/source-kind=NodeCertificateCheck,fathom.skaphos.io/source-name=node-certificates'
+```
+
+## NodeHealthCheck
+
+`NodeHealthCheck` manages a node-agent DaemonSet in health mode, merges each
+node's fresh report with the node conditions the operator grades from the Node
+object, and rolls them into a `HealthReport`. A `HealthCheck` can project that
+status into `ClusterHealth`. There is no pause field.
+
+Status fields to start with:
+
+- `status.lastResult` - worst-case result across every node in scope, from the
+  most recent complete evaluation.
+- `status.summary` - `N of M node(s) passed`, plus the worst node and check
+  when some did not.
+- `status.nodeResults` - one entry per node (sorted, capped at 100; the verdict
+  is folded across every node before the cap): result, message naming the
+  worst check, observation time. Bounded detail, not the coverage signal: in
+  a fleet larger than the cap a node can be absent here although it reported.
+  `CoverageComplete` is the fleet-wide coverage result and names the nodes
+  that have not reported.
+- `status.lastRunTime`, `status.lastReportName`, `status.lastRunTrigger`,
+  `status.desiredNodes`, `status.reportingNodes` - as for
+  `NodeCertificateCheck`.
+
+Freshness and coverage follow the `NodeCertificateCheck` rules above with one
+deliberate difference: a report is fresh for one full agent cycle — the
+**agent cadence** `min(spec.interval, 5m)` plus three times the agent's
+effective timeout `min(spec.timeout, that cadence)` (this pass's publication,
+the next pass's evaluation and publication), at most twenty minutes — and the reconciler
+requeues and refreshes `lastRunTime` on the agent cadence rather than
+`spec.interval`, so a silently dead agent is noticed within that bound and a
+healthy check never reads as stale. A long roll-up interval therefore
+never accepts an old measurement. Coverage is per
+node identity, an incomplete window freezes `lastResult`, `lastReportName`,
+`lastRunTime`, and `nodeResults`, and a provisioning failure persists
+`Ready=False` without clearing the verdict.
+
+| Condition | Status / reason | Meaning | Operator action |
+| --- | --- | --- | --- |
+| `Accepted` | `True / SpecAccepted` | The spec was accepted. | Continue to `AgentReady` and `Ready`. |
+| `Accepted` | `True / SpecClamped` | A stored sub-floor `interval`/`timeout` is running clamped to the floors. | Raise the field to the floor. |
+| `Accepted` | `False / ItemsRejected` | An item's `path` or `socketPath` is outside the operator's allowlist, or its `criticalPercentFree` is above the effective `warnPercentFree`. Only reachable for an object stored under an older CRD (admission rejects all of these today). The operator clears scoped report access before removing the node-agent DaemonSet, and retains the last complete verdict. `AgentReady`, `AgentPrivileged`, `CoverageComplete`, and `Ready` carry the same reason after successful revocation, and `fathomctl run --wait` fails fast. | Fix or remove the item; the message names it. The agent is re-provisioned on the next accepted generation. |
+| `AgentReady` | `False / ItemsRejected` | The agent was revoked because the spec was rejected (see `Accepted`). | As above. |
+| `AgentPrivileged` | `False / ItemsRejected` | No agent is running: the spec was rejected. | As above. |
+| `AgentPrivileged` | `Unknown / AgentRevocationFailed` | The spec was rejected but scoped report access could not be cleared or the previous generation's DaemonSet could not be removed; that agent may still be running with its earlier privileges. `Ready` carries the error and the reconcile retries. | Fix Role update or DaemonSet delete access and API availability; remove the DaemonSet by hand if urgent. |
+| `AgentReady` | `False / <step>ProvisioningFailed` | Provisioning failed at `<step>` (RBAC, AdmissionPolicy, NetworkPolicy, DaemonSet) for this generation; the agent's state is unknown. `Ready` carries the error. | Read the `Ready` message; fix the cluster-side cause. |
+| `CoverageComplete` | `False / ItemsRejected` or `False / <step>ProvisioningFailed` | Coverage cannot be evaluated for this generation because no agent was provisioned. The last complete verdict is retained. | As above. |
+| `AgentPrivileged` | `False / Hardened` | The resolved items need no privilege beyond read-only `hostPath` mounts: the agent runs non-root with no host network. | None. |
+| `AgentPrivileged` | `True / HostNetwork` | A `KubeletHealthz` item put the agent on the host network. The per-check NetworkPolicy does not isolate it; the message names the host metrics port. | Confirm this is intended; drop the item to return to the hardened profile. |
+| `AgentPrivileged` | `True / RunAsRoot` | A `ContainerRuntime` item runs the agent as root with the CRI socket mounted (capabilities still dropped). | Confirm this is intended. |
+| `AgentPrivileged` | `True / HostNetworkAndRoot` | Both of the above. | Confirm this is intended. |
+| `ReportsAuthentic` | `Unknown / ReportsNotCollected` | Reconciliation stopped before reports were collected, so an earlier generation's authenticity result is no longer current. | Read `Ready` for the provisioning or evaluation failure and retry after fixing it. |
+| `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
+| `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged. | Continue to `Ready`. |
+| `AgentReady` | `False / RollingOut` | The DaemonSet has not fully converged. On a privileged spec, check that the namespace's Pod Security level admits host-network / root pods. | Inspect DaemonSet pods, scheduling, image pulls, Pod Security labels. |
+| `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
+| `Ready` | `True / Reporting` | Complete, fresh evaluations were rolled up into a `HealthReport`. | Read `lastResult`, `summary`, `nodeResults`. |
+| `Ready` | `False / NoMatchingNodes` / `AwaitingReports` / `PartialReports` / `AgentRollingOut` | As for `NodeCertificateCheck`; the previous verdict is frozen, not cleared. | As for `NodeCertificateCheck`. |
+| `Ready` | `False / RBACProvisioningFailed` / `AdmissionPolicyProvisioningFailed` / `NetworkPolicyProvisioningFailed` / `DaemonSetProvisioningFailed` | Provisioning failed; persisted, verdict retained. An admission-policy failure first attempts to clear scoped report access and delete any existing agent. | As for `NodeCertificateCheck`. |
+| `Ready` | `False / AgentRevocationFailed` | Admission enforcement became unavailable or the spec was rejected, and clearing scoped report access or deleting the existing agent failed. Both revocation steps are attempted; the message includes the admission and cleanup failures when both occurred. The historical verdict remains retained. | Restore Role update and DaemonSet delete access, then retry; remove the agent manually if urgent. |
+| `Ready` | `False / EvaluationFailed` | A ConfigMap/Pod list, Node read, or HealthReport write failed during evaluation. The historical result, time, report name, and node results are retained; `AgentReady` is unchanged. | Fix the API or RBAC failure and retry. |
+| `CoverageComplete` | `Unknown / EvaluationFailed` | Current coverage could not be evaluated because an API operation failed; the last complete verdict, time, report name, and node results remain retained. | Fix the API or RBAC failure and retry. |
+| `CoverageComplete` | `True / AllNodesReporting` | Every node in scope published a fresh evaluation. | None. |
+| `CoverageComplete` | `False / PartialReports` / `AgentRollingOut` / `NoMatchingNodes` | As for `NodeCertificateCheck`; `lastResult` and `nodeResults` are the frozen previous values. | As for `NodeCertificateCheck`. |
+| `ReportsAuthentic` | `True / AllReportsBound` / `False / ForgedReportRejected` | As for `NodeCertificateCheck` — the same authenticity policy and bindings apply. | As for `NodeCertificateCheck`. |
+
+A `NodeCondition` item whose node the operator cannot read (the node left, or
+the `nodes` `get` grant was removed) grades as `Error` on that node's condition
+checks; the node's report still counts toward coverage.
+
+```sh
+kubectl -n fathom-system get configmap \
+  -l 'fathom.skaphos.io/managed-by=fathom,fathom.skaphos.io/source-kind=NodeHealthCheck,fathom.skaphos.io/source-name=node-health'
+
+kubectl -n fathom-system get healthreport \
+  -l 'fathom.skaphos.io/source-kind=NodeHealthCheck,fathom.skaphos.io/source-name=node-health'
 ```
 
 ## DNSCheck

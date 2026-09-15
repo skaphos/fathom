@@ -1,0 +1,269 @@
+/*
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
+SPDX-License-Identifier: MIT
+*/
+
+package nodehealth
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/skaphos/fathom/internal/nodecert"
+)
+
+func TestReportRoundTrip(t *testing.T) {
+	t.Parallel()
+	pct := 42.5
+	in := NodeReport{
+		Node:       "node-a",
+		CheckName:  "nh",
+		ObservedAt: time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC),
+		Aggregate:  OutcomeWarn,
+		Trigger:    "tok-1",
+		Checks: []CheckResult{
+			{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: OutcomeWarn, Summary: "42.5% of bytes free", PercentFree: &pct, Total: 1000, Free: 425},
+			{Type: TypeKubeletHealthz, Outcome: OutcomePass, Summary: "ok"},
+		},
+	}
+	encoded, err := EncodeReport(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := DecodeReport(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Node != in.Node || out.CheckName != in.CheckName || !out.ObservedAt.Equal(in.ObservedAt) || out.Aggregate != in.Aggregate || out.Trigger != in.Trigger {
+		t.Fatalf("header round-trip mismatch: %+v", out)
+	}
+	if len(out.Checks) != 2 || out.Checks[0].PercentFree == nil || *out.Checks[0].PercentFree != pct || out.Checks[1].PercentFree != nil {
+		t.Fatalf("checks round-trip mismatch: %+v", out.Checks)
+	}
+	if _, err := DecodeReport("{not json"); err == nil {
+		t.Fatal("expected decode error")
+	}
+}
+
+func TestItemsRoundTrip(t *testing.T) {
+	t.Parallel()
+	in := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/log", WarnPercentFree: 20, CriticalPercentFree: 0},
+		{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+	}
+	encoded, err := EncodeItems(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := DecodeItems(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 2 || out[0] != in[0] || out[1] != in[1] {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	// A zero threshold must survive: it means "never", not "unset".
+	if out[0].CriticalPercentFree != 0 {
+		t.Fatalf("zero threshold did not survive: %d", out[0].CriticalPercentFree)
+	}
+	if _, err := DecodeItems("nope"); err == nil {
+		t.Fatal("expected decode error")
+	}
+}
+
+// TestReportConfigMapNameIsKindQualified pins the fix for the name collision a
+// second node-scoped kind would otherwise introduce: a NodeHealthCheck and a
+// NodeCertificateCheck sharing a name in one namespace must write to different
+// ConfigMaps, or each would authenticate — and overwrite — the other's report.
+func TestReportConfigMapNameIsKindQualified(t *testing.T) {
+	t.Parallel()
+	ours := ReportConfigMapName("shared", "node-a")
+	theirs := nodecert.NodeReportConfigMapName("shared", "node-a")
+	if ours == theirs {
+		t.Fatalf("NodeHealthCheck and NodeCertificateCheck report names collide: %q", ours)
+	}
+	if !strings.HasPrefix(ours, "nodehealth-shared-") {
+		t.Fatalf("name %q is not kind-qualified", ours)
+	}
+	if ours != ReportConfigMapName("shared", "node-a") {
+		t.Fatal("name is not deterministic")
+	}
+	if len(ours) > 253 {
+		t.Fatalf("name too long: %d", len(ours))
+	}
+	if ReportConfigMapName("shared", "node-a") == ReportConfigMapName("shared", "node-b") {
+		t.Fatal("distinct nodes produced the same name")
+	}
+}
+
+// TestVerifyReportBindingSharesNodecertBindings pins that the SEC-1 structural
+// bindings apply to this kind through the shared verifier, including the
+// canonical-name rule against THIS kind's name — not nodecert's.
+func TestVerifyReportBindingSharesNodecertBindings(t *testing.T) {
+	t.Parallel()
+	report := NodeReport{Node: "node-a", CheckName: "nh"}
+	canonical := ReportConfigMapName("nh", "node-a")
+	tests := []struct {
+		name          string
+		cmName        string
+		annotatedNode string
+		checkName     string
+		report        NodeReport
+		want          nodecert.ReportRejection
+	}{
+		{"accepted", canonical, "node-a", "nh", report, nodecert.ReportAccepted},
+		{"wrong check", canonical, "node-a", "other", report, nodecert.RejectWrongCheck},
+		{"missing node", canonical, "node-a", "nh", NodeReport{CheckName: "nh"}, nodecert.RejectMissingNode},
+		{"missing annotation", canonical, "", "nh", report, nodecert.RejectMissingNodeAnnotation},
+		{"node mismatch", canonical, "node-b", "nh", report, nodecert.RejectNodeMismatch},
+		{"non-canonical name", "nh-node-a-deadbeef", "node-a", "nh", report, nodecert.RejectNonCanonicalName},
+		// A report at nodecert's canonical name for the same check+node is an
+		// off-name report for THIS kind: the two must never be confused.
+		{"nodecert's canonical name is off-name here", nodecert.NodeReportConfigMapName("nh", "node-a"), "node-a", "nh", report, nodecert.RejectNonCanonicalName},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := VerifyReportBinding(tt.cmName, tt.annotatedNode, tt.checkName, tt.report); got != tt.want {
+				t.Fatalf("VerifyReportBinding = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestWorstOutcomeFold pins the fold the operator relies on: Skipped is
+// informational and never wins while a graded outcome exists; empty and
+// all-Skipped inputs yield Skipped.
+func TestWorstOutcomeFold(t *testing.T) {
+	t.Parallel()
+	r := func(o ...Outcome) []CheckResult {
+		out := make([]CheckResult, 0, len(o))
+		for _, x := range o {
+			out = append(out, CheckResult{Outcome: x})
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		in   []CheckResult
+		want Outcome
+	}{
+		{"empty", nil, OutcomeSkipped},
+		{"all skipped", r(OutcomeSkipped, OutcomeSkipped), OutcomeSkipped},
+		{"single pass", r(OutcomePass), OutcomePass},
+		{"pass beats skipped", r(OutcomeSkipped, OutcomePass), OutcomePass},
+		{"warn beats pass", r(OutcomePass, OutcomeWarn), OutcomeWarn},
+		{"fail beats warn", r(OutcomeWarn, OutcomeFail, OutcomePass), OutcomeFail},
+		{"error beats fail", r(OutcomeFail, OutcomeError), OutcomeError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := WorstOutcome(tt.in); got != tt.want {
+				t.Fatalf("WorstOutcome = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReportCovers(t *testing.T) {
+	t.Parallel()
+	items := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"},
+		{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+		{Type: TypeKubeletHealthz},
+		{Type: TypeNodeCondition}, // operator-side; never required of the agent
+	}
+	full := NodeReport{Checks: []CheckResult{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: OutcomeSkipped},
+		{Type: TypeContainerRuntime, Path: "/run/crio/crio.sock", Outcome: OutcomeFail},
+		{Type: TypeKubeletHealthz, Outcome: OutcomePass},
+	}}
+	if !ReportCovers(full, items) {
+		t.Fatal("a report with a result per agent item (any outcome) must cover")
+	}
+	if ReportCovers(NodeReport{Checks: full.Checks[:2]}, items) {
+		t.Fatal("a report missing KubeletHealthz must not cover")
+	}
+	wrongPath := NodeReport{Checks: append([]CheckResult{{Type: TypeDiskHeadroom, Path: "/var/log"}}, full.Checks[1:]...)}
+	if ReportCovers(wrongPath, items) {
+		t.Fatal("same type at a different path must not cover")
+	}
+	if !ReportCovers(NodeReport{}, []Item{{Type: TypeNodeCondition}}) || !ReportCovers(NodeReport{}, nil) {
+		t.Fatal("no agent-side items are covered by an empty report")
+	}
+	// A superset is a report from before an item was removed: the removed
+	// item's (possibly failing) result must not reach the roll-up.
+	superset := NodeReport{Checks: append(append([]CheckResult(nil), full.Checks...), CheckResult{Type: TypeDiskHeadroom, Path: "/var/log", Outcome: OutcomeFail})}
+	if ReportCovers(superset, items) {
+		t.Fatal("a report carrying a result for a removed item must not cover")
+	}
+	if ReportCovers(full, nil) {
+		t.Fatal("a non-empty report must not cover an empty item set")
+	}
+	// Same count, but one current item repeated in place of another: the
+	// duplicate must not mask the missing check.
+	duplicated := NodeReport{Checks: []CheckResult{full.Checks[0], full.Checks[0], full.Checks[2]}}
+	if ReportCovers(duplicated, items) {
+		t.Fatal("a duplicated key must not stand in for a missing one")
+	}
+	if ItemKey(Item{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}) != "/run/crio/crio.sock" || ItemKey(Item{Type: TypeDiskHeadroom, Path: "/var/log"}) != "/var/log" || ItemKey(Item{Type: TypeKubeletHealthz}) != "" {
+		t.Fatal("ItemKey must be the socket for ContainerRuntime, the path otherwise")
+	}
+}
+
+func TestItemsDigest(t *testing.T) {
+	t.Parallel()
+	a := []Item{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10},
+		{Type: TypeKubeletHealthz},
+		{Type: TypeNodeCondition},
+	}
+	d := ItemsDigest(a, 30*time.Second)
+	if len(d) != itemsDigestLength {
+		t.Fatalf("digest %q has length %d", d, len(d))
+	}
+	// Order-insensitive, and NodeCondition (operator-graded) does not participate.
+	if ItemsDigest([]Item{a[1], a[0]}, 30*time.Second) != d {
+		t.Fatal("digest must not depend on item order or on NodeCondition items")
+	}
+	// A threshold change is a semantic change: the digest must move.
+	tightened := []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 15}, a[1]}
+	if ItemsDigest(tightened, 30*time.Second) == d {
+		t.Fatal("changing a threshold must change the digest")
+	}
+	if ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}}, time.Second) == ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"}}, time.Second) {
+		t.Fatal("different sockets must digest differently")
+	}
+	if ItemsDigest(nil, time.Second) != ItemsDigest([]Item{{Type: TypeNodeCondition}}, time.Second) {
+		t.Fatal("no agent-side items must digest the same regardless of NodeCondition items")
+	}
+	// The pass timeout grades the probes, so it is part of the identity.
+	if ItemsDigest(a, 30*time.Second) == ItemsDigest(a, 10*time.Second) {
+		t.Fatal("changing the pass timeout must change the digest")
+	}
+}
+
+func TestUnknownOutcomesFailClosed(t *testing.T) {
+	t.Parallel()
+	mixed := []CheckResult{
+		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: OutcomePass},
+		{Type: TypeKubeletHealthz, Outcome: Outcome("Bogus")},
+	}
+	if got := WorstOutcome(mixed); got != OutcomeError {
+		t.Fatalf("a tampered outcome beside a Pass folded to %s, want Error", got)
+	}
+	if got := WorstOutcome([]CheckResult{{Outcome: Outcome("Bogus")}, {Outcome: OutcomeError}}); got != OutcomeError {
+		t.Fatalf("unknown beside Error = %s, want Error", got)
+	}
+	if ReportWellFormed(NodeReport{Checks: mixed}) {
+		t.Fatal("a report with an unknown outcome must not be well-formed")
+	}
+	if !ReportWellFormed(NodeReport{Checks: mixed[:1]}) || !ReportWellFormed(NodeReport{}) {
+		t.Fatal("known outcomes only, or no checks, must be well-formed")
+	}
+	if KnownOutcome(Outcome("")) || !KnownOutcome(OutcomeSkipped) {
+		t.Fatal("KnownOutcome must reject the empty outcome and accept Skipped")
+	}
+}

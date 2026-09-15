@@ -92,6 +92,8 @@ shard_for_file() {
     test/e2e/cilium_test.go) echo core ;;
     test/e2e/externalsecrets_test.go) echo core ;;
     test/e2e/nodecert_test.go) echo core ;;
+    # NodeHealthCheck is a core-tier kind (node-agent over hostPath, no addon).
+    test/e2e/nodehealth_test.go) echo core ;;
     # DNSCheck is a core-tier kind (probe Pods + CoreDNS, no addon); its
     # specs carry the core label, so the always-on core shard runs them.
     test/e2e/dnscheck*_test.go) echo core ;;

@@ -230,8 +230,15 @@ func reportChange(newer, older *fathomv1alpha1.HealthReport) string {
 	return fmt.Sprintf("%d check(s) changed", changed)
 }
 
+// checkKey identifies a check across two reports. Family and target are not
+// enough on their own: the node-scoped kinds emit several checks per node
+// (one per item, or per certificate), all sharing family and Node target, so
+// the discriminating details — type and path — are part of the key. Without
+// them the last item per node overwrote the rest and a changed DiskHeadroom
+// beside an unchanged final item read as "unchanged".
 func checkKey(c fathomv1alpha1.HealthReportCheck) string {
-	return c.Family + "|" + c.TargetRef.Kind + "/" + c.TargetRef.Namespace + "/" + c.TargetRef.Name
+	return c.Family + "|" + c.TargetRef.Kind + "/" + c.TargetRef.Namespace + "/" + c.TargetRef.Name +
+		"|" + c.Details["type"] + "|" + c.Details["path"]
 }
 
 func changedCheckCount(newer, older *fathomv1alpha1.HealthReport) int {

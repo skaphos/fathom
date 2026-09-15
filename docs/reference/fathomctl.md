@@ -40,6 +40,7 @@ name, or a CLI alias:
 | `AddonCheck` | `addonchecks` | `ac` | namespaced | yes |
 | `DNSCheck` | `dnschecks` | `dns` | namespaced | yes |
 | `NodeCertificateCheck` | `nodecertificatechecks` | `ncc` | namespaced | yes |
+| `NodeHealthCheck` | `nodehealthchecks` | `nhc` | namespaced | yes |
 | `HealthCheck` | `healthchecks` | `hc` | namespaced | no (mirrors a source) |
 | `ClusterHealth` | `clusterhealths` | `ch` | cluster | no (aggregates) |
 
@@ -63,7 +64,8 @@ fathomctl ls [kind] [-l <selector>]
 
 Lists checks with the verdict the operator last published. With no kind it
 lists every kind, grouped in the order AddonCheck, DNSCheck,
-NodeCertificateCheck, HealthCheck, ClusterHealth, with a `KIND` column.
+NodeCertificateCheck, NodeHealthCheck, HealthCheck, ClusterHealth, with a
+`KIND` column.
 ClusterHealth is cluster-scoped and is always included regardless of `-n`.
 With a kind, only that kind is listed and the `KIND` column is dropped.
 
@@ -90,9 +92,13 @@ timeout as the controller applies them, marked `(default)` or `clamped`
 when the spec is unset or below the floor), the normalised verdict, summary,
 last and next run, the consumed run-now trigger, kind-specific status
 (detected version and absent count for AddonCheck, observed targets for
-DNSCheck, desired and reporting nodes for NodeCertificateCheck, matched count
-for ClusterHealth), every condition with its reason and message, per-target
-results for DNSCheck, each contributing HealthCheck for ClusterHealth, and a
+DNSCheck, desired and reporting nodes for NodeCertificateCheck and
+NodeHealthCheck — for NodeHealthCheck also the per-node results, the
+privilege posture, and the interval and timeout as the controller applies
+them, naming the declared value when it was capped at the 5m agent cadence —
+matched count for ClusterHealth), every condition with its reason and message,
+per-target results for DNSCheck, per-node results for NodeHealthCheck, each
+contributing HealthCheck for ClusterHealth, and a
 `Latest report:` pointer into `fathomctl reports`.
 
 A missing check is an error (`AddonCheck "x" not found in namespace y`),
@@ -169,22 +175,39 @@ writing.
 With `--wait`, `run` polls each target every 2 seconds until
 `status.lastRunTrigger` equals the token it wrote, which every controller
 sets in the same status update as the run's verdict. The default timeout is
-the largest target's effective `spec.timeout` plus 30 seconds; `--timeout`
-overrides it. If the annotation changes to a different value before the
-token is consumed, the run is reported as **superseded**. If the operator
-reports it can never run the check (`Ready=False` with `InvalidPolicy`,
+the largest target's conservative wait estimate plus 30 seconds; `--timeout`
+overrides it exactly. For most kinds that estimate is the effective
+`spec.timeout`. A `NodeHealthCheck` estimate accounts for its serial
+DaemonSet rollout: `max(status.desiredNodes, 1)` times a one-minute pod
+startup/termination allowance plus twice the effective timeout. Evaluation
+and publication are each bounded by
+`min(spec.timeout, min(spec.interval, 5m))`, so a one-node 24h/24h check gets
+an 11m30s default, never a day. While polling a `NodeHealthCheck`, the CLI
+raises this implicit deadline if newer status reports a larger
+`desiredNodes`; the deadline remains anchored to the original start, never
+shrinks, and does not reset on each poll. If the controller does not publish
+the new fleet size before the initial one-node or stale-status budget expires,
+the CLI cannot infer it. The estimate also cannot bound scheduler or image
+pull delays; use an explicit `--timeout` when the cluster needs more time.
+An explicit timeout stays absolute and is never expanded. If
+the annotation changes to a different value before the token is consumed,
+the run is reported as **superseded**. If the operator
+reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` (a NodeHealthCheck item the operator's allowlist refuses),
 `MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
 `--wait` fails immediately with that reason instead of waiting out the
-deadline. Transient API errors (rate limiting, a restarting API server) do
+deadline. The condition must belong to the object's current generation, so a
+stale reason from before a spec change does not abort the new run. Transient
+API errors (rate limiting, a restarting API server) do
 not end the wait; only a deleted check or a permission failure does. A
 timeout message names the remaining likely causes: an operator older than
 the CLI (compare with `fathomctl version`) or a node-agent rollout still in
 progress.
 
-A `NodeCertificateCheck` run restarts one node-agent pod per node before the
-token can complete; see
+A `NodeCertificateCheck` or `NodeHealthCheck` run restarts one node-agent pod
+per node before the token can complete; see
 [Forcing a scan](../guides/node-certificate-checks.md#forcing-a-scan) and
-give `--wait` a `--timeout` that covers the rollout on large clusters.
+give `--wait` an explicit `--timeout` if the conservative default does not
+cover the cluster's rollout conditions.
 
 ### Output
 
@@ -254,8 +277,8 @@ ship under `config/rbac/` for people and CI jobs:
 
 | Role | Grants | Use it for |
 | --- | --- | --- |
-| `fathomctl-viewer-role` | `get`, `list`, `watch` on the five check kinds and `healthreports` (plus `/status`); `get`, `list` on `apps/deployments` | `ls`, `describe`, `reports`, `version` |
-| `fathomctl-runner-role` | the viewer rules plus `patch` on `addonchecks`, `dnschecks`, `nodecertificatechecks` | everything, including `run` |
+| `fathomctl-viewer-role` | `get`, `list`, `watch` on the six check kinds and `healthreports` (plus `/status`); `get`, `list` on `apps/deployments` | `ls`, `describe`, `reports`, `version` |
+| `fathomctl-runner-role` | the viewer rules plus `patch` on `addonchecks`, `dnschecks`, `nodecertificatechecks`, `nodehealthchecks` | everything, including `run` |
 
 `run` writes only the trigger annotation, but Kubernetes RBAC cannot scope
 `patch` to metadata, so the runner role also permits spec edits; bind it to
