@@ -882,7 +882,10 @@ for ContainerRuntime (its default counts as a value), nothing for the
 rest — so two items with the same identity would collide there. Rejecting
 the duplicate at write time is far kinder than a status update failing
 later with an error that says nothing about the specification that caused
-it. Two ContainerRuntime items with different sockets are distinct.
+it. Two ContainerRuntime items with different sockets are distinct. The
+pathless types key on their own type name rather than an empty string:
+gofmt rewrites a ” sequence inside a doc comment as a typographic quote,
+which would silently break the rule at CRD install.
 
 
 

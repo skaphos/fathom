@@ -172,8 +172,11 @@ type NodeHealthCheckItem struct {
 // rest — so two items with the same identity would collide there. Rejecting
 // the duplicate at write time is far kinder than a status update failing
 // later with an error that says nothing about the specification that caused
-// it. Two ContainerRuntime items with different sockets are distinct.
-// +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? (has(o.socketPath) ? o.socketPath : '/run/containerd/containerd.sock') : ”)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? (has(c.socketPath) ? c.socketPath : '/run/containerd/containerd.sock') : ”))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
+// it. Two ContainerRuntime items with different sockets are distinct. The
+// pathless types key on their own type name rather than an empty string:
+// gofmt rewrites a ” sequence inside a doc comment as a typographic quote,
+// which would silently break the rule at CRD install.
+// +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? (has(o.socketPath) ? o.socketPath : '/run/containerd/containerd.sock') : o.type)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? (has(c.socketPath) ? c.socketPath : '/run/containerd/containerd.sock') : c.type))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
 type NodeHealthCheckSpec struct {
 	// Checks are the assertions made on every node in scope. At least one is
 	// required — a check with no items would report a vacuous pass.

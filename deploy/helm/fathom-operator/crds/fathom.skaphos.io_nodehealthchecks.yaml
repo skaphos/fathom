@@ -74,7 +74,10 @@ spec:
               rest — so two items with the same identity would collide there. Rejecting
               the duplicate at write time is far kinder than a status update failing
               later with an error that says nothing about the specification that caused
-              it. Two ContainerRuntime items with different sockets are distinct.
+              it. Two ContainerRuntime items with different sockets are distinct. The
+              pathless types key on their own type name rather than an empty string:
+              gofmt rewrites a ” sequence inside a doc comment as a typographic quote,
+              which would silently break the rule at CRD install.
             properties:
               checks:
                 description: |-
@@ -318,9 +321,9 @@ spec:
             - message: checks must be unique by type and path (socketPath for ContainerRuntime)
               rule: 'self.checks.all(c, self.checks.filter(o, o.type == c.type &&
                 (has(o.path) ? o.path : (o.type == ''ContainerRuntime'' ? (has(o.socketPath)
-                ? o.socketPath : ''/run/containerd/containerd.sock'') : '''')) ==
+                ? o.socketPath : ''/run/containerd/containerd.sock'') : o.type)) ==
                 (has(c.path) ? c.path : (c.type == ''ContainerRuntime'' ? (has(c.socketPath)
-                ? c.socketPath : ''/run/containerd/containerd.sock'') : ''''))).size()
+                ? c.socketPath : ''/run/containerd/containerd.sock'') : c.type))).size()
                 == 1)'
           status:
             description: NodeHealthCheckStatus defines the observed state of NodeHealthCheck.
