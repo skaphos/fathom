@@ -121,6 +121,10 @@ Two `ContainerRuntime` items with different sockets are distinct.
 
 ### Which path to measure
 
+`path` must name an existing directory on every selected node. Regular files
+are not supported. Admission validates the path's canonical form and allowed
+prefix, but the API server cannot inspect each node's host filesystem.
+
 On most nodes `/var/lib/kubelet` sits on the root filesystem, so a headroom
 check there doubles as a root-filesystem check. Nodes with a dedicated
 container or log volume should add `/var/lib/containerd` (or `/var/lib/docker`)
@@ -130,15 +134,14 @@ least privilege.
 
 **A path that does not exist on a node is never created.** The operator mounts
 each measured directory with `hostPath` type `Directory`. If the required path
-is absent, Kubernetes cannot start that node's agent pod; `AgentReady=False`
-and incomplete coverage make the missing measurement visible while the last
-complete verdict remains frozen. This avoids mutating the host or silently
-measuring the filesystem that would have held a newly created directory.
+is absent or is not a directory, Kubernetes cannot start that node's agent
+pod; `AgentReady=False` and incomplete coverage make the missing measurement
+visible while the last complete verdict remains frozen. This avoids mutating
+the host or silently measuring the filesystem that would have held a newly
+created directory.
 Prefer paths that exist on every node in scope, and narrow
 `spec.nodeSelector` on mixed fleets. Every requested directory is mounted in
-its own right, even one nested under another requested directory. Only a
-location missing *beneath* a mounted directory (a subdirectory the agent
-cannot `stat`) is reported `Skipped`.
+its own right, even one nested under another requested directory.
 
 Paths are restricted to an operator-approved allowlist — `/var/lib/kubelet`,
 `/var/lib/containerd`, `/var/lib/docker`, `/var/lib/etcd`, `/var/log`,
@@ -249,11 +252,11 @@ closed before provisioning agents, collecting reports, or rolling up a
 verdict: `Ready=False / AdmissionPolicyProvisioningFailed` and
 `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
 `lastResult`, `lastRunTime`, `lastReportName`, and `nodeResults` remain frozen.
-The controller attempts both clearing the existing agent's scoped report
-permissions and deleting its DaemonSet. If either step fails, `Ready=False /
-AgentRevocationFailed` reports the cleanup failure alongside the admission
-error. Reports are not consumed until enforcement recovers. See the same
-requirement in the
+The controller attempts both clearing the existing agent's scoped update and
+shared create permissions and deleting its DaemonSet. If either step fails,
+`Ready=False / AgentRevocationFailed` reports the cleanup failure alongside
+the admission error. Reports are not consumed until enforcement recovers. See
+the same requirement in the
 [node certificate guide](node-certificate-checks.md).
 
 After the policy is available, it also makes the managed-by, source-kind, and

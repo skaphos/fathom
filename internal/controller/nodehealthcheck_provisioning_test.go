@@ -454,23 +454,29 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 			}
 			agentName := nodeHealthAgentResourceName(check)
 			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace}}
+			owner := metav1.OwnerReference{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+			}
 			role := &rbacv1.Role{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: scopedReportAccessName(agentName), Namespace: check.Namespace,
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
-						Name: check.Name, UID: check.UID, Controller: ptr.To(true),
-					}},
+					OwnerReferences: []metav1.OwnerReference{owner},
 				},
 				Rules: []rbacv1.PolicyRule{{
 					APIGroups: []string{""}, Resources: []string{"configmaps"},
 					ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")}, Verbs: []string{"get", "update"},
 				}},
 			}
+			binding := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}},
+				RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+				Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentName, Namespace: check.Namespace}},
+			}
 			authErr := errors.New("admission policy read failed")
 			roleErr := errors.New("Role update failed")
 			deleteErr := errors.New("DaemonSet delete failed")
-			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role).
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
 				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
@@ -514,6 +520,13 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 			}
 			if (len(cleared.Rules) == 0) != tc.roleCleared {
 				t.Fatalf("report permissions cleared = %t, want %t: %+v", len(cleared.Rules) == 0, tc.roleCleared, cleared.Rules)
+			}
+			clearedBinding := &rbacv1.RoleBinding{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), clearedBinding); err != nil {
+				t.Fatal(err)
+			}
+			if len(clearedBinding.Subjects) != 0 {
+				t.Fatalf("authenticity failure retained shared create permission: %+v", clearedBinding.Subjects)
 			}
 			remaining := &appsv1.DaemonSet{}
 			dsErr := cl.Get(context.Background(), client.ObjectKeyFromObject(ds), remaining)

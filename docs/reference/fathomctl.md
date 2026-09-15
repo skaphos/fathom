@@ -182,14 +182,22 @@ DaemonSet rollout: `max(status.desiredNodes, 1)` times a one-minute pod
 startup/termination allowance plus twice the effective timeout. Evaluation
 and publication are each bounded by
 `min(spec.timeout, min(spec.interval, 5m))`, so a one-node 24h/24h check gets
-an 11m30s default, never a day. The estimate cannot bound scheduler or image
-pull delays; use an explicit `--timeout` when the cluster needs more time. If
+an 11m30s default, never a day. While polling a `NodeHealthCheck`, the CLI
+raises this implicit deadline if newer status reports a larger
+`desiredNodes`; the deadline remains anchored to the original start, never
+shrinks, and does not reset on each poll. If the controller does not publish
+the new fleet size before the initial one-node or stale-status budget expires,
+the CLI cannot infer it. The estimate also cannot bound scheduler or image
+pull delays; use an explicit `--timeout` when the cluster needs more time.
+An explicit timeout stays absolute and is never expanded. If
 the annotation changes to a different value before the token is consumed,
 the run is reported as **superseded**. If the operator
 reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` (a NodeHealthCheck item the operator's allowlist refuses),
 `MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
 `--wait` fails immediately with that reason instead of waiting out the
-deadline. Transient API errors (rate limiting, a restarting API server) do
+deadline. The condition must belong to the object's current generation, so a
+stale reason from before a spec change does not abort the new run. Transient
+API errors (rate limiting, a restarting API server) do
 not end the wait; only a deleted check or a permission failure does. A
 timeout message names the remaining likely causes: an operator older than
 the CLI (compare with `fathomctl version`) or a node-agent rollout still in

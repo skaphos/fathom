@@ -446,8 +446,8 @@ func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, ch
 // reduce authority when the other fails.
 func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
 	var errs []error
-	if err := clearScopedReportAccess(ctx, r.Client, check, agentResourceName(check)); err != nil {
-		errs = append(errs, fmt.Errorf("clear scoped report access: %w", err))
+	if err := clearNodeAgentAccess(ctx, r.Client, check, agentResourceName(check), r.roleName()); err != nil {
+		errs = append(errs, fmt.Errorf("clear node-agent report access: %w", err))
 	}
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {

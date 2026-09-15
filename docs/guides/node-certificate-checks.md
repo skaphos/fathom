@@ -183,7 +183,8 @@ spec:
   reports.
 - **`timeout`** (default `30s`) — bounds a single scan-and-publish pass.
 - **`paused`** — when set, the operator first clears the per-check Role's
-  report `get`/`update` rules, then **removes the agent DaemonSet** and
+  report `get`/`update` rules and the shared RoleBinding's agent subject,
+  revoking ConfigMap creation too. It then **removes the agent DaemonSet** and
   preserves the last status snapshot. If access revocation or DaemonSet
   deletion fails, the agent may remain and
   `Ready=False / RBACRevocationFailed` reports the error. Unset `paused` to
@@ -315,8 +316,9 @@ The agent is built for least privilege:
   cannot be provisioned, the check fails closed before new agent provisioning,
   report collection, or roll-up: `Ready=False / AdmissionPolicyProvisioningFailed`
   and `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
-  verdict and time remain frozen. The operator clears an existing agent's scoped
-  report permissions and removes its DaemonSet. If either revocation step fails,
+  verdict and time remain frozen. The operator clears an existing agent's
+  scoped report Role and its subject from the shared create RoleBinding, then
+  removes its DaemonSet. If any revocation step fails,
   `Ready=False / AgentRevocationFailed` records the failure while report
   collection remains stopped.
 

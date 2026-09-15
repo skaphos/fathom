@@ -296,6 +296,48 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(privileged.Reason).To(Equal("Hardened"))
 	})
 
+	It("reconciles a maximum-length check name through agent resources and report roll-up", func() {
+		name := types.NamespacedName{Name: strings.Repeat("n", 63), Namespace: "default"}
+		check := newNHC(name, headroom)
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeHealthReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		agentName := nodeHealthAgentResourceName(check)
+		Expect(agentName).To(HaveLen(63 + len(nodeHealthAgentSuffix)))
+		Expect(len(agentName)).To(BeNumerically(">", 63), "the test must exercise a derived resource name longer than 63 characters")
+		key := types.NamespacedName{Name: agentName, Namespace: name.Namespace}
+		Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, &rbacv1.RoleBinding{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, &networkingv1.NetworkPolicy{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, key, &appsv1.DaemonSet{})).To(Succeed())
+
+		setNodeHealthDaemonSetStatus(ctx, check, 1, 1)
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		reportName := nodehealth.ReportConfigMapName(check.Name, "node-a")
+		scopedRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedReportAccessName(agentName), Namespace: name.Namespace}, scopedRole)).To(Succeed())
+		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"},
+			ResourceNames: []string{reportName}, Verbs: []string{"get", "update"},
+		}))
+
+		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: reportName, Namespace: name.Namespace}, &corev1.ConfigMap{})).To(Succeed())
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		current := &fathomv1alpha1.NodeHealthCheck{}
+		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
+		Expect(current.Status.LastResult).To(Equal("Pass"))
+		Expect(current.Status.LastReportName).NotTo(BeEmpty())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: current.Status.LastReportName, Namespace: name.Namespace}, &fathomv1alpha1.HealthReport{})).To(Succeed())
+	})
+
 	It("grants host network only for KubeletHealthz and root only for ContainerRuntime, and says so on the object", func() {
 		name := types.NamespacedName{Name: "nh-priv", Namespace: "default"}
 		check := newNHC(name, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})

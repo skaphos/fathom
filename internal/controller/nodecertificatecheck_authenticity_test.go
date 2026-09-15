@@ -478,6 +478,31 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		}).Should(BeTrue(), "a departed node's report permission must be revoked")
 	})
 
+	It("revokes the shared ConfigMap create grant while an agent DaemonSet still exists", func() {
+		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-create-revoke", Namespace: "default"}}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+		Expect(err).NotTo(HaveOccurred())
+		writer := reportWriterClient(check.Namespace, agentResourceName(check), "node-a")
+		before := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "ordinary-before-revoke", Namespace: check.Namespace}}
+		Expect(writer.Create(ctx, before)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, before))).To(Succeed()) })
+
+		Expect(clearNodeAgentAccess(ctx, k8sClient, check, agentResourceName(check), r.roleName())).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})).To(Succeed(), "access revocation must work even if DaemonSet deletion later fails")
+		Eventually(func() bool {
+			after := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{GenerateName: "ordinary-after-revoke-", Namespace: check.Namespace}}
+			err := writer.Create(ctx, after)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, after)).To(Succeed())
+				return false
+			}
+			return apierrors.IsForbidden(err)
+		}).Should(BeTrue(), "the cleared shared RoleBinding must remove ConfigMap create access")
+	})
+
 	It("revokes scoped report updates while paused and persists revocation failures", func() {
 		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-pause-rbac", Namespace: "default"}}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -508,6 +533,9 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(k8sClient.Update(ctx, check)).To(Succeed())
 		_, err = r.Reconcile(ctx, request)
 		Expect(err).NotTo(HaveOccurred())
+		binding := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, binding)).To(Succeed())
+		Expect(binding.Subjects).To(ConsistOf(rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}), "resume must restore the create binding subject")
 		scheduleAgentPods(ctx, check, "node-a")
 		_, err = r.Reconcile(ctx, request)
 		Expect(err).NotTo(HaveOccurred())

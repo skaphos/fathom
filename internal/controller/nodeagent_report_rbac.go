@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -50,6 +51,41 @@ func clearScopedReportAccess(ctx context.Context, c client.Client, owner client.
 	}
 	role.Rules = nil
 	return c.Update(ctx, role)
+}
+
+// clearSharedAgentBindingAccess revokes the agent's create capability without
+// deleting its owner-referenced RoleBinding. Reconciliation restores the sole
+// expected subject when the check can safely run again.
+func clearSharedAgentBindingAccess(ctx context.Context, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
+	binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: serviceAccount, Namespace: owner.GetNamespace()}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(binding), binding); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !metav1.IsControlledBy(binding, owner) {
+		return fmt.Errorf("refusing to modify node-agent rolebinding %s/%s not controlled by %s", binding.Namespace, binding.Name, owner.GetName())
+	}
+	expected := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: expectedClusterRole}
+	if binding.RoleRef != expected {
+		return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", binding.Namespace, binding.Name, binding.RoleRef.Kind, binding.RoleRef.Name, expected.Name)
+	}
+	if len(binding.Subjects) == 0 {
+		return nil
+	}
+	binding.Subjects = nil
+	return c.Update(ctx, binding)
+}
+
+// clearNodeAgentAccess independently revokes the agent's named get/update and
+// shared create grants, returning every failure so callers can report partial
+// cleanup honestly.
+func clearNodeAgentAccess(ctx context.Context, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
+	return errors.Join(
+		clearScopedReportAccess(ctx, c, owner, serviceAccount),
+		clearSharedAgentBindingAccess(ctx, c, owner, serviceAccount, expectedClusterRole),
+	)
 }
 
 func activeAgentReportNames(ctx context.Context, reader client.Reader, namespace string, labels map[string]string, ds *appsv1.DaemonSet, reportName func(string) string) ([]string, error) {

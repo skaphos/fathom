@@ -99,17 +99,19 @@ type NodeHealthCheckItem struct {
 	// privilege each type costs the node-agent.
 	Type NodeHealthCheckType `json:"type"`
 
-	// Path is a location on the filesystem whose headroom is measured. Required
-	// for DiskHeadroom and InodeHeadroom and rejected for every other type. The
-	// operator mounts it into the agent read-only, so it must be a traversal-free
-	// absolute path under one of the operator-approved prefixes.
+	// Path is an existing directory on every selected node whose headroom is
+	// measured. Regular files are not supported. Required for DiskHeadroom and
+	// InodeHeadroom and rejected for every other type. The operator mounts it
+	// into the agent read-only, so it must be a traversal-free absolute path
+	// under one of the operator-approved prefixes. Admission validates the path's
+	// syntax and prefix but cannot inspect a node's host filesystem.
 	//
 	// The operator uses a non-creating hostPath Directory mount. If Path does
-	// not exist on a node, Kubernetes cannot start that node's agent pod;
+	// not exist or is not a directory on a node, Kubernetes cannot start
+	// that node's agent pod;
 	// AgentReady becomes False and coverage remains incomplete while the last
 	// complete verdict is retained. This avoids mutating the host or measuring
-	// the filesystem that would have held a newly created directory. Only a path
-	// missing beneath a mounted directory is reported Skipped by the agent.
+	// the filesystem that would have held a newly created directory.
 	// +optional
 	// +kubebuilder:validation:MaxLength=512
 	Path string `json:"path,omitempty"`

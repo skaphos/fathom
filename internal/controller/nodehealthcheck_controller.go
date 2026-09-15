@@ -480,14 +480,15 @@ func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr
 }
 
 // revokeAgent removes the node-agent DaemonSet for a specification the
-// operator will not run. Clearing report update access and deleting the agent
-// are both attempted, so failure of one does not prevent the other revocation
-// step. The owner-referenced ServiceAccount, bindings, empty Role, and
-// NetworkPolicy are harmless while idle and remain for later reconciliation.
+// operator will not run. Clearing the scoped Role's rules and the shared
+// RoleBinding's subjects revokes report update and create access. That cleanup
+// and deleting the agent are both attempted, so failure of one does not prevent
+// the other revocation step. The owner-referenced ServiceAccount, empty
+// bindings and Role, and NetworkPolicy remain for later reconciliation.
 func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
 	var revokeErrors []error
-	if err := clearScopedReportAccess(ctx, r.Client, check, nodeHealthAgentResourceName(check)); err != nil {
-		revokeErrors = append(revokeErrors, fmt.Errorf("revoke node-agent report access: %w", err))
+	if err := clearNodeAgentAccess(ctx, r.Client, check, nodeHealthAgentResourceName(check), r.roleName()); err != nil {
+		revokeErrors = append(revokeErrors, fmt.Errorf("revoke node-agent API access: %w", err))
 	}
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}}
 	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {

@@ -213,11 +213,16 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 		},
 		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
 	}
+	binding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace, OwnerReferences: role.OwnerReferences},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}},
+	}
 	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	scheme := newProvisioningScheme(t)
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	deleteDenied := apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, agent.Name, errors.New("delete denied"))
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, agent).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, binding, agent).
 		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
@@ -263,6 +268,13 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 	if len(cleared.Rules) != 0 {
 		t.Errorf("scoped Role retained rules after delete failure: %+v", cleared.Rules)
 	}
+	clearedBinding := &rbacv1.RoleBinding{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), clearedBinding); err != nil {
+		t.Fatal(err)
+	}
+	if len(clearedBinding.Subjects) != 0 {
+		t.Errorf("shared create RoleBinding retained subjects after delete failure: %+v", clearedBinding.Subjects)
+	}
 }
 
 func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *testing.T) {
@@ -279,11 +291,16 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 		},
 		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
 	}
+	binding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace, OwnerReferences: role.OwnerReferences},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}},
+	}
 	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	scheme := newProvisioningScheme(t)
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	updateDenied := apierrors.NewForbidden(schema.GroupResource{Group: rbacv1.GroupName, Resource: "roles"}, role.Name, errors.New("update denied"))
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, agent).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, binding, agent).
 		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
@@ -307,6 +324,13 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 	}
 	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(agent), &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("DaemonSet deletion was not attempted after Role update failure: %v", err)
+	}
+	clearedBinding := &rbacv1.RoleBinding{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), clearedBinding); err != nil {
+		t.Fatal(err)
+	}
+	if len(clearedBinding.Subjects) != 0 {
+		t.Errorf("shared RoleBinding clear was not attempted after Role update failure: %+v", clearedBinding.Subjects)
 	}
 	got := &fathomv1alpha1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {

@@ -374,6 +374,7 @@ func writeTrigger(ctx context.Context, c client.Client, obj client.Object, token
 // waitForOutcomes waits on every triggered target concurrently and fills the
 // verdict fields of its outcome.
 func waitForOutcomes(ctx context.Context, c client.Client, f *factory, targets []runTarget, outcomes []runOutcome, token string, timeout time.Duration) {
+	dynamicTimeout := timeout <= 0
 	timeout = runWaitTimeout(targets, timeout)
 	var wg sync.WaitGroup
 	for i := range targets {
@@ -383,7 +384,7 @@ func waitForOutcomes(ctx context.Context, c client.Client, f *factory, targets [
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			res := f.waitForRun(ctx, c, targets[i], token, timeout)
+			res := f.waitForRunWithDeadlineGrowth(ctx, c, targets[i], token, timeout, dynamicTimeout, time.Now)
 			switch {
 			case res.err != nil:
 				outcomes[i].Error = res.err.Error()
