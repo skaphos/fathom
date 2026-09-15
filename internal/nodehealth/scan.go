@@ -284,6 +284,17 @@ func headroom(ctx context.Context, it Item, statfs statfsFunc, guard *StatfsGuar
 	return res
 }
 
+// probeTimedOut reports whether a probe error is a deadline rather than a
+// refusal or an addressing problem, so the summary an operator reads names
+// the right cause.
+func probeTimedOut(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 // kubeletHealthz GETs the kubelet's health endpoint. An unreachable endpoint is
 // Fail, not Error: a kubelet that is down is exactly what the check detects,
 // and the agent only reaches this code when the operator put it on the host
@@ -302,7 +313,11 @@ func kubeletHealthz(ctx context.Context, client *http.Client, url string, timeou
 	resp, err := client.Do(req)
 	if err != nil {
 		res.Outcome = OutcomeFail
-		res.Summary = fmt.Sprintf("kubelet health endpoint %s unreachable: %v", url, err)
+		if probeTimedOut(err) {
+			res.Summary = fmt.Sprintf("kubelet health endpoint %s did not answer within %s (probe timed out)", url, timeout)
+		} else {
+			res.Summary = fmt.Sprintf("kubelet health endpoint %s unreachable: %v", url, err)
+		}
 		return res
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -338,9 +353,15 @@ func containerRuntime(ctx context.Context, dial dialFunc, socket string, timeout
 		case errors.Is(err, fs.ErrPermission), errors.Is(err, syscall.EACCES):
 			res.Outcome = OutcomeSkipped
 			res.Summary = fmt.Sprintf("permission denied: the node-agent cannot open %s", socket)
-		default:
+		case probeTimedOut(err):
+			res.Outcome = OutcomeFail
+			res.Summary = fmt.Sprintf("container runtime socket %s did not accept a connection within %s (probe timed out)", socket, timeout)
+		case errors.Is(err, syscall.ECONNREFUSED):
 			res.Outcome = OutcomeFail
 			res.Summary = fmt.Sprintf("container runtime socket %s refused connection: %v", socket, err)
+		default:
+			res.Outcome = OutcomeFail
+			res.Summary = fmt.Sprintf("cannot connect to container runtime socket %s: %v", socket, err)
 		}
 		return res
 	}

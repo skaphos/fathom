@@ -97,8 +97,9 @@ func PathAllowed(p string) bool {
 }
 
 // SocketPathAllowed reports whether p is a dialable CRI socket path: a
-// traversal-free .sock file directly under one of allowedSocketDirs. It is the
-// Go twin of the CRD's socketPath validation.
+// traversal-free .sock file anywhere under one of allowedSocketDirs (nested
+// paths included), or one of the exact allowedSocketFiles. It is the Go twin
+// of the CRD's socketPath validation.
 func SocketPathAllowed(p string) bool {
 	if p == "" || !path.IsAbs(p) || strings.Contains(p, "..") || !strings.HasSuffix(p, ".sock") {
 		return false
@@ -130,7 +131,9 @@ func MountDirs(items []Item) []string {
 		if it.Type != TypeDiskHeadroom && it.Type != TypeInodeHeadroom {
 			continue
 		}
-		p := strings.TrimSpace(it.Path)
+		// The raw value, untrimmed, exactly as PathAllowed judged it: a mount
+		// must never be computed from a different string than admission saw.
+		p := it.Path
 		if p == "" || !path.IsAbs(p) {
 			continue
 		}

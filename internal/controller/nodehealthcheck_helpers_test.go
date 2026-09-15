@@ -594,3 +594,19 @@ func TestTolerationsEmptyAndOmittedAreEquivalent(t *testing.T) {
 		t.Fatal("empty and omitted tolerations must produce the same DaemonSet template (no rollout churn)")
 	}
 }
+
+// TestReportCoversSpecRejectsAnEmptyDigest pins that a report without a
+// digest is never consumed: the fail-closed guarantee must not depend on the
+// operator's own digest also coming out empty.
+func TestReportCoversSpecRejectsAnEmptyDigest(t *testing.T) {
+	t.Parallel()
+	items := []nodehealth.Item{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10}}
+	report := nodehealth.NodeReport{Checks: []nodehealth.CheckResult{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomePass}}}
+	if nodeHealthReportCoversSpec(report, items) {
+		t.Fatal("a report with no digest must not cover the spec")
+	}
+	report.ItemsDigest = nodehealth.ItemsDigest(items)
+	if !nodeHealthReportCoversSpec(report, items) {
+		t.Fatal("a report with the current digest and matching checks must cover the spec")
+	}
+}

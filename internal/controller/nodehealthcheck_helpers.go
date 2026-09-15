@@ -651,7 +651,11 @@ func nodeHealthEvaluationsInScope(evals []nodeHealthEvaluation, expected map[str
 // structural check binds shape: exactly one result per current item and
 // nothing else, so a removed item's result cannot linger in the roll-up.
 func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodehealth.Item) bool {
-	return report.ItemsDigest == nodehealth.ItemsDigest(agentItems) &&
+	// An empty digest never matches, even if the operator's own computation
+	// were to fail the same way: "fail closed" must not depend on both sides
+	// failing identically.
+	return report.ItemsDigest != "" &&
+		report.ItemsDigest == nodehealth.ItemsDigest(agentItems) &&
 		nodehealth.ReportCovers(report, agentItems)
 }
 

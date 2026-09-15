@@ -200,7 +200,7 @@ func TestContainerRuntime(t *testing.T) {
 		{"socket absent", failDial(syscall.ENOENT), OutcomeFail, "does not exist"},
 		{"permission denied", failDial(syscall.EACCES), OutcomeSkipped, "permission denied"},
 		{"connection refused", failDial(syscall.ECONNREFUSED), OutcomeFail, "refused connection"},
-		{"other error", failDial(errors.New("boom")), OutcomeFail, "refused connection: dial unix: boom"},
+		{"other error", failDial(errors.New("boom")), OutcomeFail, "cannot connect to container runtime socket /run/containerd/containerd.sock: dial unix: boom"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -327,8 +327,8 @@ func TestScanProbesRunConcurrently(t *testing.T) {
 	if byType[TypeKubeletHealthz].Outcome != OutcomePass {
 		t.Fatalf("kubelet next to a hung runtime = %+v, want Pass", byType[TypeKubeletHealthz])
 	}
-	if byType[TypeContainerRuntime].Outcome != OutcomeFail {
-		t.Fatalf("hung runtime = %+v, want Fail", byType[TypeContainerRuntime])
+	if byType[TypeContainerRuntime].Outcome != OutcomeFail || !strings.Contains(byType[TypeContainerRuntime].Summary, "timed out") {
+		t.Fatalf("hung runtime = %+v, want Fail naming the timeout, not a refusal", byType[TypeContainerRuntime])
 	}
 	if elapsed > 2*timeout-50*time.Millisecond {
 		t.Fatalf("pass took %v; probes must run concurrently, not serially (2x%v)", elapsed, timeout)
