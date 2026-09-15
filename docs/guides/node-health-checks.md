@@ -185,14 +185,19 @@ on a control-plane node is a decision the author makes, not a default.
 `spec.interval` (default `5m`, floor `10s`) is how often the operator refreshes
 the rolled-up `HealthReport` and the check's liveness. The **agent** re-evaluates
 at `min(interval, 5m)`, and a report counts as fresh for that agent cadence
-plus `spec.timeout` — never for the full interval. Headroom, kubelet, and
+plus the agent's *effective* timeout, `min(spec.timeout, agent cadence)` —
+never for the full interval. A `24h` interval with a `24h` timeout therefore
+accepts a report for at most 10 minutes, not 48 hours. Headroom, kubelet, and
 runtime liveness change on the order of minutes, so a long interval must not
 accept a measurement that old: a `24h` interval still detects a disk filling
 up within minutes (the fold transitions immediately, and a new `HealthReport`
 is written), and simply refreshes on its own cadence when nothing changed.
 
 `spec.timeout` (default `30s`, floor `1s`, at most `interval`) bounds one agent
-pass, including the kubelet and socket probes.
+pass, including the kubelet and socket probes — capped at the agent cadence,
+since a pass can never usefully outlast the cadence it runs on. With a `24h`
+interval and timeout the agent still stops a pass at `5m`. `fathomctl run
+--wait` uses the same effective value.
 
 ## Coverage, freezing, and what the conditions mean
 

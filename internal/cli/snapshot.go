@@ -147,9 +147,16 @@ func nodeHealthCheckSnapshot(o client.Object) snapshot {
 	}
 }
 
+// nodeHealthCheckTimeout mirrors the controller's effective agent timeout:
+// the agent re-evaluates at min(interval, MaxNodeHealthCheckAgentInterval)
+// and a pass is bounded by min(timeout, that cadence). Reporting the raw
+// spec.timeout made `run --wait` on a 24h/24h check wait a day for a pass the
+// agent stops at five minutes.
 func nodeHealthCheckTimeout(o client.Object) time.Duration {
 	c := o.(*fathomv1alpha1.NodeHealthCheck)
-	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+	timeout := effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+	return min(timeout, min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval))
 }
 
 func healthCheckSnapshot(o client.Object) snapshot {

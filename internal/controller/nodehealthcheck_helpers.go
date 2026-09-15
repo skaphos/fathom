@@ -55,7 +55,7 @@ const (
 	// agent therefore runs at min(interval, this) and a report is fresh for
 	// that cadence plus the timeout, so a long-interval check still detects a
 	// transition within minutes while refreshing liveness on its own cadence.
-	maxNodeHealthAgentInterval = 5 * time.Minute
+	maxNodeHealthAgentInterval = fathomv1alpha1.MaxNodeHealthCheckAgentInterval
 
 	// nodeHealthHostMetricsPortMin/Max bound the metrics port an agent binds
 	// when it runs on the host network. Container port 8080 would then bind on

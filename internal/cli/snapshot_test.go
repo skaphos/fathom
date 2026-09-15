@@ -220,3 +220,25 @@ func samePtrTime(a, b *time.Time) bool {
 	}
 	return a.Equal(*b)
 }
+
+// TestNodeHealthCheckTimeoutIsCappedAtTheAgentCadence pins that the CLI's
+// effective timeout matches the controller's: a 24h interval with a 24h
+// timeout is a 5m agent pass, so `run --wait` must not wait a day for it.
+func TestNodeHealthCheckTimeoutIsCappedAtTheAgentCadence(t *testing.T) {
+	t.Parallel()
+	day := &metav1.Duration{Duration: 24 * time.Hour}
+	long := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Interval: day, Timeout: day}}
+	if got := nodeHealthCheckTimeout(long); got != fathomv1alpha1.MaxNodeHealthCheckAgentInterval {
+		t.Fatalf("timeout = %v, want the %v agent cadence cap", got, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+	}
+	// A short interval caps the timeout at that cadence.
+	short := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Interval: &metav1.Duration{Duration: time.Minute}, Timeout: day}}
+	if got := nodeHealthCheckTimeout(short); got != time.Minute {
+		t.Fatalf("timeout = %v, want the 1m interval", got)
+	}
+	// A timeout below the cadence is used as declared.
+	plain := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Timeout: &metav1.Duration{Duration: 20 * time.Second}}}
+	if got := nodeHealthCheckTimeout(plain); got != 20*time.Second {
+		t.Fatalf("timeout = %v, want 20s", got)
+	}
+}

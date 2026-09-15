@@ -323,9 +323,12 @@ Status fields to start with:
   `NodeCertificateCheck`.
 
 Freshness and coverage follow the `NodeCertificateCheck` rules above with one
-deliberate difference: a report is fresh for the **agent cadence** plus
-`spec.timeout`, where the agent re-evaluates at `min(spec.interval, 5m)`. A long
-roll-up interval therefore never accepts an old measurement. Coverage is per
+deliberate difference: a report is fresh for the **agent cadence** plus the
+agent's effective timeout — `min(spec.interval, 5m)` plus
+`min(spec.timeout, that cadence)`, at most ten minutes — and the reconciler
+requeues on the agent cadence rather than `spec.interval`, so a silently
+dead agent is noticed within that bound. A long roll-up interval therefore
+never accepts an old measurement. Coverage is per
 node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 `lastRunTime`, and `nodeResults`, and a provisioning failure persists
 `Ready=False` without clearing the verdict.
