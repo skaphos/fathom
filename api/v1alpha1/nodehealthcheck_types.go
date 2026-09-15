@@ -348,8 +348,11 @@ type NodeHealthCheckStatus struct {
 	// +optional
 	DesiredNodes int32 `json:"desiredNodes,omitempty"`
 
-	// ReportingNodes is the number of nodes that have published a fresh report
-	// the operator consumed in the most recent roll-up.
+	// ReportingNodes is the number of fresh, well-formed reports the operator
+	// found at its latest reconcile, including surplus reports from nodes that
+	// have since left scope. It is refreshed every reconcile, so it can change
+	// while LastResult and NodeResults are frozen across an incomplete window;
+	// it is a liveness count, not the coverage signal — CoverageComplete is.
 	// +optional
 	ReportingNodes int32 `json:"reportingNodes,omitempty"`
 

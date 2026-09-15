@@ -341,6 +341,10 @@ node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. | Continue to `AgentReady` and `Ready`. |
 | `Accepted` | `True / SpecClamped` | A stored sub-floor `interval`/`timeout` is running clamped to the floors. | Raise the field to the floor. |
+| `Accepted` | `False / ItemsRejected` | An item's `path` or `socketPath` is outside the operator's allowlist. Only reachable for an object stored under an older CRD (admission rejects it today). No agent is provisioned for this generation; whatever ran before is left in place. `AgentReady`, `CoverageComplete`, and `Ready` carry the same reason, and `fathomctl run --wait` fails fast. | Fix or remove the item; the message names it. |
+| `AgentReady` | `False / ItemsRejected` | No agent was provisioned for this generation because the spec was rejected (see `Accepted`). | As above. |
+| `AgentReady` | `False / <step>ProvisioningFailed` | Provisioning failed at `<step>` (RBAC, AdmissionPolicy, NetworkPolicy, DaemonSet) for this generation; the agent's state is unknown. `Ready` carries the error. | Read the `Ready` message; fix the cluster-side cause. |
+| `CoverageComplete` | `False / ItemsRejected` or `False / <step>ProvisioningFailed` | Coverage cannot be evaluated for this generation because no agent was provisioned. The last complete verdict is retained. | As above. |
 | `AgentPrivileged` | `False / Hardened` | The resolved items need no privilege beyond read-only `hostPath` mounts: the agent runs non-root with no host network. | None. |
 | `AgentPrivileged` | `True / HostNetwork` | A `KubeletHealthz` item put the agent on the host network. The per-check NetworkPolicy does not isolate it; the message names the host metrics port. | Confirm this is intended; drop the item to return to the hardened profile. |
 | `AgentPrivileged` | `True / RunAsRoot` | A `ContainerRuntime` item runs the agent as root with the CRI socket mounted (capabilities still dropped). | Confirm this is intended. |

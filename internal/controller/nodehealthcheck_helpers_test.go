@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -30,9 +31,9 @@ func nhCheck(items ...fathomv1alpha1.NodeHealthCheckItem) *fathomv1alpha1.NodeHe
 
 // TestResolveNodeHealthItems pins the resolution the agent depends on: API
 // defaults applied to unset thresholds and sockets, a critical threshold never
-// above warn, disallowed paths filtered (defense-in-depth behind admission),
-// and a stable (type, path) order so the DaemonSet template hash does not
-// churn when a user reorders the spec.
+// above warn, and a stable (type, path) order so the DaemonSet template hash
+// does not churn when a user reorders the spec. Disallowed paths are not
+// filtered here: Reconcile rejects the whole spec (rejectedNodeHealthItems).
 func TestResolveNodeHealthItems(t *testing.T) {
 	t.Parallel()
 	check := nhCheck(
@@ -564,5 +565,32 @@ func TestNodeHealthReportMaxAgeCoversAFullCycle(t *testing.T) {
 	}
 	if nodeHealthReportFresh(stamp, nextVisible.Add(11*time.Second), maxAge) {
 		t.Fatal("a report a full cycle plus a cadence old is stale")
+	}
+}
+
+// TestTolerationsEmptyAndOmittedAreEquivalent pins the documented contract for
+// the nil-vs-empty round-trip (#150): an explicit empty list is normalised
+// away by omitempty, and the operator resolves the two identically, so the
+// lost distinction has no effect on the agent DaemonSet.
+func TestTolerationsEmptyAndOmittedAreEquivalent(t *testing.T) {
+	t.Parallel()
+	omitted := nhCheck()
+	empty := nhCheck()
+	empty.Spec.Tolerations = []corev1.Toleration{}
+	raw, err := json.Marshal(empty.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "tolerations") {
+		t.Fatalf("an empty tolerations list is expected to be normalised away on the wire, got %s", raw)
+	}
+	if got, want := resolveNodeHealthTolerations(empty), resolveNodeHealthTolerations(omitted); len(got) != 0 || len(want) != 0 {
+		t.Fatalf("empty and omitted tolerations must resolve identically to none: %v vs %v", got, want)
+	}
+	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
+	a := r.desiredDaemonSet(omitted, "sa", resolveNodeHealthItems(omitted))
+	b := r.desiredDaemonSet(empty, "sa", resolveNodeHealthItems(empty))
+	if nodeAgentSpecHash(a) != nodeAgentSpecHash(b) {
+		t.Fatal("empty and omitted tolerations must produce the same DaemonSet template (no rollout churn)")
 	}
 }
