@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -357,5 +363,36 @@ func TestScanAndPublishHealthPersistsTimeoutFailures(t *testing.T) {
 	decoded, err := nodehealth.DecodeReport(cm.Data[nodecert.ConfigMapReportKey])
 	if err != nil || decoded.Aggregate != nodehealth.OutcomeFail {
 		t.Fatalf("published report = %+v (%v)", decoded, err)
+	}
+}
+
+// TestLivenessFollowsPublication pins that a pass which could not publish its
+// report does not count as progress: an agent whose ConfigMap writes fail
+// (RBAC revoked, API unreachable) must let /healthz go 503 so the kubelet
+// restarts it and the check shows AgentReady=False instead of a silent gap.
+func TestLivenessFollowsPublication(t *testing.T) {
+	l := newLiveness(time.Minute, time.Second)
+	stale := time.Now().Add(-10 * time.Minute).UnixNano()
+	l.lastPass.Store(stale)
+	l.record(false)
+	if l.lastPass.Load() != stale || l.healthy(time.Now()) {
+		t.Fatal("a failed publication must not advance liveness")
+	}
+	l.record(true)
+	if !l.healthy(time.Now()) {
+		t.Fatal("a successful publication must advance liveness")
+	}
+
+	// And the publish path really does fail when the client refuses the write.
+	kube := fake.NewSimpleClientset()
+	kube.PrependReactor("create", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "x", errors.New("rbac revoked"))
+	})
+	cfg := config{
+		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
+		configMapName: nodehealth.ReportConfigMapName("nh", "node-1"), timeout: time.Second,
+	}
+	if _, err := scanAndPublishHealth(context.Background(), kube, cfg, time.Now()); err == nil {
+		t.Fatal("a forbidden ConfigMap write must surface as a publish error")
 	}
 }

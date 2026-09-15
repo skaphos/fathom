@@ -130,30 +130,37 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	var scanOnce func()
+	// scanOnce reports whether the pass published its report. Liveness follows
+	// publication, not merely execution: an agent that evaluates but can no
+	// longer write its ConfigMap (RBAC revoked, API unreachable) is not doing
+	// its job, and must not answer /healthz as if it were — the kubelet
+	// restarting it is what turns a silent coverage gap into a visible
+	// AgentReady=False.
+	var scanOnce func() bool
 	switch cfg.mode {
 	case modeHealth:
-		scanOnce = func() {
+		scanOnce = func() bool {
 			report, err := scanAndPublishHealth(ctx, kube, cfg, time.Now())
 			if err != nil {
 				log.Printf("node-agent: publish report: %v", err)
-				return
+				return false
 			}
 			log.Printf("node-agent: evaluated %d health check(s) on %s, aggregate=%s", len(report.Checks), cfg.nodeName, report.Aggregate)
+			return true
 		}
 	default:
-		scanOnce = func() {
+		scanOnce = func() bool {
 			report, err := scanAndPublish(ctx, kube, cfg, time.Now())
 			if err != nil {
 				log.Printf("node-agent: publish report: %v", err)
-				return
+				return false
 			}
 			log.Printf("node-agent: scanned %d certificate(s) on %s, aggregate=%s", len(report.Certs), cfg.nodeName, report.Aggregate)
+			return true
 		}
 	}
 
-	scanOnce()
-	liveness.passed()
+	liveness.record(scanOnce())
 	if cfg.once {
 		// A one-shot run exists to publish one report; whether the metrics
 		// listener bound is irrelevant to that and must not fail it.
@@ -177,8 +184,7 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 			}
 			log.Printf("node-agent: %v (continuing; metrics will not serve)", err)
 		case <-ticker.C:
-			scanOnce()
-			liveness.passed()
+			liveness.record(scanOnce())
 		}
 	}
 }
@@ -201,6 +207,14 @@ func newLiveness(interval, timeout time.Duration) *liveness {
 }
 
 func (l *liveness) passed() { l.lastPass.Store(time.Now().UnixNano()) }
+
+// record advances liveness only for a pass that published its report; a
+// failed publication leaves the clock running toward a restart.
+func (l *liveness) record(published bool) {
+	if published {
+		l.passed()
+	}
+}
 
 // healthy reports whether the last completed pass (or process start) is
 // recent enough that the agent is demonstrably still making progress.
