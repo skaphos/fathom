@@ -212,6 +212,11 @@ available to aggregate.
 reports into a `HealthReport`. A `HealthCheck` can project that status into
 `ClusterHealth`.
 
+The shared report-authenticity admission policy makes the managed-by,
+source-kind, and source-name labels and the node-name annotation immutable on
+update. Owner-reference-only adoption by the operator and legitimate same-node
+report refresh remain allowed.
+
 Status fields to start with:
 
 - `status.lastResult` - worst-case result across complete, fresh node reports.
@@ -285,6 +290,7 @@ Freshness and coverage rules:
 | `CoverageComplete` | `False / AgentRollingOut` | The DaemonSet has not fully converged, so no roll-up was computed. `lastResult` is frozen. | Wait for rollout or inspect pod scheduling/image pulls. |
 | `CoverageComplete` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes; there is nothing to scan. | Check `spec.nodeSelector` and cluster labels. |
 | `ReportsAuthentic` | `True / AllReportsBound` | Every collected report is bound to the node it claims. | None. |
+| `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `ReportsAuthentic` | `False / ForgedReportRejected` | One or more reports failed a binding only a writer passing off another node's report can fail — a payload disagreeing with the node-name annotation, or a report at a non-canonical ConfigMap name. The message names the ConfigMaps (up to five) and the reason. The rejected reports are excluded from the aggregate. | Investigate: some principal with ConfigMap write in the namespace is attempting to steer a node's verdict. Check who holds `configmaps` write there, and confirm the report-authenticity `ValidatingAdmissionPolicy` is enforced. |
 | `Ready` | `False / RBACProvisioningFailed` | Runtime ClusterRole/ServiceAccount/RoleBinding provisioning failed. | Check operator RBAC and admission failures. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
@@ -352,13 +358,15 @@ node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 | `AgentPrivileged` | `True / HostNetwork` | A `KubeletHealthz` item put the agent on the host network. The per-check NetworkPolicy does not isolate it; the message names the host metrics port. | Confirm this is intended; drop the item to return to the hardened profile. |
 | `AgentPrivileged` | `True / RunAsRoot` | A `ContainerRuntime` item runs the agent as root with the CRI socket mounted (capabilities still dropped). | Confirm this is intended. |
 | `AgentPrivileged` | `True / HostNetworkAndRoot` | Both of the above. | Confirm this is intended. |
-| `ReportsAuthentic` | `Unknown / AuthenticityUnenforced` | The cluster does not serve `ValidatingAdmissionPolicy` (GA 1.30), so the writer of a node report is not authenticated: reports satisfy the controller's structural bindings, which any ConfigMap writer in the namespace could forge. The roll-up continues. | Upgrade the cluster or enable the API; treat node verdicts as unauthenticated meanwhile. Same for `NodeCertificateCheck`. |
+| `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet has not fully converged. On a privileged spec, check that the namespace's Pod Security level admits host-network / root pods. | Inspect DaemonSet pods, scheduling, image pulls, Pod Security labels. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
 | `Ready` | `True / Reporting` | Complete, fresh evaluations were rolled up into a `HealthReport`. | Read `lastResult`, `summary`, `nodeResults`. |
 | `Ready` | `False / NoMatchingNodes` / `AwaitingReports` / `PartialReports` / `AgentRollingOut` | As for `NodeCertificateCheck`; the previous verdict is frozen, not cleared. | As for `NodeCertificateCheck`. |
 | `Ready` | `False / RBACProvisioningFailed` / `AdmissionPolicyProvisioningFailed` / `NetworkPolicyProvisioningFailed` / `DaemonSetProvisioningFailed` | Provisioning failed; persisted, verdict retained. | As for `NodeCertificateCheck`. |
+| `Ready` | `False / EvaluationFailed` | A ConfigMap/Pod list, Node read, or HealthReport write failed during evaluation. The historical result, time, report name, and node results are retained; `AgentReady` is unchanged. | Fix the API or RBAC failure and retry. |
+| `CoverageComplete` | `Unknown / EvaluationFailed` | Current coverage could not be evaluated because an API operation failed; the last complete verdict, time, report name, and node results remain retained. | Fix the API or RBAC failure and retry. |
 | `CoverageComplete` | `True / AllNodesReporting` | Every node in scope published a fresh evaluation. | None. |
 | `CoverageComplete` | `False / PartialReports` / `AgentRollingOut` / `NoMatchingNodes` | As for `NodeCertificateCheck`; `lastResult` and `nodeResults` are the frozen previous values. | As for `NodeCertificateCheck`. |
 | `ReportsAuthentic` | `True / AllReportsBound` / `False / ForgedReportRejected` | As for `NodeCertificateCheck` — the same authenticity policy and bindings apply. | As for `NodeCertificateCheck`. |

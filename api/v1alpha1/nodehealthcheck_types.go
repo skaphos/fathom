@@ -225,7 +225,7 @@ type NodeHealthCheckSpec struct {
 
 	// MetricsHostPort is the host port a host-network agent (one running a
 	// KubeletHealthz item) serves its metrics on. When unset, the operator
-	// derives a port in 30000–32767 from the check's namespaced name; that
+	// derives a port in 20000–22767 from the check's namespaced name; that
 	// derivation is a hash, so two host-network checks scheduled on the same
 	// node can collide, which surfaces as the second agent crash-looping
 	// (AgentReady=False) and is reported on the AgentPrivileged condition. Set
@@ -384,6 +384,7 @@ type NodeHealthCheckStatus struct {
 // +kubebuilder:printcolumn:name="Desired",type=integer,JSONPath=`.status.desiredNodes`
 // +kubebuilder:printcolumn:name="Last Run",type=date,JSONPath=`.status.lastRunTime`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="metadata.name must be no more than 63 characters"
 
 // NodeHealthCheck is the Schema for the nodehealthchecks API.
 type NodeHealthCheck struct {

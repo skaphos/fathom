@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
@@ -300,9 +301,9 @@ func TestNodeHealthInvertedThresholdsAreRejected(t *testing.T) {
 }
 
 // TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI pins that on a cluster
-// without ValidatingAdmissionPolicy the check never claims AllReportsBound:
-// the collect-time bindings are forgeable, so ReportsAuthentic reads
-// Unknown/AuthenticityUnenforced while the reconcile otherwise proceeds.
+// without ValidatingAdmissionPolicy the controller fails closed before it
+// provisions an agent: collect-time bindings are forgeable by another
+// ConfigMap writer and cannot substitute for admission enforcement.
 func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
@@ -325,16 +326,27 @@ func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
 			return c.Get(ctx, key, obj, opts...)
 		}}).Build()
 	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
-	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-novap", Namespace: "default"}}); err != nil {
-		t.Fatalf("an unsupported policy API degrades, it does not fail the reconcile: %v", err)
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-novap", Namespace: "default"}}); err == nil {
+		t.Fatal("an unsupported policy API must fail closed and retry")
 	}
 	got := &fathomv1alpha1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-novap", Namespace: "default"}, got); err != nil {
 		t.Fatal(err)
 	}
 	c := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionAuthentic)
-	if c == nil || c.Status != metav1.ConditionUnknown || c.Reason != reasonAuthenticityUnenforced {
-		t.Fatalf("ReportsAuthentic = %+v, want Unknown/AuthenticityUnenforced without the policy API", c)
+	if c == nil || c.Status != metav1.ConditionUnknown || c.Reason != reasonAuthenticityUnavailable || c.ObservedGeneration != got.Generation {
+		t.Fatalf("ReportsAuthentic = %+v, want Unknown/%s at generation %d", c, reasonAuthenticityUnavailable, got.Generation)
+	}
+	ready := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "AdmissionPolicyProvisioningFailed" {
+		t.Fatalf("Ready = %+v, want False/AdmissionPolicyProvisioningFailed", ready)
+	}
+	var daemonSets appsv1.DaemonSetList
+	if err := cl.List(context.Background(), &daemonSets, client.InNamespace(check.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(daemonSets.Items) != 0 {
+		t.Fatalf("unsupported authenticity enforcement provisioned %d agent DaemonSet(s)", len(daemonSets.Items))
 	}
 }
 
@@ -374,5 +386,175 @@ func TestNodeHealthEvaluationIgnoresDepartedNodes(t *testing.T) {
 	}
 	if len(evals) != 1 || evals[0].Node != "node-live" || evals[0].Outcome != nodehealth.OutcomePass {
 		t.Fatalf("evaluations = %+v, want one passing live node", evals)
+	}
+}
+
+// TestNodeHealthEvaluationFailuresPersistStatus covers every API boundary
+// after the agent has been provisioned. Each failure must be observable on the
+// current generation without rewriting the last complete roll-up (COR-3).
+func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		stage string
+	}{
+		{name: "report ConfigMap list", stage: "reports"},
+		{name: "agent pod list", stage: "pods"},
+		{name: "Node read", stage: "node"},
+		{name: "HealthReport create", stage: "healthreport"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			scheme := newProvisioningScheme(t)
+			lastRun := metav1.NewTime(time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC))
+			resultObservedAt := metav1.NewTime(lastRun.Add(-time.Minute))
+			check := &fathomv1alpha1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nh-evaluation-error", Namespace: "default", UID: "check-uid", Generation: 2},
+				Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
+					{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
+					{Type: fathomv1alpha1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"}},
+				}},
+				Status: fathomv1alpha1.NodeHealthCheckStatus{
+					ObservedGeneration: 1,
+					LastRunTime:        &lastRun,
+					LastResult:         string(fathomv1alpha1.HealthReportResultPass),
+					Summary:            "1 of 1 node(s) passed",
+					LastReportName:     "nh-evaluation-error-previous",
+					NodeResults: []fathomv1alpha1.NodeHealthNodeResult{{
+						Node: "node-live", Result: string(fathomv1alpha1.HealthReportResultPass), ObservedAt: &resultObservedAt,
+					}},
+					DesiredNodes: 1, ReportingNodes: 1,
+					Conditions: []metav1.Condition{
+						{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeHealthConditionCoverage, Status: metav1.ConditionTrue, Reason: "AllNodesReporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeHealthConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1, LastTransitionTime: lastRun},
+					},
+				},
+			}
+
+			items := resolveNodeHealthItems(check)
+			renderer := &NodeHealthCheckReconciler{NodeAgentImage: "img:test"}
+			ds := renderer.desiredDaemonSet(check, nodeHealthAgentResourceName(check), items)
+			ds.UID = "daemonset-uid"
+			ds.Generation = 1
+			ds.CreationTimestamp = lastRun
+			ds.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+			}}
+			ds.Annotations = map[string]string{nodeAgentSpecHashAnnotation: nodeAgentSpecHash(ds)}
+			ds.Status = appsv1.DaemonSetStatus{
+				DesiredNumberScheduled: 1, CurrentNumberScheduled: 1, UpdatedNumberScheduled: 1,
+				NumberAvailable: 1, NumberReady: 1, ObservedGeneration: ds.Generation,
+			}
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "nh-evaluation-error-node-live", Namespace: check.Namespace,
+					Labels: nodeHealthAgentSelectorLabels(check),
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "DaemonSet", Name: ds.Name, UID: ds.UID, Controller: ptr.To(true),
+					}},
+				},
+				Spec: corev1.PodSpec{NodeName: "node-live", Containers: []corev1.Container{{Name: "node-agent", Image: "img:test"}}},
+			}
+			failedCheck := nodehealth.CheckResult{
+				Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomeFail, Summary: "disk full",
+			}
+			report := nodehealth.NodeReport{
+				Node: "node-live", CheckName: check.Name, ObservedAt: lastRun.Add(time.Minute),
+				Aggregate: nodehealth.OutcomeFail, Checks: []nodehealth.CheckResult{failedCheck},
+				ItemsDigest: nodehealth.ItemsDigest(nodeHealthAgentItems(items), nodeHealthAgentTimeout(check)),
+			}
+			encoded, err := nodehealth.EncodeReport(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: nodehealth.ReportConfigMapName(check.Name, report.Node), Namespace: check.Namespace,
+				Labels: map[string]string{
+					nodecert.LabelManagedBy: nodecert.ManagedByValue, nodecert.LabelSourceKind: nodeHealthKind,
+					nodecert.LabelSourceName: check.Name,
+				},
+				Annotations: map[string]string{nodecert.AnnotationNodeName: report.Node},
+			}, Data: map[string]string{nodecert.ConfigMapReportKey: encoded}}
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: report.Node}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+				Type: corev1.NodeReady, Status: corev1.ConditionTrue,
+			}}}}
+
+			injected := errors.New("injected " + tt.stage + " failure")
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, pod, cm, node).
+				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						switch list.(type) {
+						case *corev1.ConfigMapList:
+							if tt.stage == "reports" {
+								return injected
+							}
+						case *corev1.PodList:
+							if tt.stage == "pods" {
+								return injected
+							}
+						}
+						return c.List(ctx, list, opts...)
+					},
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if tt.stage == "node" {
+							if _, ok := obj.(*corev1.Node); ok {
+								return injected
+							}
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if tt.stage == "healthreport" {
+							if _, ok := obj.(*fathomv1alpha1.HealthReport); ok {
+								return injected
+							}
+						}
+						return c.Create(ctx, obj, opts...)
+					},
+				}).Build()
+			r := &NodeHealthCheckReconciler{
+				Client: cl, APIReader: cl, Scheme: scheme, NodeAgentImage: "img:test",
+				Clock: func() time.Time { return lastRun.Add(time.Minute) },
+			}
+			_, err = r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+			if !errors.Is(err, injected) {
+				t.Fatalf("Reconcile error = %v, want original %v", err, injected)
+			}
+
+			persisted := &fathomv1alpha1.NodeHealthCheck{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
+				t.Fatal(err)
+			}
+			if persisted.Status.ObservedGeneration != check.Generation {
+				t.Fatalf("observedGeneration = %d, want %d", persisted.Status.ObservedGeneration, check.Generation)
+			}
+			for _, typ := range []string{nodeHealthConditionReady, nodeHealthConditionCoverage} {
+				condition := apiMeta.FindStatusCondition(persisted.Status.Conditions, typ)
+				if condition == nil || condition.Reason != "EvaluationFailed" || condition.ObservedGeneration != check.Generation {
+					t.Fatalf("%s = %+v, want EvaluationFailed at generation %d", typ, condition, check.Generation)
+				}
+				if typ == nodeHealthConditionReady && condition.Status != metav1.ConditionFalse {
+					t.Fatalf("Ready = %+v, want False", condition)
+				}
+				if typ == nodeHealthConditionCoverage && condition.Status != metav1.ConditionUnknown {
+					t.Fatalf("CoverageComplete = %+v, want Unknown", condition)
+				}
+			}
+			agentReady := apiMeta.FindStatusCondition(persisted.Status.Conditions, nodeHealthConditionAgentReady)
+			if agentReady == nil || agentReady.Status != metav1.ConditionTrue || agentReady.ObservedGeneration != check.Generation {
+				t.Fatalf("AgentReady = %+v, want the known rolled-out state at generation %d", agentReady, check.Generation)
+			}
+			if persisted.Status.LastResult != check.Status.LastResult || persisted.Status.Summary != check.Status.Summary ||
+				persisted.Status.LastReportName != check.Status.LastReportName || persisted.Status.LastRunTime == nil ||
+				!persisted.Status.LastRunTime.Equal(check.Status.LastRunTime) || len(persisted.Status.NodeResults) != 1 ||
+				persisted.Status.NodeResults[0].Result != check.Status.NodeResults[0].Result ||
+				!persisted.Status.NodeResults[0].ObservedAt.Equal(check.Status.NodeResults[0].ObservedAt) {
+				t.Fatalf("last complete roll-up changed: got %+v, want historical %+v", persisted.Status, check.Status)
+			}
+		})
 	}
 }

@@ -248,6 +248,9 @@ func TestNodeHealthHostMetricsPort(t *testing.T) {
 	if p1 < nodeHealthHostMetricsPortMin || p1 > nodeHealthHostMetricsPortMax {
 		t.Fatalf("port %d outside [%d, %d]", p1, nodeHealthHostMetricsPortMin, nodeHealthHostMetricsPortMax)
 	}
+	if p1 >= 30000 && p1 <= 32767 {
+		t.Fatalf("derived host metrics port %d overlaps Kubernetes' default NodePort range", p1)
+	}
 	b := nhCheck()
 	b.Name = "other"
 	if nodeHealthHostMetricsPort(b) == p1 {

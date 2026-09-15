@@ -566,7 +566,6 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		setNodeHealthDaemonSetStatus(ctx, check, 2, 2)
-		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
 		// A writer that legitimately holds node-b's claim tries to publish a
 		// failing verdict attributed to node-a, at node-a's canonical name.
 		failing := []nodehealth.CheckResult{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomeFail, Summary: "0.1% of bytes free"}}
@@ -583,9 +582,8 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(authentic.Status).To(Equal(metav1.ConditionFalse))
 		Expect(authentic.Reason).To(Equal(eventReasonForgedReport))
 		Expect(authentic.Message).To(ContainSubstring(string(nodecert.RejectNodeMismatch)))
-		// The forged report was excluded: node-a's report is now the forged
-		// one (same name), so node-a has no accepted report and nothing rolled
-		// up to Fail.
+		// The forged report was excluded, so node-a has no accepted report and
+		// nothing rolled up to Fail.
 		Expect(updated.Status.LastResult).NotTo(Equal("Fail"))
 	})
 

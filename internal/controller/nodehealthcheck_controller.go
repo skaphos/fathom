@@ -252,6 +252,13 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
 	if err != nil {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type:               nodeHealthConditionAuthentic,
+			Status:             metav1.ConditionUnknown,
+			ObservedGeneration: check.Generation,
+			Reason:             reasonAuthenticityUnavailable,
+			Message:            "Report authenticity enforcement is unavailable: " + err.Error(),
+		})
 		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
 	saName, err := r.ensureAgentRBAC(ctx, &check)
@@ -274,19 +281,19 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	now := r.now()
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, nodeHealthAgentItems(items), now, nodeHealthReportMaxAge(&check))
 	if err != nil {
-		return ctrl.Result{}, err
+		return r.failEvaluation(ctx, log, before, &check, "collect node reports", err)
 	}
 	check.Status.ReportingNodes = int32(len(reports))
 	r.setReportsAuthentic(&check, rejections, authenticityEnforced)
 
 	expected, err := r.expectedAgentNodes(ctx, &check, ds)
 	if err != nil {
-		return ctrl.Result{}, err
+		return r.failEvaluation(ctx, log, before, &check, "discover nodes in scope", err)
 	}
 
 	evals, err := r.evaluateNodes(ctx, log, &check, reports, expected)
 	if err != nil {
-		return ctrl.Result{}, err
+		return r.failEvaluation(ctx, log, before, &check, "evaluate node conditions", err)
 	}
 	reported := nodeHealthNodeNameSet(evals)
 
@@ -309,7 +316,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// spec.interval made a continuously healthy daily check look stale five
 		// minutes after every refresh. HealthReports are still transition-only.
 		if err := r.rollup(ctx, log, &check, inScope, aggregate, nodeHealthRequeueAfter(&check)); err != nil {
-			return ctrl.Result{}, err
+			return r.failEvaluation(ctx, log, before, &check, "persist HealthReport roll-up", err)
 		}
 	}
 	r.setCoverage(&check, ds, expected, reported, complete)
@@ -397,6 +404,37 @@ func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log lo
 	return ctrl.Result{}, cause
 }
 
+// failEvaluation persists that the current evaluation is unavailable while
+// retaining the last complete roll-up. AgentReady is left alone because a
+// report, pod, Node, or HealthReport API error says nothing about whether the
+// already-provisioned DaemonSet is healthy.
+func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, phase string, cause error) (ctrl.Result, error) {
+	historical := before.DeepCopy()
+	check.Status.LastRunTime = historical.LastRunTime
+	check.Status.LastResult = historical.LastResult
+	check.Status.Summary = historical.Summary
+	check.Status.LastReportName = historical.LastReportName
+	check.Status.NodeResults = historical.NodeResults
+
+	message := fmt.Sprintf("Current evaluation is unavailable (%s): %v. The last complete verdict is retained.", phase, cause)
+	r.setReady(check, metav1.ConditionFalse, "EvaluationFailed", message)
+	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+		Type:               nodeHealthConditionCoverage,
+		Status:             metav1.ConditionUnknown,
+		ObservedGeneration: check.Generation,
+		Reason:             "EvaluationFailed",
+		Message:            message,
+	})
+	if !equality.Semantic.DeepEqual(before, &check.Status) {
+		if err := r.Status().Update(ctx, check); err != nil {
+			// Preserve the evaluation error as the retry cause; the next reconcile
+			// retries both the evaluation and this status write.
+			log.Error(err, "failed to persist NodeHealthCheck status after evaluation failure", "phase", phase)
+		}
+	}
+	return ctrl.Result{}, cause
+}
+
 // revokeAgent removes the node-agent DaemonSet for a specification the
 // operator will not run. The owner-referenced ServiceAccount, RoleBinding and
 // NetworkPolicy are harmless while idle and are left in place, as the paused
@@ -455,9 +493,10 @@ func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *
 
 // ensureAgentNetworkPolicy converges the per-check NetworkPolicy that isolates
 // the agent pods (#153): metrics ingress only from namespaces labeled
-// metrics=enabled, egress only to the API server. It is created
-// unconditionally so the surface is uniform; on a host-network agent it is
-// inert, which the AgentPrivileged condition says out loud.
+// metrics=enabled, and egress limited to TCP ports 443 and 6443 with
+// unrestricted destinations. It is created unconditionally so the surface is
+// uniform; on a host-network agent it is inert, which the AgentPrivileged
+// condition says out loud.
 func (r *NodeHealthCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, items []nodehealth.Item) error {
 	tcp := corev1.ProtocolTCP
 	metricsPort := intstr.FromInt32(nodeHealthMetricsPort(check, items))

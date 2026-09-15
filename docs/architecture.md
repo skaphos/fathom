@@ -235,8 +235,8 @@ adapter level is forced to `Error`.
 `internal/controller/nodecertificatecheck_controller.go`
 
 - **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
-  `RoleBinding`, and `NetworkPolicy` (metrics-only ingress, API-server-only
-  egress — see [Network policies](reference/network-policies.md)), and the
+  `RoleBinding`, and `NetworkPolicy` (metrics-only ingress and TCP 443/6443
+  egress by destination port — see [Network policies](reference/network-policies.md)), and the
   `fathom-node-agent-role` `ClusterRole` (created at
   runtime so its name survives kustomize/OLM name prefixing); creates
   `HealthReport` objects and writes `NodeCertificateCheck.status`. All owned
@@ -272,6 +272,9 @@ adapter level is forced to `Error`.
   objects and `NodeHealthCheck.status`. It converges the *same* runtime
   singletons (`fathom-node-agent-role` ClusterRole, the report-authenticity
   `ValidatingAdmissionPolicy`) through shared helpers rather than a second copy.
+  The policy makes managed-by, source-kind, and source-name labels and the
+  node-name annotation immutable on update, while allowing owner-reference-only
+  adoption and legitimate same-node report refresh.
 - **Watches:** `NodeHealthCheck` (`For`), the owned objects (`Owns`), and
   per-node report `ConfigMap`s by label (`source-kind=NodeHealthCheck`).
 - **Execution model:** the agent runs `cmd/node-agent --mode health` with the
@@ -288,6 +291,14 @@ adapter level is forced to `Error`.
   and folded to one outcome; nodes fold into the check verdict via the shared
   `WorstResult`. `status.nodeResults` (capped at 100, folded before the cap)
   and `status.summary` name the worst node and check.
+  If report-authenticity admission cannot be provisioned, reconciliation stops
+  before agent provisioning or report collection with
+  `Ready=False / AdmissionPolicyProvisioningFailed` and
+  `ReportsAuthentic=Unknown / EnforcementUnavailable`; the last complete
+  verdict and time remain frozen. API errors while evaluating reports, Pods,
+  Nodes, or HealthReports produce `Ready=False / EvaluationFailed` and
+  `CoverageComplete=Unknown / EvaluationFailed`, while historical roll-up
+  fields remain unchanged and `AgentReady` is left unchanged.
 - **Correctness properties** (written against the v0.5.0 review findings, not
   inherited): provisioning failures persist `Ready=False` (COR-2), an
   incomplete window freezes the verdict (COR-3), coverage is per node identity

@@ -296,11 +296,21 @@ The agent is built for least privilege:
   node, and the ConfigMap sits at the deterministic name the agent for that
   (check, node) writes to. Those are corroboration rather than authentication:
   Kubernetes does not record the writer on the stored object, so admission is
-  the boundary. They still matter, because they are what remains on a cluster
-  where the policy is unavailable, and they close the one vector admission alone
-  does not — a *second*, off-name ConfigMap competing with a node's real report.
+  the boundary. They also close the one vector admission alone does not — a
+  *second*, off-name ConfigMap competing with a node's real report.
   A rejected report is surfaced on the `ReportsAuthentic` condition and a
   Warning event, never silently skipped.
+
+  If the `ValidatingAdmissionPolicy` or its binding API is unavailable or
+  cannot be provisioned, the check fails closed before new agent provisioning,
+  report collection, or roll-up: `Ready=False / AdmissionPolicyProvisioningFailed`
+  and `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
+  verdict and time remain frozen. Existing agents may continue running, but
+  their reports are not consumed until enforcement recovers.
+
+  The policy also makes the managed-by, source-kind, and source-name labels and
+  the node-name annotation immutable on update. Owner-reference-only adoption
+  by the operator and a legitimate same-node report refresh remain allowed.
 
   Requires ServiceAccount-token node info (GA in Kubernetes 1.33) and the
   `ValidatingAdmissionPolicy` feature (GA 1.30).
@@ -308,7 +318,8 @@ The agent is built for least privilege:
   Prometheus metrics endpoint and a health check.
 - **Network-isolated.** The operator creates a NetworkPolicy with each
   DaemonSet: metrics ingress only from namespaces labeled `metrics: enabled`,
-  egress only to the API server. See
+  egress limited to TCP destination ports 443 and 6443. This is a port-only
+  filter and does not restrict destination addresses. See
   [Network policies](../reference/network-policies.md) for the label contract
   and CNI caveats.
 

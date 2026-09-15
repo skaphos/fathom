@@ -47,7 +47,7 @@ check's `status`. Each agent also exports per-check gauges (see
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: NodeHealthCheck
 metadata:
-  name: node-health
+  name: node-health # max 63 characters; the name is used in resource labels
   namespace: fathom-system
 spec:
   interval: 5m
@@ -158,7 +158,7 @@ paths only.
 | --- | --- | --- |
 | `DiskHeadroom`, `InodeHeadroom` | none beyond a read-only `hostPath` of the measured directory | `statfs` needs a path on the filesystem, nothing more. |
 | `NodeCondition` | a cluster-scoped `get` on **nodes** for the **operator** (not the agent) | The conditions live only on the Node object. The operator reads one node at a time, by name, only for the nodes agent pods landed on — never a `list` or `watch` — so it starts no Node informer and can enumerate nothing through this grant. See [Operator RBAC](../reference/operator-rbac.md). |
-| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**, and its metrics port binds on the node itself (a per-check port in 30000–32767 derived from the check's name, or `spec.metricsHostPort` when set), so the agent's plaintext gauges are reachable from the node's network. |
+| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**, and its metrics port binds on the node itself (a per-check port in 20000–22767 derived from the check's name, or `spec.metricsHostPort` when set), so the agent's plaintext gauges are reachable from the node's network. |
 | `ContainerRuntime` | the CRI socket mounted (`hostPath` type `Socket`) and the agent running **as root** (`runAsUser: 0`), still with every capability dropped and a read-only root filesystem | The socket is root-owned on every mainstream runtime. The agent only dials and closes — it carries no CRI client — but a compromised agent process would hold the socket. |
 
 The check reports which of these are in effect on its own object: the
@@ -168,6 +168,12 @@ with a message naming the socket and host port. A namespace enforcing the
 `restricted` Pod Security Standard rejects host-network and root pods: the
 DaemonSet is created but its pods are not admitted, which surfaces as
 `AgentReady=False` and `CoverageComplete=False`.
+
+For host-network checks, the derived metrics host port is in `20000–22767`,
+below Kubernetes' default NodePort range (`30000–32767`). Set
+`spec.metricsHostPort` explicitly when needed; explicit values from `1024` to
+`65535` are accepted. Choose a free port for the node and account for any
+custom NodePort range and other host-network listeners.
 
 Opt into the two privileged types deliberately, in namespaces you control:
 
@@ -238,15 +244,19 @@ the writing agent's node identity, and the `ReportsAuthentic` condition (plus a
 Warning event) surfaces any report that failed its bindings.
 
 That policy requires the `ValidatingAdmissionPolicy` API (GA in Kubernetes
-1.30). On a cluster that does not serve it the operator logs, at its default
-level, that authenticity enforcement is **disabled**, sets
-`ReportsAuthentic=Unknown / AuthenticityUnenforced` on the check (it never
-claims `AllReportsBound` there), and continues: the
-controller's collect-time bindings (canonical name, node annotation, check
-name, spec digest) still apply, but they corroborate a report's shape — they
-do not authenticate its writer. Treat writer identity as unverified on such
-clusters; see the same requirement in the
+1.30). If the API or policy binding cannot be used, reconciliation fails
+closed before provisioning agents, collecting reports, or rolling up a
+verdict: `Ready=False / AdmissionPolicyProvisioningFailed` and
+`ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
+`lastResult`, `lastRunTime`, `lastReportName`, and `nodeResults` remain frozen.
+Existing agents may continue running, but their reports are not consumed until
+enforcement recovers. See the same requirement in the
 [node certificate guide](node-certificate-checks.md).
+
+After the policy is available, it also makes the managed-by, source-kind, and
+source-name labels and the node-name annotation immutable on update. The
+operator's owner-reference-only adoption and a legitimate same-node report
+refresh remain allowed.
 
 ## Projecting into cluster health
 
@@ -310,3 +320,8 @@ fathomctl reports nhc node-health
 - **Two host-network checks on one node, second agent in `CrashLoopBackOff`**:
   a metrics host-port collision (the `AgentPrivileged` condition names each
   check's port). Set `spec.metricsHostPort` on one of them to a free port.
+- **`Ready=False / EvaluationFailed`**: a ConfigMap or Pod list, Node read, or
+  HealthReport write failed while evaluating the check. `CoverageComplete` is
+  `Unknown / EvaluationFailed`; the historical result, timestamp, report name,
+  and node results remain frozen. `AgentReady` does not indicate an agent
+  failure for this condition. Fix the API or RBAC problem and retry.

@@ -7,6 +7,7 @@ package v1alpha1_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -452,6 +453,40 @@ func TestNodeHealthCheckAdmissionRejectsExplicitEmptySocketPath(t *testing.T) {
 				t.Fatalf("omitted socketPath should be accepted: %v", err)
 			}
 			_ = k8sClient.Delete(ctx, obj)
+		})
+	}
+}
+
+// TestNodeHealthCheckNameLengthAtAdmission pins the 63-character name limit
+// needed by the source-name labels used by derived node-health resources.
+func TestNodeHealthCheckNameLengthAtAdmission(t *testing.T) {
+	requireAPIServer(t)
+	for _, tt := range []struct {
+		name       string
+		wantReject bool
+	}{
+		{name: strings.Repeat("n", 63)},
+		{name: strings.Repeat("n", 64), wantReject: true},
+	} {
+		t.Run(fmt.Sprintf("name length %d", len(tt.name)), func(t *testing.T) {
+			obj := validNodeHealthCheck()
+			obj.GenerateName = ""
+			obj.Name = tt.name
+			err := k8sClient.Create(context.Background(), obj)
+			if tt.wantReject {
+				if err == nil {
+					_ = k8sClient.Delete(context.Background(), obj)
+					t.Fatal("64-character metadata.name was accepted")
+				}
+				if !strings.Contains(err.Error(), "metadata.name") {
+					t.Fatalf("rejection must name metadata.name; got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("63-character metadata.name should be accepted: %v", err)
+			}
+			_ = k8sClient.Delete(context.Background(), obj)
 		})
 	}
 }

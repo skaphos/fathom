@@ -219,7 +219,7 @@ metrics endpoint:
 Scrape these agents the same way as the certificate agents (a `PodMonitor` on
 the agent pods, or scrape annotations). Note that a `KubeletHealthz` item puts
 the agent on the **host network**: its metrics then bind on a per-check host
-port (30000–32767; the check's `AgentPrivileged` condition names it) and the
+port (20000–22767 by default; the check's `AgentPrivileged` condition names it) and the
 per-check NetworkPolicy does not gate them — see
 [Network policies](../reference/network-policies.md#node-agent-daemonset-runtime-managed-always-on).
 

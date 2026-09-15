@@ -66,8 +66,8 @@ const (
 	// host-network checks landing on the same port on one node is a hash
 	// collision (~1 in 2768) that surfaces as CrashLoopBackOff on the second
 	// agent, i.e. AgentReady=False — visible, never silent.
-	nodeHealthHostMetricsPortMin = 30000
-	nodeHealthHostMetricsPortMax = 32767
+	nodeHealthHostMetricsPortMin = 20000
+	nodeHealthHostMetricsPortMax = 22767
 
 	// nodeHealthDefaultNodeConditionMessage is the healthy summary for a node
 	// condition that carries its expected value.

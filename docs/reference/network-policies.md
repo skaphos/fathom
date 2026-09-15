@@ -47,13 +47,12 @@ DaemonSet:
   `metrics: enabled` — the same label contract as the operator policy. **Label
   your monitoring namespace** (`kubectl label namespace <ns> metrics=enabled`)
   or, on an enforcing CNI, scrapes of the agent will be dropped.
-- **Egress**: only TCP 443 and 6443 — the API server, the one thing the agent
-  talks to (it publishes its report ConfigMap; it needs no DNS because
-  `KUBERNETES_SERVICE_HOST` is an IP). Both ports are allowed because service
-  traffic to the `kubernetes` ClusterIP (443) is policed post-DNAT against the
-  endpoint port (6443) by most CNIs. If your API server listens on a
-  nonstandard port (e.g. some distributions use 16443), add your own
-  NetworkPolicy allowing agent egress to it — policies are additive.
+- **Egress**: only TCP destination ports 443 and 6443. This is a port-only
+  filter; it does not restrict destinations to the API server. Both ports are
+  allowed because service traffic to the `kubernetes` ClusterIP (443) is
+  policed post-DNAT against the endpoint port (6443) by most CNIs. If your API
+  server uses another port, add an appropriate policy; policies are additive.
+  Narrowing destinations is a follow-up tracked in #274.
 - **Lifecycle**: garbage-collected with the check; like the agent's RBAC it is
   left in place while the check is paused.
 
@@ -61,7 +60,7 @@ DaemonSet:
 (`<check>-node-health-agent`), with one caveat that the check states on its own
 object: a `KubeletHealthz` item runs the agent with `hostNetwork: true`, and
 **NetworkPolicy does not apply to host-network pods**. The agent's metrics then
-bind on a per-check host port (30000–32767, named in the `AgentPrivileged`
+bind on a per-check host port (20000–22767, named in the `AgentPrivileged`
 condition) reachable from the node's network, and its API-server egress is the
 node's. The policy is still created so the surface stays uniform, but it is
 inert for that check. Treat a `KubeletHealthz` opt-in as a decision about the

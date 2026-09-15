@@ -283,6 +283,14 @@ the node-agent DaemonSet in health mode; the operator grades the node
 conditions itself and rolls every node into one `HealthReport` with a
 per-node result list in `status`.
 
+`metadata.name` is limited to 63 characters because the check name is carried
+in resource labels. If the shared report-authenticity admission policy cannot
+be used, both node-scoped checks stop before provisioning or consuming reports
+and retain their last complete verdict (`Ready=False /
+AdmissionPolicyProvisioningFailed`, `ReportsAuthentic=Unknown /
+EnforcementUnavailable`). Existing agents may continue running, but their
+reports are not consumed until enforcement recovers.
+
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: NodeHealthCheck

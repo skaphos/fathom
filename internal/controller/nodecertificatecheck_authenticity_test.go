@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,10 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/nodecert"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 // writeReportWithAnnotation writes a per-node report ConfigMap where the payload's
@@ -287,15 +290,82 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(policy.Spec.MatchConstraints.ObjectSelector.MatchLabels).To(HaveKeyWithValue(nodecert.LabelManagedBy, nodecert.ManagedByValue))
 		Expect(policy.Spec.MatchConstraints.ObjectSelector.MatchLabels).NotTo(HaveKey(nodecert.LabelSourceKind))
 
-		Expect(policy.Spec.Validations).To(HaveLen(1))
-		Expect(policy.Spec.Validations[0].Expression).To(ContainSubstring("variables.annotatedNode == variables.claimNode"))
+		Expect(policy.Spec.Validations).To(HaveLen(2))
+		Expect(policy.Spec.Validations[0].Expression).To(Equal("variables.identityUnchanged"))
+		Expect(policy.Spec.Validations[1].Expression).To(ContainSubstring("variables.annotatedNode == variables.claimNode"))
 		// The operator's own adoption Update carries no node claim, so it passes
 		// on the content-unchanged branch rather than an identity carve-out.
-		Expect(policy.Spec.Validations[0].Expression).To(ContainSubstring("variables.contentUnchanged"))
+		Expect(policy.Spec.Validations[1].Expression).To(ContainSubstring("variables.contentUnchanged"))
 
 		binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: reportAuthenticityPolicyName}, binding)).To(Succeed())
 		Expect(binding.Spec.PolicyName).To(Equal(reportAuthenticityPolicyName))
 		Expect(binding.Spec.ValidationActions).To(ContainElement(admissionregistrationv1.Deny))
+	})
+
+	It("keeps report identity immutable for both node-scoped kinds while allowing adoption and same-node refresh (#338)", func() {
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: "nc-identity", Namespace: "default"},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		// Reconcile once so this test always exercises the current singleton spec,
+		// independent of which Ginkgo example happened to create it first.
+		_, err := newNodeCertReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, sourceKind := range []string{nodecert.KindNodeCertificateCheck, nodehealth.KindNodeHealthCheck} {
+			sourceKind := sourceKind
+			By("protecting " + sourceKind + " report identity")
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "identity-" + strings.ToLower(sourceKind),
+					Namespace: check.Namespace,
+					Labels: map[string]string{
+						nodecert.LabelManagedBy:  nodecert.ManagedByValue,
+						nodecert.LabelSourceKind: sourceKind,
+						nodecert.LabelSourceName: check.Name,
+					},
+					Annotations: map[string]string{nodecert.AnnotationNodeName: "node-a"},
+				},
+				Data: map[string]string{nodecert.ConfigMapReportKey: `{"node":"node-a","generation":1}`},
+			}
+			Expect(nodeAgentClient(check, "node-a").Create(ctx, cm)).To(Succeed())
+			DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cm))).To(Succeed()) })
+
+			mutations := []struct {
+				name   string
+				mutate func(*corev1.ConfigMap)
+			}{
+				{"remove managed-by", func(cm *corev1.ConfigMap) { delete(cm.Labels, nodecert.LabelManagedBy) }},
+				{"change managed-by", func(cm *corev1.ConfigMap) { cm.Labels[nodecert.LabelManagedBy] = "attacker" }},
+				{"remove source-kind", func(cm *corev1.ConfigMap) { delete(cm.Labels, nodecert.LabelSourceKind) }},
+				{"change source-kind", func(cm *corev1.ConfigMap) { cm.Labels[nodecert.LabelSourceKind] = "Other" }},
+				{"remove source-name", func(cm *corev1.ConfigMap) { delete(cm.Labels, nodecert.LabelSourceName) }},
+				{"change source-name", func(cm *corev1.ConfigMap) { cm.Labels[nodecert.LabelSourceName] = "other" }},
+				{"rebind node annotation", func(cm *corev1.ConfigMap) { cm.Annotations[nodecert.AnnotationNodeName] = "node-b" }},
+			}
+			for _, mutation := range mutations {
+				current := &corev1.ConfigMap{}
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), current)).To(Succeed())
+				mutation.mutate(current)
+				err := nodeAgentClient(check, "node-b").Update(ctx, current)
+				Expect(err).To(HaveOccurred(), mutation.name+" must be denied for "+sourceKind)
+				Expect(apierrors.IsForbidden(err)).To(BeTrue(), "expected admission denial for %s/%s, got: %v", sourceKind, mutation.name, err)
+			}
+
+			// Owner-reference adoption changes metadata outside the protected
+			// identity and carries no node claim; unchanged report content permits it.
+			current := &corev1.ConfigMap{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), current)).To(Succeed())
+			Expect(controllerutil.SetControllerReference(check, current, k8sClient.Scheme())).To(Succeed())
+			Expect(k8sClient.Update(ctx, current)).To(Succeed())
+
+			// The genuine node may refresh report content while retaining identity.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), current)).To(Succeed())
+			current.Data[nodecert.ConfigMapReportKey] = `{"node":"node-a","generation":2}`
+			Expect(nodeAgentClient(check, "node-a").Update(ctx, current)).To(Succeed())
+		}
 	})
 })
