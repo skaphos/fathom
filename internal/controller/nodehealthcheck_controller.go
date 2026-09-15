@@ -187,6 +187,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	interval := nodeHealthInterval(&check)
 	items := resolveNodeHealthItems(&check)
+	// The privilege posture is a function of the spec alone, so it is current
+	// for this generation before anything is provisioned — a provisioning
+	// failure must never leave a previous generation's posture advertised.
+	r.setAgentPrivileged(&check, items)
 
 	// An item the allowlist refuses (only possible for an object stored under
 	// an older CRD) is a failed specification, not a filter: provisioning an
@@ -201,6 +205,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Reason: conditionReasonItemsRejected, Message: message,
 		})
 		r.setReady(&check, metav1.ConditionFalse, conditionReasonItemsRejected, message)
+		r.invalidateAgentConditions(&check, conditionReasonItemsRejected, "No agent was provisioned for this generation; the specification was rejected.")
 		return r.finish(ctx, log, before, &check, nodeHealthRequeueAfter(&check))
 	}
 
@@ -226,7 +231,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	check.Status.DesiredNodes = ds.Status.DesiredNumberScheduled
 	r.setAgentReady(&check, ds)
-	r.setAgentPrivileged(&check, items)
 
 	now := time.Now()
 	reports, rejections, err := r.collectNodeReports(ctx, log, &check, nodeHealthAgentItems(items), now, nodeHealthReportMaxAge(&check))
@@ -340,12 +344,28 @@ func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger,
 // nothing about what the last complete evaluation found.
 func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, reason string, cause error) (ctrl.Result, error) {
 	r.setReady(check, metav1.ConditionFalse, reason, cause.Error())
+	r.invalidateAgentConditions(check, reason, "Provisioning failed for this generation; the agent's state and coverage are unknown: "+cause.Error())
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
 		if err := r.Status().Update(ctx, check); err != nil {
 			log.Error(err, "failed to persist NodeHealthCheck status after provisioning failure", "reason", reason)
 		}
 	}
 	return ctrl.Result{}, cause
+}
+
+// invalidateAgentConditions marks the conditions that describe a provisioned
+// agent — AgentReady and CoverageComplete — False at the current generation.
+// Without this, a provisioning failure on a new generation persisted
+// Ready=False next to AgentReady=True/RolledOut and CoverageComplete=True left
+// over from the previous generation, and no consumer checks a condition's
+// observedGeneration, so the stale rows read as current.
+func (r *NodeHealthCheckReconciler) invalidateAgentConditions(check *fathomv1alpha1.NodeHealthCheck, reason, message string) {
+	for _, typ := range []string{nodeHealthConditionAgentReady, nodeHealthConditionCoverage} {
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type: typ, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
+			Reason: reason, Message: message,
+		})
+	}
 }
 
 // ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding
@@ -516,6 +536,11 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 		"--timeout", nodeHealthAgentTimeout(check).String(),
 		"--metrics-bind-address", ":" + strconv.Itoa(int(metricsPort)),
 	}
+	if hostNetwork {
+		// On the host network the metrics port is a host port: a collision must
+		// crash the agent (AgentReady=False) rather than be tolerated.
+		args = append(args, "--fatal-metrics-bind")
+	}
 
 	env := []corev1.EnvVar{{
 		Name:      "NODE_NAME",
@@ -567,13 +592,24 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 					SecurityContext:               &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot, RunAsUser: &runAsUser, SeccompProfile: &seccomp},
 					Volumes:                       volumes,
 					Containers: []corev1.Container{{
-						Name:                     "node-agent",
-						Image:                    r.NodeAgentImage,
-						ImagePullPolicy:          corev1.PullIfNotPresent,
-						Command:                  []string{"/node-agent"},
-						Args:                     args,
-						Env:                      env,
-						Ports:                    []corev1.ContainerPort{{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP}},
+						Name:            "node-agent",
+						Image:           r.NodeAgentImage,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Command:         []string{"/node-agent"},
+						Args:            args,
+						Env:             env,
+						Ports:           []corev1.ContainerPort{{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP}},
+						// The agent answers /healthz from its own progress: a pass that
+						// never returns (statfs wedged on a hung mount) makes it 503 once
+						// overdue, and the kubelet restarts the container.
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromInt32(metricsPort), Scheme: corev1.URISchemeHTTP}},
+							InitialDelaySeconds: 10,
+							PeriodSeconds:       60,
+							TimeoutSeconds:      5,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
+						},
 						TerminationMessagePath:   "/dev/termination-log",
 						TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 						SecurityContext: &corev1.SecurityContext{
@@ -638,7 +674,13 @@ func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log 
 			}
 			continue
 		}
-		if !nodeHealthReportFresh(report.ObservedAt, now, maxAge) {
+		if nodeHealthClockSkewNotable(report.ObservedAt, now) {
+			// Default level: the node's clock is ahead of the operator's by more
+			// than drift explains. The report still counts (age is measured
+			// from arrival), but somebody should fix that clock.
+			log.Info("node health report is stamped ahead of the operator's clock; node clock skew", "configmap", cm.Name, "node", report.Node, "observedAt", report.ObservedAt, "operatorNow", now)
+		}
+		if !nodeHealthReportFresh(nodeHealthObservedBound(report.ObservedAt, cm), now, maxAge) {
 			log.V(1).Info("skipping stale node health report", "configmap", cm.Name, "node", report.Node, "observedAt", report.ObservedAt, "maxAge", maxAge.String())
 			continue
 		}

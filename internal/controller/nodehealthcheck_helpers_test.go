@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,6 @@ func TestResolveNodeHealthItems(t *testing.T) {
 		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz},
 		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/log"},
 		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](5), CriticalPercentFree: ptr.To[int32](30)},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/home"}, // slipped past admission
 		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
 		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition},
 	)
@@ -80,7 +80,7 @@ func TestResolveNodeHealthItems(t *testing.T) {
 	}
 
 	// Reordering the spec must not change the resolved list.
-	reordered := nhCheck(check.Spec.Checks[4], check.Spec.Checks[2], check.Spec.Checks[0], check.Spec.Checks[5], check.Spec.Checks[1])
+	reordered := nhCheck(check.Spec.Checks[4], check.Spec.Checks[2], check.Spec.Checks[0], check.Spec.Checks[3], check.Spec.Checks[1])
 	again := resolveNodeHealthItems(reordered)
 	if joinNodeHealthArgs(again) != joinNodeHealthArgs(got) {
 		t.Fatalf("resolved items depend on spec order:\n%s\n%s", joinNodeHealthArgs(again), joinNodeHealthArgs(got))
@@ -320,8 +320,8 @@ func TestNodeHealthCadence(t *testing.T) {
 	if nodeHealthReportFresh(now.Add(-6*time.Minute), now, 5*time.Minute) {
 		t.Fatal("old report accepted")
 	}
-	if nodeHealthReportFresh(now.Add(time.Hour), now, 5*time.Minute) {
-		t.Fatal("future report accepted")
+	if !nodeHealthReportFresh(now.Add(time.Hour), now, 5*time.Minute) {
+		t.Fatal("a future-stamped report counts as observed on arrival and must be fresh")
 	}
 	if nodeHealthReportFresh(time.Time{}, now, 5*time.Minute) {
 		t.Fatal("zero observedAt accepted")
@@ -467,24 +467,76 @@ func TestDesiredDaemonSetNeverMountsOnePathTwice(t *testing.T) {
 	}
 }
 
-// TestNodeHealthReportFreshRejectsTheFuture pins the clock-skew allowance: a
-// report slightly ahead of the operator's clock counts (drift), but one far
-// ahead does not — otherwise a future observedAt would extend the freshness
-// window beyond the documented cadence-plus-timeout bound.
-func TestNodeHealthReportFreshRejectsTheFuture(t *testing.T) {
+// TestNodeHealthReportFreshClampsTheFuture pins the clock-skew handling: a
+// report stamped ahead of the operator's clock counts as observed on arrival —
+// it neither extends the freshness window (measured from the future it stayed
+// fresh for up to 2*maxAge) nor excludes the node (rejecting it left a
+// fast-clocked node permanently missing from coverage) — and a large skew is
+// flagged separately for the collector to log.
+func TestNodeHealthReportFreshClampsTheFuture(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	const maxAge = 10 * time.Minute
-	if !nodeHealthReportFresh(now.Add(10*time.Second), now, maxAge) {
-		t.Fatal("10s of clock drift must be tolerated")
-	}
-	if nodeHealthReportFresh(now.Add(2*time.Minute), now, maxAge) {
-		t.Fatal("a report two minutes in the future must not be fresh")
-	}
-	if nodeHealthReportFresh(now.Add(maxAge), now, maxAge) {
-		t.Fatal("a report at the future bound must not double the freshness window")
+	if !nodeHealthReportFresh(now.Add(10*time.Second), now, maxAge) || !nodeHealthReportFresh(now.Add(2*time.Minute), now, maxAge) {
+		t.Fatal("a future-stamped report must still count as fresh (observed on arrival)")
 	}
 	if !nodeHealthReportFresh(now.Add(-maxAge), now, maxAge) || nodeHealthReportFresh(now.Add(-maxAge-time.Second), now, maxAge) {
 		t.Fatal("the past bound is inclusive at maxAge")
+	}
+	if nodeHealthClockSkewNotable(now.Add(10*time.Second), now) || !nodeHealthClockSkewNotable(now.Add(2*time.Minute), now) {
+		t.Fatal("skew beyond 30s must be flagged; ordinary drift must not")
+	}
+}
+
+// TestDesiredDaemonSetLivenessAndFatalBind pins two agent-lifecycle details:
+// every health agent carries a liveness probe on its metrics port (a wedged
+// pass must be restarted, not left Running), and only a host-network agent —
+// whose metrics port is a host port — is told to die on a bind failure.
+func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
+	t.Parallel()
+	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
+	plain := nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"})
+	ds := r.desiredDaemonSet(plain, "sa", resolveNodeHealthItems(plain))
+	c := ds.Spec.Template.Spec.Containers[0]
+	if c.LivenessProbe == nil || c.LivenessProbe.HTTPGet == nil || c.LivenessProbe.HTTPGet.Path != "/healthz" || c.LivenessProbe.HTTPGet.Port.IntValue() != int(c.Ports[0].ContainerPort) {
+		t.Fatalf("liveness probe = %+v, want HTTP /healthz on the metrics port", c.LivenessProbe)
+	}
+	if slices.Contains(c.Args, "--fatal-metrics-bind") {
+		t.Fatal("a pod-network agent must tolerate a metrics bind failure")
+	}
+	hostNet := nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})
+	ds = r.desiredDaemonSet(hostNet, "sa", resolveNodeHealthItems(hostNet))
+	if !ds.Spec.Template.Spec.HostNetwork || !slices.Contains(ds.Spec.Template.Spec.Containers[0].Args, "--fatal-metrics-bind") {
+		t.Fatal("a host-network agent must be told a metrics bind failure is fatal")
+	}
+}
+
+// TestNodeHealthObservedBoundUsesTheServerClock pins how a fast node clock is
+// neutralised: freshness is measured from the report's stamp capped at the
+// API server's write time, so a future stamp neither extends the window
+// (2*maxAge) nor excludes the node, while an honest stamp is used as is.
+func TestNodeHealthObservedBoundUsesTheServerClock(t *testing.T) {
+	t.Parallel()
+	server := time.Now()
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{
+		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server.Add(-time.Hour)))},
+		{Manager: "node-agent", Operation: metav1.ManagedFieldsOperationUpdate, Time: ptr.To(metav1.NewTime(server))},
+	}}}
+	if got := nodeHealthObservedBound(server.Add(5*time.Minute), cm); !got.Equal(server) {
+		t.Fatalf("future stamp bound = %v, want the server write time %v", got, server)
+	}
+	honest := server.Add(-10 * time.Second)
+	if got := nodeHealthObservedBound(honest, cm); !got.Equal(honest) {
+		t.Fatalf("honest stamp bound = %v, want the stamp itself %v", got, honest)
+	}
+	if got := nodeHealthObservedBound(server.Add(5*time.Minute), &corev1.ConfigMap{}); !got.Equal(server.Add(5 * time.Minute)) {
+		t.Fatal("without managedFields the stamp is used (the freshness clamp still applies)")
+	}
+	// End to end: a stamp 5m ahead on a server write 9m ago is 9m old, so it
+	// is fresh at maxAge 10m and stale at 8m — never "fresh for 15m".
+	old := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{{Time: ptr.To(metav1.NewTime(server.Add(-9 * time.Minute)))}}}}
+	bound := nodeHealthObservedBound(server.Add(5*time.Minute), old)
+	if !nodeHealthReportFresh(bound, server, 10*time.Minute) || nodeHealthReportFresh(bound, server, 8*time.Minute) {
+		t.Fatal("age must follow the server write time, not the future stamp")
 	}
 }

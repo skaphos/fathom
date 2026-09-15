@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 Rillan AI LLC
 SPDX-License-Identifier: MIT
 */
 
-package nodehealth
+package nodehealth_test
 
 import (
 	"os"
@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 func TestPathAllowed(t *testing.T) {
@@ -37,8 +38,8 @@ func TestPathAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			t.Parallel()
-			if got := PathAllowed(tt.path); got != tt.want {
-				t.Fatalf("PathAllowed(%q) = %v, want %v", tt.path, got, tt.want)
+			if got := nodehealth.PathAllowed(tt.path); got != tt.want {
+				t.Fatalf("nodehealth.PathAllowed(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}
@@ -54,6 +55,11 @@ func TestSocketPathAllowed(t *testing.T) {
 		{"/var/run/containerd/containerd.sock", true},
 		{"/run/crio/crio.sock", true},
 		{"/run/cri-dockerd/cri-dockerd.sock", true},
+		{"/run/k3s/containerd/containerd.sock", true}, // k3s / RKE2
+		{"/var/run/cri-dockerd.sock", true},           // cri-dockerd's actual default: a file directly in /var/run
+		{"/run/cri-dockerd.sock", true},
+		{"/run/docker.sock", false}, // no directory allowance for /run itself
+		{"/var/run/cri-dockerd.sock/x.sock", false},
 		{"/run/containerd/containerd", false},
 		{"/var/run/docker.sock", false},
 		{"/run/containerd/../docker.sock", false},
@@ -64,55 +70,25 @@ func TestSocketPathAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			t.Parallel()
-			if got := SocketPathAllowed(tt.path); got != tt.want {
-				t.Fatalf("SocketPathAllowed(%q) = %v, want %v", tt.path, got, tt.want)
+			if got := nodehealth.SocketPathAllowed(tt.path); got != tt.want {
+				t.Fatalf("nodehealth.SocketPathAllowed(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestFilterAllowedItems(t *testing.T) {
-	t.Parallel()
-	in := []Item{
-		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"},
-		{Type: TypeDiskHeadroom, Path: "/home"},
-		{Type: TypeInodeHeadroom, Path: "/"},
-		{Type: TypeKubeletHealthz},
-		{Type: TypeNodeCondition},
-		{Type: TypeContainerRuntime},
-		{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"},
-		{Type: TypeContainerRuntime, SocketPath: "/var/run/docker.sock"},
-	}
-	got := FilterAllowedItems(in)
-	want := []Item{
-		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"},
-		{Type: TypeKubeletHealthz},
-		{Type: TypeNodeCondition},
-		{Type: TypeContainerRuntime},
-		{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d items %+v, want %d %+v", len(got), got, len(want), want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("item %d = %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
-
 func TestMountDirs(t *testing.T) {
 	t.Parallel()
-	got := MountDirs([]Item{
-		{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet/pods"},
-		{Type: TypeInodeHeadroom, Path: "/var/lib/kubelet"},
-		{Type: TypeDiskHeadroom, Path: "/var/log"},
-		{Type: TypeKubeletHealthz},
-		{Type: TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"},
+	got := nodehealth.MountDirs([]nodehealth.Item{
+		{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet/pods"},
+		{Type: nodehealth.TypeInodeHeadroom, Path: "/var/lib/kubelet"},
+		{Type: nodehealth.TypeDiskHeadroom, Path: "/var/log"},
+		{Type: nodehealth.TypeKubeletHealthz},
+		{Type: nodehealth.TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"},
 	})
 	want := []string{"/var/lib/kubelet", "/var/log"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("MountDirs = %v, want %v (descendants collapsed, sockets excluded)", got, want)
+		t.Fatalf("nodehealth.MountDirs = %v, want %v (descendants collapsed, sockets excluded)", got, want)
 	}
 }
 
@@ -127,37 +103,40 @@ func TestAllowlistsMirrorCRDRules(t *testing.T) {
 		t.Fatalf("read generated CRD: %v", err)
 	}
 	crd := string(raw)
-	for _, pre := range AllowedPathPrefixes() {
+	for _, pre := range nodehealth.AllowedPathPrefixes() {
 		if !strings.Contains(crd, "'"+pre+"'") {
 			t.Errorf("headroom prefix %q is allowed in Go but absent from the CRD path rule", pre)
 		}
 	}
-	for _, dir := range AllowedSocketDirs() {
+	for _, dir := range nodehealth.AllowedSocketDirs() {
 		if !strings.Contains(crd, "'"+dir+"'") {
 			t.Errorf("socket dir %q is allowed in Go but absent from the CRD socketPath rule", dir)
 		}
 	}
-	// Reverse direction: pull every quoted literal out of the two rules and
-	// make sure the Go side knows it.
+	for _, file := range nodehealth.AllowedSocketFiles() {
+		if !strings.Contains(crd, "'"+file+"'") {
+			t.Errorf("socket file %q is allowed in Go but absent from the CRD socketPath rule", file)
+		}
+	}
+	// Reverse direction: every path-like literal in an allowlist rule must be
+	// known on the Go side. The rule lines also carry `self.path != '/'` and
+	// `a + '/'`; a lone "/" is not an allowance and is skipped.
 	known := map[string]bool{}
-	for _, p := range AllowedPathPrefixes() {
+	for _, p := range nodehealth.AllowedPathPrefixes() {
 		known[p] = true
 	}
-	for _, d := range AllowedSocketDirs() {
+	for _, d := range nodehealth.AllowedSocketDirs() {
 		known[d] = true
 	}
-	// Only the literals inside the allowlist array count: the same line also
-	// carries `self.path != '/'` and `a + '/'`, which are not allowances.
+	for _, f := range nodehealth.AllowedSocketFiles() {
+		known[f] = true
+	}
 	for _, line := range strings.Split(crd, "\n") {
-		if !strings.Contains(line, ".exists(a,") {
+		if !strings.Contains(line, ".exists(") {
 			continue
 		}
-		open, close := strings.Index(line, "["), strings.Index(line, "]")
-		if open < 0 || close < open {
-			t.Fatalf("cannot locate the allowlist array in rule line %q", line)
-		}
-		for _, lit := range strings.Split(line[open:close], "'") {
-			if strings.HasPrefix(lit, "/") && !known[lit] {
+		for _, lit := range strings.Split(line, "'") {
+			if len(lit) > 1 && strings.HasPrefix(lit, "/") && !known[lit] {
 				t.Errorf("CRD rule allows %q but the Go allowlists do not", lit)
 			}
 		}
@@ -170,19 +149,19 @@ func TestAllowlistsMirrorCRDRules(t *testing.T) {
 func TestCheckTypesMirrorAPI(t *testing.T) {
 	t.Parallel()
 	pairs := map[string]fathomv1alpha1.NodeHealthCheckType{
-		TypeDiskHeadroom:     fathomv1alpha1.NodeHealthCheckDiskHeadroom,
-		TypeInodeHeadroom:    fathomv1alpha1.NodeHealthCheckInodeHeadroom,
-		TypeNodeCondition:    fathomv1alpha1.NodeHealthCheckNodeCondition,
-		TypeKubeletHealthz:   fathomv1alpha1.NodeHealthCheckKubeletHealthz,
-		TypeContainerRuntime: fathomv1alpha1.NodeHealthCheckContainerRuntime,
+		nodehealth.TypeDiskHeadroom:     fathomv1alpha1.NodeHealthCheckDiskHeadroom,
+		nodehealth.TypeInodeHeadroom:    fathomv1alpha1.NodeHealthCheckInodeHeadroom,
+		nodehealth.TypeNodeCondition:    fathomv1alpha1.NodeHealthCheckNodeCondition,
+		nodehealth.TypeKubeletHealthz:   fathomv1alpha1.NodeHealthCheckKubeletHealthz,
+		nodehealth.TypeContainerRuntime: fathomv1alpha1.NodeHealthCheckContainerRuntime,
 	}
 	for wire, api := range pairs {
 		if wire != string(api) {
 			t.Errorf("wire type %q != api type %q", wire, api)
 		}
 	}
-	if DefaultProbeSocket := fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket; !SocketPathAllowed(DefaultProbeSocket) {
-		t.Errorf("the API default socket %q is not allowed by SocketPathAllowed", DefaultProbeSocket)
+	if DefaultProbeSocket := fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket; !nodehealth.SocketPathAllowed(DefaultProbeSocket) {
+		t.Errorf("the API default socket %q is not allowed by nodehealth.SocketPathAllowed", DefaultProbeSocket)
 	}
 }
 
@@ -192,14 +171,14 @@ func TestItemPrivilegeFlags(t *testing.T) {
 		typ                       string
 		hostNet, root, agentEvals bool
 	}{
-		{TypeDiskHeadroom, false, false, true},
-		{TypeInodeHeadroom, false, false, true},
-		{TypeNodeCondition, false, false, false},
-		{TypeKubeletHealthz, true, false, true},
-		{TypeContainerRuntime, false, true, true},
+		{nodehealth.TypeDiskHeadroom, false, false, true},
+		{nodehealth.TypeInodeHeadroom, false, false, true},
+		{nodehealth.TypeNodeCondition, false, false, false},
+		{nodehealth.TypeKubeletHealthz, true, false, true},
+		{nodehealth.TypeContainerRuntime, false, true, true},
 	}
 	for _, tt := range tests {
-		it := Item{Type: tt.typ}
+		it := nodehealth.Item{Type: tt.typ}
 		if it.NeedsHostNetwork() != tt.hostNet || it.NeedsRoot() != tt.root || it.AgentEvaluated() != tt.agentEvals {
 			t.Errorf("%s: hostNet=%v root=%v agent=%v, want %v %v %v", tt.typ,
 				it.NeedsHostNetwork(), it.NeedsRoot(), it.AgentEvaluated(), tt.hostNet, tt.root, tt.agentEvals)

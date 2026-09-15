@@ -203,10 +203,13 @@ spec:
                       self.path == a || self.path.startsWith(a + ''/'')))'
                   - message: socketPath must be a traversal-free .sock path under
                       an allowed runtime directory (/run/containerd, /var/run/containerd,
-                      /run/crio, /var/run/crio, /run/cri-dockerd, /var/run/cri-dockerd)
+                      /run/crio, /var/run/crio, /run/k3s/containerd, /var/run/k3s/containerd,
+                      /run/cri-dockerd, /var/run/cri-dockerd) or the cri-dockerd socket
+                      itself (/run/cri-dockerd.sock, /var/run/cri-dockerd.sock)
                     rule: '!has(self.socketPath) || (self.socketPath.endsWith(''.sock'')
-                      && !self.socketPath.contains(''..'') && [''/run/containerd'',''/var/run/containerd'',''/run/crio'',''/var/run/crio'',''/run/cri-dockerd'',''/var/run/cri-dockerd''].exists(a,
-                      self.socketPath.startsWith(a + ''/'')))'
+                      && !self.socketPath.contains(''..'') && ([''/run/containerd'',''/var/run/containerd'',''/run/crio'',''/var/run/crio'',''/run/cri-dockerd'',''/var/run/cri-dockerd'',''/run/k3s/containerd'',''/var/run/k3s/containerd''].exists(a,
+                      self.socketPath.startsWith(a + ''/'')) || [''/run/cri-dockerd.sock'',''/var/run/cri-dockerd.sock''].exists(f,
+                      self.socketPath == f)))'
                 maxItems: 16
                 minItems: 1
                 type: array

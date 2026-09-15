@@ -271,16 +271,51 @@ func TestRunFailsWhenMetricsPortIsTaken(t *testing.T) {
 	kube := fake.NewSimpleClientset()
 	cfg := config{
 		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
-		configMapName: nodehealth.ReportConfigMapName("nh", "node-1"),
-		metricsAddr:   l.Addr().String(),
-		interval:      time.Hour,
-		timeout:       time.Second,
+		configMapName:    nodehealth.ReportConfigMapName("nh", "node-1"),
+		metricsAddr:      l.Addr().String(),
+		fatalMetricsBind: true,
+		interval:         time.Hour,
+		timeout:          time.Second,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	err = run(ctx, kube, cfg)
 	if err == nil || !strings.Contains(err.Error(), "metrics server") {
-		t.Fatalf("run must fail when the metrics port is taken, got %v", err)
+		t.Fatalf("run must fail when the metrics port is taken and the operator asked for that, got %v", err)
+	}
+
+	// Without --fatal-metrics-bind — the certificate agent on its fixed
+	// pod-network port, exactly as before this release — a taken port is
+	// logged and tolerated: the agent keeps its loop and publishing.
+	cfg.fatalMetricsBind = false
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel2()
+	if err := run(ctx2, kube, cfg); err != nil {
+		t.Fatalf("a bind failure must be tolerated unless the operator made it fatal, got %v", err)
+	}
+}
+
+// TestHealthzReflectsProgress pins the liveness contract: /healthz answers
+// 503 once no pass has completed within the liveness window, so a wedged
+// agent is restarted by the kubelet instead of sitting Running forever.
+func TestHealthzReflectsProgress(t *testing.T) {
+	l := newLiveness(time.Minute, time.Second)
+	mux := metricsMux(l)
+	get := func() int {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+		return rec.Code
+	}
+	if code := get(); code != http.StatusOK {
+		t.Fatalf("fresh agent /healthz = %d, want 200", code)
+	}
+	l.lastPass.Store(time.Now().Add(-10 * time.Minute).UnixNano())
+	if code := get(); code != http.StatusServiceUnavailable {
+		t.Fatalf("overdue agent /healthz = %d, want 503", code)
+	}
+	l.passed()
+	if code := get(); code != http.StatusOK {
+		t.Fatalf("after a pass /healthz = %d, want 200", code)
 	}
 }
 

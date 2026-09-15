@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -67,10 +68,11 @@ type config struct {
 	healthItems       []nodehealth.Item
 	kubeletHealthzURL string
 
-	interval    time.Duration
-	timeout     time.Duration
-	metricsAddr string
-	once        bool
+	interval         time.Duration
+	timeout          time.Duration
+	metricsAddr      string
+	once             bool
+	fatalMetricsBind bool
 	// trigger is the run-now token this agent was started with (see
 	// nodecert.EnvRunTrigger); stamped into every report it publishes.
 	trigger string
@@ -102,11 +104,15 @@ func main() {
 // run serves metrics and drives the evaluation loop until ctx is cancelled.
 // With cfg.once it performs a single pass and returns.
 func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
-	// A bind failure is fatal, not a log line: in health mode with hostNetwork
-	// the metrics port is a host port, and a collision must surface as a
-	// crashing pod (AgentReady=False on the check) rather than an agent that
-	// keeps publishing while its metrics silently never serve.
-	srv := &http.Server{Addr: cfg.metricsAddr, Handler: metricsMux(), ReadHeaderTimeout: 5 * time.Second}
+	// A metrics bind failure is fatal only when the operator says so
+	// (--fatal-metrics-bind, set for a host-network agent whose port is a host
+	// port): there a collision must surface as a crashing pod, AgentReady=False
+	// on the check, rather than an agent that keeps publishing while its
+	// metrics silently never serve. Everywhere else — the certificate agent on
+	// its fixed pod-network port in particular — the listener is incidental to
+	// publishing, and a bind failure is logged and tolerated exactly as before.
+	liveness := newLiveness(cfg.interval, cfg.timeout)
+	srv := &http.Server{Addr: cfg.metricsAddr, Handler: metricsMux(liveness), ReadHeaderTimeout: 5 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -142,6 +148,7 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 	}
 
 	scanOnce()
+	liveness.passed()
 	if cfg.once {
 		// A one-shot run exists to publish one report; whether the metrics
 		// listener bound is irrelevant to that and must not fail it.
@@ -160,17 +167,52 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 		case <-ctx.Done():
 			return nil
 		case err := <-serveErr:
-			return err
+			if cfg.fatalMetricsBind {
+				return err
+			}
+			log.Printf("node-agent: %v (continuing; metrics will not serve)", err)
 		case <-ticker.C:
 			scanOnce()
+			liveness.passed()
 		}
 	}
 }
 
-func metricsMux() http.Handler {
+// liveness answers /healthz from the agent's own progress rather than
+// unconditionally. A pass that never returns — a statfs wedged on a hung mount
+// in uninterruptible sleep, which no context can cancel — used to leave the
+// pod Running and Ready forever while it published nothing; the kubelet's
+// liveness probe now restarts it once a pass is overdue by more than one
+// cadence plus a timeout.
+type liveness struct {
+	lastPass atomic.Int64 // unix nanoseconds of the last completed pass (or start)
+	maxAge   time.Duration
+}
+
+func newLiveness(interval, timeout time.Duration) *liveness {
+	l := &liveness{maxAge: 2*interval + timeout}
+	l.lastPass.Store(time.Now().UnixNano())
+	return l
+}
+
+func (l *liveness) passed() { l.lastPass.Store(time.Now().UnixNano()) }
+
+// healthy reports whether the last completed pass (or process start) is
+// recent enough that the agent is demonstrably still making progress.
+func (l *liveness) healthy(now time.Time) bool {
+	return now.Sub(time.Unix(0, l.lastPass.Load())) <= l.maxAge
+}
+
+func metricsMux(l *liveness) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if l != nil && !l.healthy(time.Now()) {
+			http.Error(w, "no completed pass within the liveness window", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	})
 	return mux
 }
 
@@ -377,6 +419,7 @@ func parseConfig(argv []string) (config, error) {
 		interval      = fs.Duration("interval", time.Hour, "re-evaluation cadence")
 		timeout       = fs.Duration("timeout", 30*time.Second, "per-pass publish timeout (health mode: bounds the whole pass)")
 		metricsAddr   = fs.String("metrics-bind-address", ":8080", "address for the Prometheus metrics endpoint")
+		fatalBind     = fs.Bool("fatal-metrics-bind", false, "exit when the metrics endpoint cannot bind (set by the operator for host-network agents, whose port is a host port)")
 		once          = fs.Bool("once", false, "run a single pass and exit")
 	)
 	if err := fs.Parse(argv); err != nil {
@@ -404,6 +447,7 @@ func parseConfig(argv []string) (config, error) {
 		timeout:           *timeout,
 		metricsAddr:       *metricsAddr,
 		once:              *once,
+		fatalMetricsBind:  *fatalBind,
 		// The token arrives through the downward API from the DaemonSet pod
 		// template, so it is an env var rather than a flag: the operator does
 		// not rewrite the args when only the trigger changes.

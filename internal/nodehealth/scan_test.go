@@ -61,7 +61,7 @@ func TestHeadroomClassification(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := headroom(tt.item, tt.statfs, tt.item.Type == TypeInodeHeadroom)
+			got := headroom(context.Background(), tt.item, tt.statfs, tt.item.Type == TypeInodeHeadroom)
 			if got.Outcome != tt.wantOutcome {
 				t.Fatalf("outcome = %s, want %s (%s)", got.Outcome, tt.wantOutcome, got.Summary)
 			}
@@ -98,7 +98,7 @@ func TestHeadroomStatfsFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := headroom(item, fakeStatfs(0, 0, 0, 0, tt.err), false)
+			got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, tt.err), false)
 			if got.Outcome != tt.wantOutcome || !strings.Contains(got.Summary, tt.wantInSum) {
 				t.Fatalf("got %s %q, want %s containing %q", got.Outcome, got.Summary, tt.wantOutcome, tt.wantInSum)
 			}
@@ -110,7 +110,7 @@ func TestHeadroomStatfsFailures(t *testing.T) {
 
 	t.Run("zero-block filesystem is an error, not a division", func(t *testing.T) {
 		t.Parallel()
-		got := headroom(item, fakeStatfs(0, 0, 0, 0, nil), false)
+		got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, nil), false)
 		if got.Outcome != OutcomeError || !strings.Contains(got.Summary, "zero bytes") {
 			t.Fatalf("got %s %q", got.Outcome, got.Summary)
 		}
@@ -331,5 +331,54 @@ func TestScanProbesRunConcurrently(t *testing.T) {
 	}
 	if elapsed > 2*timeout-50*time.Millisecond {
 		t.Fatalf("pass took %v; probes must run concurrently, not serially (2x%v)", elapsed, timeout)
+	}
+}
+
+// TestInodeHeadroomWithoutInodeTableIsSkipped pins the btrfs case: statfs
+// reports f_files == 0 on filesystems without a fixed inode table, which is
+// "nothing to measure", not a measurement failure that should outrank a full
+// disk elsewhere in the fleet. Zero bytes stays an Error: a mounted
+// filesystem with no blocks is a genuine anomaly.
+func TestInodeHeadroomWithoutInodeTableIsSkipped(t *testing.T) {
+	t.Parallel()
+	btrfs := func(_ string, st *unix.Statfs_t) error {
+		st.Bsize = 4096
+		st.Blocks, st.Bavail = 1000, 500
+		st.Files, st.Ffree = 0, 0
+		return nil
+	}
+	got := headroom(context.Background(), Item{Type: TypeInodeHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10}, btrfs, true)
+	if got.Outcome != OutcomeSkipped || !strings.Contains(got.Summary, "inode") {
+		t.Fatalf("inodes on a btrfs-like filesystem = %+v, want Skipped", got)
+	}
+	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, btrfs, false); got.Outcome != OutcomePass {
+		t.Fatalf("bytes on the same filesystem = %+v, want Pass (50%% free)", got)
+	}
+	noBlocks := func(_ string, st *unix.Statfs_t) error { return nil }
+	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, noBlocks, false); got.Outcome != OutcomeError {
+		t.Fatalf("zero bytes = %+v, want Error", got)
+	}
+}
+
+// TestHeadroomStatfsHonoursTheDeadline pins that a statfs which never returns
+// (a hung mount, uninterruptible) cannot wedge the pass: the item is graded
+// Error within the timeout and the rest of the pass continues.
+func TestHeadroomStatfsHonoursTheDeadline(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	defer close(release)
+	hung := func(_ string, _ *unix.Statfs_t) error { <-release; return nil }
+
+	start := time.Now()
+	results := Scan(context.Background(), ScanOptions{
+		Items:   []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}},
+		Timeout: 200 * time.Millisecond,
+		statfs:  hung,
+	})
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("a hung statfs must not block the pass; took %v", elapsed)
+	}
+	if len(results) != 1 || results[0].Outcome != OutcomeError || !strings.Contains(results[0].Summary, "did not return") {
+		t.Fatalf("hung statfs = %+v, want Error naming the timeout", results)
 	}
 }

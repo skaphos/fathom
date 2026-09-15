@@ -146,25 +146,57 @@ func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool
 	if observedAt.IsZero() {
 		return false
 	}
-	// A report from the future is a clock problem, not evidence, and must not
-	// extend the freshness window: accepted up to maxAge ahead of now, a
-	// report at that bound stayed fresh for 2*maxAge. Allow a small explicit
-	// skew for ordinary clock drift between the node and the operator.
-	if observedAt.After(now.Add(maxNodeHealthReportClockSkew)) {
-		return false
+	// A report from the future is a clock problem, not evidence. It must not
+	// extend the freshness window (measured from a future observedAt, a report
+	// stayed fresh for up to 2*maxAge), but neither may it exclude the node:
+	// rejecting it left a node whose clock runs fast permanently missing from
+	// coverage, indistinguishable from a dead agent. Age is therefore measured
+	// from min(observedAt, now) — the report counts as observed on arrival.
+	// The skew itself is surfaced by the collector (nodeHealthClockSkewNotable).
+	if observedAt.After(now) {
+		observedAt = now
 	}
 	return now.Sub(observedAt) <= maxAge
 }
 
 // maxNodeHealthReportClockSkew is how far ahead of the operator's clock a
-// report's observedAt may be and still count, covering ordinary drift.
+// report's observedAt may be before the collector logs it as a clock problem
+// worth an operator's attention; ordinary drift stays below it.
 const maxNodeHealthReportClockSkew = 30 * time.Second
+
+// nodeHealthObservedBound returns the time freshness is measured from: the
+// report's own observedAt, capped at the API server's most recent write time
+// for the ConfigMap (managedFields[].time, stamped from the server's clock).
+// A node whose clock runs fast stamps the future; measuring from its stamp
+// kept the report fresh for up to 2*maxAge, and rejecting it excluded the node
+// entirely. The server's write time is the one clock both sides share, so a
+// fast node's report is exactly as fresh as its arrival, no more and no less.
+// Without managedFields (an older server, a fake client) the stamp is used.
+func nodeHealthObservedBound(observedAt time.Time, cm *corev1.ConfigMap) time.Time {
+	var latest time.Time
+	for _, mf := range cm.ManagedFields {
+		if mf.Time != nil && mf.Time.After(latest) {
+			latest = mf.Time.Time
+		}
+	}
+	if !latest.IsZero() && observedAt.After(latest) {
+		return latest
+	}
+	return observedAt
+}
+
+// nodeHealthClockSkewNotable reports whether observedAt is far enough ahead of
+// now that the node's clock, not the report, is what needs fixing.
+func nodeHealthClockSkewNotable(observedAt, now time.Time) bool {
+	return observedAt.After(now.Add(maxNodeHealthReportClockSkew))
+}
 
 // resolveNodeHealthItems turns the spec's items into the resolved wire items
 // the agent receives: API defaults applied to every unset threshold and
-// socket, disallowed paths filtered out (defense-in-depth behind admission),
-// and the list sorted by (type, path) so the DaemonSet arguments — and hence
-// the template hash — are stable across spec reorderings.
+// socket, and the list sorted by (type, path) so the DaemonSet arguments — and
+// hence the template hash — are stable across spec reorderings. Items the
+// allowlist refuses are not filtered here; Reconcile rejects the whole spec
+// (rejectedNodeHealthItems) so nothing is ever silently dropped.
 func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.Item {
 	items := make([]nodehealth.Item, 0, len(check.Spec.Checks))
 	for _, c := range check.Spec.Checks {
@@ -191,7 +223,6 @@ func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.
 		}
 		items = append(items, it)
 	}
-	items = nodehealth.FilterAllowedItems(items)
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Type != items[j].Type {
 			return items[i].Type < items[j].Type

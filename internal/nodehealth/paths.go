@@ -42,6 +42,26 @@ var allowedSocketDirs = []string{
 	"/var/run/crio",
 	"/run/cri-dockerd",
 	"/var/run/cri-dockerd",
+	// k3s and RKE2 run their embedded containerd here.
+	"/run/k3s/containerd",
+	"/var/run/k3s/containerd",
+}
+
+// allowedSocketFiles are exact socket paths admitted on their own: runtimes
+// whose socket sits directly in /run rather than in a directory of its own.
+// A directory allowance for /run would admit every socket on the node (the
+// Docker daemon's, for one), so these are exact matches. Mirrored in the CRD's
+// socketPath rule.
+var allowedSocketFiles = []string{
+	// cri-dockerd's default (its documented endpoint is unix:///var/run/cri-dockerd.sock).
+	"/run/cri-dockerd.sock",
+	"/var/run/cri-dockerd.sock",
+}
+
+// AllowedSocketFiles returns a copy of the exact socket paths admitted on
+// their own.
+func AllowedSocketFiles() []string {
+	return append([]string(nil), allowedSocketFiles...)
 }
 
 // AllowedPathPrefixes returns a copy of the operator-approved headroom-path
@@ -89,30 +109,12 @@ func SocketPathAllowed(p string) bool {
 			return true
 		}
 	}
-	return false
-}
-
-// FilterAllowedItems returns the items whose paths satisfy the allowlists,
-// preserving order. Headroom items with a disallowed Path and ContainerRuntime
-// items with a disallowed SocketPath are dropped; every other item passes
-// through. The operator applies it before building the agent's mount set so a
-// value that slipped past admission still cannot widen the hostPath surface.
-func FilterAllowedItems(items []Item) []Item {
-	out := make([]Item, 0, len(items))
-	for _, it := range items {
-		switch it.Type {
-		case TypeDiskHeadroom, TypeInodeHeadroom:
-			if !PathAllowed(it.Path) {
-				continue
-			}
-		case TypeContainerRuntime:
-			if it.SocketPath != "" && !SocketPathAllowed(it.SocketPath) {
-				continue
-			}
+	for _, file := range allowedSocketFiles {
+		if p == file {
+			return true
 		}
-		out = append(out, it)
 	}
-	return out
+	return false
 }
 
 // MountDirs computes the least-privilege set of host directories the agent

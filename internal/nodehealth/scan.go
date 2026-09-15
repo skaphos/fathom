@@ -61,6 +61,32 @@ type ScanOptions struct {
 	httpClient *http.Client
 }
 
+// errStatfsTimeout marks a statfs that did not return before its deadline.
+var errStatfsTimeout = errors.New("statfs timed out")
+
+// statfsWithin runs statfs on its own goroutine and gives up at ctx's
+// deadline. The syscall itself is uninterruptible, so the goroutine may
+// outlive the call; that is the price of not letting one hung mount wedge
+// the whole agent.
+func statfsWithin(ctx context.Context, statfs statfsFunc, path string) (unix.Statfs_t, error) {
+	type result struct {
+		st  unix.Statfs_t
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		var st unix.Statfs_t
+		err := statfs(path, &st)
+		done <- result{st: st, err: err}
+	}()
+	select {
+	case r := <-done:
+		return r.st, r.err
+	case <-ctx.Done():
+		return unix.Statfs_t{}, errStatfsTimeout
+	}
+}
+
 // Scan evaluates every agent-side item. It never returns an error: a path the
 // agent cannot stat surfaces as a Skipped result, an unreachable kubelet or
 // runtime socket as Fail (that unreachability is the signal the check exists
@@ -97,10 +123,10 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 	var probes sync.WaitGroup
 	for i, it := range opts.Items {
 		switch it.Type {
-		case TypeDiskHeadroom:
-			out[i] = headroom(it, statfs, false)
-		case TypeInodeHeadroom:
-			out[i] = headroom(it, statfs, true)
+		case TypeDiskHeadroom, TypeInodeHeadroom:
+			hctx, cancel := context.WithTimeout(ctx, timeout)
+			out[i] = headroom(hctx, it, statfs, it.Type == TypeInodeHeadroom)
+			cancel()
 		case TypeKubeletHealthz:
 			probes.Add(1)
 			go func(i int) {
@@ -145,10 +171,18 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 // blocks available to an unprivileged caller — is used rather than Bfree so the
 // reservation ext4 keeps for root is not counted as headroom the kubelet's
 // workloads can use.
-func headroom(it Item, statfs statfsFunc, inodes bool) CheckResult {
+func headroom(ctx context.Context, it Item, statfs statfsFunc, inodes bool) CheckResult {
 	res := CheckResult{Type: it.Type, Path: it.Path}
-	var st unix.Statfs_t
-	if err := statfs(it.Path, &st); err != nil {
+	st, err := statfsWithin(ctx, statfs, it.Path)
+	if errors.Is(err, errStatfsTimeout) {
+		// A statfs that does not return — a hung network or failing block
+		// device — cannot be cancelled; the goroutine is abandoned and the
+		// pass moves on so one wedged mount cannot stop every other check.
+		res.Outcome = OutcomeError
+		res.Summary = "cannot stat filesystem: statfs did not return within the pass timeout"
+		return res
+	}
+	if err != nil {
 		switch {
 		case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOENT):
 			res.Outcome = OutcomeSkipped
@@ -176,8 +210,17 @@ func headroom(it Item, statfs statfsFunc, inodes bool) CheckResult {
 		total, free = st.Blocks*bsize, st.Bavail*bsize
 	}
 	if total == 0 {
+		if inodes {
+			// btrfs (and other filesystems without a fixed inode table) report
+			// f_files == 0: there is nothing to measure, which is "this check
+			// does not apply here", not a measurement failure. Error would
+			// outrank a genuinely full disk elsewhere in the fleet.
+			res.Outcome = OutcomeSkipped
+			res.Summary = "filesystem does not report inode counts (no fixed inode table, e.g. btrfs)"
+			return res
+		}
 		res.Outcome = OutcomeError
-		res.Summary = fmt.Sprintf("filesystem reports zero %s", unit)
+		res.Summary = "filesystem reports zero bytes"
 		return res
 	}
 	pct := float64(free) / float64(total) * 100

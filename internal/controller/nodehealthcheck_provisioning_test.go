@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -146,5 +147,63 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	var ds appsv1.DaemonSetList
 	if err := cl.List(context.Background(), &ds); err != nil || len(ds.Items) != 0 {
 		t.Fatalf("no agent may be provisioned for a spec with a rejected item: %d DaemonSet(s), err=%v", len(ds.Items), err)
+	}
+}
+
+// TestNodeHealthProvisioningFailureInvalidatesAgentConditions pins that a
+// provisioning failure on a new generation does not leave the previous
+// generation's AgentReady=True / CoverageComplete=True advertised next to
+// Ready=False, and that the privilege posture reflects the new spec.
+func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-stale", Namespace: "default", Generation: 2},
+		Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
+			{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
+			{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz},
+		}},
+		Status: fathomv1alpha1.NodeHealthCheckStatus{
+			ObservedGeneration: 1, LastResult: "Pass",
+			Conditions: []metav1.Condition{
+				{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+				{Type: nodeHealthConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+				{Type: nodeHealthConditionCoverage, Status: metav1.ConditionTrue, Reason: "AllNodesReporting", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+				{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionFalse, Reason: "Hardened", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, ok := obj.(*appsv1.DaemonSet); ok {
+				return apierrors.NewInternalError(errors.New("daemonset create refused"))
+			}
+			return c.Create(ctx, obj, opts...)
+		}}).Build()
+	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-stale", Namespace: "default"}}); err == nil {
+		t.Fatal("the provisioning error must be returned for retry")
+	}
+	got := &fathomv1alpha1.NodeHealthCheck{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-stale", Namespace: "default"}, got); err != nil {
+		t.Fatal(err)
+	}
+	for _, typ := range []string{nodeHealthConditionReady, nodeHealthConditionAgentReady, nodeHealthConditionCoverage} {
+		c := apiMeta.FindStatusCondition(got.Status.Conditions, typ)
+		if c == nil || c.Status != metav1.ConditionFalse || c.ObservedGeneration != 2 {
+			t.Fatalf("%s = %+v, want False at generation 2", typ, c)
+		}
+	}
+	priv := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionPrivileged)
+	if priv == nil || priv.Status != metav1.ConditionTrue || priv.ObservedGeneration != 2 {
+		t.Fatalf("AgentPrivileged = %+v, want True at generation 2 (KubeletHealthz needs the host network)", priv)
+	}
+	if got.Status.LastResult != "Pass" {
+		t.Fatal("the last complete verdict must be retained (COR-2)")
 	}
 }
