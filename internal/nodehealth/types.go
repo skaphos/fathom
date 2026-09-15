@@ -117,8 +117,8 @@ type NodeReport struct {
 	// an empty value as "not this trigger".
 	Trigger string `json:"trigger,omitempty"`
 	// ItemsDigest identifies the exact agent-side item set — types, paths,
-	// sockets, and thresholds — this report was evaluated against (see
-	// ItemsDigest). The operator accepts a report only when it equals the
+	// sockets, thresholds — and the pass timeout this report was evaluated
+	// against (see ItemsDigest). The operator accepts a report only when it equals the
 	// digest of the spec's current resolved items, so a report evaluated
 	// under a previous threshold is never graded as if it carried the
 	// current one.

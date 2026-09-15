@@ -607,12 +607,17 @@ func TestReportCoversSpecRejectsAnEmptyDigest(t *testing.T) {
 	t.Parallel()
 	items := []nodehealth.Item{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10}}
 	report := nodehealth.NodeReport{Checks: []nodehealth.CheckResult{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet", Outcome: nodehealth.OutcomePass}}}
-	if nodeHealthReportCoversSpec(report, items) {
+	if nodeHealthReportCoversSpec(report, items, 30*time.Second) {
 		t.Fatal("a report with no digest must not cover the spec")
 	}
-	report.ItemsDigest = nodehealth.ItemsDigest(items)
-	if !nodeHealthReportCoversSpec(report, items) {
+	report.ItemsDigest = nodehealth.ItemsDigest(items, 30*time.Second)
+	if !nodeHealthReportCoversSpec(report, items, 30*time.Second) {
 		t.Fatal("a report with the current digest and matching checks must cover the spec")
+	}
+	// The pass timeout is part of the grading semantics: a report evaluated
+	// under a different timeout must not be consumed as current.
+	if nodeHealthReportCoversSpec(report, items, 10*time.Second) {
+		t.Fatal("a report evaluated under another timeout must not cover the spec")
 	}
 }
 

@@ -353,7 +353,7 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 		Aggregate:   nodehealth.WorstOutcome(results),
 		Checks:      results,
 		Trigger:     cfg.trigger,
-		ItemsDigest: nodehealth.ItemsDigest(cfg.healthItems),
+		ItemsDigest: nodehealth.ItemsDigest(cfg.healthItems, cfg.timeout),
 	}
 	encoded, err := nodehealth.EncodeReport(report)
 	if err != nil {

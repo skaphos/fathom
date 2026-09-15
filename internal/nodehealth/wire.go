@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/skaphos/fathom/internal/nodecert"
 )
@@ -92,14 +93,17 @@ func ItemKey(it Item) string {
 // short enough for a report field, collision-safe for one check's item set.
 const itemsDigestLength = 32
 
-// ItemsDigest is the identity of an agent-side item set: a short hex SHA-256
-// of the agent-evaluated items in canonical order, thresholds included. The
-// operator computes it from the spec's resolved items and the agent from the
-// items it was started with; the two agree only when the report was
-// evaluated against exactly the current spec semantics. NodeCondition items
-// are excluded because the operator, not the agent, grades them, and order
-// is irrelevant: items are sorted by (type, key) before hashing.
-func ItemsDigest(items []Item) string {
+// ItemsDigest is the identity of what an agent evaluates: a short hex
+// SHA-256 of the agent-evaluated items in canonical order, thresholds
+// included, and of the pass timeout the probes are graded against — a kubelet
+// that answers in 20s fails at a 10s timeout and passes at 30s, so the timeout
+// is part of the grading semantics as much as a threshold is. The operator
+// computes it from the spec's resolved items and effective timeout and the
+// agent from what it was started with; the two agree only when the report
+// was evaluated against exactly the current spec semantics. NodeCondition
+// items are excluded because the operator, not the agent, grades them, and
+// order is irrelevant: items are sorted by (type, key) before hashing.
+func ItemsDigest(items []Item, timeout time.Duration) string {
 	canonical := make([]Item, 0, len(items))
 	for _, it := range items {
 		if it.AgentEvaluated() {
@@ -112,7 +116,10 @@ func ItemsDigest(items []Item) string {
 		}
 		return ItemKey(canonical[i]) < ItemKey(canonical[j])
 	})
-	raw, err := json.Marshal(canonical)
+	raw, err := json.Marshal(struct {
+		Items   []Item `json:"items"`
+		Timeout string `json:"timeout"`
+	}{canonical, timeout.String()})
 	if err != nil {
 		// Item always marshals; on the impossible error an empty digest never
 		// matches, so the report is left unconsumed rather than wrongly trusted.

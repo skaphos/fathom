@@ -220,24 +220,28 @@ func TestItemsDigest(t *testing.T) {
 		{Type: TypeKubeletHealthz},
 		{Type: TypeNodeCondition},
 	}
-	d := ItemsDigest(a)
+	d := ItemsDigest(a, 30*time.Second)
 	if len(d) != itemsDigestLength {
 		t.Fatalf("digest %q has length %d", d, len(d))
 	}
 	// Order-insensitive, and NodeCondition (operator-graded) does not participate.
-	if ItemsDigest([]Item{a[1], a[0]}) != d {
+	if ItemsDigest([]Item{a[1], a[0]}, 30*time.Second) != d {
 		t.Fatal("digest must not depend on item order or on NodeCondition items")
 	}
 	// A threshold change is a semantic change: the digest must move.
 	tightened := []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 15}, a[1]}
-	if ItemsDigest(tightened) == d {
+	if ItemsDigest(tightened, 30*time.Second) == d {
 		t.Fatal("changing a threshold must change the digest")
 	}
-	if ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}}) == ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"}}) {
+	if ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}}, time.Second) == ItemsDigest([]Item{{Type: TypeContainerRuntime, SocketPath: "/run/containerd/containerd.sock"}}, time.Second) {
 		t.Fatal("different sockets must digest differently")
 	}
-	if ItemsDigest(nil) != ItemsDigest([]Item{{Type: TypeNodeCondition}}) {
+	if ItemsDigest(nil, time.Second) != ItemsDigest([]Item{{Type: TypeNodeCondition}}, time.Second) {
 		t.Fatal("no agent-side items must digest the same regardless of NodeCondition items")
+	}
+	// The pass timeout grades the probes, so it is part of the identity.
+	if ItemsDigest(a, 30*time.Second) == ItemsDigest(a, 10*time.Second) {
+		t.Fatal("changing the pass timeout must change the digest")
 	}
 }
 

@@ -86,7 +86,7 @@ func writeNodeHealthReportObject(ctx context.Context, check *fathomv1alpha1.Node
 	if report.ItemsDigest == "" {
 		// What a genuine agent started from this check's current template
 		// stamps. A test that wants a report from a previous spec sets its own.
-		report.ItemsDigest = nodehealth.ItemsDigest(nodeHealthAgentItems(resolveNodeHealthItems(check)))
+		report.ItemsDigest = nodehealth.ItemsDigest(nodeHealthAgentItems(resolveNodeHealthItems(check)), nodeHealthAgentTimeout(check))
 	}
 	encoded, err := nodehealth.EncodeReport(report)
 	Expect(err).NotTo(HaveOccurred())

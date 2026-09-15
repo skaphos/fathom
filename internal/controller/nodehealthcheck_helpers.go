@@ -659,12 +659,12 @@ func nodeHealthEvaluationsInScope(evals []nodeHealthEvaluation, expected map[str
 // previous threshold is never graded as if it carried the current one. The
 // structural check binds shape: exactly one result per current item and
 // nothing else, so a removed item's result cannot linger in the roll-up.
-func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodehealth.Item) bool {
+func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodehealth.Item, timeout time.Duration) bool {
 	// An empty digest never matches, even if the operator's own computation
 	// were to fail the same way: "fail closed" must not depend on both sides
 	// failing identically.
 	return report.ItemsDigest != "" &&
-		report.ItemsDigest == nodehealth.ItemsDigest(agentItems) &&
+		report.ItemsDigest == nodehealth.ItemsDigest(agentItems, timeout) &&
 		nodehealth.ReportCovers(report, agentItems)
 }
 

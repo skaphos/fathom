@@ -170,8 +170,9 @@ type NodeHealthCheckItem struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) >= duration('1s')",message="timeout must be at least 1s"
 // +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) >= duration('10s')",message="interval must be at least 10s"
 // The comparison uses the effective interval: an omitted interval is 5m at
-// runtime, so timeout: 10m without an interval was admitted and then silently
-// capped. Keep the literal in step with DefaultNodeHealthCheckInterval.
+// runtime, so timeout: 10m without an interval is rejected here rather than
+// admitted and silently capped. Keep the literal in step with
+// DefaultNodeHealthCheckInterval.
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) <= (has(self.interval) ? duration(self.interval) : duration('5m'))",message="timeout must not exceed interval (5m when interval is omitted)"
 // Per-node results and HealthReport checks are keyed by the item's identity —
 // its type plus what it measures: the path for the headroom types, the socket

@@ -737,7 +737,7 @@ func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log 
 			log.Info("skipping malformed node health report with an unknown outcome", "configmap", cm.Name, "node", report.Node)
 			continue
 		}
-		if !nodeHealthReportCoversSpec(report, agentItems) {
+		if !nodeHealthReportCoversSpec(report, agentItems, nodeHealthAgentTimeout(check)) {
 			log.V(1).Info("skipping node health report that predates the current spec", "configmap", cm.Name, "node", report.Node)
 			continue
 		}
