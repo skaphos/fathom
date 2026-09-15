@@ -200,7 +200,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// while status describes a different one. The last complete verdict is
 	// retained, frozen, exactly as for any other incomplete window.
 	if rejected := rejectedNodeHealthItems(&check); len(rejected) > 0 {
-		message := fmt.Sprintf("Rejected %d item(s) whose path is outside the operator-approved allowlist: %s.", len(rejected), strings.Join(rejected, ", "))
+		message := fmt.Sprintf("Rejected %d item(s) whose path or socketPath is outside the operator-approved allowlists: %s.", len(rejected), strings.Join(rejected, ", "))
 		if err := r.revokeAgent(ctx, &check); err != nil {
 			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", err)
 		}

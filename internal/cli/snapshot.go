@@ -128,9 +128,18 @@ func nodeCertificateCheckTimeout(o client.Object) time.Duration {
 	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
 }
 
+// nodeHealthCheckCadence is the cadence the controller actually runs a
+// NodeHealthCheck at: spec.interval capped at the agent cadence. Status is
+// refreshed and the agent re-evaluates on it, so "next run" follows it, not
+// a 24h spec.interval.
+func nodeHealthCheckCadence(c *fathomv1alpha1.NodeHealthCheck) time.Duration {
+	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+	return min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+}
+
 func nodeHealthCheckSnapshot(o client.Object) snapshot {
 	c := o.(*fathomv1alpha1.NodeHealthCheck)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+	interval := nodeHealthCheckCadence(c)
 	// NodeHealthCheck writes its own bounded summary once it has rolled up;
 	// before that the Ready message is the best one-line explanation.
 	summary := c.Status.Summary
@@ -155,8 +164,7 @@ func nodeHealthCheckSnapshot(o client.Object) snapshot {
 func nodeHealthCheckTimeout(o client.Object) time.Duration {
 	c := o.(*fathomv1alpha1.NodeHealthCheck)
 	timeout := effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
-	return min(timeout, min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval))
+	return min(timeout, nodeHealthCheckCadence(c))
 }
 
 // nodeHealthCheckPassTimeout is the bound on one whole agent pass — the

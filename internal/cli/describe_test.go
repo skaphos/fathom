@@ -92,7 +92,7 @@ func TestDescribe_PerKind(t *testing.T) {
 			"Desired nodes: 3", "Reporting nodes: 3", "Consumed trigger: tok-2", "Interval: 1h0m0s (default)"}},
 		// The agent pass is capped at min(timeout, agent cadence): describe must
 		// show the value the runtime enforces, not a 24h timeout it never uses.
-		{"nhc/node-health", nhcLong, []string{"Kind: NodeHealthCheck", "Interval: 24h0m0s", "Timeout: 5m0s (declared 24h0m0s, capped at the agent cadence)"}},
+		{"nhc/node-health", nhcLong, []string{"Kind: NodeHealthCheck", "Interval: 5m0s (declared 24h0m0s, capped at the agent cadence)", "Timeout: 5m0s (declared 24h0m0s, capped at the agent cadence)"}},
 		{"hc/web", hc, []string{"Check ref: AddonCheck/coredns", "Description: front door", "Verdict: Pass", "Source interval: 1m0s", "Next run:", "Latest report: coredns-abc"}},
 		{"clusterhealth/prod", ch, []string{"Kind: ClusterHealth", "Selector: tier=core", "Namespaces: team-a", "Matched: 3", "Children:", "web", "Warn", "expiring", "3 matched, worst Fail"}},
 	}

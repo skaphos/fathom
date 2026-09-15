@@ -186,7 +186,14 @@ func (d *describer) spec(obj client.Object) {
 			d.sub("Paths", strings.Join(o.Spec.Paths, ", "))
 		}
 	case *fathomv1alpha1.NodeHealthCheck:
-		d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval))
+		// The runtime cadence is capped at the agent cadence; show what the
+		// controller applies, naming the declared value when it was capped.
+		declaredInterval := effectiveDuration(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+		if capped := nodeHealthCheckCadence(o); capped < declaredInterval {
+			d.sub("Interval", fmt.Sprintf("%s (declared %s, capped at the agent cadence)", capped, declaredInterval))
+		} else {
+			d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval))
+		}
 		// The agent's pass is bounded by min(timeout, agent cadence); show the
 		// value the runtime enforces, naming the declared one when it was capped.
 		declared := effectiveDuration(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)

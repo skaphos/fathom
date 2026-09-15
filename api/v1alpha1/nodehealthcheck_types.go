@@ -306,9 +306,10 @@ type NodeHealthCheckStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// LastRunTime records when the operator last evaluated the node-agent
-	// results. It is refreshed on the interval cadence even when the aggregate
-	// is unchanged, so downstream liveness stays fresh, and never moves
-	// backward: an incomplete window freezes it along with the verdict.
+	// results. It is refreshed on the capped agent cadence, min(interval, 5m),
+	// even when the aggregate is unchanged, so downstream liveness stays
+	// fresh, and never moves backward: an incomplete window freezes it along
+	// with the verdict.
 	// +optional
 	LastRunTime *metav1.Time `json:"lastRunTime,omitempty"`
 

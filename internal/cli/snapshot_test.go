@@ -259,3 +259,18 @@ func TestNodeHealthCheckPassTimeoutBudgetsEvaluationAndPublication(t *testing.T)
 		t.Fatalf("pass timeout = %v, want 40s (20s evaluation + 20s publication)", got)
 	}
 }
+
+// TestNodeHealthCheckNextRunFollowsTheAgentCadence pins that `ls`/`describe`
+// report the next run on the capped cadence the controller actually refreshes
+// status at, not a 24h spec.interval that has no runtime effect above 5m.
+func TestNodeHealthCheckNextRunFollowsTheAgentCadence(t *testing.T) {
+	t.Parallel()
+	last := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
+	day := &metav1.Duration{Duration: 24 * time.Hour}
+	c := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Interval: day}, Status: fathomv1alpha1.NodeHealthCheckStatus{LastRunTime: &last}}
+	got := nodeHealthCheckSnapshot(c).NextRun
+	want := nextRun(&last, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+	if got == nil || want == nil || !got.Equal(*want) {
+		t.Fatalf("next run = %v, want %v (last run + the 5m agent cadence)", got, want)
+	}
+}

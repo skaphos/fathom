@@ -151,7 +151,7 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	}
 	for _, typ := range []string{nodeHealthConditionAccepted, nodeHealthConditionReady} {
 		c := apiMeta.FindStatusCondition(got.Status.Conditions, typ)
-		if c == nil || c.Status != metav1.ConditionFalse || c.Reason != conditionReasonItemsRejected || !strings.Contains(c.Message, "DiskHeadroom /etc/shadow") {
+		if c == nil || c.Status != metav1.ConditionFalse || c.Reason != conditionReasonItemsRejected || !strings.Contains(c.Message, "DiskHeadroom path /etc/shadow") {
 			t.Fatalf("%s = %+v, want False/%s naming the item", typ, c, conditionReasonItemsRejected)
 		}
 	}

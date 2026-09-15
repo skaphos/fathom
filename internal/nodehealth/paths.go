@@ -7,9 +7,8 @@ package nodehealth
 
 import (
 	"path"
+	"sort"
 	"strings"
-
-	"github.com/skaphos/fathom/internal/nodecert"
 )
 
 // allowedPathPrefixes is the set of host directories a headroom check may
@@ -119,16 +118,45 @@ func SocketPathAllowed(p string) bool {
 
 // MountDirs computes the least-privilege set of host directories the agent
 // must have mounted read-only to measure every headroom item, collapsed so no
-// returned directory is a descendant of another. The computation is shared
-// with nodecert: a headroom path is a directory, which MinimalMountDirs uses
-// as-is. Socket paths are not included — the socket is mounted individually,
-// as a hostPath of type Socket, by the operator.
+// returned directory is a descendant of another. Every headroom path is a
+// directory by contract — nodecert.MinimalMountDirs is not reused because its
+// file heuristic turns a directory with a dot in its last segment
+// (/var/log/app.v1) into its parent, mounting the wrong thing. The host root
+// is never mounted. Socket paths are not included: the socket is mounted
+// individually with hostPath type Socket.
 func MountDirs(items []Item) []string {
-	var paths []string
+	seen := map[string]struct{}{}
 	for _, it := range items {
-		if it.Type == TypeDiskHeadroom || it.Type == TypeInodeHeadroom {
-			paths = append(paths, it.Path)
+		if it.Type != TypeDiskHeadroom && it.Type != TypeInodeHeadroom {
+			continue
+		}
+		p := strings.TrimSpace(it.Path)
+		if p == "" || !path.IsAbs(p) {
+			continue
+		}
+		clean := path.Clean(p)
+		if clean == "/" {
+			continue
+		}
+		seen[clean] = struct{}{}
+	}
+	dirs := make([]string, 0, len(seen))
+	for d := range seen {
+		dirs = append(dirs, d)
+	}
+	sort.Strings(dirs)
+	var kept []string
+	for _, d := range dirs {
+		covered := false
+		for _, k := range kept {
+			if d == k || strings.HasPrefix(d, k+"/") {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			kept = append(kept, d)
 		}
 	}
-	return nodecert.MinimalMountDirs(paths)
+	return kept
 }

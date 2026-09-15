@@ -664,11 +664,11 @@ func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 		switch c.Type {
 		case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
 			if !nodehealth.PathAllowed(c.Path) {
-				rejected = append(rejected, string(c.Type)+" "+c.Path)
+				rejected = append(rejected, string(c.Type)+" path "+c.Path)
 			}
 		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
 			if c.SocketPath != "" && !nodehealth.SocketPathAllowed(c.SocketPath) {
-				rejected = append(rejected, string(c.Type)+" "+c.SocketPath)
+				rejected = append(rejected, string(c.Type)+" socketPath "+c.SocketPath)
 			}
 		}
 	}
