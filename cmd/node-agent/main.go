@@ -73,6 +73,7 @@ type config struct {
 	metricsAddr      string
 	once             bool
 	fatalMetricsBind bool
+	statfsGuard      *nodehealth.StatfsGuard
 	// trigger is the run-now token this agent was started with (see
 	// nodecert.EnvRunTrigger); stamped into every report it publishes.
 	trigger string
@@ -112,6 +113,10 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 	// its fixed pod-network port in particular — the listener is incidental to
 	// publishing, and a bind failure is logged and tolerated exactly as before.
 	liveness := newLiveness(cfg.interval, cfg.timeout)
+	if cfg.statfsGuard == nil {
+		// One guard for the agent's lifetime: a hung mount is abandoned once.
+		cfg.statfsGuard = nodehealth.NewStatfsGuard()
+	}
 	srv := &http.Server{Addr: cfg.metricsAddr, Handler: metricsMux(liveness), ReadHeaderTimeout: 5 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() {
@@ -262,6 +267,7 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 		Items:             cfg.healthItems,
 		Timeout:           cfg.timeout,
 		KubeletHealthzURL: cfg.kubeletHealthzURL,
+		StatfsGuard:       cfg.statfsGuard,
 	})
 	cancelScan()
 	// ObservedAt is the evaluation's completion time, which is what the

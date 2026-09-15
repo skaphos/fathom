@@ -54,6 +54,10 @@ type ScanOptions struct {
 	Timeout time.Duration
 	// KubeletHealthzURL overrides DefaultKubeletHealthzURL.
 	KubeletHealthzURL string
+	// StatfsGuard, when set, remembers hung statfs calls across passes so a
+	// permanently hung mount is abandoned once, not once per cadence. The
+	// agent keeps one for its lifetime; nil gets a fresh per-pass guard.
+	StatfsGuard *StatfsGuard
 
 	// Seams for tests; nil selects the real implementation.
 	statfs     statfsFunc
@@ -64,21 +68,27 @@ type ScanOptions struct {
 // errStatfsTimeout marks a statfs that did not return before its deadline;
 // errStatfsHung marks a path whose earlier statfs still has not returned.
 var (
-	errStatfsTimeout = errors.New("statfs timed out")
+	errStatfsTimeout = errors.New("statfs did not return within the pass timeout")
 	errStatfsHung    = errors.New("statfs from a previous pass has not returned")
 )
 
-// statfsInFlight holds the paths whose statfs goroutine has not returned yet.
-// The syscall is uninterruptible, so an abandoned call can only be left to
-// finish on its own; this guard makes sure a permanently hung mount costs the
-// long-running agent exactly one abandoned goroutine, not one per cadence.
-var statfsInFlight sync.Map
+// StatfsGuard remembers the paths whose statfs goroutine has not returned
+// yet. The syscall is uninterruptible, so an abandoned call can only be left
+// to finish on its own; a guard that outlives the pass makes sure a
+// permanently hung mount costs the long-running agent exactly one abandoned
+// goroutine, not one per cadence. The agent keeps one for its lifetime and
+// hands it to every Scan; a Scan without one gets a fresh guard, which still
+// bounds the pass but remembers nothing between passes.
+type StatfsGuard struct{ inFlight sync.Map }
+
+// NewStatfsGuard returns an empty guard.
+func NewStatfsGuard() *StatfsGuard { return &StatfsGuard{} }
 
 // statfsWithin runs statfs on its own goroutine and gives up at ctx's
 // deadline. If an earlier call for the same path is still hung, no new one
 // is started: the path is reported hung immediately.
-func statfsWithin(ctx context.Context, statfs statfsFunc, path string) (unix.Statfs_t, error) {
-	if _, busy := statfsInFlight.LoadOrStore(path, struct{}{}); busy {
+func (g *StatfsGuard) statfsWithin(ctx context.Context, statfs statfsFunc, path string) (unix.Statfs_t, error) {
+	if _, busy := g.inFlight.LoadOrStore(path, struct{}{}); busy {
 		return unix.Statfs_t{}, errStatfsHung
 	}
 	type result struct {
@@ -87,7 +97,7 @@ func statfsWithin(ctx context.Context, statfs statfsFunc, path string) (unix.Sta
 	}
 	done := make(chan result, 1)
 	go func() {
-		defer statfsInFlight.Delete(path)
+		defer g.inFlight.Delete(path)
 		var st unix.Statfs_t
 		err := statfs(path, &st)
 		done <- result{st: st, err: err}
@@ -130,6 +140,10 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 	if healthzURL == "" {
 		healthzURL = DefaultKubeletHealthzURL
 	}
+	guard := opts.StatfsGuard
+	if guard == nil {
+		guard = NewStatfsGuard()
+	}
 
 	// Every network probe is launched first, concurrently, each under its own
 	// timeout derived from the pass context; only then does headroom run
@@ -159,7 +173,7 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 		switch it.Type {
 		case TypeDiskHeadroom, TypeInodeHeadroom:
 			hctx, cancel := context.WithTimeout(ctx, timeout)
-			out[i] = headroom(hctx, it, statfs, it.Type == TypeInodeHeadroom)
+			out[i] = headroom(hctx, it, statfs, guard, it.Type == TypeInodeHeadroom)
 			cancel()
 		case TypeKubeletHealthz, TypeContainerRuntime:
 			// Already in flight.
@@ -195,9 +209,12 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 // blocks available to an unprivileged caller — is used rather than Bfree so the
 // reservation ext4 keeps for root is not counted as headroom the kubelet's
 // workloads can use.
-func headroom(ctx context.Context, it Item, statfs statfsFunc, inodes bool) CheckResult {
+func headroom(ctx context.Context, it Item, statfs statfsFunc, guard *StatfsGuard, inodes bool) CheckResult {
 	res := CheckResult{Type: it.Type, Path: it.Path}
-	st, err := statfsWithin(ctx, statfs, it.Path)
+	if guard == nil {
+		guard = NewStatfsGuard()
+	}
+	st, err := guard.statfsWithin(ctx, statfs, it.Path)
 	if errors.Is(err, errStatfsTimeout) || errors.Is(err, errStatfsHung) {
 		// A statfs that does not return — a hung network or failing block
 		// device — cannot be cancelled; the goroutine is abandoned (once per

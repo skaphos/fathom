@@ -106,7 +106,7 @@ func TestSnapshot_PerKind(t *testing.T) {
 				Verdict: "Fail", Summary: "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free", LastRun: &snapLast,
 				NextRun: ptrTime(snapLast.Add(fathomv1alpha1.DefaultNodeHealthCheckInterval)), ReportName: "nhc-1", ConsumedTrigger: "tok-4",
 			},
-			wantTimeout: fathomv1alpha1.DefaultNodeHealthCheckTimeout,
+			wantTimeout: 2 * fathomv1alpha1.DefaultNodeHealthCheckTimeout, // evaluation + publication
 		},
 		{
 			name: "NodeHealthCheck falls back to the Ready message before its first roll-up",
@@ -114,7 +114,7 @@ func TestSnapshot_PerKind(t *testing.T) {
 				Status: fathomv1alpha1.NodeHealthCheckStatus{Conditions: ready},
 			},
 			want:        snapshot{Summary: "3 of 3 checks passed"},
-			wantTimeout: fathomv1alpha1.DefaultNodeHealthCheckTimeout,
+			wantTimeout: 2 * fathomv1alpha1.DefaultNodeHealthCheckTimeout, // evaluation + publication
 		},
 		{
 			name: "HealthCheck mirrors source observation and interval",

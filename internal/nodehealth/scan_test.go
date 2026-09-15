@@ -62,7 +62,7 @@ func TestHeadroomClassification(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := headroom(context.Background(), tt.item, tt.statfs, tt.item.Type == TypeInodeHeadroom)
+			got := headroom(context.Background(), tt.item, tt.statfs, nil, tt.item.Type == TypeInodeHeadroom)
 			if got.Outcome != tt.wantOutcome {
 				t.Fatalf("outcome = %s, want %s (%s)", got.Outcome, tt.wantOutcome, got.Summary)
 			}
@@ -99,7 +99,7 @@ func TestHeadroomStatfsFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, tt.err), false)
+			got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, tt.err), nil, false)
 			if got.Outcome != tt.wantOutcome || !strings.Contains(got.Summary, tt.wantInSum) {
 				t.Fatalf("got %s %q, want %s containing %q", got.Outcome, got.Summary, tt.wantOutcome, tt.wantInSum)
 			}
@@ -111,7 +111,7 @@ func TestHeadroomStatfsFailures(t *testing.T) {
 
 	t.Run("zero-block filesystem is an error, not a division", func(t *testing.T) {
 		t.Parallel()
-		got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, nil), false)
+		got := headroom(context.Background(), item, fakeStatfs(0, 0, 0, 0, nil), nil, false)
 		if got.Outcome != OutcomeError || !strings.Contains(got.Summary, "zero bytes") {
 			t.Fatalf("got %s %q", got.Outcome, got.Summary)
 		}
@@ -348,15 +348,15 @@ func TestInodeHeadroomWithoutInodeTableIsSkipped(t *testing.T) {
 		st.Files, st.Ffree = 0, 0
 		return nil
 	}
-	got := headroom(context.Background(), Item{Type: TypeInodeHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10}, btrfs, true)
+	got := headroom(context.Background(), Item{Type: TypeInodeHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: 20, CriticalPercentFree: 10}, btrfs, nil, true)
 	if got.Outcome != OutcomeSkipped || !strings.Contains(got.Summary, "inode") {
 		t.Fatalf("inodes on a btrfs-like filesystem = %+v, want Skipped", got)
 	}
-	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, btrfs, false); got.Outcome != OutcomePass {
+	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, btrfs, nil, false); got.Outcome != OutcomePass {
 		t.Fatalf("bytes on the same filesystem = %+v, want Pass (50%% free)", got)
 	}
 	noBlocks := func(_ string, st *unix.Statfs_t) error { return nil }
-	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, noBlocks, false); got.Outcome != OutcomeError {
+	if got := headroom(context.Background(), Item{Type: TypeDiskHeadroom, Path: "/var/lib/kubelet"}, noBlocks, nil, false); got.Outcome != OutcomeError {
 		t.Fatalf("zero bytes = %+v, want Error", got)
 	}
 }
@@ -412,7 +412,7 @@ func TestHungStatfsIsAbandonedOncePerPath(t *testing.T) {
 	defer close(release)
 	var calls atomic.Int32
 	hung := func(_ string, _ *unix.Statfs_t) error { calls.Add(1); <-release; return nil }
-	opts := ScanOptions{Items: []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/hung-once"}}, Timeout: 100 * time.Millisecond, statfs: hung}
+	opts := ScanOptions{Items: []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/hung-once"}}, Timeout: 100 * time.Millisecond, statfs: hung, StatfsGuard: NewStatfsGuard()}
 
 	first := Scan(context.Background(), opts)
 	second := Scan(context.Background(), opts)
