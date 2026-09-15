@@ -88,9 +88,9 @@ controller-runtime and Go metrics are exposed alongside them):
 | `fathom_adapter_run_duration_seconds` | histogram | `adapter`, `family`, `outcome` | How long adapter runs take, and their outcome distribution. |
 | `fathom_adapter_registered` | gauge | `adapter` | `1` for each adapter registered at startup — confirms the operator loaded the adapters you expect. |
 
-The check gauges cover all four check kinds (`AddonCheck`, `HealthCheck`,
-`ClusterHealth`, `NodeCertificateCheck`; `ClusterHealth` is cluster-scoped, so
-its `namespace` label is empty). Series exist from the moment the operator
+The check gauges cover every check kind (`AddonCheck`, `DNSCheck`,
+`NodeCertificateCheck`, `NodeHealthCheck`, `HealthCheck`, `ClusterHealth`;
+`ClusterHealth` is cluster-scoped, so its `namespace` label is empty). Series exist from the moment the operator
 first observes a check — reporting `result="Unknown"` and last-run `0` until
 the first evaluation completes — and are removed when the check is deleted.
 For the wrapper kinds the last-run timestamp follows the staleness of the
