@@ -222,7 +222,10 @@ func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.
 			if c.CriticalPercentFree != nil {
 				it.CriticalPercentFree = *c.CriticalPercentFree
 			}
-			// The Fail boundary can never sit above the Warn boundary.
+			// The Fail boundary can never sit above the Warn boundary. Reconcile
+			// rejects such a spec before these items are used
+			// (rejectedNodeHealthItems); the clamp only keeps this function from
+			// ever emitting an inverted pair.
 			if it.CriticalPercentFree > it.WarnPercentFree {
 				it.CriticalPercentFree = it.WarnPercentFree
 			}
@@ -652,12 +655,13 @@ func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodeh
 		nodehealth.ReportCovers(report, agentItems)
 }
 
-// rejectedNodeHealthItems returns the spec items the operator's allowlist
-// refuses (a headroom path or a runtime socket outside the approved
-// prefixes). Admission rejects these too, so the list is non-empty only for
-// an object stored under an older CRD. Such items are never silently
-// dropped: a check that cannot measure what it declares must say so, not
-// report a vacuous verdict from whatever remained.
+// rejectedNodeHealthItems returns the spec items the operator cannot run as
+// declared: a headroom path or runtime socket outside the approved prefixes,
+// or a critical threshold above the effective warning threshold. Admission
+// rejects all of these too, so the list is non-empty only for an object
+// stored under an older CRD. Such items are never silently dropped or
+// rewritten: a check that cannot measure what it declares must say so, not
+// grade a different policy than the object states.
 func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 	var rejected []string
 	for _, c := range check.Spec.Checks {
@@ -665,6 +669,16 @@ func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 		case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
 			if !nodehealth.PathAllowed(c.Path) {
 				rejected = append(rejected, string(c.Type)+" path "+c.Path)
+			}
+			warn, critical := fathomv1alpha1.DefaultNodeHealthWarnPercentFree, fathomv1alpha1.DefaultNodeHealthCriticalPercentFree
+			if c.WarnPercentFree != nil {
+				warn = *c.WarnPercentFree
+			}
+			if c.CriticalPercentFree != nil {
+				critical = *c.CriticalPercentFree
+			}
+			if critical > warn {
+				rejected = append(rejected, fmt.Sprintf("%s %s criticalPercentFree %d above warnPercentFree %d", c.Type, c.Path, critical, warn))
 			}
 		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
 			if c.SocketPath != "" && !nodehealth.SocketPathAllowed(c.SocketPath) {

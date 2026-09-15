@@ -200,14 +200,24 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// while status describes a different one. The last complete verdict is
 	// retained, frozen, exactly as for any other incomplete window.
 	if rejected := rejectedNodeHealthItems(&check); len(rejected) > 0 {
-		message := fmt.Sprintf("Rejected %d item(s) whose path or socketPath is outside the operator-approved allowlists: %s.", len(rejected), strings.Join(rejected, ", "))
-		if err := r.revokeAgent(ctx, &check); err != nil {
-			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", err)
-		}
+		message := fmt.Sprintf("Rejected %d item(s) the operator cannot run: %s.", len(rejected), strings.Join(rejected, ", "))
+		// The generation is rejected whether or not revocation succeeds, so
+		// Accepted=False is written first: a failed Delete must never persist
+		// Accepted=True for a refused spec.
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type: nodeHealthConditionAccepted, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
 			Reason: conditionReasonItemsRejected, Message: message,
 		})
+		if err := r.revokeAgent(ctx, &check); err != nil {
+			// The previous generation's agent — possibly host-network or root —
+			// may still be running; say so rather than leave its old posture
+			// advertised, and persist through failProvisioning (COR-2).
+			apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+				Type: nodeHealthConditionPrivileged, Status: metav1.ConditionUnknown, ObservedGeneration: check.Generation,
+				Reason: "AgentRevocationFailed", Message: "The specification was rejected but the previous generation's node-agent DaemonSet could not be removed and may still be running with its earlier privileges: " + err.Error(),
+			})
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", err)
+		}
 		r.setReady(&check, metav1.ConditionFalse, conditionReasonItemsRejected, message)
 		r.invalidateAgentConditions(&check, conditionReasonItemsRejected, "The specification was rejected; the node-agent DaemonSet has been removed and nothing is evaluated for this generation.")
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{

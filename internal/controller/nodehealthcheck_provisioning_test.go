@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/utils/ptr"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -223,5 +225,74 @@ func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
 	}
 	if got.Status.LastResult != "Pass" {
 		t.Fatal("the last complete verdict must be retained (COR-2)")
+	}
+}
+
+// TestNodeHealthRejectedSpecWithFailedRevocation pins that a failed
+// revocation is still a rejected generation: Accepted=False is persisted
+// (never Accepted=True for a refused spec), AgentPrivileged says the previous
+// agent may still be running, Ready carries the error, the verdict is kept,
+// and the error is returned for retry.
+func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-stuck", Namespace: "default", Generation: 2},
+		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"}}},
+		Status: fathomv1alpha1.NodeHealthCheckStatus{ObservedGeneration: 1, LastResult: "Pass", Conditions: []metav1.Condition{
+			{Type: nodeHealthConditionAccepted, Status: metav1.ConditionTrue, Reason: "SpecAccepted", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
+		}},
+	}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: "default"}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, agent).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			if _, ok := obj.(*appsv1.DaemonSet); ok {
+				return apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, obj.GetName(), errors.New("delete denied"))
+			}
+			return c.Delete(ctx, obj, opts...)
+		}}).Build()
+	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-stuck", Namespace: "default"}}); err == nil {
+		t.Fatal("a failed revocation must be returned for retry")
+	}
+	got := &fathomv1alpha1.NodeHealthCheck{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-stuck", Namespace: "default"}, got); err != nil {
+		t.Fatal(err)
+	}
+	acc := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionAccepted)
+	if acc == nil || acc.Status != metav1.ConditionFalse || acc.Reason != conditionReasonItemsRejected || acc.ObservedGeneration != 2 {
+		t.Fatalf("Accepted = %+v, want False/ItemsRejected at generation 2 even though revocation failed", acc)
+	}
+	priv := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionPrivileged)
+	if priv == nil || priv.Status != metav1.ConditionUnknown || priv.Reason != "AgentRevocationFailed" || priv.ObservedGeneration != 2 {
+		t.Fatalf("AgentPrivileged = %+v, want Unknown/AgentRevocationFailed at generation 2", priv)
+	}
+	ready := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "AgentRevocationFailed" {
+		t.Fatalf("Ready = %+v, want False/AgentRevocationFailed", ready)
+	}
+	if got.Status.LastResult != "Pass" {
+		t.Fatal("the last complete verdict must be retained")
+	}
+}
+
+// TestNodeHealthInvertedThresholdsAreRejected pins that an older-CRD object
+// whose critical threshold sits above the effective warning threshold is a
+// rejected generation, not a silently rewritten policy.
+func TestNodeHealthInvertedThresholdsAreRejected(t *testing.T) {
+	t.Parallel()
+	check := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
+		{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", CriticalPercentFree: ptr.To[int32](30)}, // warn defaults to 20
+		{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/log", WarnPercentFree: ptr.To[int32](50), CriticalPercentFree: ptr.To[int32](10)},
+	}}}
+	rejected := rejectedNodeHealthItems(check)
+	if len(rejected) != 1 || !strings.Contains(rejected[0], "criticalPercentFree 30 above warnPercentFree 20") {
+		t.Fatalf("rejected = %v, want exactly the inverted DiskHeadroom item", rejected)
 	}
 }

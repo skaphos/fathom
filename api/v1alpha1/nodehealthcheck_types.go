@@ -250,8 +250,9 @@ type NodeHealthCheckSpec struct {
 	// transitions, whatever the interval.
 	// Headroom, kubelet, and runtime liveness change on the order of minutes,
 	// so a long interval must not accept a measurement that old: a 24h
-	// interval still detects a disk filling up within minutes, and simply
-	// refreshes the HealthReport on its own cadence.
+	// interval still detects a disk filling up within minutes. Unchanged
+	// evaluations refresh only status liveness (LastRunTime); a new
+	// HealthReport is written only when the verdict transitions.
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 
