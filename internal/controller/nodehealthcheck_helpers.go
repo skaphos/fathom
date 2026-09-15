@@ -138,21 +138,28 @@ func nodeHealthRequeueAfter(check *fathomv1alpha1.NodeHealthCheck) time.Duration
 // nodeHealthReportMaxAge is how old a node report may be and still count. It
 // follows the agent cadence and the agent's (capped) timeout, never the
 // roll-up cadence (#270).
+//
+// The bound is a full cycle, not cadence plus one timeout. observedAt is
+// stamped when evaluation completes; the report then takes up to one timeout
+// to publish, the next tick can be a whole cadence away, and the next report
+// takes up to one timeout to evaluate and one more to publish before it is
+// visible. With timeout == interval (legal) a continuously running agent was
+// therefore judged stale on every cycle and its coverage frozen.
 func nodeHealthReportMaxAge(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
-	return nodeHealthAgentInterval(check) + nodeHealthAgentTimeout(check)
+	return nodeHealthAgentInterval(check) + 3*nodeHealthAgentTimeout(check)
 }
 
 func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool {
 	if observedAt.IsZero() {
 		return false
 	}
-	// A report from the future is a clock problem, not evidence. It must not
-	// extend the freshness window (measured from a future observedAt, a report
-	// stayed fresh for up to 2*maxAge), but neither may it exclude the node:
-	// rejecting it left a node whose clock runs fast permanently missing from
-	// coverage, indistinguishable from a dead agent. Age is therefore measured
-	// from min(observedAt, now) — the report counts as observed on arrival.
-	// The skew itself is surfaced by the collector (nodeHealthClockSkewNotable).
+	// observedAt has normally been bounded by the API server's write time
+	// already (nodeHealthObservedBound), which is what stops a fast node clock
+	// from stretching the window. This clamp is the fallback for a ConfigMap
+	// without managedFields: a future stamp counts as observed now rather than
+	// excluding the node, which left a fast-clocked node permanently missing
+	// from coverage, indistinguishable from a dead agent. Large skew is logged
+	// by the collector (nodeHealthClockSkewNotable).
 	if observedAt.After(now) {
 		observedAt = now
 	}

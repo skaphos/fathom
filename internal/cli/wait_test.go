@@ -192,3 +192,13 @@ func TestWaitForRun_FailsFastWhenOperatorCannotRun(t *testing.T) {
 		t.Fatalf("a recoverable Ready=False must keep waiting, got %+v", res)
 	}
 }
+
+// TestBlockingReasonsIncludeItemsRejected pins that a NodeHealthCheck whose
+// spec the operator rejected fails `run --wait` fast instead of waiting for a
+// trigger the controller will never consume.
+func TestBlockingReasonsIncludeItemsRejected(t *testing.T) {
+	t.Parallel()
+	if !blockingReasons["ItemsRejected"] {
+		t.Fatal("ItemsRejected must be a blocking Ready=False reason for run --wait")
+	}
+}

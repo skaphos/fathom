@@ -489,9 +489,9 @@ layout is in [code-map.md](code-map.md).
 
 ## Known Limitations
 
-- **Compiled-in wrapper targets.** `HealthCheck` supports the three specialized
-  resources in this release: `AddonCheck`, `DNSCheck`, and
-  `NodeCertificateCheck`. It is not a runtime target-plugin API; other kinds
+- **Compiled-in wrapper targets.** `HealthCheck` supports the four specialized
+  resources in this release: `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`,
+  and `NodeHealthCheck`. It is not a runtime target-plugin API; other kinds
   are rejected with `Ready=False / UnsupportedKind`.
 - **Cluster-wide wrapper selection.** `ClusterHealth` is cluster-scoped and
   selects `HealthCheck`s under the allowlist / denylist / open namespace filter

@@ -103,7 +103,11 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 	}
 	client := opts.httpClient
 	if client == nil {
-		client = &http.Client{}
+		// The probe grades the kubelet's own response. Following a redirect
+		// would grade whatever it pointed at instead — a 3xx from the health
+		// endpoint (or from some other listener on the host network) is a
+		// failure of the endpoint, not a 2xx to chase.
+		client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {

@@ -209,7 +209,11 @@ func readNodeHealthCheckTarget(
 		Summary:          summary,
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
-		Interval:         nodeHealthInterval(&target),
+		// The wrapper's SourceInterval drives its staleness judgement, so it is
+		// the capped agent cadence, not spec.interval: a NodeHealthCheck with a
+		// 24h interval whose agents have gone quiet must not read as current
+		// for days (transition roll-ups still follow spec.interval).
+		Interval: nodeHealthRequeueAfter(&target),
 	}, nil
 }
 

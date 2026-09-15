@@ -169,7 +169,10 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		observeCheck(r.Recorder, &check, nodeHealthKind,
 			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
-			check.Status.LastRunTime, nodeHealthInterval(&check), err)
+			// The staleness cadence published to monitoring (FathomCheckStale)
+			// is the capped agent cadence, not spec.interval: a frozen verdict on
+			// a 24h check must read as stale within minutes, not days.
+			check.Status.LastRunTime, nodeHealthRequeueAfter(&check), err)
 	}()
 	check.Status.ObservedGeneration = check.Generation
 	accepted := metav1.Condition{

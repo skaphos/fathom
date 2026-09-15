@@ -382,3 +382,23 @@ func TestHeadroomStatfsHonoursTheDeadline(t *testing.T) {
 		t.Fatalf("hung statfs = %+v, want Error naming the timeout", results)
 	}
 }
+
+// TestKubeletHealthzDoesNotFollowRedirects pins that a 3xx from the health
+// endpoint is graded on its own status, never on the target it points at.
+func TestKubeletHealthzDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer ok.Close()
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, ok.URL+"/healthz", http.StatusFound)
+	}))
+	defer redirecting.Close()
+	results := Scan(context.Background(), ScanOptions{
+		Items:             []Item{{Type: TypeKubeletHealthz}},
+		Timeout:           2 * time.Second,
+		KubeletHealthzURL: redirecting.URL + "/healthz",
+	})
+	if len(results) != 1 || results[0].Outcome != OutcomeFail {
+		t.Fatalf("a redirecting health endpoint = %+v, want Fail (its own 302), not the redirect target's 200", results)
+	}
+}

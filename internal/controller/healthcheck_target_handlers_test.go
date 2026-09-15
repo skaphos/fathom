@@ -510,3 +510,31 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestNodeHealthCheckTargetIntervalIsTheAgentCadence pins that the wrapper's
+// SourceInterval — its staleness cadence — is the capped agent cadence, so a
+// 24h NodeHealthCheck whose agents stop reporting reads as stale in minutes.
+func TestNodeHealthCheckTargetIntervalIsTheAgentCadence(t *testing.T) {
+	t.Parallel()
+	day := metav1.Duration{Duration: 24 * time.Hour}
+	target := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "daily", Namespace: "source-ns"},
+		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Interval: &day},
+	}
+	scheme := runtime.NewScheme()
+	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(target).Build()
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
+	if !ok {
+		t.Fatal("NodeHealthCheck handler not registered")
+	}
+	got, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "daily"})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got.Interval != fathomv1alpha1.MaxNodeHealthCheckAgentInterval {
+		t.Fatalf("SourceInterval = %v, want the %v agent cadence, not the 24h roll-up interval", got.Interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+	}
+}

@@ -279,7 +279,7 @@ func TestNodeHealthCadence(t *testing.T) {
 	if got := nodeHealthAgentInterval(long); got != maxNodeHealthAgentInterval {
 		t.Fatalf("agent interval = %v, want the %v cap", got, maxNodeHealthAgentInterval)
 	}
-	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+30*time.Second {
+	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+3*30*time.Second {
 		t.Fatalf("report max age = %v, must follow the agent cadence, not the 24h interval", got)
 	}
 	// The requeue follows the agent cadence: a 24h interval is still looked at
@@ -293,7 +293,7 @@ func TestNodeHealthCadence(t *testing.T) {
 	if got := nodeHealthAgentTimeout(long); got != maxNodeHealthAgentInterval {
 		t.Fatalf("agent timeout = %v, want the %v cadence cap", got, maxNodeHealthAgentInterval)
 	}
-	if got := nodeHealthReportMaxAge(long); got != 2*maxNodeHealthAgentInterval {
+	if got := nodeHealthReportMaxAge(long); got != 4*maxNodeHealthAgentInterval {
 		t.Fatalf("report max age with a 24h timeout = %v, want %v", got, 2*maxNodeHealthAgentInterval)
 	}
 
@@ -538,5 +538,26 @@ func TestNodeHealthObservedBoundUsesTheServerClock(t *testing.T) {
 	bound := nodeHealthObservedBound(server.Add(5*time.Minute), old)
 	if !nodeHealthReportFresh(bound, server, 10*time.Minute) || nodeHealthReportFresh(bound, server, 8*time.Minute) {
 		t.Fatal("age must follow the server write time, not the future stamp")
+	}
+}
+
+// TestNodeHealthReportMaxAgeCoversAFullCycle pins the worst-case timeline for
+// timeout == interval, which the schema allows: report k is stamped at the end
+// of its evaluation, publishes for up to one timeout, the next tick arrives up
+// to one cadence later, and report k+1 evaluates and publishes for a timeout
+// each before it is visible. Report k must stay fresh until then.
+func TestNodeHealthReportMaxAgeCoversAFullCycle(t *testing.T) {
+	t.Parallel()
+	check := nhCheck()
+	check.Spec.Interval = &metav1.Duration{Duration: 10 * time.Second}
+	check.Spec.Timeout = &metav1.Duration{Duration: 10 * time.Second}
+	maxAge := nodeHealthReportMaxAge(check)
+	stamp := time.Now()
+	nextVisible := stamp.Add(10*time.Second /*publish k*/ + 10*time.Second /*wait for tick*/ + 10*time.Second /*evaluate k+1*/ + 10*time.Second /*publish k+1*/)
+	if !nodeHealthReportFresh(stamp, nextVisible, maxAge) {
+		t.Fatalf("report k must still be fresh when report k+1 becomes visible (maxAge %v)", maxAge)
+	}
+	if nodeHealthReportFresh(stamp, nextVisible.Add(11*time.Second), maxAge) {
+		t.Fatal("a report a full cycle plus a cadence old is stale")
 	}
 }

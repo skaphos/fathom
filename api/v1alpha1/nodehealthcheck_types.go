@@ -240,8 +240,8 @@ type NodeHealthCheckSpec struct {
 	// Liveness runs on a second, capped cadence: the node-agent re-evaluates
 	// at min(interval, 5m), the operator reconciles on that same cadence so a
 	// silently dead agent is noticed within minutes whatever the interval, and
-	// a report counts as fresh for that agent cadence plus the capped Timeout
-	// — never for the full interval.
+	// a report counts as fresh for one full agent cycle — that cadence plus
+	// three times the capped Timeout — never for the full interval.
 	// Headroom, kubelet, and runtime liveness change on the order of minutes,
 	// so a long interval must not accept a measurement that old: a 24h
 	// interval still detects a disk filling up within minutes, and simply

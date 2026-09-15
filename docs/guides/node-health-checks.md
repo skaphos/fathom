@@ -104,7 +104,11 @@ is rejected (effective warn is 20). Zero is legal (`warnPercentFree: 0` means
 defaults are applied at runtime rather than by the schema because a schema
 default on one type's field would break the type rules for every other item.
 
-Items must be unique by `(type, path)`, and the list is capped at 16.
+Items must be unique by what they measure — `(type, path)` for the headroom
+types, `(type, socketPath)` for `ContainerRuntime` (an omitted socket counts
+as the default, so an explicit default duplicates an omitted one), and a
+single item for each of the pathless types — and the list is capped at 16.
+Two `ContainerRuntime` items with different sockets are distinct.
 
 ### Which path to measure
 
@@ -184,10 +188,12 @@ on a control-plane node is a decision the author makes, not a default.
 
 `spec.interval` (default `5m`, floor `10s`) is how often the operator refreshes
 the rolled-up `HealthReport` and the check's liveness. The **agent** re-evaluates
-at `min(interval, 5m)`, and a report counts as fresh for that agent cadence
-plus the agent's *effective* timeout, `min(spec.timeout, agent cadence)` —
-never for the full interval. A `24h` interval with a `24h` timeout therefore
-accepts a report for at most 10 minutes, not 48 hours. Headroom, kubelet, and
+at `min(interval, 5m)`, and a report counts as fresh for one full cycle: that
+agent cadence plus three times the agent's *effective* timeout,
+`min(spec.timeout, agent cadence)` — this pass's publication, then the next
+pass's evaluation and publication — never for the full interval. A `24h`
+interval with a `24h` timeout therefore accepts a report for at most 20
+minutes, not 48 hours. Headroom, kubelet, and
 runtime liveness change on the order of minutes, so a long interval must not
 accept a measurement that old: a `24h` interval still detects a disk filling
 up within minutes (the fold transitions immediately, and a new `HealthReport`

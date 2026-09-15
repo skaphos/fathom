@@ -34,6 +34,10 @@ type waitResult struct {
 // consume a trigger: the check is misconfigured or has nothing to run on.
 // Waiting further would only time out, so --wait fails fast and says why.
 var blockingReasons = map[string]bool{
+	// NodeHealthCheck: an item the operator's allowlist refuses (an object stored
+	// under an older CRD). No agent is provisioned and the trigger is never
+	// consumed, so waiting can only time out.
+	"ItemsRejected":       true,
 	"InvalidPolicy":       true,
 	"MissingAdapter":      true,
 	"AdapterLookupFailed": true,
