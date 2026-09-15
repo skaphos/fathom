@@ -242,3 +242,20 @@ func TestNodeHealthCheckTimeoutIsCappedAtTheAgentCadence(t *testing.T) {
 		t.Fatalf("timeout = %v, want 20s", got)
 	}
 }
+
+// TestNodeHealthCheckPassTimeoutBudgetsEvaluationAndPublication pins that
+// the wait budget covers a whole pass — evaluation, then publication, each
+// bounded by the effective timeout — so a slow but successful API write is
+// not reported as a timed-out run.
+func TestNodeHealthCheckPassTimeoutBudgetsEvaluationAndPublication(t *testing.T) {
+	t.Parallel()
+	day := &metav1.Duration{Duration: 24 * time.Hour}
+	long := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Interval: day, Timeout: day}}
+	if got := nodeHealthCheckPassTimeout(long); got != 2*fathomv1alpha1.MaxNodeHealthCheckAgentInterval {
+		t.Fatalf("pass timeout = %v, want twice the %v agent cadence cap", got, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+	}
+	plain := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Timeout: &metav1.Duration{Duration: 20 * time.Second}}}
+	if got := nodeHealthCheckPassTimeout(plain); got != 40*time.Second {
+		t.Fatalf("pass timeout = %v, want 40s (20s evaluation + 20s publication)", got)
+	}
+}

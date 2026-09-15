@@ -61,20 +61,33 @@ type ScanOptions struct {
 	httpClient *http.Client
 }
 
-// errStatfsTimeout marks a statfs that did not return before its deadline.
-var errStatfsTimeout = errors.New("statfs timed out")
+// errStatfsTimeout marks a statfs that did not return before its deadline;
+// errStatfsHung marks a path whose earlier statfs still has not returned.
+var (
+	errStatfsTimeout = errors.New("statfs timed out")
+	errStatfsHung    = errors.New("statfs from a previous pass has not returned")
+)
+
+// statfsInFlight holds the paths whose statfs goroutine has not returned yet.
+// The syscall is uninterruptible, so an abandoned call can only be left to
+// finish on its own; this guard makes sure a permanently hung mount costs the
+// long-running agent exactly one abandoned goroutine, not one per cadence.
+var statfsInFlight sync.Map
 
 // statfsWithin runs statfs on its own goroutine and gives up at ctx's
-// deadline. The syscall itself is uninterruptible, so the goroutine may
-// outlive the call; that is the price of not letting one hung mount wedge
-// the whole agent.
+// deadline. If an earlier call for the same path is still hung, no new one
+// is started: the path is reported hung immediately.
 func statfsWithin(ctx context.Context, statfs statfsFunc, path string) (unix.Statfs_t, error) {
+	if _, busy := statfsInFlight.LoadOrStore(path, struct{}{}); busy {
+		return unix.Statfs_t{}, errStatfsHung
+	}
 	type result struct {
 		st  unix.Statfs_t
 		err error
 	}
 	done := make(chan result, 1)
 	go func() {
+		defer statfsInFlight.Delete(path)
 		var st unix.Statfs_t
 		err := statfs(path, &st)
 		done <- result{st: st, err: err}
@@ -118,19 +131,16 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 		healthzURL = DefaultKubeletHealthzURL
 	}
 
-	// The network probes run concurrently, each under its own timeout derived
-	// from the pass context. Run one after another under a shared deadline, a
-	// hung runtime socket would exhaust the budget and hand the kubelet probe
-	// an already-expired context, grading a healthy kubelet as Fail. Headroom
-	// is a local statfs and runs inline.
+	// Every network probe is launched first, concurrently, each under its own
+	// timeout derived from the pass context; only then does headroom run
+	// inline. Run one after another under a shared deadline, a hung runtime
+	// socket (or a hung statfs, which comes first in item order) would exhaust
+	// the budget and hand the kubelet probe an already-expired context,
+	// grading a healthy kubelet as Fail without ever asking it.
 	out := make([]CheckResult, len(opts.Items))
 	var probes sync.WaitGroup
 	for i, it := range opts.Items {
 		switch it.Type {
-		case TypeDiskHeadroom, TypeInodeHeadroom:
-			hctx, cancel := context.WithTimeout(ctx, timeout)
-			out[i] = headroom(hctx, it, statfs, it.Type == TypeInodeHeadroom)
-			cancel()
 		case TypeKubeletHealthz:
 			probes.Add(1)
 			go func(i int) {
@@ -143,6 +153,16 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 				defer probes.Done()
 				out[i] = containerRuntime(ctx, dial, socket, timeout)
 			}(i, it.SocketPath)
+		}
+	}
+	for i, it := range opts.Items {
+		switch it.Type {
+		case TypeDiskHeadroom, TypeInodeHeadroom:
+			hctx, cancel := context.WithTimeout(ctx, timeout)
+			out[i] = headroom(hctx, it, statfs, it.Type == TypeInodeHeadroom)
+			cancel()
+		case TypeKubeletHealthz, TypeContainerRuntime:
+			// Already in flight.
 		case TypeNodeCondition:
 			// Operator-evaluated from the Node object; nothing for the agent.
 			out[i] = CheckResult{}
@@ -178,12 +198,13 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 func headroom(ctx context.Context, it Item, statfs statfsFunc, inodes bool) CheckResult {
 	res := CheckResult{Type: it.Type, Path: it.Path}
 	st, err := statfsWithin(ctx, statfs, it.Path)
-	if errors.Is(err, errStatfsTimeout) {
+	if errors.Is(err, errStatfsTimeout) || errors.Is(err, errStatfsHung) {
 		// A statfs that does not return — a hung network or failing block
-		// device — cannot be cancelled; the goroutine is abandoned and the
-		// pass moves on so one wedged mount cannot stop every other check.
+		// device — cannot be cancelled; the goroutine is abandoned (once per
+		// path, never per pass) and the pass moves on so one wedged mount
+		// cannot stop every other check.
 		res.Outcome = OutcomeError
-		res.Summary = "cannot stat filesystem: statfs did not return within the pass timeout"
+		res.Summary = "cannot stat filesystem: " + err.Error()
 		return res
 	}
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -400,5 +401,55 @@ func TestKubeletHealthzDoesNotFollowRedirects(t *testing.T) {
 	})
 	if len(results) != 1 || results[0].Outcome != OutcomeFail {
 		t.Fatalf("a redirecting health endpoint = %+v, want Fail (its own 302), not the redirect target's 200", results)
+	}
+}
+
+// TestHungStatfsIsAbandonedOncePerPath pins the leak bound: a permanently
+// hung mount costs exactly one abandoned goroutine. The next pass does not
+// start a second statfs for the path; it reports the path hung immediately.
+func TestHungStatfsIsAbandonedOncePerPath(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	var calls atomic.Int32
+	hung := func(_ string, _ *unix.Statfs_t) error { calls.Add(1); <-release; return nil }
+	opts := ScanOptions{Items: []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/hung-once"}}, Timeout: 100 * time.Millisecond, statfs: hung}
+
+	first := Scan(context.Background(), opts)
+	second := Scan(context.Background(), opts)
+	if calls.Load() != 1 {
+		t.Fatalf("statfs started %d times for one hung path, want exactly 1", calls.Load())
+	}
+	if first[0].Outcome != OutcomeError || second[0].Outcome != OutcomeError || !strings.Contains(second[0].Summary, "previous pass") {
+		t.Fatalf("passes = %+v / %+v, want Error both times, the second naming the earlier hung call", first[0], second[0])
+	}
+}
+
+// TestNetworkProbesAreNotStarvedByAHungStatfs pins that a hung headroom
+// path, which sorts before the network items, cannot hand the kubelet probe
+// an expired context: the probes are launched before headroom runs inline.
+func TestNetworkProbesAreNotStarvedByAHungStatfs(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	hung := func(_ string, _ *unix.Statfs_t) error { <-release; return nil }
+	kubelet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer kubelet.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond) // the shared pass context
+	defer cancel()
+	results := Scan(ctx, ScanOptions{
+		Items:             []Item{{Type: TypeDiskHeadroom, Path: "/var/lib/hung-starve"}, {Type: TypeKubeletHealthz}},
+		Timeout:           300 * time.Millisecond,
+		KubeletHealthzURL: kubelet.URL + "/healthz",
+		statfs:            hung,
+	})
+	byType := map[string]CheckResult{}
+	for _, r := range results {
+		byType[r.Type] = r
+	}
+	if byType[TypeKubeletHealthz].Outcome != OutcomePass {
+		t.Fatalf("kubelet beside a hung statfs = %+v, want Pass", byType[TypeKubeletHealthz])
+	}
+	if byType[TypeDiskHeadroom].Outcome != OutcomeError {
+		t.Fatalf("hung headroom = %+v, want Error", byType[TypeDiskHeadroom])
 	}
 }

@@ -130,7 +130,7 @@ var kinds = []*kindDescriptor{
 		},
 		Paused:         func(client.Object) bool { return false },
 		Snapshot:       nodeHealthCheckSnapshot,
-		DefaultTimeout: nodeHealthCheckTimeout,
+		DefaultTimeout: nodeHealthCheckPassTimeout,
 	},
 	{
 		Kind: "HealthCheck", Resource: "healthchecks", Aliases: []string{"hc"},

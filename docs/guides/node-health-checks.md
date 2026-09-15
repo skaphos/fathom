@@ -200,10 +200,12 @@ up within minutes (the fold transitions immediately, and a new `HealthReport`
 is written), and simply refreshes on its own cadence when nothing changed.
 
 `spec.timeout` (default `30s`, floor `1s`, at most `interval`) bounds one agent
-pass, including the kubelet and socket probes — capped at the agent cadence,
-since a pass can never usefully outlast the cadence it runs on. With a `24h`
-interval and timeout the agent still stops a pass at `5m`. `fathomctl run
---wait` uses the same effective value.
+pass's evaluation, including the kubelet and socket probes — capped at the
+agent cadence, since a pass can never usefully outlast the cadence it runs on.
+With a `24h` interval and timeout the agent still stops an evaluation at
+`5m`. Publishing the report is bounded separately by the same effective
+timeout, so a whole pass takes at most twice it; `fathomctl run --wait`
+budgets for that whole pass.
 
 ## Coverage, freezing, and what the conditions mean
 

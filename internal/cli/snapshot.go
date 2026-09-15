@@ -159,6 +159,15 @@ func nodeHealthCheckTimeout(o client.Object) time.Duration {
 	return min(timeout, min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval))
 }
 
+// nodeHealthCheckPassTimeout is the bound on one whole agent pass — the
+// evaluation and then the publication of its report, each bounded by the
+// effective timeout — which is what `run --wait` must budget for. Budgeting a
+// single timeout let a pass whose API write was merely slow be reported as a
+// timed-out run.
+func nodeHealthCheckPassTimeout(o client.Object) time.Duration {
+	return 2 * nodeHealthCheckTimeout(o)
+}
+
 func healthCheckSnapshot(o client.Object) snapshot {
 	c := o.(*fathomv1alpha1.HealthCheck)
 	var interval time.Duration
