@@ -50,7 +50,9 @@ repositories:
     url: registry-1.docker.io/envoyproxy
     oci: true
   - name: istio
-    url: https://istio-release.storage.googleapis.com/charts
+    # Istio is retiring its GCP-hosted artifacts; blob.istio.io is the
+    # supported repository for all Istio chart versions.
+    url: https://blob.istio.io/istio-release/charts
   - name: argo
     url: https://argoproj.github.io/argo-helm
   # Community chart for NodeLocal DNSCache (upstream ships raw manifests only).
