@@ -192,8 +192,9 @@ adapter level is forced to `Error`.
 `internal/controller/healthcheck_controller.go`
 
 - **Owns / produces:** `HealthCheck.status` only. It creates nothing.
-- **Watches:** `HealthCheck` (`For`) plus typed `AddonCheck`, `DNSCheck`, and
-  `NodeCertificateCheck` watches from the target-handler registry. A shared
+- **Watches:** `HealthCheck` (`For`) plus typed `AddonCheck`, `DNSCheck`,
+  `NodeCertificateCheck`, and `NodeHealthCheck` watches from the
+  target-handler registry. A shared
   mapper enqueues only wrappers whose normalized API version, kind, effective
   namespace, and name exactly match the source. A
   `ResourceVersionChangedPredicate` filters no-op events.
@@ -202,7 +203,7 @@ adapter level is forced to `Error`.
   `lastReportName`, `sourceInterval`). An empty `checkRef.apiVersion` defaults
   to `fathom.skaphos.io/v1alpha1`; other nonempty versions yield
   `Ready=False / UnsupportedAPIVersion`. Supported kinds are `AddonCheck`,
-  `DNSCheck`, and `NodeCertificateCheck`; any other kind yields
+  `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck`; any other kind yields
   `Ready=False / UnsupportedKind`. Missing targets clear the snapshot with
   `TargetNotFound`; transient lookup failures preserve it with
   `TargetLookupFailed` and return the error for retry. An omitted
