@@ -301,12 +301,19 @@ func TestScanAndPublishHealthPersistsTimeoutFailures(t *testing.T) {
 		kubeletHealthzURL: hang.URL + "/healthz",
 		timeout:           300 * time.Millisecond,
 	}
-	report, err := scanAndPublishHealth(context.Background(), kube, cfg, time.Now())
+	base := time.Now()
+	report, err := scanAndPublishHealth(context.Background(), kube, cfg, base)
 	if err != nil {
 		t.Fatalf("a timed-out probe must still publish: %v", err)
 	}
 	if report.Aggregate != nodehealth.OutcomeFail {
 		t.Fatalf("aggregate = %s, want Fail", report.Aggregate)
+	}
+	// ObservedAt is the completion time: a probe that used its whole timeout
+	// must not publish a report stamped from before it started, or the
+	// operator's freshness bound would already be partly spent.
+	if report.ObservedAt.Before(base.Add(cfg.timeout)) {
+		t.Fatalf("ObservedAt %v predates the scan's completion (base %v + timeout %v)", report.ObservedAt, base, cfg.timeout)
 	}
 	cm, err := kube.CoreV1().ConfigMaps("ns").Get(context.Background(), cfg.configMapName, metav1.GetOptions{})
 	if err != nil {

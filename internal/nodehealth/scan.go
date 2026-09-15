@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"sync"
 	"syscall"
 	"time"
 
@@ -87,24 +88,49 @@ func Scan(ctx context.Context, opts ScanOptions) []CheckResult {
 		healthzURL = DefaultKubeletHealthzURL
 	}
 
-	var out []CheckResult
-	for _, it := range opts.Items {
+	// The network probes run concurrently, each under its own timeout derived
+	// from the pass context. Run one after another under a shared deadline, a
+	// hung runtime socket would exhaust the budget and hand the kubelet probe
+	// an already-expired context, grading a healthy kubelet as Fail. Headroom
+	// is a local statfs and runs inline.
+	out := make([]CheckResult, len(opts.Items))
+	var probes sync.WaitGroup
+	for i, it := range opts.Items {
 		switch it.Type {
 		case TypeDiskHeadroom:
-			out = append(out, headroom(it, statfs, false))
+			out[i] = headroom(it, statfs, false)
 		case TypeInodeHeadroom:
-			out = append(out, headroom(it, statfs, true))
+			out[i] = headroom(it, statfs, true)
 		case TypeKubeletHealthz:
-			out = append(out, kubeletHealthz(ctx, client, healthzURL, timeout))
+			probes.Add(1)
+			go func(i int) {
+				defer probes.Done()
+				out[i] = kubeletHealthz(ctx, client, healthzURL, timeout)
+			}(i)
 		case TypeContainerRuntime:
-			out = append(out, containerRuntime(ctx, dial, it.SocketPath, timeout))
+			probes.Add(1)
+			go func(i int, socket string) {
+				defer probes.Done()
+				out[i] = containerRuntime(ctx, dial, socket, timeout)
+			}(i, it.SocketPath)
 		case TypeNodeCondition:
 			// Operator-evaluated from the Node object; nothing for the agent.
+			out[i] = CheckResult{}
 		default:
-			out = append(out, CheckResult{Type: it.Type, Path: it.Path, Outcome: OutcomeError,
-				Summary: fmt.Sprintf("unknown check type %q (operator newer than this agent?)", it.Type)})
+			out[i] = CheckResult{Type: it.Type, Path: it.Path, Outcome: OutcomeError,
+				Summary: fmt.Sprintf("unknown check type %q (operator newer than this agent?)", it.Type)}
 		}
 	}
+	probes.Wait()
+	// Drop the NodeCondition placeholders so the result set is exactly the
+	// agent-evaluated items.
+	kept := out[:0]
+	for _, r := range out {
+		if r.Type != "" {
+			kept = append(kept, r)
+		}
+	}
+	out = kept
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Type != out[j].Type {
 			return out[i].Type < out[j].Type

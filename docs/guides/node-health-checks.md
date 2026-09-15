@@ -258,10 +258,15 @@ kubectl -n fathom-system get configmap -l fathom.skaphos.io/managed-by=fathom,fa
 fathomctl reports nhc node-health
 ```
 
-- **`AgentReady=False` and no agent pods** on a privileged spec: check the
-  namespace's Pod Security labels — `restricted` rejects host-network and root
-  pods. Run the check in a namespace that allows them, or drop the privileged
-  types.
+- **`AgentReady=False` and no agent pods**: check the namespace's Pod
+  Security labels. **Every** agent mounts read-only `hostPath` volumes for
+  its headroom paths, and both the `restricted` and `baseline` Pod Security
+  Standards forbid `hostPath` — so a headroom-only check is rejected there
+  too, not only the host-network and root types. Run the check in a
+  namespace enforcing `privileged` (label
+  `pod-security.kubernetes.io/enforce: privileged`, as for
+  `NodeCertificateCheck`), or exempt the agent's ServiceAccount in your
+  admission configuration.
 - **`ContainerRuntime` pods stuck `ContainerCreating`**: the socket is mounted
   with `hostPath` type `Socket`, so a wrong `socketPath` prevents the pod from
   starting at all (rather than reporting a misleading verdict). Set

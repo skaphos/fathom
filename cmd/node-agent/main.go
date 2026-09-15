@@ -215,12 +215,19 @@ func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, 
 func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg config, now time.Time) (nodehealth.NodeReport, error) {
 	scanCtx, cancelScan := boundedContext(ctx, cfg.timeout)
 	defer cancelScan()
+	scanStart := time.Now()
 	results := nodehealth.Scan(scanCtx, nodehealth.ScanOptions{
 		Items:             cfg.healthItems,
 		Timeout:           cfg.timeout,
 		KubeletHealthzURL: cfg.kubeletHealthzURL,
 	})
 	cancelScan()
+	// ObservedAt is the evaluation's completion time, which is what the
+	// operator's freshness bound (agent cadence + timeout) is measured from.
+	// Stamping the start time would make a probe that used most of its
+	// timeout publish an already nearly-stale report. now is the injected
+	// base clock; the elapsed scan time is added to it.
+	observedAt := now.Add(time.Since(scanStart)).UTC()
 	publishHealthGauges(cfg.nodeName, results)
 
 	passCtx, cancel := boundedContext(ctx, cfg.timeout)
@@ -229,7 +236,7 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 	report := nodehealth.NodeReport{
 		Node:        cfg.nodeName,
 		CheckName:   cfg.checkName,
-		ObservedAt:  now.UTC(),
+		ObservedAt:  observedAt,
 		Aggregate:   nodehealth.WorstOutcome(results),
 		Checks:      results,
 		Trigger:     cfg.trigger,

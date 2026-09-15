@@ -297,3 +297,39 @@ func TestScanRealStatfs(t *testing.T) {
 		}
 	}
 }
+
+// TestScanProbesRunConcurrently pins that a hung runtime socket cannot exhaust
+// the pass budget for the kubelet probe: each network probe gets its own
+// timeout under the pass context, so a healthy kubelet passes next to a hung
+// runtime, and the pass takes about one timeout, not two.
+func TestScanProbesRunConcurrently(t *testing.T) {
+	kubelet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer kubelet.Close()
+	hungDial := func(ctx context.Context, _, _ string) (net.Conn, error) { <-ctx.Done(); return nil, ctx.Err() }
+
+	const timeout = 300 * time.Millisecond
+	start := time.Now()
+	results := Scan(context.Background(), ScanOptions{
+		Items: []Item{
+			{Type: TypeContainerRuntime, SocketPath: "/run/hung.sock"},
+			{Type: TypeKubeletHealthz},
+		},
+		Timeout:           timeout,
+		KubeletHealthzURL: kubelet.URL + "/healthz",
+		dial:              hungDial,
+	})
+	elapsed := time.Since(start)
+	byType := map[string]CheckResult{}
+	for _, r := range results {
+		byType[r.Type] = r
+	}
+	if byType[TypeKubeletHealthz].Outcome != OutcomePass {
+		t.Fatalf("kubelet next to a hung runtime = %+v, want Pass", byType[TypeKubeletHealthz])
+	}
+	if byType[TypeContainerRuntime].Outcome != OutcomeFail {
+		t.Fatalf("hung runtime = %+v, want Fail", byType[TypeContainerRuntime])
+	}
+	if elapsed > 2*timeout-50*time.Millisecond {
+		t.Fatalf("pass took %v; probes must run concurrently, not serially (2x%v)", elapsed, timeout)
+	}
+}
