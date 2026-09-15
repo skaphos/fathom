@@ -320,8 +320,8 @@ func TestNodeHealthCadence(t *testing.T) {
 	if nodeHealthReportFresh(now.Add(-6*time.Minute), now, 5*time.Minute) {
 		t.Fatal("old report accepted")
 	}
-	if !nodeHealthReportFresh(now.Add(time.Hour), now, 5*time.Minute) {
-		t.Fatal("a future-stamped report counts as observed on arrival and must be fresh")
+	if nodeHealthReportFresh(now.Add(time.Hour), now, 5*time.Minute) {
+		t.Fatal("a stamp far beyond the skew allowance with no server bound must fail closed")
 	}
 	if nodeHealthReportFresh(time.Time{}, now, 5*time.Minute) {
 		t.Fatal("zero observedAt accepted")
@@ -477,8 +477,13 @@ func TestNodeHealthReportFreshClampsTheFuture(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	const maxAge = 10 * time.Minute
-	if !nodeHealthReportFresh(now.Add(10*time.Second), now, maxAge) || !nodeHealthReportFresh(now.Add(2*time.Minute), now, maxAge) {
-		t.Fatal("a future-stamped report must still count as fresh (observed on arrival)")
+	if !nodeHealthReportFresh(now.Add(10*time.Second), now, maxAge) {
+		t.Fatal("ordinary drift ahead of the operator must count as observed on arrival")
+	}
+	// Beyond the skew allowance with no server bound the report fails closed:
+	// clamped afresh on every reconcile it would otherwise never age out.
+	if nodeHealthReportFresh(now.Add(2*time.Minute), now, maxAge) {
+		t.Fatal("an unbounded far-future stamp must not be fresh")
 	}
 	if !nodeHealthReportFresh(now.Add(-maxAge), now, maxAge) || nodeHealthReportFresh(now.Add(-maxAge-time.Second), now, maxAge) {
 		t.Fatal("the past bound is inclusive at maxAge")

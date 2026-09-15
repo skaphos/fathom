@@ -22,7 +22,7 @@ relevant sections rather than restated here:
 
 Fathom is a Kubernetes operator (API group `fathom.skaphos.io`) that validates
 the health of platform add-ons — cert-manager, CoreDNS, External Secrets
-Operator, and others reachable through an adapter. It reconciles five custom
+Operator, and others reachable through an adapter. It reconciles six custom
 resources, runs adapter-defined checks against the cluster, persists the
 results as history, and rolls those results up into a single cluster-wide
 verdict that dashboards, alerting, and deployment gates can consume.
@@ -305,12 +305,13 @@ an aggregate-result transition. `NodeCertificateCheck` uses the cadence to
 refresh the rolled-up node-agent report, in addition to the ConfigMap-watch
 events its agents generate.
 
-`NodeHealthCheckReconciler` deliberately requeues on the **capped agent
+`NodeHealthCheckReconciler` deliberately requeues, refreshes
+`status.lastRunTime`, and publishes its interval on the **capped agent
 cadence**, `min(spec.interval, 5m)`, not on `spec.interval`: report freshness
-is bounded by that cadence, and a silently dead agent raises no watch event,
-so a 24h interval must not mean a daily look. `spec.interval` still governs
-only the roll-up refresh (`status.lastRunTime` and the transition-only
-`HealthReport` contract).
+is bounded by that cadence, a silently dead agent raises no watch event, so a
+24h interval must not mean a daily look, and a healthy check must never read
+as stale. `HealthReports` remain transition-only whatever the interval; a
+`spec.interval` above `5m` has no further runtime effect.
 
 `HealthCheckReconciler` and `ClusterHealthReconciler` are projection/
 aggregation controllers with no timer; they are event-driven by spec edits and

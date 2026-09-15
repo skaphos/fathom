@@ -168,8 +168,7 @@ binary stays small.
   which applies nodecert's SEC-1 bindings through the shared
   `nodecert.VerifyReportIdentity`.
 - `paths.go` — the headroom-path and CRI-socket allowlists (mirrored in the
-  CRD CEL rules; a lockstep test enforces it), `FilterAllowedItems`, and
-  `MountDirs`.
+  CRD CEL rules; a lockstep test enforces it) and `MountDirs`.
 - `scan.go` — `Scan`: `statfs` headroom, kubelet `/healthz`, and the CRI
   socket dial, with injectable seams for tests. `NodeCondition` items are
   ignored here — the operator grades them.

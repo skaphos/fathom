@@ -316,8 +316,10 @@ Status fields to start with:
   when some did not.
 - `status.nodeResults` - one entry per node (sorted, capped at 100; the verdict
   is folded across every node before the cap): result, message naming the
-  worst check, observation time. This is the explicit coverage signal — a node
-  in scope that is absent here has not reported.
+  worst check, observation time. Bounded detail, not the coverage signal: in
+  a fleet larger than the cap a node can be absent here although it reported.
+  `CoverageComplete` is the fleet-wide coverage result and names the nodes
+  that have not reported.
 - `status.lastRunTime`, `status.lastReportName`, `status.lastRunTrigger`,
   `status.desiredNodes`, `status.reportingNodes` - as for
   `NodeCertificateCheck`.
@@ -327,8 +329,9 @@ deliberate difference: a report is fresh for one full agent cycle — the
 **agent cadence** `min(spec.interval, 5m)` plus three times the agent's
 effective timeout `min(spec.timeout, that cadence)` (this pass's publication,
 the next pass's evaluation and publication), at most twenty minutes — and the reconciler
-requeues on the agent cadence rather than `spec.interval`, so a silently
-dead agent is noticed within that bound. A long roll-up interval therefore
+requeues and refreshes `lastRunTime` on the agent cadence rather than
+`spec.interval`, so a silently dead agent is noticed within that bound and a
+healthy check never reads as stale. A long roll-up interval therefore
 never accepts an old measurement. Coverage is per
 node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 `lastRunTime`, and `nodeResults`, and a provisioning failure persists

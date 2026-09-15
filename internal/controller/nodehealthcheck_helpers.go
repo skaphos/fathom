@@ -155,11 +155,15 @@ func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool
 	}
 	// observedAt has normally been bounded by the API server's write time
 	// already (nodeHealthObservedBound), which is what stops a fast node clock
-	// from stretching the window. This clamp is the fallback for a ConfigMap
-	// without managedFields: a future stamp counts as observed now rather than
-	// excluding the node, which left a fast-clocked node permanently missing
-	// from coverage, indistinguishable from a dead agent. Large skew is logged
-	// by the collector (nodeHealthClockSkewNotable).
+	// from stretching the window. Without that bound (a ConfigMap with no
+	// managedFields) ordinary drift is tolerated by counting the report as
+	// observed now, but a stamp beyond the skew allowance fails closed: clamped
+	// afresh on every reconcile it would never age, and a dead agent's
+	// far-future report would stay fresh forever. Large skew is logged by the
+	// collector (nodeHealthClockSkewNotable).
+	if observedAt.After(now.Add(maxNodeHealthReportClockSkew)) {
+		return false
+	}
 	if observedAt.After(now) {
 		observedAt = now
 	}

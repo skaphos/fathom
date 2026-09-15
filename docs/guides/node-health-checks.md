@@ -77,8 +77,11 @@ node-health   Pass     3           3         42s        2m
 - `status.summary` says how many nodes passed and, when some did not, names
   the worst node and check: `2 of 3 node(s) passed; worst: node-b DiskHeadroom
   /var/lib/kubelet: 8.2% of bytes free (at or below criticalPercentFree 10)`.
-- `status.nodeResults` lists every node's verdict and message (capped at 100
-  entries; the verdict is folded across every node before the cap applies).
+- `status.nodeResults` lists each node's verdict and message as bounded
+  detail (capped at 100 entries; the verdict is folded across every node
+  before the cap applies). In a fleet larger than the cap a node can be
+  absent here although it reported — the fleet-wide coverage signal is the
+  `CoverageComplete` condition, which names the nodes that have not.
 
 `fathomctl describe nhc node-health` renders the same, with a per-node table.
 
@@ -186,9 +189,12 @@ on a control-plane node is a decision the author makes, not a default.
 
 ## Cadence and freshness
 
-`spec.interval` (default `5m`, floor `10s`) is how often the operator refreshes
-the rolled-up `HealthReport` and the check's liveness. The **agent** re-evaluates
-at `min(interval, 5m)`, and a report counts as fresh for one full cycle: that
+`spec.interval` (default `5m`, floor `10s`) sets the check's cadence, capped at
+`5m` at runtime: the **agent** re-evaluates at `min(interval, 5m)`, the operator
+refreshes `status.lastRunTime` on that same cadence (a healthy check never
+reads as stale), and a new `HealthReport` is written only when the verdict
+transitions, whatever the interval. A value above `5m` has no further
+runtime effect. A report counts as fresh for one full cycle: that
 agent cadence plus three times the agent's *effective* timeout,
 `min(spec.timeout, agent cadence)` — this pass's publication, then the next
 pass's evaluation and publication — never for the full interval. A `24h`

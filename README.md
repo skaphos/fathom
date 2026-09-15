@@ -131,7 +131,7 @@ cluster to install or operate Fathom, see the prescriptive
 
 ## Installation details
 
-The chart installs the five `fathom.skaphos.io` CRDs from its native `crds/`
+The chart installs the seven `fathom.skaphos.io` CRDs from its native `crds/`
 directory. Helm installs CRDs on first install only and never upgrades or
 removes them, so apply new CRDs with `kubectl` before a breaking `helm upgrade`.
 

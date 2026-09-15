@@ -188,7 +188,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, accepted)
 
-	interval := nodeHealthInterval(&check)
 	items := resolveNodeHealthItems(&check)
 	// The privilege posture is a function of the spec alone, so it is current
 	// for this generation before anything is provisioned — a provisioning
@@ -267,7 +266,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// nodeResults, or HealthReport of a fleet it has left.
 		inScope := nodeHealthEvaluationsInScope(evals, expected)
 		aggregate := aggregateNodeHealth(inScope)
-		if err := r.rollup(ctx, log, &check, inScope, aggregate, interval); err != nil {
+		// The liveness refresh (status.lastRunTime) is throttled to the agent
+		// cadence, the same cadence published as the check's interval to
+		// monitoring and to the HealthCheck wrapper. Throttling it to
+		// spec.interval made a continuously healthy daily check look stale five
+		// minutes after every refresh. HealthReports are still transition-only.
+		if err := r.rollup(ctx, log, &check, inScope, aggregate, nodeHealthRequeueAfter(&check)); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
