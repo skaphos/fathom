@@ -189,27 +189,40 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	apiMeta.SetStatusCondition(&check.Status.Conditions, accepted)
 
 	items := resolveNodeHealthItems(&check)
-	// The privilege posture is a function of the spec alone, so it is current
-	// for this generation before anything is provisioned — a provisioning
-	// failure must never leave a previous generation's posture advertised.
-	r.setAgentPrivileged(&check, items)
 
 	// An item the allowlist refuses (only possible for an object stored under
 	// an older CRD) is a failed specification, not a filter: provisioning an
 	// agent for the remainder — or for nothing, when every agent-side item is
 	// refused — would report a vacuous verdict for a check that cannot measure
-	// what it declares. Say so on the object and run nothing new; whatever the
-	// check ran before is left in place, so a bad edit cannot erase coverage.
+	// what it declares. The agent is revoked, not merely left alone: an agent
+	// from the previous generation may hold the host network or root, and it
+	// must not keep running under a specification the operator has refused
+	// while status describes a different one. The last complete verdict is
+	// retained, frozen, exactly as for any other incomplete window.
 	if rejected := rejectedNodeHealthItems(&check); len(rejected) > 0 {
 		message := fmt.Sprintf("Rejected %d item(s) whose path is outside the operator-approved allowlist: %s.", len(rejected), strings.Join(rejected, ", "))
+		if err := r.revokeAgent(ctx, &check); err != nil {
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", err)
+		}
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type: nodeHealthConditionAccepted, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
 			Reason: conditionReasonItemsRejected, Message: message,
 		})
 		r.setReady(&check, metav1.ConditionFalse, conditionReasonItemsRejected, message)
-		r.invalidateAgentConditions(&check, conditionReasonItemsRejected, "No agent was provisioned for this generation; the specification was rejected.")
+		r.invalidateAgentConditions(&check, conditionReasonItemsRejected, "The specification was rejected; the node-agent DaemonSet has been removed and nothing is evaluated for this generation.")
+		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
+			Type: nodeHealthConditionPrivileged, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
+			Reason: conditionReasonItemsRejected, Message: "No agent is running: the specification was rejected.",
+		})
+		check.Status.DesiredNodes = 0
+		check.Status.ReportingNodes = 0
 		return r.finish(ctx, log, before, &check, nodeHealthRequeueAfter(&check))
 	}
+
+	// The privilege posture is a function of the spec alone, so it is current
+	// for this generation before anything is provisioned — a provisioning
+	// failure must never leave a previous generation's posture advertised.
+	r.setAgentPrivileged(&check, items)
 
 	if err := ensureNodeAgentClusterRole(ctx, r.Client, r.roleName()); err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
@@ -358,6 +371,18 @@ func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log lo
 		}
 	}
 	return ctrl.Result{}, cause
+}
+
+// revokeAgent removes the node-agent DaemonSet for a specification the
+// operator will not run. The owner-referenced ServiceAccount, RoleBinding and
+// NetworkPolicy are harmless while idle and are left in place, as the paused
+// path of the certificate kind does; the report ConfigMaps age out.
+func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
+	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}}
+	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("remove node-agent DaemonSet for a rejected specification: %w", err)
+	}
+	return nil
 }
 
 // invalidateAgentConditions marks the conditions that describe a provisioned

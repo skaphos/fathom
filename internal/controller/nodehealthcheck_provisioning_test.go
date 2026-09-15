@@ -129,7 +129,18 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 			{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"},
 		}},
 	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+	// The previous, accepted generation left a host-network agent running.
+	check.Generation = 4
+	check.Status = fathomv1alpha1.NodeHealthCheckStatus{
+		ObservedGeneration: 3, LastResult: "Pass", DesiredNodes: 3, ReportingNodes: 3,
+		Conditions: []metav1.Condition{
+			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
+			{Type: nodeHealthConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
+		},
+	}
+	oldAgent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: "default"},
+		Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{HostNetwork: true}}}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, oldAgent).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
 	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-bad", Namespace: "default"}}); err != nil {
 		t.Fatalf("a rejected item is a status outcome, not a reconcile error: %v", err)
@@ -146,7 +157,14 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	}
 	var ds appsv1.DaemonSetList
 	if err := cl.List(context.Background(), &ds); err != nil || len(ds.Items) != 0 {
-		t.Fatalf("no agent may be provisioned for a spec with a rejected item: %d DaemonSet(s), err=%v", len(ds.Items), err)
+		t.Fatalf("the previous generation's agent must be revoked, not left running under a refused spec: %d DaemonSet(s), err=%v", len(ds.Items), err)
+	}
+	priv := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionPrivileged)
+	if priv == nil || priv.Status != metav1.ConditionFalse || priv.Reason != conditionReasonItemsRejected || priv.ObservedGeneration != 4 {
+		t.Fatalf("AgentPrivileged = %+v, want False/ItemsRejected at the current generation (nothing is running)", priv)
+	}
+	if got.Status.LastResult != "Pass" || got.Status.DesiredNodes != 0 {
+		t.Fatalf("the last verdict is retained frozen and desiredNodes is 0: %+v", got.Status)
 	}
 }
 
