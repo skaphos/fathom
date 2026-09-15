@@ -1039,6 +1039,11 @@ func (in *NodeHealthCheckSpec) DeepCopyInto(out *NodeHealthCheckSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.MetricsHostPort != nil {
+		in, out := &in.MetricsHostPort, &out.MetricsHostPort
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Interval != nil {
 		in, out := &in.Interval, &out.Interval
 		*out = new(v1.Duration)

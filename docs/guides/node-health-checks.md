@@ -94,7 +94,7 @@ misapplied threshold is a write-time error rather than a silently ignored one.
 | `InodeHeadroom` | Percentage of free **inodes** on the filesystem holding `path`. | same as `DiskHeadroom` | same |
 | `NodeCondition` | The node's `status.conditions`, graded by the operator. `Ready` must be `True`; every other listed condition must be `False` — the healthy value for every pressure and unavailability condition Kubernetes and the cloud providers define. | `conditions` (defaults to `Ready`, `MemoryPressure`, `DiskPressure`, `PIDPressure`) | A condition with its expected value → Pass; otherwise Fail, with the condition's reason and message in the summary. A condition the node does not report is Skipped. |
 | `KubeletHealthz` | `GET http://127.0.0.1:10248/healthz` from the node. | none | 2xx → Pass; any other response, or an unreachable kubelet, → Fail. |
-| `ContainerRuntime` | A connection to the CRI socket (dial + close; the agent speaks no CRI). | `socketPath` (defaults to `/run/containerd/containerd.sock`) | Accepts a connection → Pass; refused or missing → Fail. |
+| `ContainerRuntime` | A connection to the CRI socket (dial + close; the agent speaks no CRI). | `socketPath` (defaults to `/run/containerd/containerd.sock`) | Accepts a connection → Pass; refuses → Fail. A socket that disappears while the agent runs → Fail. A socket absent when the agent *starts* keeps the pod from starting at all (`hostPath` type `Socket`), which shows as `AgentReady=False` and incomplete coverage rather than a verdict — see [Troubleshooting](#troubleshooting). |
 
 Thresholds default to **20 / 10** when unset. Zero is legal (`warnPercentFree:
 0` means "never warn"), which is why the defaults are applied at runtime rather
@@ -140,7 +140,7 @@ paths only.
 | --- | --- | --- |
 | `DiskHeadroom`, `InodeHeadroom` | none beyond a read-only `hostPath` of the measured directory | `statfs` needs a path on the filesystem, nothing more. |
 | `NodeCondition` | a cluster-scoped `get` on **nodes** for the **operator** (not the agent) | The conditions live only on the Node object. The operator reads one node at a time, by name, only for the nodes agent pods landed on — never a `list` or `watch` — so it starts no Node informer and can enumerate nothing through this grant. See [Operator RBAC](../reference/operator-rbac.md). |
-| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**, and its metrics port binds on the node itself (a per-check port in 30000–32767, derived from the check's name), so the agent's plaintext gauges are reachable from the node's network. |
+| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**, and its metrics port binds on the node itself (a per-check port in 30000–32767 derived from the check's name, or `spec.metricsHostPort` when set), so the agent's plaintext gauges are reachable from the node's network. |
 | `ContainerRuntime` | the CRI socket mounted (`hostPath` type `Socket`) and the agent running **as root** (`runAsUser: 0`), still with every capability dropped and a read-only root filesystem | The socket is root-owned on every mainstream runtime. The agent only dials and closes — it carries no CRI client — but a compromised agent process would hold the socket. |
 
 The check reports which of these are in effect on its own object: the
@@ -262,4 +262,5 @@ fathomctl reports nhc node-health
   `nodes` `get` grant was removed (a restricted install). Restore it or drop
   the item; the rest of the check is unaffected.
 - **Two host-network checks on one node, second agent in `CrashLoopBackOff`**:
-  a metrics-port hash collision. Rename one check.
+  a metrics host-port collision (the `AgentPrivileged` condition names each
+  check's port). Set `spec.metricsHostPort` on one of them to a free port.

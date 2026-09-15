@@ -191,6 +191,18 @@ func TestReportCovers(t *testing.T) {
 		t.Fatal("same type at a different path must not cover")
 	}
 	if !ReportCovers(NodeReport{}, []Item{{Type: TypeNodeCondition}}) || !ReportCovers(NodeReport{}, nil) {
-		t.Fatal("no agent-side items are trivially covered")
+		t.Fatal("no agent-side items are covered by an empty report")
+	}
+	// A superset is a report from before an item was removed: the removed
+	// item's (possibly failing) result must not reach the roll-up.
+	superset := NodeReport{Checks: append(append([]CheckResult(nil), full.Checks...), CheckResult{Type: TypeDiskHeadroom, Path: "/var/log", Outcome: OutcomeFail})}
+	if ReportCovers(superset, items) {
+		t.Fatal("a report carrying a result for a removed item must not cover")
+	}
+	if ReportCovers(full, nil) {
+		t.Fatal("a non-empty report must not cover an empty item set")
+	}
+	if ItemKey(Item{Type: TypeContainerRuntime, SocketPath: "/run/crio/crio.sock"}) != "/run/crio/crio.sock" || ItemKey(Item{Type: TypeDiskHeadroom, Path: "/var/log"}) != "/var/log" || ItemKey(Item{Type: TypeKubeletHealthz}) != "" {
+		t.Fatal("ItemKey must be the socket for ContainerRuntime, the path otherwise")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,6 +67,16 @@ func TestResolveNodeHealthItems(t *testing.T) {
 	}
 	if len(agent) != 4 {
 		t.Fatalf("agent items = %d, want 4", len(agent))
+	}
+
+	// Two ContainerRuntime items sort by socket, so their order is stable too.
+	twoSockets := nhCheck(
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+	)
+	sockets := resolveNodeHealthItems(twoSockets)
+	if len(sockets) != 2 || sockets[0].SocketPath != fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket || sockets[1].SocketPath != "/run/crio/crio.sock" {
+		t.Fatalf("runtime items not sorted by socket: %+v", sockets)
 	}
 
 	// Reordering the spec must not change the resolved list.
@@ -171,6 +182,14 @@ func TestMergeNodeHealthEvaluationAndSummary(t *testing.T) {
 	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy}, fathomv1alpha1.HealthReportResultPass); s != "1 of 1 node(s) passed" {
 		t.Fatalf("passing summary = %q", s)
 	}
+	// Skipped is "nothing graded", never "passed".
+	skipped := nodeHealthEvaluation{Node: "node-s", Outcome: nodehealth.OutcomeSkipped}
+	if s := nodeHealthSummary([]nodeHealthEvaluation{skipped}, fathomv1alpha1.HealthReportResultSkipped); s != "0 of 1 node(s) passed" {
+		t.Fatalf("all-Skipped summary = %q", s)
+	}
+	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy, skipped}, fathomv1alpha1.HealthReportResultPass); s != "1 of 2 node(s) passed" {
+		t.Fatalf("mixed Pass/Skipped summary = %q", s)
+	}
 
 	results := nodeHealthNodeResults(evals)
 	if len(results) != 2 || results[0].Node != "node-a" || results[1].Node != "node-b" {
@@ -232,6 +251,12 @@ func TestNodeHealthHostMetricsPort(t *testing.T) {
 	if nodeHealthHostMetricsPort(b) == p1 {
 		t.Log("two checks hashed to the same port; allowed but noting it")
 	}
+	// An explicit port wins over the derived one: the operator's escape hatch
+	// for a collision.
+	b.Spec.MetricsHostPort = ptr.To[int32](31337)
+	if got := nodeHealthHostMetricsPort(b); got != 31337 {
+		t.Fatalf("explicit port = %d, want 31337", got)
+	}
 	// Without a host-network item the shared container port is used.
 	if got := nodeHealthMetricsPort(a, []nodehealth.Item{{Type: nodehealth.TypeDiskHeadroom, Path: "/var/log"}}); got != metricsContainerPort {
 		t.Fatalf("non-host-network port = %d", got)
@@ -256,6 +281,15 @@ func TestNodeHealthCadence(t *testing.T) {
 	}
 	if got := nodeHealthReportMaxAge(long); got != maxNodeHealthAgentInterval+30*time.Second {
 		t.Fatalf("report max age = %v, must follow the agent cadence, not the 24h interval", got)
+	}
+	// timeout == interval is legal; the agent's timeout is capped at its
+	// cadence so the freshness bound stays minutes, never a day.
+	long.Spec.Timeout = &metav1.Duration{Duration: 24 * time.Hour}
+	if got := nodeHealthAgentTimeout(long); got != maxNodeHealthAgentInterval {
+		t.Fatalf("agent timeout = %v, want the %v cadence cap", got, maxNodeHealthAgentInterval)
+	}
+	if got := nodeHealthReportMaxAge(long); got != 2*maxNodeHealthAgentInterval {
+		t.Fatalf("report max age with a 24h timeout = %v, want %v", got, 2*maxNodeHealthAgentInterval)
 	}
 
 	short := nhCheck()
@@ -384,5 +418,20 @@ func TestNodeHealthEvaluationsInScope(t *testing.T) {
 	}
 	if got := nodeHealthEvaluationsInScope(evals, nil); len(got) != 0 {
 		t.Fatalf("no expected nodes should yield nothing, got %+v", got)
+	}
+}
+
+// TestTruncateNodeHealthMessageCountsRunes pins that truncation is measured in
+// code points, the unit the schema's MaxLength counts: a non-ASCII message is
+// never cut mid-sequence, and one under the cap in runes is never trimmed.
+func TestTruncateNodeHealthMessageCountsRunes(t *testing.T) {
+	t.Parallel()
+	msg := strings.Repeat("é", 10) // 10 runes, 20 bytes
+	if got := truncateNodeHealthMessage(msg, 10); got != msg {
+		t.Fatalf("a 10-rune message must survive a cap of 10, got %q", got)
+	}
+	got := truncateNodeHealthMessage(msg, 5)
+	if !utf8.ValidString(got) || utf8.RuneCountInString(got) != 5 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncated = %q (%d runes, valid=%v)", got, utf8.RuneCountInString(got), utf8.ValidString(got))
 	}
 }

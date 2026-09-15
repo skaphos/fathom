@@ -143,12 +143,14 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 
 	scanOnce()
 	if cfg.once {
+		// A one-shot run exists to publish one report; whether the metrics
+		// listener bound is irrelevant to that and must not fail it.
 		select {
 		case err := <-serveErr:
-			return err
+			log.Printf("node-agent: %v (ignored for a one-shot run)", err)
 		default:
-			return nil
 		}
+		return nil
 	}
 
 	ticker := time.NewTicker(cfg.interval)
@@ -204,18 +206,25 @@ func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, 
 // scanAndPublishHealth runs one node-health evaluation, updates the
 // per-check gauges, and upserts the per-node report ConfigMap. Unlike the
 // certificate scan, the evaluation itself reaches the network (kubelet,
-// runtime socket), so the whole pass — not only the publish — is bounded by
-// cfg.timeout.
+// runtime socket), so the evaluation is bounded by cfg.timeout — and the
+// publish gets a bound of its own, derived from the parent. A probe that
+// runs the evaluation to its deadline yields Fail results, and those must
+// still reach the operator: publishing under the exhausted evaluation
+// context would drop exactly the report that carries the failure and leave
+// the operator with a coverage gap instead of a verdict.
 func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg config, now time.Time) (nodehealth.NodeReport, error) {
-	passCtx, cancel := boundedContext(ctx, cfg.timeout)
-	defer cancel()
-
-	results := nodehealth.Scan(passCtx, nodehealth.ScanOptions{
+	scanCtx, cancelScan := boundedContext(ctx, cfg.timeout)
+	defer cancelScan()
+	results := nodehealth.Scan(scanCtx, nodehealth.ScanOptions{
 		Items:             cfg.healthItems,
 		Timeout:           cfg.timeout,
 		KubeletHealthzURL: cfg.kubeletHealthzURL,
 	})
+	cancelScan()
 	publishHealthGauges(cfg.nodeName, results)
+
+	passCtx, cancel := boundedContext(ctx, cfg.timeout)
+	defer cancel()
 
 	report := nodehealth.NodeReport{
 		Node:       cfg.nodeName,

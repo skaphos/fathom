@@ -147,6 +147,13 @@ type NodeCertificateCheckReconciler struct {
 	// the node-agent ServiceAccount. Defaults to defaultNodeAgentRoleName.
 	NodeAgentRoleName string
 
+	// APIReader lists the agent pods for coverage. It MUST be an uncached
+	// reader: Pods are deliberately absent from the manager's informer cache
+	// (scopedCacheOptions, #164), so a cached List would start an unfiltered
+	// cluster-wide Pod informer. Nil falls back to Client, which is only
+	// appropriate in tests with an uncached client.
+	APIReader client.Reader
+
 	// Tracer creates the per-Reconcile span. Optional; a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
 	Tracer trace.Tracer
@@ -155,6 +162,13 @@ type NodeCertificateCheckReconciler struct {
 	// operational failures) on NodeCertificateCheck resources. Optional: nil
 	// disables event recording; the check gauges are unaffected.
 	Recorder events.EventRecorder
+}
+
+func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks,verbs=get;list;watch;update;patch
@@ -1103,8 +1117,9 @@ func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context,
 	// check's name runs its own agent pods under the same component and
 	// source-name labels, and those must never count as this check's coverage
 	// (#206).
+	// Uncached on purpose — see APIReader.
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods,
+	if err := r.apiReader().List(ctx, &pods,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels{
 			nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
@@ -1344,6 +1359,9 @@ func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCert
 func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.NodeAgentRoleName == "" {
 		r.NodeAgentRoleName = defaultNodeAgentRoleName
+	}
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.NodeCertificateCheck{}).

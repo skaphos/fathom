@@ -327,6 +327,80 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 	}
 }
 
+// TestNodeHealthCheckTargetHandlerProjection pins what a HealthCheck mirrors
+// from a NodeHealthCheck: the check's own bounded summary is preferred over
+// the Ready message (it names the worst node), the Ready message is the
+// fallback before the first roll-up, and the cadence is the 5m default,
+// clamped, or as declared.
+func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
+	t.Parallel()
+
+	runTime := metav1.NewTime(time.Now().Add(-time.Hour).UTC().Truncate(time.Second))
+	targets := []client.Object{
+		&fathomv1alpha1.NodeHealthCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: "rolled-up", Namespace: "source-ns"},
+			Status: fathomv1alpha1.NodeHealthCheckStatus{
+				LastResult:     string(fathomv1alpha1.HealthReportResultFail),
+				Summary:        "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 3.0% of bytes free",
+				LastRunTime:    &runTime,
+				LastReportName: "node-health-report",
+				Conditions: []metav1.Condition{{
+					Type: healthCheckConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting",
+					Message: "Node-agents are reporting and a HealthReport was rolled up.",
+				}},
+			},
+		},
+		&fathomv1alpha1.NodeHealthCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: "pre-rollup", Namespace: "source-ns"},
+			Spec:       fathomv1alpha1.NodeHealthCheckSpec{Interval: &metav1.Duration{Duration: time.Second}},
+			Status: fathomv1alpha1.NodeHealthCheckStatus{Conditions: []metav1.Condition{{
+				Type: healthCheckConditionReady, Status: metav1.ConditionFalse, Reason: "AwaitingReports",
+				Message: "Waiting for node-agents to publish fresh evaluations.",
+			}}},
+		},
+		&fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "empty-status", Namespace: "source-ns"}},
+	}
+	scheme := runtime.NewScheme()
+	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(targets...).Build()
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
+	if !ok {
+		t.Fatal("NodeHealthCheck handler not registered")
+	}
+
+	got, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "rolled-up"})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got.Result != fathomv1alpha1.HealthReportResultFail || !strings.HasPrefix(got.Summary, "1 of 2 node(s) passed; worst: node-b") {
+		t.Fatalf("rolled-up snapshot = %#v (summary must be the check's own, not the Ready message)", got)
+	}
+	if got.SourceObservedAt == nil || !got.SourceObservedAt.Equal(&runTime) || got.LastReportName != "node-health-report" || got.Interval != fathomv1alpha1.DefaultNodeHealthCheckInterval {
+		t.Fatalf("rolled-up evidence/cadence = %#v", got)
+	}
+
+	pre, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "pre-rollup"})
+	if err != nil {
+		t.Fatalf("read pre-rollup: %v", err)
+	}
+	if pre.Summary != "Waiting for node-agents to publish fresh evaluations." || pre.Result != "" {
+		t.Fatalf("pre-rollup must fall back to the Ready message with no verdict: %#v", pre)
+	}
+	if pre.Interval != fathomv1alpha1.MinCheckInterval {
+		t.Fatalf("sub-floor interval must be clamped: %v", pre.Interval)
+	}
+
+	empty, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "empty-status"})
+	if err != nil {
+		t.Fatalf("read empty: %v", err)
+	}
+	if empty.Result != "" || empty.Summary != "" || empty.SourceObservedAt != nil || empty.LastReportName != "" || empty.Interval != fathomv1alpha1.DefaultNodeHealthCheckInterval {
+		t.Fatalf("empty source invented status: %#v", empty)
+	}
+}
+
 func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 	t.Parallel()
 
@@ -364,6 +438,7 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 		healthCheckTargetKindAddonCheck,
 		healthCheckTargetKindDNSCheck,
 		healthCheckTargetKindNodeCertificateCheck,
+		healthCheckTargetKindNodeHealthCheck,
 	} {
 		tests = append(tests,
 			struct {

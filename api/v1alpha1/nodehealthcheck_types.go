@@ -166,11 +166,14 @@ type NodeHealthCheckItem struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || duration(self.timeout) >= duration('1s')",message="timeout must be at least 1s"
 // +kubebuilder:validation:XValidation:rule="!has(self.interval) || duration(self.interval) >= duration('10s')",message="interval must be at least 10s"
 // +kubebuilder:validation:XValidation:rule="!has(self.timeout) || !has(self.interval) || duration(self.timeout) <= duration(self.interval)",message="timeout must not exceed interval"
-// Per-node results and HealthReport checks are keyed by (type, path), so two
-// items identical in both would collide there. Rejecting the duplicate at
-// write time is far kinder than a status update failing later with an error
-// that says nothing about the specification that caused it.
-// +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? (has(c.path) && o.path == c.path) : !has(c.path))).size() == 1)",message="checks must be unique by type and path"
+// Per-node results and HealthReport checks are keyed by the item's identity —
+// its type plus what it measures: the path for the headroom types, the socket
+// for ContainerRuntime (its default counts as a value), nothing for the
+// rest — so two items with the same identity would collide there. Rejecting
+// the duplicate at write time is far kinder than a status update failing
+// later with an error that says nothing about the specification that caused
+// it. Two ContainerRuntime items with different sockets are distinct.
+// +kubebuilder:validation:XValidation:rule="self.checks.all(c, self.checks.filter(o, o.type == c.type && (has(o.path) ? o.path : (o.type == 'ContainerRuntime' ? (has(o.socketPath) ? o.socketPath : '/run/containerd/containerd.sock') : ”)) == (has(c.path) ? c.path : (c.type == 'ContainerRuntime' ? (has(c.socketPath) ? c.socketPath : '/run/containerd/containerd.sock') : ”))).size() == 1)",message="checks must be unique by type and path (socketPath for ContainerRuntime)"
 type NodeHealthCheckSpec struct {
 	// Checks are the assertions made on every node in scope. At least one is
 	// required — a check with no items would report a vacuous pass.
@@ -203,6 +206,19 @@ type NodeHealthCheckSpec struct {
 	// +optional
 	// +kubebuilder:default=false
 	IncludeControlPlaneNodes *bool `json:"includeControlPlaneNodes,omitempty"`
+
+	// MetricsHostPort is the host port a host-network agent (one running a
+	// KubeletHealthz item) serves its metrics on. When unset, the operator
+	// derives a port in 30000–32767 from the check's namespaced name; that
+	// derivation is a hash, so two host-network checks scheduled on the same
+	// node can collide, which surfaces as the second agent crash-looping
+	// (AgentReady=False) and is reported on the AgentPrivileged condition. Set
+	// this to resolve such a collision, or to avoid an unrelated host listener.
+	// Ignored for a check without a host-network item.
+	// +optional
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=65535
+	MetricsHostPort *int32 `json:"metricsHostPort,omitempty"`
 
 	// Interval is the cadence at which the operator refreshes the rolled-up
 	// HealthReport and the check's liveness. Defaults to 5m when unset. Must

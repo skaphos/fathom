@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -118,10 +119,20 @@ func nodeHealthAgentInterval(check *fathomv1alpha1.NodeHealthCheck) time.Duratio
 	return min(nodeHealthInterval(check), maxNodeHealthAgentInterval)
 }
 
+// nodeHealthAgentTimeout bounds one agent pass. It is spec.timeout capped at
+// the agent cadence: a pass can never usefully outlast the cadence it runs
+// on, and the schema allows timeout == interval, so without this cap a 24h
+// interval with a 24h timeout would stretch the freshness bound to a day —
+// exactly what the capped cadence exists to prevent.
+func nodeHealthAgentTimeout(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+	return min(nodeHealthTimeout(check), nodeHealthAgentInterval(check))
+}
+
 // nodeHealthReportMaxAge is how old a node report may be and still count. It
-// follows the agent cadence, not the roll-up cadence (#270).
+// follows the agent cadence and the agent's (capped) timeout, never the
+// roll-up cadence (#270).
 func nodeHealthReportMaxAge(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
-	return nodeHealthAgentInterval(check) + nodeHealthTimeout(check)
+	return nodeHealthAgentInterval(check) + nodeHealthAgentTimeout(check)
 }
 
 func nodeHealthReportFresh(observedAt, now time.Time, maxAge time.Duration) bool {
@@ -170,7 +181,7 @@ func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.
 		if items[i].Type != items[j].Type {
 			return items[i].Type < items[j].Type
 		}
-		return items[i].Path < items[j].Path
+		return nodehealth.ItemKey(items[i]) < nodehealth.ItemKey(items[j])
 	})
 	return items
 }
@@ -240,10 +251,17 @@ func nodeHealthSocketPaths(items []nodehealth.Item) []string {
 	return out
 }
 
-// nodeHealthHostMetricsPort derives the per-check metrics port for a
-// host-network agent from the check's namespaced name, so it is stable across
-// reconciles and operator restarts (no template churn) without any state.
+// nodeHealthHostMetricsPort is the metrics port for a host-network agent: the
+// explicit spec.metricsHostPort when set, otherwise one derived from the
+// check's namespaced name so it is stable across reconciles and operator
+// restarts (no template churn) without any state. The derived port is a hash,
+// so two host-network checks on one node can collide deterministically; the
+// explicit field is the operator's way out, and the AgentPrivileged condition
+// names the port in effect so the collision is diagnosable.
 func nodeHealthHostMetricsPort(check *fathomv1alpha1.NodeHealthCheck) int32 {
+	if check.Spec.MetricsHostPort != nil {
+		return *check.Spec.MetricsHostPort
+	}
 	sum := sha256.Sum256([]byte(check.Namespace + "/" + check.Name))
 	span := uint32(nodeHealthHostMetricsPortMax - nodeHealthHostMetricsPortMin + 1)
 	return int32(nodeHealthHostMetricsPortMin + binary.BigEndian.Uint32(sum[:4])%span)
@@ -363,11 +381,15 @@ func nodeHealthCheckLabel(c nodehealth.CheckResult) string {
 	return c.Type + " " + c.Path
 }
 
+// truncateNodeHealthMessage bounds s to max code points — the unit the
+// schema's MaxLength counts — so a non-ASCII condition message is never cut
+// mid-sequence and a message shorter than the cap in runes is never trimmed.
 func truncateNodeHealthMessage(s string, max int) string {
-	if len(s) <= max {
+	if utf8.RuneCountInString(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	runes := []rune(s)
+	return string(runes[:max-1]) + "…"
 }
 
 // aggregateNodeHealth folds every node's outcome into the check's verdict via
@@ -408,7 +430,9 @@ func nodeHealthNodeResults(evals []nodeHealthEvaluation) []fathomv1alpha1.NodeHe
 }
 
 // nodeHealthSummary is the one-line status.summary: how many nodes passed,
-// and when some did not, the worst of them.
+// and when some did not, the worst of them. Only Pass counts as passed: a
+// node whose checks produced no participating result folds to Skipped, which
+// is "nothing graded", not "healthy".
 func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1alpha1.HealthReportResult) string {
 	passed := 0
 	var worst *nodeHealthEvaluation
@@ -416,7 +440,7 @@ func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1alpha1.He
 	for i := range evals {
 		e := &evals[i]
 		r := nodeOutcomeToResult(e.Outcome)
-		if r == fathomv1alpha1.HealthReportResultPass || r == fathomv1alpha1.HealthReportResultSkipped {
+		if r == fathomv1alpha1.HealthReportResultPass {
 			passed++
 		}
 		if r == fathomv1alpha1.HealthReportResultSkipped {

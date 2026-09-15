@@ -85,13 +85,16 @@ type NodeHealthCheckReconciler struct {
 	// same runtime singleton NodeCertificateCheck converges.
 	NodeAgentRoleName string
 
-	// NodeReader reads Node objects for NodeCondition items. It MUST be an
-	// uncached reader: nodes are read one at a time, only for the nodes agent
-	// pods actually landed on, so the operator never starts a cluster-wide Node
-	// informer and never needs list or watch on nodes — a `get` grant is the
-	// whole surface. Nil falls back to Client, which is only appropriate in
-	// tests with an uncached client.
-	NodeReader client.Reader
+	// APIReader reads Node objects (for NodeCondition items) and the agent pods
+	// (for coverage). It MUST be an uncached reader. Nodes are read one at a
+	// time, only for the nodes agent pods actually landed on, so the operator
+	// never starts a cluster-wide Node informer and a `get` grant is the whole
+	// surface. Pods are deliberately absent from the manager's informer cache
+	// (scopedCacheOptions, #164): a single cached Pod List would start an
+	// unfiltered cluster-wide Pod informer and pull every pod into operator
+	// memory. Nil falls back to Client, which is only appropriate in tests
+	// with an uncached client.
+	APIReader client.Reader
 
 	// Tracer creates the per-Reconcile span. Optional; a nil Tracer falls back
 	// to the global provider (a no-op unless tracing is enabled).
@@ -258,9 +261,9 @@ func (r *NodeHealthCheckReconciler) roleName() string {
 	return r.NodeAgentRoleName
 }
 
-func (r *NodeHealthCheckReconciler) nodeReader() client.Reader {
-	if r.NodeReader != nil {
-		return r.NodeReader
+func (r *NodeHealthCheckReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
 	}
 	return r.Client
 }
@@ -474,7 +477,7 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 		"--check-namespace", check.Namespace,
 		"--checks", joinNodeHealthArgs(agentItems),
 		"--interval", nodeHealthAgentInterval(check).String(),
-		"--timeout", nodeHealthTimeout(check).String(),
+		"--timeout", nodeHealthAgentTimeout(check).String(),
 		"--metrics-bind-address", ":" + strconv.Itoa(int(metricsPort)),
 	}
 
@@ -648,8 +651,9 @@ func (r *NodeHealthCheckReconciler) adoptReportConfigMap(ctx context.Context, lo
 // pod naming a node that will never report and pin coverage incomplete — a
 // frozen verdict — for as long as it likes.
 func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
+	// Uncached on purpose — see APIReader.
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods,
+	if err := r.apiReader().List(ctx, &pods,
 		client.InNamespace(check.Namespace),
 		client.MatchingLabels(nodeHealthAgentSelectorLabels(check)),
 	); err != nil {
@@ -680,7 +684,7 @@ func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.
 		var conditions []nodehealth.CheckResult
 		if len(conditionTypes) > 0 {
 			var node corev1.Node
-			if err := r.nodeReader().Get(ctx, types.NamespacedName{Name: report.Node}, &node); err != nil {
+			if err := r.apiReader().Get(ctx, types.NamespacedName{Name: report.Node}, &node); err != nil {
 				if !apierrors.IsNotFound(err) && !apierrors.IsForbidden(err) {
 					return nil, err
 				}
@@ -910,8 +914,8 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.NodeAgentRoleName == "" {
 		r.NodeAgentRoleName = defaultNodeAgentRoleName
 	}
-	if r.NodeReader == nil {
-		r.NodeReader = mgr.GetAPIReader()
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.NodeHealthCheck{}).

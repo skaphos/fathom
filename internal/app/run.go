@@ -257,19 +257,22 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 			Client:         mgr.GetClient(),
 			Scheme:         mgr.GetScheme(),
 			NodeAgentImage: opts.NodeAgentImage,
-			Tracer:         tracer,
-			Recorder:       mgr.GetEventRecorder("fathom-nodecertificatecheck-controller"),
+			// Agent pods for coverage: uncached, so no cluster-wide Pod informer.
+			APIReader: mgr.GetAPIReader(),
+			Tracer:    tracer,
+			Recorder:  mgr.GetEventRecorder("fathom-nodecertificatecheck-controller"),
 		},
 		&controller.NodeHealthCheckReconciler{
 			Client:         mgr.GetClient(),
 			Scheme:         mgr.GetScheme(),
 			NodeAgentImage: opts.NodeAgentImage,
-			// Nodes are read one at a time through the uncached API reader so
+			// Nodes and agent pods are read through the uncached API reader so
 			// NodeCondition items never start a cluster-wide Node informer (and
-			// the grant stays `get` only) — see NodeHealthCheckReconciler.NodeReader.
-			NodeReader: mgr.GetAPIReader(),
-			Tracer:     tracer,
-			Recorder:   mgr.GetEventRecorder("fathom-nodehealthcheck-controller"),
+			// the grant stays `get` only), and coverage never starts an unfiltered
+			// Pod informer — see NodeHealthCheckReconciler.APIReader.
+			APIReader: mgr.GetAPIReader(),
+			Tracer:    tracer,
+			Recorder:  mgr.GetEventRecorder("fathom-nodehealthcheck-controller"),
 		},
 		&controller.DNSCheckReconciler{
 			Client: mgr.GetClient(),

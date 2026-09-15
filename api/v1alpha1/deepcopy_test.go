@@ -649,6 +649,7 @@ func fullyPopulatedNodeHealthCheck() *NodeHealthCheck {
 				Effect:   corev1.TaintEffectNoSchedule,
 			}},
 			IncludeControlPlaneNodes: ptr.To(true),
+			MetricsHostPort:          ptr.To[int32](31337),
 			Interval:                 &interval,
 			Timeout:                  &timeout,
 			HistoryLimit:             &historyLimit,

@@ -38,8 +38,8 @@ func newNodeHealthReconciler() *NodeHealthCheckReconciler {
 		Scheme:            k8sClient.Scheme(),
 		NodeAgentImage:    "ghcr.io/skaphos/fathom-node-agent:test",
 		NodeAgentRoleName: defaultNodeAgentRoleName,
-		// k8sClient is uncached, so it is a legitimate NodeReader here.
-		NodeReader: k8sClient,
+		// k8sClient is uncached, so it is a legitimate APIReader here.
+		APIReader: k8sClient,
 	}
 }
 

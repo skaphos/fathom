@@ -280,3 +280,37 @@ func TestRunFailsWhenMetricsPortIsTaken(t *testing.T) {
 		t.Fatalf("run must fail when the metrics port is taken, got %v", err)
 	}
 }
+
+// TestScanAndPublishHealthPersistsTimeoutFailures pins that a probe which runs
+// the evaluation to its deadline still gets its Fail published: the publish
+// has its own bounded context, so the operator records the failure instead of
+// seeing a coverage gap.
+func TestScanAndPublishHealthPersistsTimeoutFailures(t *testing.T) {
+	release := make(chan struct{})
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release }))
+	defer func() { close(release); hang.Close() }()
+
+	kube := fake.NewSimpleClientset()
+	cfg := config{
+		mode: modeHealth, checkName: "nh", checkNamespace: "ns", nodeName: "node-1",
+		configMapName:     nodehealth.ReportConfigMapName("nh", "node-1"),
+		healthItems:       []nodehealth.Item{{Type: nodehealth.TypeKubeletHealthz}},
+		kubeletHealthzURL: hang.URL + "/healthz",
+		timeout:           300 * time.Millisecond,
+	}
+	report, err := scanAndPublishHealth(context.Background(), kube, cfg, time.Now())
+	if err != nil {
+		t.Fatalf("a timed-out probe must still publish: %v", err)
+	}
+	if report.Aggregate != nodehealth.OutcomeFail {
+		t.Fatalf("aggregate = %s, want Fail", report.Aggregate)
+	}
+	cm, err := kube.CoreV1().ConfigMaps("ns").Get(context.Background(), cfg.configMapName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("report ConfigMap not published: %v", err)
+	}
+	decoded, err := nodehealth.DecodeReport(cm.Data[nodecert.ConfigMapReportKey])
+	if err != nil || decoded.Aggregate != nodehealth.OutcomeFail {
+		t.Fatalf("published report = %+v (%v)", decoded, err)
+	}
+}

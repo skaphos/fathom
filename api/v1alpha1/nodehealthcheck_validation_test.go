@@ -234,6 +234,25 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 			},
 		},
 		{
+			name: "28a two ContainerRuntime items with different sockets are distinct",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: "/run/containerd/containerd.sock"},
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+				)
+			},
+		},
+		{
+			name: "28b an explicit default socket duplicates an omitted one",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
+				c.Spec.Checks = items(
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+					fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket},
+				)
+			},
+			wantReject: true, wantInMsg: "unique",
+		},
+		{
 			name: "28 duplicate pathless type",
 			mutate: func(c *fathomv1alpha1.NodeHealthCheck) {
 				c.Spec.Checks = items(
@@ -269,6 +288,15 @@ func TestNodeHealthCheckAdmission(t *testing.T) {
 				c.Spec.Interval = duration(10 * time.Second)
 				c.Spec.Timeout = duration(10 * time.Second)
 			},
+		},
+		{
+			name:       "34 metricsHostPort below 1024",
+			mutate:     func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](80) },
+			wantReject: true, wantInMsg: "metricsHostPort",
+		},
+		{
+			name:   "35 metricsHostPort in range",
+			mutate: func(c *fathomv1alpha1.NodeHealthCheck) { c.Spec.MetricsHostPort = ptr.To[int32](31337) },
 		},
 		{
 			name:       "33 historyLimit below one",

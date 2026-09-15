@@ -74,29 +74,37 @@ func DecodeItems(data string) ([]Item, error) {
 	return items, nil
 }
 
-// itemKey identifies what an item measures, matching CheckResult.Path for the
+// ItemKey identifies what an item measures, matching CheckResult.Path for the
 // result the agent emits: the filesystem path for headroom, the socket for
-// ContainerRuntime, empty for KubeletHealthz.
-func itemKey(it Item) string {
+// ContainerRuntime, empty for KubeletHealthz. It is the item's identity
+// together with Type, and the sort key that keeps the agent arguments stable.
+func ItemKey(it Item) string {
 	if it.Type == TypeContainerRuntime {
 		return it.SocketPath
 	}
 	return it.Path
 }
 
-// ReportCovers reports whether report carries a result for every item in
-// items, keyed by (type, path). Items the agent does not evaluate
-// (NodeCondition) are ignored. An empty item set is trivially covered.
+// ReportCovers reports whether report carries exactly one result for each
+// agent-side item in items and nothing else: the report's (type, key) set
+// must equal the items'. A superset is not enough — a report written before
+// an item was removed still carries that item's result, and forwarding it
+// would let a removed (possibly failing) check keep shaping the verdict of a
+// spec that no longer declares it. Items the agent does not evaluate
+// (NodeCondition) are ignored. An empty item set is covered only by a report
+// with no checks.
 func ReportCovers(report NodeReport, items []Item) bool {
-	have := make(map[string]struct{}, len(report.Checks))
-	for _, c := range report.Checks {
-		have[c.Type+"\x00"+c.Path] = struct{}{}
-	}
+	want := make(map[string]struct{}, len(items))
 	for _, it := range items {
-		if !it.AgentEvaluated() {
-			continue
+		if it.AgentEvaluated() {
+			want[it.Type+"\x00"+ItemKey(it)] = struct{}{}
 		}
-		if _, ok := have[it.Type+"\x00"+itemKey(it)]; !ok {
+	}
+	if len(report.Checks) != len(want) {
+		return false
+	}
+	for _, c := range report.Checks {
+		if _, ok := want[c.Type+"\x00"+c.Path]; !ok {
 			return false
 		}
 	}
