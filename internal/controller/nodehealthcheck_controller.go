@@ -237,7 +237,8 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := ensureNodeAgentClusterRole(ctx, r.Client, r.roleName()); err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
-	if err := ensureReportAuthenticityPolicy(ctx, r.Client, log); err != nil {
+	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
+	if err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "AdmissionPolicyProvisioningFailed", err)
 	}
 	saName, err := r.ensureAgentRBAC(ctx, &check)
@@ -263,7 +264,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	check.Status.ReportingNodes = int32(len(reports))
-	r.setReportsAuthentic(&check, rejections)
+	r.setReportsAuthentic(&check, rejections, authenticityEnforced)
 
 	expected, err := r.expectedAgentNodes(ctx, &check, ds)
 	if err != nil {
@@ -983,16 +984,10 @@ func (r *NodeHealthCheckReconciler) setReadyFromState(check *fathomv1alpha1.Node
 
 // setReportsAuthentic records whether any collected report failed its
 // authenticity bindings, and raises a Warning event when one did (SEC-1).
-func (r *NodeHealthCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeHealthCheck, rejections []reportRejection) {
+func (r *NodeHealthCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeHealthCheck, rejections []reportRejection, enforced bool) {
 	forged := forgeryRejections(rejections)
 	if len(forged) == 0 {
-		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-			Type:               nodeHealthConditionAuthentic,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: check.Generation,
-			Reason:             "AllReportsBound",
-			Message:            "Every collected node report is bound to the node it claims.",
-		})
+		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeHealthConditionAuthentic, check.Generation, enforced))
 		return
 	}
 

@@ -162,6 +162,12 @@ type NodeCertificateCheckReconciler struct {
 	// operational failures) on NodeCertificateCheck resources. Optional: nil
 	// disables event recording; the check gauges are unaffected.
 	Recorder events.EventRecorder
+
+	// authenticityEnforced records whether the last ensure of the
+	// report-authenticity policy found the API served; false makes
+	// ReportsAuthentic read Unknown rather than claim a binding that only
+	// admission can provide.
+	authenticityEnforced bool
 }
 
 func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
@@ -471,14 +477,22 @@ func ensureNodeAgentClusterRole(ctx context.Context, c client.Client, name strin
 // not serve ValidatingAdmissionPolicy the ensure is skipped — the operator's
 // collect-time cross-check in collectNodeReports still rejects mismatched reports.
 func (r *NodeCertificateCheckReconciler) ensureReportAuthenticityPolicy(ctx context.Context, log logr.Logger) error {
-	return ensureReportAuthenticityPolicy(ctx, r.Client, log)
+	enforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
+	r.authenticityEnforced = enforced
+	return err
 }
 
 // ensureReportAuthenticityPolicy is the shared implementation behind both
 // node-scoped reconcilers. The policy selects node-report ConfigMaps by
 // managed-by alone, so one converged singleton authenticates every kind's
 // reports (#206, SEC-1).
-func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log logr.Logger) error {
+//
+// It returns whether enforcement is active. On a cluster that does not serve
+// the policy API it returns false with no error: the caller must then say so
+// on the object (ReportsAuthentic=Unknown) rather than claim authenticity the
+// collect-time bindings cannot provide — they corroborate a report's shape and
+// are forgeable by any ConfigMap writer in the namespace.
+func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log logr.Logger) (bool, error) {
 	policy := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, c, policy, func() error {
 		policy.Labels = mergeLabels(policy.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
@@ -490,9 +504,9 @@ func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log lo
 			// node-agent token can forge or suppress another node's report. Log at
 			// the default level (not V(1)) so it is visible in normal operator logs.
 			log.Info("ValidatingAdmissionPolicy is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 
 	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: reportAuthenticityPolicyName}}
@@ -506,11 +520,11 @@ func ensureReportAuthenticityPolicy(ctx context.Context, c client.Client, log lo
 	}); err != nil {
 		if admissionPolicyUnsupported(err) {
 			log.Info("ValidatingAdmissionPolicyBinding is not served by this cluster: node-report authenticity enforcement is DISABLED; only the controller's collect-time consistency check applies", "error", err.Error())
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // admissionPolicyUnsupported reports whether err means the API server does not
@@ -1300,6 +1314,29 @@ func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, l
 	return ctrl.Result{}, cause
 }
 
+// reportsAuthenticCondition is the ReportsAuthentic condition when no report
+// failed its bindings. With admission enforcing the binding it is True; when
+// the cluster does not serve ValidatingAdmissionPolicy it is Unknown, because
+// the collect-time bindings corroborate a report's shape but are forgeable by
+// any ConfigMap writer in the namespace and prove nothing about the writer.
+func reportsAuthenticCondition(conditionType string, generation int64, enforced bool) metav1.Condition {
+	if enforced {
+		return metav1.Condition{
+			Type: conditionType, Status: metav1.ConditionTrue, ObservedGeneration: generation,
+			Reason: "AllReportsBound", Message: "Every collected node report is bound to the node it claims.",
+		}
+	}
+	return metav1.Condition{
+		Type: conditionType, Status: metav1.ConditionUnknown, ObservedGeneration: generation,
+		Reason:  reasonAuthenticityUnenforced,
+		Message: "This cluster does not serve ValidatingAdmissionPolicy, so the writer of a node report is not authenticated; reports satisfy the controller's structural bindings, which any ConfigMap writer in the namespace could forge.",
+	}
+}
+
+// reasonAuthenticityUnenforced marks ReportsAuthentic=Unknown on a cluster
+// without the ValidatingAdmissionPolicy API.
+const reasonAuthenticityUnenforced = "AuthenticityUnenforced"
+
 // setReportsAuthentic records whether any collected report failed its
 // authenticity bindings, and raises a Warning event when one did. A forgery
 // signal means some principal with ConfigMap write in the namespace is actively
@@ -1308,13 +1345,7 @@ func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, l
 func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeCertificateCheck, rejections []reportRejection) {
 	forged := forgeryRejections(rejections)
 	if len(forged) == 0 {
-		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-			Type:               nodeCertConditionAuthentic,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: check.Generation,
-			Reason:             "AllReportsBound",
-			Message:            "Every collected node report is bound to the node it claims.",
-		})
+		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, r.authenticityEnforced))
 		return
 	}
 

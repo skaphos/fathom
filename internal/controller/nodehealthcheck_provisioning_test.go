@@ -296,3 +296,42 @@ func TestNodeHealthInvertedThresholdsAreRejected(t *testing.T) {
 		t.Fatalf("rejected = %v, want exactly the inverted DiskHeadroom item", rejected)
 	}
 }
+
+// TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI pins that on a cluster
+// without ValidatingAdmissionPolicy the check never claims AllReportsBound:
+// the collect-time bindings are forgeable, so ReportsAuthentic reads
+// Unknown/AuthenticityUnenforced while the reconcile otherwise proceeds.
+func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := &fathomv1alpha1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-novap", Namespace: "default", Generation: 1},
+		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}}},
+	}
+	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "admissionregistration.k8s.io", Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithInterceptorFuncs(interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			switch obj.(type) {
+			case *admissionregistrationv1.ValidatingAdmissionPolicy, *admissionregistrationv1.ValidatingAdmissionPolicyBinding:
+				return noMatch
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}}).Build()
+	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-novap", Namespace: "default"}}); err != nil {
+		t.Fatalf("an unsupported policy API degrades, it does not fail the reconcile: %v", err)
+	}
+	got := &fathomv1alpha1.NodeHealthCheck{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-novap", Namespace: "default"}, got); err != nil {
+		t.Fatal(err)
+	}
+	c := apiMeta.FindStatusCondition(got.Status.Conditions, nodeHealthConditionAuthentic)
+	if c == nil || c.Status != metav1.ConditionUnknown || c.Reason != reasonAuthenticityUnenforced {
+		t.Fatalf("ReportsAuthentic = %+v, want Unknown/AuthenticityUnenforced without the policy API", c)
+	}
+}

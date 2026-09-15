@@ -351,6 +351,7 @@ node identity, an incomplete window freezes `lastResult`, `lastReportName`,
 | `AgentPrivileged` | `True / HostNetwork` | A `KubeletHealthz` item put the agent on the host network. The per-check NetworkPolicy does not isolate it; the message names the host metrics port. | Confirm this is intended; drop the item to return to the hardened profile. |
 | `AgentPrivileged` | `True / RunAsRoot` | A `ContainerRuntime` item runs the agent as root with the CRI socket mounted (capabilities still dropped). | Confirm this is intended. |
 | `AgentPrivileged` | `True / HostNetworkAndRoot` | Both of the above. | Confirm this is intended. |
+| `ReportsAuthentic` | `Unknown / AuthenticityUnenforced` | The cluster does not serve `ValidatingAdmissionPolicy` (GA 1.30), so the writer of a node report is not authenticated: reports satisfy the controller's structural bindings, which any ConfigMap writer in the namespace could forge. The roll-up continues. | Upgrade the cluster or enable the API; treat node verdicts as unauthenticated meanwhile. Same for `NodeCertificateCheck`. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet has not fully converged. On a privileged spec, check that the namespace's Pod Security level admits host-network / root pods. | Inspect DaemonSet pods, scheduling, image pulls, Pod Security labels. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |

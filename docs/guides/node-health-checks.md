@@ -235,7 +235,9 @@ Warning event) surfaces any report that failed its bindings.
 
 That policy requires the `ValidatingAdmissionPolicy` API (GA in Kubernetes
 1.30). On a cluster that does not serve it the operator logs, at its default
-level, that authenticity enforcement is **disabled** and continues: the
+level, that authenticity enforcement is **disabled**, sets
+`ReportsAuthentic=Unknown / AuthenticityUnenforced` on the check (it never
+claims `AllReportsBound` there), and continues: the
 controller's collect-time bindings (canonical name, node annotation, check
 name, spec digest) still apply, but they corroborate a report's shape — they
 do not authenticate its writer. Treat writer identity as unverified on such
