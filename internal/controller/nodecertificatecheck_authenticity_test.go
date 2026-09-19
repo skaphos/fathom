@@ -330,13 +330,6 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		_, err := newNodeCertReconciler().Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		Expect(err).NotTo(HaveOccurred())
 		healthServiceAccount := check.Name + nodeHealthAgentSuffix
-		healthWriterBinding := &rbacv1.RoleBinding{
-			ObjectMeta: metav1.ObjectMeta{Name: "identity-node-health-writer", Namespace: check.Namespace},
-			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
-			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: healthServiceAccount, Namespace: check.Namespace}},
-		}
-		Expect(k8sClient.Create(ctx, healthWriterBinding)).To(Succeed())
-		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, healthWriterBinding))).To(Succeed()) })
 		for _, sourceKind := range []string{nodecert.KindNodeCertificateCheck, nodehealth.KindNodeHealthCheck} {
 			sourceKind := sourceKind
 			serviceAccount := agentResourceName(check)
@@ -422,10 +415,6 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		r := newNodeCertReconciler()
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		Expect(err).NotTo(HaveOccurred())
-		sharedRole := &rbacv1.ClusterRole{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: defaultNodeAgentRoleName}, sharedRole)).To(Succeed())
-		Expect(sharedRole.Rules).To(HaveLen(1))
-		Expect(sharedRole.Rules[0].Verbs).To(Equal([]string{"create"}))
 		scheduleAgentPods(ctx, check, "node-a")
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		Expect(err).NotTo(HaveOccurred())
@@ -433,10 +422,15 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		role := &rbacv1.Role{}
 		roleKey := types.NamespacedName{Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace}
 		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
-		Expect(role.Rules).To(HaveLen(1))
+		Expect(role.Rules).To(HaveLen(2))
 		ownName := nodecert.NodeReportConfigMapName(check.Name, "node-a")
-		Expect(role.Rules[0].ResourceNames).To(Equal([]string{ownName}))
-		Expect(role.Rules[0].Verbs).To(ConsistOf("get", "update"))
+		Expect(role.Rules).To(ContainElement(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"},
+		}))
+		Expect(role.Rules).To(ContainElement(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"},
+			ResourceNames: []string{ownName}, Verbs: []string{"get", "update"},
+		}))
 
 		writer := reportWriterClient(check.Namespace, agentResourceName(check), "node-a")
 		own := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
@@ -447,7 +441,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 			},
 			Annotations: map[string]string{nodecert.AnnotationNodeName: "node-a"},
 		}, Data: map[string]string{nodecert.ConfigMapReportKey: `{"node":"node-a"}`}}
-		Expect(writer.Create(ctx, own)).To(Succeed(), "the shared ClusterRole retains the minimum create capability")
+		Expect(writer.Create(ctx, own)).To(Succeed(), "the per-check Role grants the minimum create capability")
 		Eventually(func() error { return writer.Get(ctx, client.ObjectKeyFromObject(own), &corev1.ConfigMap{}) }).Should(Succeed())
 		Expect(writer.Get(ctx, client.ObjectKeyFromObject(own), own)).To(Succeed())
 		own.Data[nodecert.ConfigMapReportKey] = `{"node":"node-a","generation":2}`
@@ -471,14 +465,16 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
-		Expect(role.Rules).To(BeEmpty(), "an empty resourceNames rule would grant every ConfigMap")
+		Expect(role.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"},
+		}), "an empty fleet must retain create without wildcard read/update access")
 		Eventually(func() bool {
 			err := writer.Get(ctx, client.ObjectKeyFromObject(own), &corev1.ConfigMap{})
 			return apierrors.IsForbidden(err)
 		}).Should(BeTrue(), "a departed node's report permission must be revoked")
 	})
 
-	It("revokes the shared ConfigMap create grant while an agent DaemonSet still exists", func() {
+	It("revokes the per-check ConfigMap grant while an agent DaemonSet still exists", func() {
 		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-create-revoke", Namespace: "default"}}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
@@ -490,7 +486,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(writer.Create(ctx, before)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, before))).To(Succeed()) })
 
-		Expect(clearNodeAgentAccess(ctx, k8sClient, check, agentResourceName(check), r.roleName())).To(Succeed())
+		Expect(clearNodeAgentAccess(ctx, k8sClient, k8sClient, check, agentResourceName(check), r.roleName())).To(Succeed())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})).To(Succeed(), "access revocation must work even if DaemonSet deletion later fails")
 		Eventually(func() bool {
 			after := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{GenerateName: "ordinary-after-revoke-", Namespace: check.Namespace}}
@@ -500,7 +496,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 				return false
 			}
 			return apierrors.IsForbidden(err)
-		}).Should(BeTrue(), "the cleared shared RoleBinding must remove ConfigMap create access")
+		}).Should(BeTrue(), "clearing the per-check Role must remove ConfigMap create access")
 	})
 
 	It("revokes scoped report updates while paused and persists revocation failures", func() {
@@ -533,9 +529,9 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(k8sClient.Update(ctx, check)).To(Succeed())
 		_, err = r.Reconcile(ctx, request)
 		Expect(err).NotTo(HaveOccurred())
-		binding := &rbacv1.RoleBinding{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, binding)).To(Succeed())
-		Expect(binding.Subjects).To(ConsistOf(rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}), "resume must restore the create binding subject")
+		legacyBinding := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, legacyBinding)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "resume must not restore the legacy ClusterRole binding")
 		scheduleAgentPods(ctx, check, "node-a")
 		_, err = r.Reconcile(ctx, request)
 		Expect(err).NotTo(HaveOccurred())

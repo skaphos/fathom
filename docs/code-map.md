@@ -115,7 +115,7 @@ ownership and watch wiring. Each implements `Reconcile` and `SetupWithManager`.
 | `dnscheck_controller.go` | `DNSCheckReconciler` | Runs one probe Pod per (target, resolver) pair in the check's namespace, folds the pair outcomes into one verdict, persists change-only `HealthReport`s. `dnscheck_plan.go` expands the pairs and budgets the run so the fan-out stays bounded. |
 | `healthcheck_controller.go` | `HealthCheckReconciler` | Mirrors `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck` status via `CheckTargetRef`; watches all four. |
 | `clusterhealth_controller.go` | `ClusterHealthReconciler` | Worst-case roll-up of `HealthCheck.status`; watches `HealthCheck`. |
-| `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet/RBAC and rolls up per-node certificate reports. Hosts the shared runtime-singleton helpers (`ensureNodeAgentClusterRole`, `ensureReportAuthenticityPolicy`) both node-scoped kinds converge. |
+| `nodecertificatecheck_controller.go` | `NodeCertificateCheckReconciler` | Manages the node-agent DaemonSet and per-check namespaced report RBAC, and rolls up per-node certificate reports. Hosts the shared report-authenticity policy helper that both node-scoped kinds converge. |
 | `nodehealthcheck_controller.go` | `NodeHealthCheckReconciler` | Manages the node-agent DaemonSet in health mode (granting hostNetwork/root only for the check types that need them), grades node conditions from the Node object, merges them with the agent reports, and rolls up per-node health. `nodehealthcheck_helpers.go` holds item resolution, condition grading, the fold, and the HealthReport builder. |
 | `suite_test.go` | — | envtest bootstrap for the Ginkgo controller tests. |
 

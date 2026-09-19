@@ -60,3 +60,30 @@ func TestPrimaryCRDGrantsAreReadOnly(t *testing.T) {
 		t.Logf("matched %d primary-kind resource entries across the role (kinds: %v)", checked, want)
 	}
 }
+
+// TestOperatorCannotManageClusterRoles prevents the runtime node-agent RBAC
+// migration from reintroducing cluster-scoped privilege management. Node-agent
+// permissions are now expressed entirely through per-check namespaced Roles;
+// legacy ClusterRole grants are drained by clearing their namespaced
+// RoleBinding subjects.
+func TestOperatorCannotManageClusterRoles(t *testing.T) {
+	role := loadOperatorClusterRole(t)
+
+	for _, rule := range role.Rules {
+		grantsRBAC := contains(rule.APIGroups, "rbac.authorization.k8s.io") || contains(rule.APIGroups, "*")
+		grantsClusterRoles := contains(rule.Resources, "clusterroles") || contains(rule.Resources, "*")
+		if !grantsRBAC || !grantsClusterRoles {
+			continue
+		}
+		t.Errorf("operator ClusterRole grants %v on clusterroles; node-agent access must remain namespaced", rule.Verbs)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

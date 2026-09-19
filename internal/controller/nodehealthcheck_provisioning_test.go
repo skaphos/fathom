@@ -77,14 +77,14 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	}
 
 	scheme := newProvisioningScheme(t)
-	denied := apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, defaultNodeAgentRoleName, context.DeadlineExceeded)
+	denied := apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, nodeHealthAgentResourceName(check), context.DeadlineExceeded)
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(check).
 		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				if _, ok := obj.(*rbacv1.ClusterRole); ok {
+				if _, ok := obj.(*corev1.ServiceAccount); ok {
 					return denied
 				}
 				return c.Create(ctx, obj, opts...)
@@ -188,7 +188,13 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 			{Type: nodeHealthConditionAuthentic, Status: metav1.ConditionTrue, Reason: "AllReportsBound", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
 		},
 	}
-	oldAgent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: "default"},
+	oldAgent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
+		Name: nodeHealthAgentResourceName(check), Namespace: "default",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+			Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+		}},
+	},
 		Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{HostNetwork: true}}}}
 	oldRole := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
@@ -314,14 +320,20 @@ func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
 		}
 	}
 	check := &fathomv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "nh-stuck", Namespace: "default", Generation: 2},
+		ObjectMeta: metav1.ObjectMeta{Name: "nh-stuck", Namespace: "default", UID: "check-uid", Generation: 2},
 		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"}}},
 		Status: fathomv1alpha1.NodeHealthCheckStatus{ObservedGeneration: 1, LastResult: "Pass", Conditions: []metav1.Condition{
 			{Type: nodeHealthConditionAccepted, Status: metav1.ConditionTrue, Reason: "SpecAccepted", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
 			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
 		}},
 	}
-	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: "default"}}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
+		Name: nodeHealthAgentResourceName(check), Namespace: "default",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+			Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+		}},
+	}}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, agent).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
 			if _, ok := obj.(*appsv1.DaemonSet); ok {
@@ -453,11 +465,11 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 				},
 			}
 			agentName := nodeHealthAgentResourceName(check)
-			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace}}
 			owner := metav1.OwnerReference{
 				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}
+			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}}}
 			role := &rbacv1.Role{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: scopedReportAccessName(agentName), Namespace: check.Namespace,
@@ -526,7 +538,7 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 				t.Fatal(err)
 			}
 			if len(clearedBinding.Subjects) != 0 {
-				t.Fatalf("authenticity failure retained shared create permission: %+v", clearedBinding.Subjects)
+				t.Fatalf("authenticity failure retained legacy shared permission: %+v", clearedBinding.Subjects)
 			}
 			remaining := &appsv1.DaemonSet{}
 			dsErr := cl.Get(context.Background(), client.ObjectKeyFromObject(ds), remaining)
@@ -558,7 +570,7 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 
 func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 	t.Parallel()
-	t.Run("rejects a binding to a more privileged ClusterRole without mutation", func(t *testing.T) {
+	t.Run("rejects an unrelated binding without mutation", func(t *testing.T) {
 		t.Parallel()
 		scheme := newProvisioningScheme(t)
 		check := &fathomv1alpha1.NodeHealthCheck{
@@ -571,11 +583,12 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "cluster-admin"},
 			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "unrelated", Namespace: check.Namespace}},
 		}
-		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+		foreignDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
+		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
 		r := &NodeHealthCheckReconciler{Client: cl, APIReader: cl, Scheme: scheme, NodeAgentImage: "img:test"}
 		_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
-		if err == nil || !strings.Contains(err.Error(), "immutable roleRef") {
-			t.Fatalf("Reconcile error = %v, want immutable roleRef conflict", err)
+		if err == nil || !strings.Contains(err.Error(), "not controlled") {
+			t.Fatalf("Reconcile error = %v, want ownership conflict", err)
 		}
 		got := &rbacv1.RoleBinding{}
 		if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), got); err != nil {
@@ -584,13 +597,12 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 		if got.RoleRef != binding.RoleRef || len(got.Subjects) != 1 || got.Subjects[0].Name != "unrelated" || got.Labels["keep"] != "me" || len(got.OwnerReferences) != 0 {
 			t.Fatalf("conflicting RoleBinding was adopted or mutated: %+v", got)
 		}
-		var daemonSets appsv1.DaemonSetList
-		if err := cl.List(context.Background(), &daemonSets, client.InNamespace(check.Namespace)); err != nil || len(daemonSets.Items) != 0 {
-			t.Fatalf("RoleBinding conflict provisioned %d DaemonSet(s), err=%v", len(daemonSets.Items), err)
+		if err := cl.Get(context.Background(), client.ObjectKeyFromObject(foreignDaemonSet), &appsv1.DaemonSet{}); err != nil {
+			t.Fatalf("foreign same-name DaemonSet was deleted after RoleBinding ownership conflict: %v", err)
 		}
 	})
 
-	t.Run("accepts the expected binding idempotently", func(t *testing.T) {
+	t.Run("drains the expected legacy binding idempotently", func(t *testing.T) {
 		t.Parallel()
 		scheme := newProvisioningScheme(t)
 		check := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-rb-ok", Namespace: "default", UID: "check-uid"}}
@@ -615,6 +627,9 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 		if err := cl.Get(context.Background(), client.ObjectKeyFromObject(binding), first); err != nil {
 			t.Fatal(err)
 		}
+		if len(first.Subjects) != 0 {
+			t.Fatalf("legacy RoleBinding retained subjects: %+v", first.Subjects)
+		}
 		if _, err := r.ensureAgentRBAC(context.Background(), check); err != nil {
 			t.Fatal(err)
 		}
@@ -623,9 +638,117 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 			t.Fatal(err)
 		}
 		if second.ResourceVersion != first.ResourceVersion {
-			t.Fatalf("expected RoleBinding was rewritten: resourceVersion %s -> %s", first.ResourceVersion, second.ResourceVersion)
+			t.Fatalf("drained RoleBinding was rewritten: resourceVersion %s -> %s", first.ResourceVersion, second.ResourceVersion)
 		}
 	})
+}
+
+func TestNodeHealthRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name            string
+		deleteFails     bool
+		daemonSetExists bool
+	}{
+		{name: "legacy binding update fails but DaemonSet is deleted"},
+		{name: "legacy binding update and DaemonSet deletion fail", deleteFails: true, daemonSetExists: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scheme := newProvisioningScheme(t)
+			lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
+			check := &fathomv1alpha1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nh-rbac-migration", Namespace: "default", UID: "check-uid", Generation: 2},
+				Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{
+					Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet",
+				}}},
+				Status: fathomv1alpha1.NodeHealthCheckStatus{
+					ObservedGeneration: 1, LastRunTime: &lastRun, LastResult: "Pass", LastReportName: "previous-report", Summary: "1 of 1 node(s) passed",
+					Conditions: []metav1.Condition{
+						{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeHealthConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeHealthConditionCoverage, Status: metav1.ConditionTrue, Reason: "Complete", ObservedGeneration: 1, LastTransitionTime: lastRun},
+					},
+				},
+			}
+			agentName := nodeHealthAgentResourceName(check)
+			owner := metav1.OwnerReference{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+			}
+			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, UID: "ds-uid", OwnerReferences: []metav1.OwnerReference{owner}}}
+			role := &rbacv1.Role{
+				ObjectMeta: metav1.ObjectMeta{Name: scopedReportAccessName(agentName), Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}},
+				Rules: []rbacv1.PolicyRule{
+					{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+					{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}},
+				},
+			}
+			binding := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}},
+				RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+				Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentName, Namespace: check.Namespace}},
+			}
+			bindingErr := errors.New("legacy RoleBinding update denied")
+			deleteErr := errors.New("DaemonSet delete denied")
+			var bindingUpdates, deleteAttempts int
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
+				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+						if _, ok := obj.(*rbacv1.RoleBinding); ok {
+							bindingUpdates++
+							return bindingErr
+						}
+						return c.Update(ctx, obj, opts...)
+					},
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*appsv1.DaemonSet); ok {
+							deleteAttempts++
+							if tc.deleteFails {
+								return deleteErr
+							}
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				}).Build()
+			r := &NodeHealthCheckReconciler{Client: cl, APIReader: cl, Scheme: scheme, NodeAgentImage: "img:test"}
+			_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+			if !errors.Is(err, bindingErr) || !strings.Contains(err.Error(), "revoke node-agent after RBAC provisioning failed") {
+				t.Fatalf("Reconcile error = %v, want original binding failure and contextual revocation failure", err)
+			}
+			if tc.deleteFails && !errors.Is(err, deleteErr) {
+				t.Fatalf("Reconcile error = %v, want joined delete failure %v", err, deleteErr)
+			}
+			if bindingUpdates != 2 || deleteAttempts != 1 {
+				t.Fatalf("cleanup attempts = binding updates %d, DaemonSet deletes %d; want 2 and 1", bindingUpdates, deleteAttempts)
+			}
+			clearedRole := &rbacv1.Role{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(role), clearedRole); err != nil || len(clearedRole.Rules) != 0 {
+				t.Fatalf("per-check permissions were not cleared: role=%+v err=%v", clearedRole.Rules, err)
+			}
+			dsErr := cl.Get(context.Background(), client.ObjectKeyFromObject(ds), &appsv1.DaemonSet{})
+			if tc.daemonSetExists && dsErr != nil {
+				t.Fatalf("failed delete unexpectedly removed DaemonSet: %v", dsErr)
+			}
+			if !tc.daemonSetExists && !apierrors.IsNotFound(dsErr) {
+				t.Fatalf("successful delete left DaemonSet behind: %v", dsErr)
+			}
+			persisted := &fathomv1alpha1.NodeHealthCheck{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
+				t.Fatal(err)
+			}
+			for _, typ := range []string{nodeHealthConditionReady, nodeHealthConditionAgentReady, nodeHealthConditionCoverage} {
+				condition := apiMeta.FindStatusCondition(persisted.Status.Conditions, typ)
+				if condition == nil || condition.Status != metav1.ConditionFalse || condition.Reason != "AgentRevocationFailed" || condition.ObservedGeneration != check.Generation {
+					t.Errorf("%s = %+v, want False/AgentRevocationFailed at generation %d", typ, condition, check.Generation)
+				}
+			}
+			if persisted.Status.LastResult != check.Status.LastResult || persisted.Status.LastReportName != check.Status.LastReportName || persisted.Status.LastRunTime == nil || !persisted.Status.LastRunTime.Equal(check.Status.LastRunTime) {
+				t.Errorf("RBAC migration failure changed historical verdict: got %+v, want %+v", persisted.Status, check.Status)
+			}
+		})
+	}
 }
 
 // TestNodeHealthEvaluationIgnoresDepartedNodes pins that a surplus fresh

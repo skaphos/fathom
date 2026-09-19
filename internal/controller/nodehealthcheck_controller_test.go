@@ -259,13 +259,15 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		sa := &corev1.ServiceAccount{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, sa)).To(Succeed())
-		rb := &rbacv1.RoleBinding{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, rb)).To(Succeed())
-		Expect(rb.RoleRef.Name).To(Equal(defaultNodeAgentRoleName), "reuses the shared node-agent ClusterRole")
+		legacyBinding := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, legacyBinding)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "new checks must not create a legacy ClusterRole binding")
 		scopedName := scopedReportAccessName(sa.Name)
 		scopedRole := &rbacv1.Role{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedRole)).To(Succeed())
-		Expect(scopedRole.Rules).To(BeEmpty(), "an unscheduled agent must not receive wildcard report access")
+		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"},
+		}), "an unscheduled agent receives create without wildcard read/update access")
 		scopedBinding := &rbacv1.RoleBinding{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedBinding)).To(Succeed())
 		Expect(scopedBinding.RoleRef).To(Equal(rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: scopedName}))
@@ -277,11 +279,14 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedName, Namespace: "default"}, scopedRole)).To(Succeed())
-		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
-			APIGroups: []string{""}, Resources: []string{"configmaps"},
-			ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")},
-			Verbs:         []string{"get", "update"},
-		}))
+		Expect(scopedRole.Rules).To(ConsistOf(
+			rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+			rbacv1.PolicyRule{
+				APIGroups: []string{""}, Resources: []string{"configmaps"},
+				ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")},
+				Verbs:         []string{"get", "update"},
+			},
+		))
 		np := &networkingv1.NetworkPolicy{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-provision-node-health-agent", Namespace: "default"}, np)).To(Succeed())
 		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(ds.Spec.Selector.MatchLabels))
@@ -311,7 +316,8 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(len(agentName)).To(BeNumerically(">", 63), "the test must exercise a derived resource name longer than 63 characters")
 		key := types.NamespacedName{Name: agentName, Namespace: name.Namespace}
 		Expect(k8sClient.Get(ctx, key, &corev1.ServiceAccount{})).To(Succeed())
-		Expect(k8sClient.Get(ctx, key, &rbacv1.RoleBinding{})).To(Succeed())
+		err = k8sClient.Get(ctx, key, &rbacv1.RoleBinding{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "new checks must not create a legacy ClusterRole binding")
 		Expect(k8sClient.Get(ctx, key, &networkingv1.NetworkPolicy{})).To(Succeed())
 		Expect(k8sClient.Get(ctx, key, &appsv1.DaemonSet{})).To(Succeed())
 
@@ -321,10 +327,13 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		reportName := nodehealth.ReportConfigMapName(check.Name, "node-a")
 		scopedRole := &rbacv1.Role{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedReportAccessName(agentName), Namespace: name.Namespace}, scopedRole)).To(Succeed())
-		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
-			APIGroups: []string{""}, Resources: []string{"configmaps"},
-			ResourceNames: []string{reportName}, Verbs: []string{"get", "update"},
-		}))
+		Expect(scopedRole.Rules).To(ConsistOf(
+			rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+			rbacv1.PolicyRule{
+				APIGroups: []string{""}, Resources: []string{"configmaps"},
+				ResourceNames: []string{reportName}, Verbs: []string{"get", "update"},
+			},
+		))
 
 		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: reportName, Namespace: name.Namespace}, &corev1.ConfigMap{})).To(Succeed())

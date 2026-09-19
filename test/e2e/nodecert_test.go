@@ -111,6 +111,39 @@ var _ = Describe("NodeCertificateCheck", Ordered, Label(utils.CoreLabel), func()
 		}
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
+
+	It("should grant namespace-local creation and restrict report reads and updates", func() {
+		Eventually(func(g Gomega) {
+			assertNodeAgentReportRBAC(g, nodeCertSampleNS, nodeCertDaemonSet, "NodeCertificateCheck", nodeCertSampleName)
+		}, time.Minute, 5*time.Second).Should(Succeed())
+	})
+
+	It("should drain an owned legacy ClusterRole binding without ClusterRole access", func() {
+		createdClusterRole, createdBinding, err := installLegacyNodeAgentBinding(
+			nodeCertSampleNS, nodeCertDaemonSet, "NodeCertificateCheck", nodeCertSampleName,
+		)
+		DeferCleanup(func() {
+			if createdBinding {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "rolebinding", nodeCertDaemonSet,
+					"-n", nodeCertSampleNS, "--ignore-not-found=true"))
+			}
+			if createdClusterRole {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrole", "fathom-node-agent-role",
+					"--ignore-not-found=true"))
+			}
+		})
+		Expect(err).NotTo(HaveOccurred())
+		if !createdBinding {
+			Skip("legacy RoleBinding already exists; leaving preexisting cluster state untouched")
+		}
+
+		Eventually(func(g Gomega) {
+			subjects, err := legacyNodeAgentBindingSubjects(nodeCertSampleNS, nodeCertDaemonSet)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(subjects).To(BeEmpty(), "legacy RoleBinding still grants the node-agent access")
+			assertNodeAgentReportRBAC(g, nodeCertSampleNS, nodeCertDaemonSet, "NodeCertificateCheck", nodeCertSampleName)
+		}, time.Minute, 5*time.Second).Should(Succeed())
+	})
 })
 
 type dsRollout struct {

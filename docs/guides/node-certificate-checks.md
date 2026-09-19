@@ -183,8 +183,9 @@ spec:
   reports.
 - **`timeout`** (default `30s`) — bounds a single scan-and-publish pass.
 - **`paused`** — when set, the operator first clears the per-check Role's
-  report `get`/`update` rules and the shared RoleBinding's agent subject,
-  revoking ConfigMap creation too. It then **removes the agent DaemonSet** and
+  report rules, revoking the agent's report access. It also drains any
+  owner-controlled legacy node-agent RoleBinding, then **removes the agent
+  DaemonSet** and
   preserves the last status snapshot. If access revocation or DaemonSet
   deletion fails, the agent may remain and
   `Ready=False / RBACRevocationFailed` reports the error. Unset `paused` to
@@ -262,9 +263,12 @@ probe image. The operator passes it to the DaemonSet via `--node-agent-image`
   defaults to the chart's appVersion). Teams mirroring images privately set
   this once.
 - The agent is **not** templated as a standalone workload in the chart — the
-  controller creates the DaemonSet, a per-check `ServiceAccount`, Roles and
-  RoleBindings, and the `fathom-node-agent-role` `ClusterRole` at runtime. The
-  namespaced objects are owner-referenced for cascading cleanup.
+  controller creates the DaemonSet, a per-check `ServiceAccount`, and the
+  `<service-account>-report-access` Role and RoleBinding at runtime. The
+  namespaced objects are owner-referenced for cascading cleanup. Existing
+  clusters may still contain the legacy `fathom-node-agent-role` ClusterRole;
+  it is left untouched for administrators to remove after checking for
+  external bindings.
 
 ## Security posture
 
@@ -272,13 +276,13 @@ The agent is built for least privilege:
 
 - **Read-only host access.** Certificate directories are mounted read-only, and
   only the minimal set of directories needed for your `paths` is mounted.
-- **Writes exactly one object** — its own per-node report ConfigMap. A shared
-  role grants ConfigMap creation in the check namespace because Kubernetes
-  cannot restrict `create` by object name. After the operator observes an agent
-  pod, a per-check Role grants `get` and `update` only on the canonical report
-  names for current pods; it cannot read or change other ConfigMaps. It needs no
-  read access to the `NodeCertificateCheck` API; all scan configuration is
-  passed in by the operator.
+- **Writes exactly one object** — its own per-node report ConfigMap. The
+  per-check Role grants ConfigMap creation in the check namespace because
+  Kubernetes cannot restrict `create` by object name. After the operator
+  observes an agent pod, that same Role grants `get` and `update` only on the
+  canonical report names for current pods; it cannot read or change other
+  ConfigMaps. It needs no read access to the `NodeCertificateCheck` API; all
+  scan configuration is passed in by the operator.
 - **Reports are bound to the source check and writing node.** Creation cannot
   be name-scoped with RBAC, so admission requires the exact ServiceAccount
   derived from the immutable source labels (`<source-name>-node-agent` for this
@@ -317,7 +321,7 @@ The agent is built for least privilege:
   report collection, or roll-up: `Ready=False / AdmissionPolicyProvisioningFailed`
   and `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
   verdict and time remain frozen. The operator clears an existing agent's
-  scoped report Role and its subject from the shared create RoleBinding, then
+  report Role rules and drains any owner-controlled legacy RoleBinding, then
   removes its DaemonSet. If any revocation step fails,
   `Ready=False / AgentRevocationFailed` records the failure while report
   collection remains stopped.

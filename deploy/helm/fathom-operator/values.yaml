@@ -19,8 +19,10 @@ probeImage:
 # -- Node-agent. A dedicated, purpose-built image (NOT the operator or probe
 # image). The node-agent is NOT templated as a workload here — the
 # NodeCertificateCheck controller creates the DaemonSet, the per-check
-# ServiceAccount/RoleBinding, and the fathom-node-agent-role ClusterRole at
-# runtime, and passes this image via --node-agent-image.
+# ServiceAccount and report-access Role/RoleBinding at runtime, and passes this
+# image via --node-agent-image. The Role grants ConfigMap create separately
+# from name-scoped get/update permissions; report authenticity remains enforced
+# by a shared runtime admission policy.
 nodeAgent:
   image:
     repository: ghcr.io/skaphos/fathom-node-agent

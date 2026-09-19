@@ -252,8 +252,8 @@ closed before provisioning agents, collecting reports, or rolling up a
 verdict: `Ready=False / AdmissionPolicyProvisioningFailed` and
 `ReportsAuthentic=Unknown / EnforcementUnavailable`. The last complete
 `lastResult`, `lastRunTime`, `lastReportName`, and `nodeResults` remain frozen.
-The controller attempts both clearing the existing agent's scoped update and
-shared create permissions and deleting its DaemonSet. If either step fails,
+The controller clears the existing agent's report Role rules and drains any
+owner-controlled legacy RoleBinding, then deletes its DaemonSet. If either step fails,
 `Ready=False / AgentRevocationFailed` reports the cleanup failure alongside
 the admission error. Reports are not consumed until enforcement recovers. See
 the same requirement in the

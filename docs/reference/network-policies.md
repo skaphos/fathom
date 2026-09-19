@@ -50,9 +50,11 @@ DaemonSet:
 - **Egress**: only TCP destination ports 443 and 6443. This is a port-only
   filter; it does not restrict destinations to the API server. Both ports are
   allowed because service traffic to the `kubernetes` ClusterIP (443) is
-  policed post-DNAT against the endpoint port (6443) by most CNIs. If your API
-  server uses another port, add an appropriate policy; policies are additive.
-  Narrowing destinations is a follow-up tracked in #274.
+  policed post-DNAT against the endpoint port (6443) by most CNIs. On an
+  enforcing CNI, any destination reachable on either port is therefore still
+  allowed; this is a documented residual risk rather than an address-level
+  restriction. If your API server uses another port, add an appropriate policy;
+  policies are additive.
 - **Lifecycle**: garbage-collected with the check; like the agent's RBAC it is
   left in place while the check is paused.
 

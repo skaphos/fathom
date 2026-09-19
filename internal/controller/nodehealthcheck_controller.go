@@ -86,9 +86,9 @@ type NodeHealthCheckReconciler struct {
 	// (cmd/node-agent), run here in --mode health.
 	NodeAgentImage string
 
-	// NodeAgentRoleName is the ClusterRole the per-check RoleBinding grants to
-	// the node-agent ServiceAccount. Defaults to defaultNodeAgentRoleName; the
-	// same runtime singleton NodeCertificateCheck converges.
+	// NodeAgentRoleName identifies the legacy shared ClusterRole whose existing
+	// per-check bindings are drained during migration. Defaults to
+	// defaultNodeAgentRoleName.
 	NodeAgentRoleName string
 
 	// APIReader reads Node objects (for NodeCondition items) and the agent pods
@@ -137,7 +137,6 @@ func (r *NodeHealthCheckReconciler) now() time.Time {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionpolicies;validatingadmissionpolicybindings,verbs=get;list;watch;create;update
@@ -250,9 +249,6 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// failure must never leave a previous generation's posture advertised.
 	r.setAgentPrivileged(&check, items)
 
-	if err := ensureNodeAgentClusterRole(ctx, r.Client, r.roleName()); err != nil {
-		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
-	}
 	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
 	if err != nil {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -272,6 +268,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	saName, err := r.ensureAgentRBAC(ctx, &check)
 	if err != nil {
+		if revokeErr := r.revokeAgent(ctx, &check); revokeErr != nil {
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", errors.Join(
+				fmt.Errorf("provision node-agent RBAC: %w", err),
+				fmt.Errorf("revoke node-agent after RBAC provisioning failed: %w", revokeErr),
+			))
+		}
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 	// Converge the NetworkPolicy before the DaemonSet so agent pods never start
@@ -480,18 +482,17 @@ func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr
 }
 
 // revokeAgent removes the node-agent DaemonSet for a specification the
-// operator will not run. Clearing the scoped Role's rules and the shared
-// RoleBinding's subjects revokes report update and create access. That cleanup
-// and deleting the agent are both attempted, so failure of one does not prevent
-// the other revocation step. The owner-referenced ServiceAccount, empty
-// bindings and Role, and NetworkPolicy remain for later reconciliation.
+// operator will not run. Clearing the per-check Role's rules and any legacy
+// binding subjects revokes all report access. That cleanup and deleting the
+// agent are both attempted, so failure of one does not prevent the other
+// revocation step. The owner-referenced ServiceAccount, empty bindings and
+// Role, and NetworkPolicy remain for later reconciliation.
 func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
 	var revokeErrors []error
-	if err := clearNodeAgentAccess(ctx, r.Client, check, nodeHealthAgentResourceName(check), r.roleName()); err != nil {
+	if err := clearNodeAgentAccess(ctx, r.apiReader(), r.Client, check, nodeHealthAgentResourceName(check), r.roleName()); err != nil {
 		revokeErrors = append(revokeErrors, fmt.Errorf("revoke node-agent API access: %w", err))
 	}
-	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}}
-	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+	if err := deleteOwnedNodeAgentDaemonSet(ctx, r.apiReader(), r.Client, check, nodeHealthAgentResourceName(check)); err != nil {
 		revokeErrors = append(revokeErrors, fmt.Errorf("remove node-agent DaemonSet: %w", err))
 	}
 	return errors.Join(revokeErrors...)
@@ -512,9 +513,10 @@ func (r *NodeHealthCheckReconciler) invalidateAgentConditions(check *fathomv1alp
 	}
 }
 
-// ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding
-// (both owner-referenced, in the check namespace) that grant the node-agent
-// its least-privilege, namespaced ConfigMap access.
+// ensureAgentRBAC provisions the per-check ServiceAccount and drains any
+// owner-referenced legacy binding to the shared ClusterRole. The namespaced
+// report-access Role and RoleBinding grant the current permissions after pod
+// discovery.
 func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) (string, error) {
 	name := nodeHealthAgentResourceName(check)
 	labels := nodeHealthAgentLabels(check)
@@ -527,18 +529,7 @@ func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *
 		return "", err
 	}
 
-	rb := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
-		expectedRoleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
-		if rb.CreationTimestamp.IsZero() {
-			rb.RoleRef = expectedRoleRef
-		} else if rb.RoleRef != expectedRoleRef {
-			return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", rb.Namespace, rb.Name, rb.RoleRef.Kind, rb.RoleRef.Name, r.roleName())
-		}
-		rb.Labels = mergeLabels(rb.Labels, labels)
-		rb.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: name, Namespace: check.Namespace}}
-		return controllerutil.SetControllerReference(check, rb, r.Scheme)
-	}); err != nil {
+	if err := clearSharedAgentBindingAccess(ctx, r.apiReader(), r.Client, check, name, r.roleName()); err != nil {
 		return "", err
 	}
 	return name, nil

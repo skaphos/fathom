@@ -192,6 +192,20 @@ syft "${IMAGE}" -o spdx-json
 [cosign]: https://github.com/sigstore/cosign
 [syft]: https://github.com/anchore/syft
 
+## Node-agent RBAC migration
+
+Upgrading from a release that used the shared `fathom-node-agent-role`
+ClusterRole moves each `NodeCertificateCheck` and `NodeHealthCheck` to its
+namespaced `<service-account>-report-access` Role and RoleBinding. The operator
+clears Subjects on owner-controlled legacy bindings while leaving their
+immutable RoleRef and the old ClusterRole untouched. After all checks have
+migrated, verify that no external RoleBinding still relies on that ClusterRole,
+or ClusterRoleBinding still relies on it, then remove it manually if desired.
+Do not remove it before that verification. A migration error triggers access
+revocation and agent teardown. If cleanup also fails, the affected check
+reports `Ready=False / AgentRevocationFailed`; resolve migration and cleanup
+errors before removing any legacy RBAC.
+
 ## Rollback / Fix Forward
 
 - If the release workflow fails after the tag lands, fix the workflow and

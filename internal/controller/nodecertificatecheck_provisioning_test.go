@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -76,7 +77,10 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 					}
 					controller := true
 					objects = append(objects,
-						&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}},
+						&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
+							Name: agentResourceName(check), Namespace: check.Namespace,
+							OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller}},
+						}},
 						&rbacv1.Role{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
@@ -218,7 +222,9 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
 		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}},
 	}
-	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
+		Name: agentResourceName(check), Namespace: check.Namespace, OwnerReferences: role.OwnerReferences,
+	}}
 	scheme := newProvisioningScheme(t)
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	deleteDenied := apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, agent.Name, errors.New("delete denied"))
@@ -273,7 +279,7 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 		t.Fatal(err)
 	}
 	if len(clearedBinding.Subjects) != 0 {
-		t.Errorf("shared create RoleBinding retained subjects after delete failure: %+v", clearedBinding.Subjects)
+		t.Errorf("legacy shared RoleBinding retained subjects after delete failure: %+v", clearedBinding.Subjects)
 	}
 }
 
@@ -296,7 +302,9 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
 		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentResourceName(check), Namespace: check.Namespace}},
 	}
-	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
+	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
+		Name: agentResourceName(check), Namespace: check.Namespace, OwnerReferences: role.OwnerReferences,
+	}}
 	scheme := newProvisioningScheme(t)
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	updateDenied := apierrors.NewForbidden(schema.GroupResource{Group: rbacv1.GroupName, Resource: "roles"}, role.Name, errors.New("update denied"))
@@ -330,7 +338,7 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 		t.Fatal(err)
 	}
 	if len(clearedBinding.Subjects) != 0 {
-		t.Errorf("shared RoleBinding clear was not attempted after Role update failure: %+v", clearedBinding.Subjects)
+		t.Errorf("legacy shared RoleBinding clear was not attempted after Role update failure: %+v", clearedBinding.Subjects)
 	}
 	got := &fathomv1alpha1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {
@@ -346,16 +354,23 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 	}
 }
 
-func TestNodeCertExistingAgentRoleBindingMustReferenceSharedClusterRole(t *testing.T) {
+func TestNodeCertLegacyAgentRoleBindingMustReferenceExpectedClusterRole(t *testing.T) {
 	t.Parallel()
-	check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-wrong-role-ref", Namespace: "default", Generation: 1}}
+	check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-wrong-role-ref", Namespace: "default", UID: "check-uid", Generation: 1}}
+	controller := true
 	binding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace, CreationTimestamp: metav1.Now()},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "foreign-role"},
-		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "victim", Namespace: check.Namespace}},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: agentResourceName(check), Namespace: check.Namespace, CreationTimestamp: metav1.Now(),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller,
+			}},
+		},
+		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "foreign-role"},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "victim", Namespace: check.Namespace}},
 	}
+	foreignDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	scheme := newProvisioningScheme(t)
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding).WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).Build()
 	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img"}
 	key := client.ObjectKeyFromObject(check)
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key}); err == nil || !strings.Contains(err.Error(), "immutable roleRef") {
@@ -367,16 +382,121 @@ func TestNodeCertExistingAgentRoleBindingMustReferenceSharedClusterRole(t *testi
 	if binding.RoleRef.Name != "foreign-role" || len(binding.Subjects) != 1 || binding.Subjects[0].Name != "victim" {
 		t.Errorf("foreign RoleBinding was adopted or mutated: %+v", binding)
 	}
-	if err := cl.Get(context.Background(), client.ObjectKey{Namespace: check.Namespace, Name: agentResourceName(check)}, &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("DaemonSet exists after RoleBinding validation failure: %v", err)
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(foreignDaemonSet), &appsv1.DaemonSet{}); err != nil {
+		t.Fatalf("foreign same-name DaemonSet was deleted after RoleBinding validation failure: %v", err)
 	}
 	got := &fathomv1alpha1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {
 		t.Fatal(err)
 	}
 	ready := apiMeta.FindStatusCondition(got.Status.Conditions, nodeCertConditionReady)
-	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "RBACProvisioningFailed" {
-		t.Errorf("Ready = %+v, want False/RBACProvisioningFailed", ready)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "AgentRevocationFailed" {
+		t.Errorf("Ready = %+v, want False/AgentRevocationFailed", ready)
+	}
+}
+
+func TestNodeCertRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name            string
+		deleteFails     bool
+		daemonSetExists bool
+	}{
+		{name: "legacy binding update fails but DaemonSet is deleted"},
+		{name: "legacy binding update and DaemonSet deletion fail", deleteFails: true, daemonSetExists: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scheme := newProvisioningScheme(t)
+			lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
+			check := &fathomv1alpha1.NodeCertificateCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nc-rbac-migration", Namespace: "default", UID: "check-uid", Generation: 2},
+				Status: fathomv1alpha1.NodeCertificateCheckStatus{
+					ObservedGeneration: 1, LastRunTime: &lastRun, LastResult: "Pass", LastReportName: "previous-report",
+					Conditions: []metav1.Condition{
+						{Type: nodeCertConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeCertConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1, LastTransitionTime: lastRun},
+						{Type: nodeCertConditionCoverage, Status: metav1.ConditionTrue, Reason: "Complete", ObservedGeneration: 1, LastTransitionTime: lastRun},
+					},
+				},
+			}
+			agentName := agentResourceName(check)
+			owner := metav1.OwnerReference{
+				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck,
+				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
+			}
+			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, UID: "ds-uid", OwnerReferences: []metav1.OwnerReference{owner}}}
+			role := &rbacv1.Role{
+				ObjectMeta: metav1.ObjectMeta{Name: scopedReportAccessName(agentName), Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}},
+				Rules: []rbacv1.PolicyRule{
+					{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+					{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}},
+				},
+			}
+			binding := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}},
+				RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: defaultNodeAgentRoleName},
+				Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: agentName, Namespace: check.Namespace}},
+			}
+			bindingErr := errors.New("legacy RoleBinding update denied")
+			deleteErr := errors.New("DaemonSet delete denied")
+			var bindingUpdates, deleteAttempts int
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
+				WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+						if _, ok := obj.(*rbacv1.RoleBinding); ok {
+							bindingUpdates++
+							return bindingErr
+						}
+						return c.Update(ctx, obj, opts...)
+					},
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*appsv1.DaemonSet); ok {
+							deleteAttempts++
+							if tc.deleteFails {
+								return deleteErr
+							}
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				}).Build()
+			r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img:test"}
+			_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
+			if !errors.Is(err, bindingErr) || !strings.Contains(err.Error(), "revoke node-agent after RBAC provisioning failed") {
+				t.Fatalf("Reconcile error = %v, want original binding failure and contextual revocation failure", err)
+			}
+			if tc.deleteFails && !errors.Is(err, deleteErr) {
+				t.Fatalf("Reconcile error = %v, want joined delete failure %v", err, deleteErr)
+			}
+			if bindingUpdates != 2 || deleteAttempts != 1 {
+				t.Fatalf("cleanup attempts = binding updates %d, DaemonSet deletes %d; want 2 and 1", bindingUpdates, deleteAttempts)
+			}
+			clearedRole := &rbacv1.Role{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(role), clearedRole); err != nil || len(clearedRole.Rules) != 0 {
+				t.Fatalf("per-check permissions were not cleared: role=%+v err=%v", clearedRole.Rules, err)
+			}
+			dsErr := cl.Get(context.Background(), client.ObjectKeyFromObject(ds), &appsv1.DaemonSet{})
+			if tc.daemonSetExists && dsErr != nil {
+				t.Fatalf("failed delete unexpectedly removed DaemonSet: %v", dsErr)
+			}
+			if !tc.daemonSetExists && !apierrors.IsNotFound(dsErr) {
+				t.Fatalf("successful delete left DaemonSet behind: %v", dsErr)
+			}
+			persisted := &fathomv1alpha1.NodeCertificateCheck{}
+			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
+				t.Fatal(err)
+			}
+			for _, typ := range []string{nodeCertConditionReady, nodeCertConditionAgentReady, nodeCertConditionCoverage} {
+				condition := apiMeta.FindStatusCondition(persisted.Status.Conditions, typ)
+				if condition == nil || condition.Status != metav1.ConditionFalse || condition.Reason != "AgentRevocationFailed" || condition.ObservedGeneration != check.Generation {
+					t.Errorf("%s = %+v, want False/AgentRevocationFailed at generation %d", typ, condition, check.Generation)
+				}
+			}
+			if persisted.Status.LastResult != check.Status.LastResult || persisted.Status.LastReportName != check.Status.LastReportName || persisted.Status.LastRunTime == nil || !persisted.Status.LastRunTime.Equal(check.Status.LastRunTime) {
+				t.Errorf("RBAC migration failure changed historical verdict: got %+v, want %+v", persisted.Status, check.Status)
+			}
+		})
 	}
 }
 
@@ -409,16 +529,14 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 	}
 
 	scheme := newProvisioningScheme(t)
-	denied := apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "fathom-node-agent-role", context.DeadlineExceeded)
+	denied := apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, agentResourceName(check), context.DeadlineExceeded)
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(check).
 		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
-			// The node-agent ClusterRole is the first thing Reconcile ensures, so
-			// failing it exercises the earliest ensure-failure return.
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				if _, ok := obj.(*rbacv1.ClusterRole); ok {
+				if _, ok := obj.(*corev1.ServiceAccount); ok {
 					return denied
 				}
 				return c.Create(ctx, obj, opts...)

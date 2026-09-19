@@ -237,10 +237,13 @@ adapter level is forced to `Error`.
 - **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
   report-access `Role` and `RoleBinding`s, and `NetworkPolicy` (metrics-only
   ingress and TCP 443/6443
-  egress by destination port — see [Network policies](reference/network-policies.md)), and the
-  `fathom-node-agent-role` `ClusterRole` (created at
-  runtime so its name survives kustomize/OLM name prefixing); creates
-  `HealthReport` objects and writes `NodeCertificateCheck.status`. All owned
+  egress by destination port — see
+  [Network policies](reference/network-policies.md));
+  the per-check report Role grants ConfigMap `create` separately and
+  name-scoped `get`/`update` for current agent reports. The shared
+  report-authenticity `ValidatingAdmissionPolicy` remains a runtime singleton.
+  The reconciler also creates `HealthReport` objects and writes
+  `NodeCertificateCheck.status`. All owned
   objects live in the check's namespace and are owner-referenced for cascading
   garbage collection.
 - **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
@@ -262,9 +265,9 @@ adapter level is forced to `Error`.
   gauge for alerting.
 - **Paused:** when `spec.paused`, the scoped report Role is emptied before the
   agent `DaemonSet` is removed, and the last status snapshot is preserved
-  (`Ready=False / Paused`). Failure to clear access stops deletion; failure in
-  either revocation step reports `Ready=False / RBACRevocationFailed`, and the
-  agent may remain running.
+  (`Ready=False / Paused`). Revocation and DaemonSet deletion are attempted
+  independently; failure in either reports
+  `Ready=False / RBACRevocationFailed`, and the agent may remain running.
 
 ### NodeHealthCheckReconciler
 
@@ -274,13 +277,13 @@ adapter level is forced to `Error`.
   — a node-agent `DaemonSet` (`<check>-node-health-agent`), a per-check
   `ServiceAccount`, report-access `Role` and `RoleBinding`s, and
   `NetworkPolicy` — plus `HealthReport`
-  objects and `NodeHealthCheck.status`. It converges the *same* runtime
-  singletons (`fathom-node-agent-role` ClusterRole, the report-authenticity
-  `ValidatingAdmissionPolicy`) through shared helpers rather than a second copy.
-  The shared ClusterRole grants ConfigMap creation only; a per-check Role grants
-  `get`/`update` only on canonical reports for current, nonterminating owned
-  pods. The policy requires the exact ServiceAccount derived from immutable
-  source labels and a matching node-bound token claim, while allowing
+  objects and `NodeHealthCheck.status`. It converges the same runtime singleton,
+  the report-authenticity `ValidatingAdmissionPolicy`, through shared helpers
+  rather than a second copy. Each per-check Role grants ConfigMap `create`
+  separately and `get`/`update` only on canonical reports for current,
+  nonterminating owned pods. The policy requires the exact ServiceAccount
+  derived from immutable source labels and a matching node-bound token claim,
+  while allowing
   owner-reference-only adoption and legitimate same-node report refresh.
 - **Watches:** `NodeHealthCheck` (`For`), the owned objects (`Owns`), and
   per-node report `ConfigMap`s by label (`source-kind=NodeHealthCheck`).
