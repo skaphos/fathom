@@ -25,7 +25,7 @@ permissions:
 env:
   # Pinned so a new helmfile release cannot change e2e behaviour behind our
   # backs; bump deliberately. Verified against the upstream checksums file.
-  HELMFILE_VERSION: "1.7.1"
+  HELMFILE_VERSION: "1.8.0"
 
 # The e2e stack is tiered (skaphos/fathom#178): instead of one kind cluster
 # installing every addon, the suite is sharded — an always-on `core` shard
@@ -93,6 +93,8 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
 
       - name: Install helmfile
         # No upstream action is SHA-pinnable for helmfile, so install the
@@ -122,6 +124,7 @@ jobs:
           # image pinned in the config below; kind-action v1.15.0 defaults to it,
           # but stay explicit so an action bump cannot silently move the kind version.
           version: v0.33.0
+          kubectl_version: v1.37.0
           config: test/e2e/fixtures/kind-cluster.yaml
           cluster_name: fathom-e2e
           # Do not wait for node Ready here: kindnet is disabled

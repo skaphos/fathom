@@ -115,7 +115,7 @@ func runCurlPod(serviceAccount, shellCommand string) string {
 			"restartPolicy": "Never",
 			"containers": [{
 				"name": "curl",
-				"image": "curlimages/curl:latest",
+				"image": "curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777",
 				"command": ["/bin/sh", "-c"],
 				"args": [%q],
 				"securityContext": {
@@ -130,7 +130,7 @@ func runCurlPod(serviceAccount, shellCommand string) string {
 	}`, serviceAccount, shellCommand)
 
 	cmd := exec.Command("kubectl", "run", podName, "--restart=Never", "-n", metricsTestNamespace,
-		"--image=curlimages/curl:latest", "--overrides", overrides)
+		"--image=curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777", "--overrides", overrides)
 	_, err := utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "failed to create curl pod %s", podName)
 	DeferCleanup(func() {

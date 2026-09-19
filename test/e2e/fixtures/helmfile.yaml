@@ -70,7 +70,7 @@ releases:
     chart: cilium/cilium
     # Validated against kindest/node v1.37.0 (k8s 1.37) by the e2e suite. Bump
     # together with the node image in kind-cluster.yaml when k8s moves.
-    version: 1.19.5
+    version: 1.20.2
     wait: true
     timeout: 600
     values:
@@ -93,7 +93,7 @@ releases:
       tier: core
       addon: cert-manager
     chart: jetstack/cert-manager
-    version: v1.20.2
+    version: v1.21.2
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -124,7 +124,7 @@ releases:
     labels:
       addon: external-dns
     chart: external-dns/external-dns
-    version: 1.21.1
+    version: 1.22.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -139,6 +139,9 @@ releases:
       # crd_health family asserts a real Established CRD against this stack.
       - provider:
           name: inmemory
+        # Chart 1.22 requires the policy to be explicit. Preserve the previous
+        # chart default so this fixture remains non-destructive.
+        policy: upsert-only
         resources:
           requests:
             cpu: 10m
@@ -149,7 +152,7 @@ releases:
     labels:
       addon: metrics-server
     chart: metrics-server/metrics-server
-    version: 3.13.1
+    version: 3.14.0
     needs:
       - kube-system/cilium
     wait: true
@@ -173,7 +176,7 @@ releases:
     labels:
       addon: kube-state-metrics
     chart: prometheus-community/kube-state-metrics
-    version: 7.8.1
+    version: 8.5.0
     needs:
       - kube-system/cilium
     wait: true
@@ -195,7 +198,7 @@ releases:
     labels:
       addon: envoy-gateway
     chart: envoyproxy/gateway-helm
-    version: 1.8.2
+    version: 1.9.1
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -222,7 +225,7 @@ releases:
     labels:
       addon: istio
     chart: istio/base
-    version: 1.30.2
+    version: 1.31.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -234,7 +237,7 @@ releases:
     labels:
       addon: istio
     chart: istio/istiod
-    version: 1.30.2
+    version: 1.31.0
     needs:
       - istio-system/istio-base
     wait: true
@@ -244,10 +247,14 @@ releases:
       # Docker Hub is the supported image source for existing releases.
       - global:
           hub: docker.io/istio
-      # Chart-default requests (500m CPU / 2Gi memory) are sized for real
-      # clusters; shrink them so the single-node kind cluster schedules
-      # istiod alongside the rest of the stack.
+      # Keep one stable istiod replica: the fixture validates Istio health,
+      # not autoscaling, and the tiny test-cluster CPU request otherwise makes
+      # the HPA scale during the first AddonCheck evaluation. Chart-default
+      # requests (500m CPU / 2Gi memory) are sized for real clusters; shrink
+      # them so the single-node kind cluster schedules the control plane.
       - pilot:
+          autoscaleEnabled: false
+          replicaCount: 1
           resources:
             requests:
               cpu: 10m
@@ -272,7 +279,9 @@ releases:
     wait: true
     timeout: 600
     values:
-      - config:
+      - image:
+          tag: "1.26.0@sha256:3ddee59877cfea79efc11e455287ed078faec8d33c008e45e225f22f6e8ecb63"
+        config:
           dnsDomain: "cluster.local"
           # kind's kube-dns Service IP (default serviceSubnet 10.96.0.0/16).
           dnsServer: "10.96.0.10"
@@ -295,7 +304,7 @@ releases:
     # Fathom's adapter prefers v1 (with a v1beta1 fallback for older clusters)
     # so the e2e fixture tracks the current stable chart.
     chart: external-secrets/external-secrets
-    version: 2.5.0
+    version: 2.10.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -329,7 +338,7 @@ releases:
     labels:
       addon: argocd
     chart: argo/argo-cd
-    version: 10.2.1
+    version: 10.9.2
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -375,7 +384,7 @@ releases:
     labels:
       addon: azure-workload-identity
     chart: azure-workload-identity/workload-identity-webhook
-    version: 1.6.0
+    version: 1.6.1
     needs:
       - kube-system/cilium
     createNamespace: true

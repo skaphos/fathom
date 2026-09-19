@@ -81,13 +81,13 @@ func scrapeOperatorMetrics(podName string) string {
 
 	cmd = exec.Command("kubectl", "run", podName, "--restart=Never",
 		"--namespace", namespace,
-		"--image=curlimages/curl:latest",
+		"--image=curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777",
 		"--overrides",
 		fmt.Sprintf(`{
 			"spec": {
 				"containers": [{
 					"name": "curl",
-					"image": "curlimages/curl:latest",
+					"image": "curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777",
 					"command": ["/bin/sh", "-c"],
 					"args": ["curl -s -f -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
 					"securityContext": {

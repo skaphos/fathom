@@ -1,7 +1,7 @@
 # Graph Report - fathom  (2026-09-19)
 
 ## Corpus Check
-- 458 files · ~585,734 words
+- 459 files · ~587,590 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `34643f08`
+- Built from commit: `b5d83468`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1418,11 +1418,11 @@ Nodes (23): TestWorstResult(), WorstResult(), HealthCheckStatus, HealthReportChe
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `New()` connect `New` to `.Run`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.Run`, `.Name`, `.detectAndGateVersion`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `quorum-ratio-rollups/cmd/probe/main_test.go`, `observeCheck`, `.DeepCopy`, `quorum-ratio-rollups/internal/probe/sweeper_test.go`, `Init`, `.Update`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopy`, `.DeepCopyInto`, `.DeepCopyInto`, `newScheme`, `.DeepCopy`, `.DeepCopy`, `.DeepCopyInto`, `.DeepCopy`, `.DeepCopy`, `TestClientForSetsImpersonationAndMemoizes`, `join`, `TestAdapterClient`, `k8s.io/apimachinery/pkg/runtime.Object`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Why does `CheckResult` connect `CheckResult` to `.Run`, `.detectAndGateVersion`, `Request`, `internal/adapter/declarative/annotation_test.go`, `.Run`, `FamilyPolicy`, `Family`, `internal/adapter/certmanager/adapter.go`, `internal/adapter/certmanager/adapter_test.go`, `k8s.io/api/core/v1.Pod`, `.Run`, `newFakeClient`, `assertHasDetail`, `deploymentInNamespace`, `assertHasOutcome`, `quorum-ratio-rollups/internal/adapter/declarative/evaluator.go`, `context.Context`, `time.Duration`, `FamilyRatioVerdict`, `.checkCRD`, `time.Time`, `addoncheck_controller.go`, `k8s.io/apimachinery/pkg/apis/meta/v1.Time`, `.Evaluate`, `MustEngine`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
 - **Why does `join()` connect `join` to `quorum-ratio-rollups/cmd/probe/main_test.go`, `quorum-ratio-rollups/internal/nodecert/paths.go`, `.Run`, `CheckResult`, `quorum-ratio-rollups/internal/adapter/rbacgen/rbacgen.go`, `normalizeShell`, `quorum-ratio-rollups/internal/controller/nodecertificatecheck_helpers.go`, `FamilyPolicy`, `quorum-ratio-rollups/internal/probe/pod_test.go`, `quorum-ratio-rollups/internal/controller/healthreport_idempotency.go`, `k8s.io/api/core/v1.Pod`, `quorum-ratio-rollups/test/utils/utils.go`, `main`, `newScheme`, `quorum-ratio-rollups/internal/controller/policy_validation_test.go`, `.checkCRD`, `.IsReadOnly`, `quorum-ratio-rollups/internal/app/run_happy_test.go`, `.Evaluate`, `quorum-ratio-rollups/internal/nodecert/scan_test.go`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+  _High betweenness centrality (0.018) - this node is a cross-community bridge._
 - **Are the 108 inferred relationships involving `assertHasOutcome()` (e.g. with `TestAnnotationStaleness_NamedLock()` and `TestAnnotationStaleness_NodeList()`) actually correct?**
   _`assertHasOutcome()` has 108 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 110 inferred relationships involving `assertHasOutcome()` (e.g. with `TestAnnotationStaleness_NamedLock()` and `TestAnnotationStaleness_NodeList()`) actually correct?**
