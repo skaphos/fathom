@@ -294,9 +294,9 @@ func TestDNSCheckTargetSeriesCeiling(t *testing.T) {
 }
 
 // TestCheckResultValuesMatchAPIVocabulary pins checkResultValues to the
-// api/v1alpha1 HealthReportResult constants. The literal exists so this
-// package stays free of API/apimachinery imports (the node-agent binary
-// serves these metrics); this test is the sync guarantee (FR-002/SC-004).
+// api/v1alpha1 HealthReportResult constants. The literal keeps production
+// metrics code independent of API/apimachinery; this test is the sync
+// guarantee (FR-002/SC-004).
 func TestCheckResultValuesMatchAPIVocabulary(t *testing.T) {
 	api := []string{
 		string(fathomv1alpha1.HealthReportResultPass),

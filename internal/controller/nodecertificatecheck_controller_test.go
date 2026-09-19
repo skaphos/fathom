@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
@@ -617,6 +618,7 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal("PartialReports"))
+		Expect(metrics.NodeCertificateExpiryDays.DeleteLabelValues(name.Namespace, name.Name, "node-a")).To(BeTrue(), "accepted node detail remains useful while fleet coverage is partial")
 
 		reports := &fathomv1alpha1.HealthReportList{}
 		Expect(k8sClient.List(ctx, reports, client.InNamespace("default"), client.MatchingLabels{
@@ -685,6 +687,8 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(coverage.Status).To(Equal(metav1.ConditionFalse))
 		Expect(coverage.Reason).To(Equal("PartialReports"))
 		Expect(coverage.Message).To(ContainSubstring("node-b"))
+		Expect(metrics.NodeCertificateExpiryDays.DeleteLabelValues(name.Namespace, name.Name, "node-b")).To(BeFalse(), "stale node detail must be withdrawn")
+		Expect(metrics.NodeCertificateExpiryDays.DeleteLabelValues(name.Namespace, name.Name, "node-a")).To(BeTrue(), "the remaining fresh node detail must stay published")
 	})
 
 	It("does not let a departed node's report cover a newly joined node (COR-4)", func() {

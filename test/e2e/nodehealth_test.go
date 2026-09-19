@@ -116,6 +116,15 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 		By(fmt.Sprintf("observed HealthReport %q with node_health Pass for every type", latest.Metadata.Name))
 	})
 
+	It("should keep liveness and reports while removing metrics in both network modes", func() {
+		By("checking the privileged host-network agent")
+		assertAgentDoesNotServeMetrics(nodeHealthDaemonSet, nodeHealthSampleNS)
+		assertNodeHealthMetrics()
+
+		By("checking a headroom-only pod-network agent")
+		assertPodNetworkHealthAgentSecurity()
+	})
+
 	It("should mirror Ready=True, per-node results, and the privileged posture into status", func() {
 		verify := func(g Gomega) {
 			status, err := nodeHealthStatus(nodeHealthSampleName, nodeHealthSampleNS)

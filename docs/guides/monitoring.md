@@ -165,42 +165,35 @@ bound elapsed — the check's `Complete` condition names how many. That is a
 sizing problem rather than a DNS problem; see
 [DNSCheck fan-out](../reference/configuration.md#dnscheck-fan-out).
 
-### Node-agent metric
+### Node certificate metrics
 
 > Applies only to builds that include the `NodeCertificateCheck` kind — see
 > [Node certificate checks → Availability](node-certificate-checks.md#availability).
 
-Each node-agent (from a `NodeCertificateCheck`) exports an expiry gauge on its
-own metrics endpoint:
+The operator exports the earliest known expiry from each accepted
+`NodeCertificateCheck` report:
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
-| `fathom_node_certificate_expiry_days` | gauge | `node`, `path` | **Days until each certificate expires.** The cleanest signal for proactive cert-expiry alerts. Labeled only by node and path — certificate subject/issuer DNs are kept off this unauthenticated endpoint (and out of the label cardinality) and live in the `HealthReport` detail instead. |
+| `fathom_node_certificate_expiry_days` | gauge | `namespace`, `check`, `node` | **Minimum known days until certificate expiry for the check and node.** Negative means expired. Paths, subjects, and issuers remain in the `HealthReport` and never become metric labels. A report with no known expiry emits no sample. |
 
-The node-agents are a DaemonSet the controller creates at runtime, so how you
-scrape them depends on your Prometheus setup — a `PodMonitor` selecting the
-agent pods, or pod scrape annotations, rather than the operator's
-`ServiceMonitor`.
-
-The controller also creates a NetworkPolicy alongside each agent DaemonSet
-that admits metrics ingress **only from namespaces labeled
-`metrics: enabled`**. On a CNI that enforces NetworkPolicy, label your
-monitoring namespace (`kubectl label namespace <ns> metrics=enabled`) or the
-scrape will be dropped — see
-[Network policies](../reference/network-policies.md).
+Scrape this gauge through the same operator `ServiceMonitor` described above.
+Remove any node-agent `PodMonitor` or scrape annotations: agents retain their
+listener for `/healthz`, but `/metrics` returns 404. The ServiceMonitor sends
+its ServiceAccount bearer token over HTTPS; that identity must be bound to the
+shipped metrics-reader role.
 
 ### Node-health metrics
 
 > Applies only to builds that include the `NodeHealthCheck` kind — see
 > [Node health checks → Availability](node-health-checks.md#availability).
 
-Each node-agent running for a `NodeHealthCheck` exports two gauges on its own
-metrics endpoint:
+The operator exports two gauges from accepted `NodeHealthCheck` agent reports:
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
-| `fathom_node_health_check_result` | gauge (one-hot) | `node`, `type`, `path`, `result` | **Per-check result on each node, for the agent-evaluated types only** (`DiskHeadroom`, `InodeHeadroom`, `KubeletHealthz`, `ContainerRuntime`). `NodeCondition` is graded by the operator, not the agent, so it has no series here; it is visible in the check-level `fathom_check_result`, `status.nodeResults`, and the HealthReport. Exactly one `result` series per `(node, type, path)` is 1. Alert on the node and check that broke rather than on the check as a whole. Series are bounded by the schema: 16 items × 6 results per node. |
-| `fathom_node_health_filesystem_free_percent` | gauge | `node`, `path`, `resource` (`bytes` \| `inodes`) | **The measured headroom behind a `DiskHeadroom`/`InodeHeadroom` verdict**, so you can graph the trend and alert ahead of the threshold. |
+| `fathom_node_health_check_result` | gauge (one-hot) | `namespace`, `check`, `node`, `type`, `path`, `result` | **Per-item result on each node, for agent-evaluated types only** (`DiskHeadroom`, `InodeHeadroom`, `KubeletHealthz`, `ContainerRuntime`). `NodeCondition` is graded by the operator and remains visible in check status and the `HealthReport`. Exactly one `result` series per item is 1. Series are bounded by the schema: 16 items × 6 results per node. |
+| `fathom_node_health_filesystem_free_percent` | gauge | `namespace`, `check`, `node`, `path`, `resource` (`bytes` \| `inodes`) | **The measured headroom behind a `DiskHeadroom`/`InodeHeadroom` verdict**, so you can graph the trend and alert ahead of the threshold. |
 
 ```yaml
       - alert: NodeHealthCheckFailing
@@ -216,12 +209,31 @@ metrics endpoint:
         labels: {severity: warning}
 ```
 
-Scrape these agents the same way as the certificate agents (a `PodMonitor` on
-the agent pods, or scrape annotations). Note that a `KubeletHealthz` item puts
-the agent on the **host network**: its metrics then bind on a per-check host
-port (20000–22767 by default; the check's `AgentPrivileged` condition names it) and the
-per-check NetworkPolicy does not gate them — see
-[Network policies](../reference/network-policies.md#node-agent-daemonset-runtime-managed-always-on).
+These families use the operator `ServiceMonitor`; do not scrape agents. A
+`KubeletHealthz` item still puts the agent on the **host network**, and its
+liveness listener still binds on a per-check host port (20000–22767 by default;
+the `AgentPrivileged` condition names it). That port returns 404 for `/metrics`.
+
+Node-detail values follow report and reconcile cadence rather than a live
+scrape. Only fresh, authentic reports for expected nodes contribute. During a
+partial fleet window, the accepted subset is exposed without manufacturing
+healthy samples for missing nodes, while the last complete aggregate status and
+`HealthReport` history remain intact. Reconciliation withdraws a check's old
+detail series before rebuilding them, so a scrape can briefly see them absent;
+pause, deletion, rejected or expired reports, removed nodes, and removed items
+withdraw their series without erasing another check's samples.
+
+With multiple operator replicas, use the normal leader-election deployment and
+replica-aware queries such as
+`max by (namespace, check, node, type, path, result) (...)`. The existing
+check-result and last-run metrics remain the way to detect a stalled controller
+or frozen evidence.
+
+The label names above are endpoint labels. Prometheus commonly adds its own
+target `namespace` label and, with `honor_labels: false`, renames Fathom's check
+namespace to `exported_namespace`. Use that label in grouping, or explicitly
+configure label preservation. Never group checks only by the operator target's
+namespace, because same-named checks in different namespaces would collide.
 
 ## 3. Tracing
 
@@ -257,19 +269,23 @@ groups:
   - name: fathom-node-certs
     rules:
       - alert: NodeCertificateExpiringSoon
-        expr: min by (node, path) (fathom_node_certificate_expiry_days) <= 14
+        expr: min by (namespace, check, node) (fathom_node_certificate_expiry_days) <= 14
         for: 1h
         labels:
           severity: warning
         annotations:
-          summary: "Certificate on {{ $labels.node }} expires in <= 14 days"
-          description: "{{ $labels.path }} on {{ $labels.node }}"
+          summary: "Certificate for {{ $labels.namespace }}/{{ $labels.check }} on {{ $labels.node }} expires in <= 14 days"
       - alert: NodeCertificateExpiringCritical
-        expr: min by (node, path) (fathom_node_certificate_expiry_days) <= 3
+        expr: min by (namespace, check, node) (fathom_node_certificate_expiry_days) <= 3
         for: 10m
         labels:
           severity: critical
 ```
+
+If Prometheus has renamed the endpoint's `namespace` label, substitute
+`exported_namespace` in these expressions and annotations. The metric already
+contains the minimum for each check and node; the `min by` also collapses
+duplicate samples during a multi-replica rollout.
 
 ### Reconcile / adapter errors
 

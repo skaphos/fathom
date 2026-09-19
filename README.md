@@ -239,9 +239,11 @@ node** and reports time-to-expiry before an expiring certificate can take the
 cluster down. The operator runs the scan via a dedicated, hardened node-agent
 DaemonSet (`cmd/node-agent`, built from `Dockerfile.node-agent` — its own image,
 distinct from the operator and probe images). Each agent reads the configured
-paths over **read-only `hostPath` mounts**, exports a
-`fathom_node_certificate_expiry_days` gauge, and publishes a per-node result
-that the operator rolls up into a `HealthReport`.
+paths over **read-only `hostPath` mounts** and publishes a per-node result.
+The operator rolls accepted reports up into a `HealthReport` and exports the
+minimum known expiry per check and node as
+`fathom_node_certificate_expiry_days` through its authenticated metrics
+endpoint. Certificate paths, subjects, and issuers are not metric labels.
 
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
@@ -330,7 +332,8 @@ the agent's hardened profile, `NodeCondition` needs a cluster-scoped `get` on
 nodes for the operator, `KubeletHealthz` puts the agent on the host network,
 and `ContainerRuntime` runs it as root with the socket mounted. The operator
 grants each privilege only when a check of that type is present and reports
-the posture in effect on the check's `AgentPrivileged` condition. See the
+the posture in effect on the check's `AgentPrivileged` condition. Node-detail
+health metrics are also served by the authenticated operator endpoint. See the
 [Node health checks guide](docs/guides/node-health-checks.md).
 
 ## Probe pods

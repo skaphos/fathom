@@ -206,6 +206,53 @@ revocation and agent teardown. If cleanup also fails, the affected check
 reports `Ready=False / AgentRevocationFailed`; resolve migration and cleanup
 errors before removing any legacy RBAC.
 
+## Node metrics security migration
+
+This release changes the supported scrape boundary for node detail metrics.
+Node-agent `/metrics` now returns 404; `/healthz`, listener flags, container
+ports, and host-network port allocation remain compatible. Certificate and
+node-health series are projected from accepted reports through the operator's
+existing HTTPS endpoint and `get /metrics` authorization.
+
+Upgrade the operator and node-agent images together. If
+`--node-agent-image`, `FATHOM_NODE_AGENT_IMAGE`, the config-file
+`node_agent_image`, or Helm `nodeAgent.image.*` values override the release
+default, update that override explicitly. Then wait for the operator and every
+managed agent DaemonSet to finish rolling out; the vulnerability remains while
+any old agent pod is running:
+
+```bash
+kubectl -n fathom-system rollout status deployment/fathom-controller-manager
+set -o pipefail
+kubectl get daemonsets -A \
+  -l 'fathom.skaphos.io/source-kind in (NodeCertificateCheck,NodeHealthCheck)' \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' |
+while read -r namespace name; do
+  [ -n "$namespace" ] && [ -n "$name" ] || continue
+  kubectl -n "$namespace" rollout status "daemonset/$name" --timeout=10m || exit 1
+done
+```
+
+Remove node-agent PodMonitors and scrape annotations, and use the shipped
+operator ServiceMonitor with a ServiceAccount bound to the metrics-reader role.
+The metric names remain stable, but labels change:
+
+- certificate expiry changes from `node,path` to `namespace,check,node` and is
+  the minimum known expiry for that check and node;
+- node-health families add `namespace,check` while retaining their existing
+  item labels.
+
+Prometheus may rename the endpoint's `namespace` label to
+`exported_namespace` when its target labels collide and `honor_labels` is
+false. Preserve the actual check namespace in aggregations; never group only
+by the operator Service's namespace. See
+[Monitoring and alerting](docs/guides/monitoring.md#node-certificate-metrics)
+for migrated query examples and replica-aware aggregation.
+
+Rollback restores the old unauthenticated agent endpoint and label contract.
+Treat rollback as reopening the disclosure until every rolled-back agent is
+again removed or replaced.
+
 ## Rollback / Fix Forward
 
 - If the release workflow fails after the tag lands, fix the workflow and

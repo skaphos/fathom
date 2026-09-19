@@ -14,6 +14,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	"github.com/skaphos/fathom/internal/nodecert"
+	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
 // Reconcile metrics track the health and performance of the three main reconcilers.
@@ -147,44 +150,38 @@ var (
 )
 
 // checkResultValues is the canonical result vocabulary, mirroring the
-// api/v1alpha1 HealthReportResult constants. It is deliberately a literal —
-// importing the API package here would drag apimachinery into every binary
-// that serves these metrics (the node-agent imports this package) — and a
-// unit test asserts it stays in sync with the API constants, so a new result
-// state cannot silently miss the metric.
+// api/v1alpha1 HealthReportResult constants. It remains a literal to keep this
+// observability package independent of the Kubernetes API types. A unit test
+// asserts it stays in sync, so a new result state cannot silently miss metrics.
 var checkResultValues = []string{"Pass", "Warn", "Fail", "Error", "Skipped", "Unknown"}
 
-// Node-agent metrics are set by the node-agent DaemonSet (cmd/node-agent), which
-// imports this package and serves ctrlmetrics.Registry on its own metrics port.
-// In the operator process the gauge is registered but never set, so it emits no
-// series there.
+// Node-detail metrics are projected by the operator from fresh, validated,
+// in-scope node reports. They are served through the operator's authenticated
+// metrics endpoint; node agents expose liveness only.
 var (
-	// NodeCertificateExpiryDays reports days-until-expiry for each on-disk
-	// certificate a node-agent scans. Negative once a certificate has expired.
-	// Labelled only by node and certificate path: the agent's /metrics endpoint
-	// is unauthenticated, so the sensitive subject/issuer distinguished names are
-	// deliberately NOT exposed here — they live in the HealthReport instead. This
-	// also keeps label cardinality bounded.
+	// NodeCertificateExpiryDays reports the earliest known certificate expiry
+	// for one check and node. Negative once the certificate has expired. Paths,
+	// subjects, and issuers are deliberately absent from the label set.
 	NodeCertificateExpiryDays = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "fathom_node_certificate_expiry_days",
-			Help: "Days until on-disk certificate expiry on a node (negative once expired), by node and path.",
+			Help: "Minimum known days until certificate expiry for a NodeCertificateCheck and node (negative once expired).",
 		},
-		[]string{"node", "path"},
+		[]string{"namespace", "check", "node"},
 	)
 
 	// NodeHealthCheckResult is the per-check result one level below the
 	// NodeHealthCheck's own verdict: a one-hot state set per (node, type, path),
 	// so an operator alerts on the node and check that broke rather than on
 	// the check as a whole (#206). Series count is bounded by the CRD schema:
-	// 16 items × 6 results per node. Labelled by node, type, and path only —
-	// no free-form summary text on this unauthenticated endpoint.
+	// 16 items × 6 results per node. Labels contain the check identity and the
+	// schema-bounded node, type, and path dimensions; no summary text is used.
 	NodeHealthCheckResult = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "fathom_node_health_check_result",
 			Help: "Current result of one NodeHealthCheck item on a node (one-hot: exactly one series per (node, type, path) is 1).",
 		},
-		[]string{"node", "type", "path", "result"},
+		[]string{"namespace", "check", "node", "type", "path", "result"},
 	)
 
 	// NodeHealthFilesystemFreePercent is the measured headroom behind a
@@ -196,7 +193,7 @@ var (
 			Name: "fathom_node_health_filesystem_free_percent",
 			Help: "Percentage of free bytes or inodes on the filesystem holding a NodeHealthCheck headroom path, by node, path, and resource.",
 		},
-		[]string{"node", "path", "resource"},
+		[]string{"namespace", "check", "node", "path", "resource"},
 	)
 )
 
@@ -307,12 +304,50 @@ func RecordAdapterRun(adapter, family, outcome string, duration time.Duration) {
 	AdapterRunDuration.WithLabelValues(adapter, family, outcome).Observe(duration.Seconds())
 }
 
+// ObserveNodeCertificateReport publishes the earliest known expiry from one
+// accepted node report. A report with no nonzero expiry publishes no sample.
+func ObserveNodeCertificateReport(namespace, check string, report nodecert.NodeReport) {
+	var minimum int
+	found := false
+	for _, cert := range report.Certs {
+		if cert.NotAfter.IsZero() || found && cert.DaysRemaining >= minimum {
+			continue
+		}
+		minimum = cert.DaysRemaining
+		found = true
+	}
+	if found {
+		NodeCertificateExpiryDays.WithLabelValues(namespace, check, report.Node).Set(float64(minimum))
+	}
+}
+
+// DeleteNodeCertificateSeries removes only one NodeCertificateCheck's detail
+// series. Reconcilers call it at entry, then rebuild from accepted reports.
+func DeleteNodeCertificateSeries(namespace, check string) {
+	NodeCertificateExpiryDays.DeletePartialMatch(prometheus.Labels{"namespace": namespace, "check": check})
+}
+
+// ObserveNodeHealthReport publishes every item in one accepted node report.
+func ObserveNodeHealthReport(namespace, check string, report nodehealth.NodeReport) {
+	for _, result := range report.Checks {
+		ObserveNodeHealthCheck(namespace, check, report.Node, result.Type, result.Path, string(result.Outcome))
+		if result.PercentFree == nil {
+			continue
+		}
+		resource := "bytes"
+		if result.Type == nodehealth.TypeInodeHeadroom {
+			resource = "inodes"
+		}
+		ObserveNodeHealthFilesystem(namespace, check, report.Node, result.Path, resource, *result.PercentFree)
+	}
+}
+
 // ObserveNodeHealthCheck mirrors one NodeHealthCheck item's outcome on one node
 // into the per-check gauge as a one-hot set. An empty or unrecognized result is
-// coerced to "Unknown", matching ObserveCheck. Callers rebuild rather than
-// diff: ResetNodeHealthSeries first, then one call per item the current pass
-// evaluated, so an item the spec dropped simply disappears.
-func ObserveNodeHealthCheck(node, checkType, path, result string) {
+// coerced to "Unknown", matching ObserveCheck. Reconcilers rebuild rather than
+// diff: delete one check's series first, then observe every accepted report, so
+// an item the spec dropped simply disappears.
+func ObserveNodeHealthCheck(namespace, check, node, checkType, path, result string) {
 	if !slices.Contains(checkResultValues, result) {
 		result = "Unknown"
 	}
@@ -321,20 +356,20 @@ func ObserveNodeHealthCheck(node, checkType, path, result string) {
 		if value == result {
 			current = 1
 		}
-		NodeHealthCheckResult.WithLabelValues(node, checkType, path, value).Set(current)
+		NodeHealthCheckResult.WithLabelValues(namespace, check, node, checkType, path, value).Set(current)
 	}
 }
 
 // ObserveNodeHealthFilesystem records the measured free percentage behind a
 // headroom result.
-func ObserveNodeHealthFilesystem(node, path, resource string, percentFree float64) {
-	NodeHealthFilesystemFreePercent.WithLabelValues(node, path, resource).Set(percentFree)
+func ObserveNodeHealthFilesystem(namespace, check, node, path, resource string, percentFree float64) {
+	NodeHealthFilesystemFreePercent.WithLabelValues(namespace, check, node, path, resource).Set(percentFree)
 }
 
-// ResetNodeHealthSeries clears every node-health series this agent published,
-// so a check or path that disappears between passes does not leave a stale
-// series behind. The agent serves only its own node, so a full reset is exact.
-func ResetNodeHealthSeries() {
-	NodeHealthCheckResult.Reset()
-	NodeHealthFilesystemFreePercent.Reset()
+// DeleteNodeHealthSeries removes only one NodeHealthCheck's detail series.
+// Reconcilers call it at entry, then rebuild from accepted reports.
+func DeleteNodeHealthSeries(namespace, check string) {
+	labels := prometheus.Labels{"namespace": namespace, "check": check}
+	NodeHealthCheckResult.DeletePartialMatch(labels)
+	NodeHealthFilesystemFreePercent.DeletePartialMatch(labels)
 }

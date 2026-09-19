@@ -112,7 +112,7 @@ const (
 	nodeAgentSpecHashAnnotation = "fathom.skaphos.io/spec-hash"
 	nodeAgentSpecHashLength     = 32
 
-	// metricsNamespaceLabelKey/Value gate ingress to the node-agent metrics port
+	// metricsNamespaceLabelKey/Value gate ingress to the node-agent listener
 	// in the managed NetworkPolicy. The same namespace-label contract already
 	// guards the operator's own metrics endpoint
 	// (config/network-policy/allow-metrics-traffic.yaml): label the scraping
@@ -225,6 +225,12 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}()
 
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
+	metrics.DeleteNodeCertificateSeries(req.Namespace, req.Name)
+	defer func() {
+		if err != nil {
+			metrics.DeleteNodeCertificateSeries(req.Namespace, req.Name)
+		}
+	}()
 
 	var check fathomv1alpha1.NodeCertificateCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
@@ -303,7 +309,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	// Converge the NetworkPolicy before the DaemonSet so agent pods never start
-	// in a window where their metrics port is open cluster-wide (#153).
+	// with their liveness listener open cluster-wide (#153).
 	if err := r.ensureAgentNetworkPolicy(ctx, &check); err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "NetworkPolicyProvisioningFailed", err)
 	}
@@ -342,6 +348,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	observeNodeCertificateReports(check.Namespace, check.Name, reports, expected)
 	reported := nodeNameSet(reports)
 
 	token, triggerPending := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
@@ -368,6 +375,14 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	r.setReadyFromState(&check, ds, expected, reported)
 	return r.finish(ctx, log, before, &check, interval)
+}
+
+func observeNodeCertificateReports(namespace, check string, reports []nodecert.NodeReport, expected map[string]struct{}) {
+	for _, report := range reports {
+		if _, ok := expected[report.Node]; ok {
+			metrics.ObserveNodeCertificateReport(namespace, check, report)
+		}
+	}
 }
 
 // nodeCertTemplateToken is the run-now token the agent template carries: the
@@ -668,10 +683,9 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 }
 
 // ensureAgentNetworkPolicy converges the per-check NetworkPolicy that isolates
-// the node-agent pods (#153). Ingress: only the metrics port, and only from
+// the node-agent pods (#153). Ingress: only the liveness port, and only from
 // namespaces labeled metrics=enabled — the same label contract that guards the
-// operator's own metrics endpoint — so the unauthenticated plaintext
-// cert-inventory gauges are not scrapeable from every pod on every node.
+// operator's own metrics endpoint.
 // Egress: TCP ports 443 and 6443 to any destination; Kubernetes NetworkPolicy
 // cannot port-filter a Service while restricting both its pre-DNAT ClusterIP
 // and implementation-specific post-DNAT endpoints. The agent reaches the API

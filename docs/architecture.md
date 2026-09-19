@@ -235,7 +235,7 @@ adapter level is forced to `Error`.
 `internal/controller/nodecertificatecheck_controller.go`
 
 - **Owns / produces:** the node-agent `DaemonSet`, a per-check `ServiceAccount`,
-  report-access `Role` and `RoleBinding`s, and `NetworkPolicy` (metrics-only
+  report-access `Role` and `RoleBinding`s, and `NetworkPolicy` (listener-port
   ingress and TCP 443/6443
   egress by destination port — see
   [Network policies](reference/network-policies.md));
@@ -261,8 +261,10 @@ adapter level is forced to `Error`.
   `status` (`lastResult`, `lastReportName`, `reportingNodes`/`desiredNodes`).
 - **Thresholds:** a certificate within `spec.criticalDays` (default `7`) of
   expiry — or already expired — is `Fail`; within `spec.warnDays` (default `30`)
-  is `Warn`. Each agent also exports a `fathom_node_certificate_expiry_days`
-  gauge for alerting.
+  is `Warn`. The operator projects the earliest known expiry from accepted,
+  in-scope reports as `fathom_node_certificate_expiry_days`, keyed by
+  namespace, check, and node. The agent listener serves `/healthz`; `/metrics`
+  returns 404.
 - **Paused:** when `spec.paused`, the scoped report Role is emptied before the
   agent `DaemonSet` is removed, and the last status snapshot is preserved
   (`Ready=False / Paused`). Revocation and DaemonSet deletion are attempted
@@ -310,6 +312,12 @@ adapter level is forced to `Error`.
   Nodes, or HealthReports produce `Ready=False / EvaluationFailed` and
   `CoverageComplete=Unknown / EvaluationFailed`, while historical roll-up
   fields remain unchanged and `AgentReady` is left unchanged.
+- **Metrics projection:** accepted, fresh reports for expected nodes populate
+  the node-health result and filesystem gauges in the operator registry.
+  Reconciliation first removes only this check's detail series, then rebuilds
+  them from the accepted subset. A partial fleet therefore yields partial
+  detail metrics while the last complete aggregate status and history remain
+  frozen; pause, deletion, rejection, or removal withdraws obsolete series.
 - **Correctness properties** (written against the v0.5.0 review findings, not
   inherited): provisioning failures persist `Ready=False` (COR-2), an
   incomplete window freezes the verdict (COR-3), coverage is per node identity
@@ -497,6 +505,8 @@ The manager is constructed in `internal/app/run.go`:
   (`filters.WithAuthenticationAndAuthorization`) is installed so scrapes require
   a valid token with RBAC. `Options.Validate` refuses to serve plaintext metrics
   on a cluster-routable port unless `metrics.allow_insecure` is set (SKA-287).
+  Node certificate and health detail gauges are reconstructed here from
+  accepted reports; node agents expose liveness but no metrics route.
 - **Tracing:** optional OpenTelemetry spans around each reconcile and adapter
   run, exported via OTLP/gRPC (SKA-293). Off by default — `tracing.Init`
   installs a no-op provider when `tracing.enabled` is false, so the hot paths
