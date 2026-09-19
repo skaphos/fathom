@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -157,6 +158,8 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		Expect(authentic.Status).To(Equal(metav1.ConditionFalse))
 		Expect(authentic.Reason).To(Equal(eventReasonForgedReport))
 		Expect(authentic.Message).To(ContainSubstring(string(nodecert.RejectNodeMismatch)))
+		Expect(metrics.NodeCertificateExpiryDays.DeleteLabelValues(name.Namespace, name.Name, "node-b")).To(BeFalse(), "rejected report must not publish node detail")
+		Expect(metrics.NodeCertificateExpiryDays.DeleteLabelValues(name.Namespace, name.Name, "node-a")).To(BeTrue(), "accepted report must remain published")
 	})
 
 	It("rejects a self-consistent report written at a non-canonical name (SEC-1)", func() {

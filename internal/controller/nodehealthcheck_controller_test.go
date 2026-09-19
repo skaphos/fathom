@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -549,6 +550,12 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(coverage.Reason).To(Equal("PartialReports"))
 		Expect(coverage.Message).To(ContainSubstring("node-a"))
 		Expect(coverage.Message).To(ContainSubstring("node-b"))
+		for _, node := range []string{"node-a", "node-b"} {
+			for _, result := range checkResultValuesForTest {
+				Expect(metrics.NodeHealthCheckResult.DeleteLabelValues(name.Namespace, name.Name, node, nodehealth.TypeDiskHeadroom, "/var/lib/kubelet", result)).To(BeFalse(), "stale node detail must be withdrawn")
+			}
+			Expect(metrics.NodeHealthFilesystemFreePercent.DeleteLabelValues(name.Namespace, name.Name, node, "/var/lib/kubelet", "bytes")).To(BeFalse(), "stale measurement must be withdrawn")
+		}
 	})
 
 	It("does not let a departed node's report cover a newly joined node (COR-4)", func() {
@@ -578,6 +585,10 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(coverage.Status).To(Equal(metav1.ConditionFalse), "node-c has never reported")
 		Expect(coverage.Message).To(ContainSubstring("node-c"))
 		Expect(updated.Status.LastResult).To(Equal("Pass"), "frozen, per COR-3")
+		for _, result := range checkResultValuesForTest {
+			Expect(metrics.NodeHealthCheckResult.DeleteLabelValues(name.Namespace, name.Name, "node-a", nodehealth.TypeDiskHeadroom, "/var/lib/kubelet", result)).To(BeFalse(), "departed-node detail must be withdrawn")
+			Expect(metrics.NodeHealthCheckResult.DeleteLabelValues(name.Namespace, name.Name, "node-b", nodehealth.TypeDiskHeadroom, "/var/lib/kubelet", result)).To(BeTrue(), "accepted node detail remains useful while fleet coverage is partial")
+		}
 
 		// node-c reports with a failing check while node-a's departed report is
 		// still fresh and passing. Coverage closes, and the roll-up must reflect
@@ -664,6 +675,9 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		// The forged report was excluded, so node-a has no accepted report and
 		// nothing rolled up to Fail.
 		Expect(updated.Status.LastResult).NotTo(Equal("Fail"))
+		for _, result := range checkResultValuesForTest {
+			Expect(metrics.NodeHealthCheckResult.DeleteLabelValues(name.Namespace, name.Name, "node-a", nodehealth.TypeDiskHeadroom, "/var/lib/kubelet", result)).To(BeFalse(), "rejected report must not publish node detail")
+		}
 	})
 
 	It("denies a node-report write from a principal with no node claim (SEC-1)", func() {

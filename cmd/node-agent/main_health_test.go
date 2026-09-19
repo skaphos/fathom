@@ -21,11 +21,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -190,26 +188,7 @@ func TestScanAndPublishHealth(t *testing.T) {
 		t.Fatal("published report does not satisfy its own authenticity bindings")
 	}
 
-	// Gauges: one-hot per (type, path) with Pass=1, and a free-percent series
-	// for each headroom result.
-	for _, c := range report.Checks {
-		got := testutil.ToFloat64(metrics.NodeHealthCheckResult.WithLabelValues("node-1", c.Type, c.Path, "Pass"))
-		if got != 1 {
-			t.Errorf("%s/%s Pass gauge = %v, want 1", c.Type, c.Path, got)
-		}
-		if fail := testutil.ToFloat64(metrics.NodeHealthCheckResult.WithLabelValues("node-1", c.Type, c.Path, "Fail")); fail != 0 {
-			t.Errorf("%s/%s Fail gauge = %v, want 0", c.Type, c.Path, fail)
-		}
-	}
-	if pct := testutil.ToFloat64(metrics.NodeHealthFilesystemFreePercent.WithLabelValues("node-1", dir, "bytes")); pct <= 0 || pct > 100 {
-		t.Errorf("bytes free percent gauge = %v", pct)
-	}
-	if pct := testutil.ToFloat64(metrics.NodeHealthFilesystemFreePercent.WithLabelValues("node-1", dir, "inodes")); pct <= 0 || pct > 100 {
-		t.Errorf("inodes free percent gauge = %v", pct)
-	}
-
-	// A second pass updates in place (no duplicate ConfigMap) and a dropped
-	// item's series disappears.
+	// A second pass updates in place without creating a duplicate ConfigMap.
 	cfg.healthItems = cfg.healthItems[:1]
 	if _, err := scanAndPublishHealth(context.Background(), kube, cfg, time.Now()); err != nil {
 		t.Fatal(err)
@@ -217,9 +196,6 @@ func TestScanAndPublishHealth(t *testing.T) {
 	list, _ := kube.CoreV1().ConfigMaps("fathom-system").List(context.Background(), metav1.ListOptions{})
 	if len(list.Items) != 1 {
 		t.Fatalf("expected exactly one report ConfigMap, got %d", len(list.Items))
-	}
-	if n := testutil.CollectAndCount(metrics.NodeHealthCheckResult); n != 6 {
-		t.Errorf("after the reset only the surviving item's 6 one-hot series should remain, got %d", n)
 	}
 }
 
@@ -272,8 +248,8 @@ func TestScanAndPublishHealthWithNoAgentItems(t *testing.T) {
 	}
 }
 
-// TestRunFailsWhenMetricsPortIsTaken pins that a metrics bind failure is
-// fatal. On the host network the metrics port is a host port, and the
+// TestRunFailsWhenMetricsPortIsTaken pins that a listener bind failure is
+// fatal. On the host network the liveness port is a host port, and the
 // documented collision behaviour — the second agent crashloops, AgentReady
 // goes False — depends on the process exiting rather than logging and
 // carrying on.
@@ -296,8 +272,8 @@ func TestRunFailsWhenMetricsPortIsTaken(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	err = run(ctx, kube, cfg)
-	if err == nil || !strings.Contains(err.Error(), "metrics server") {
-		t.Fatalf("run must fail when the metrics port is taken and the operator asked for that, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "health server") {
+		t.Fatalf("run must fail when the liveness port is taken and the operator asked for that, got %v", err)
 	}
 
 	// Without --fatal-metrics-bind — the certificate agent on its fixed
@@ -332,6 +308,22 @@ func TestHealthzReflectsProgress(t *testing.T) {
 	l.passed()
 	if code := get(); code != http.StatusOK {
 		t.Fatalf("after a pass /healthz = %d, want 200", code)
+	}
+}
+
+// TestMetricsEndpointIsNotServed pins the node-agent disclosure boundary:
+// inventory metrics are exported only by the authenticated operator endpoint.
+func TestMetricsEndpointIsNotServed(t *testing.T) {
+	mux := metricsMux(newLiveness(time.Minute, time.Minute))
+	for _, target := range []string{"/metrics", "/metrics?query=1", "/%6detrics"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("anonymous GET %s = %d, want 404", target, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "fathom_node_") {
+			t.Errorf("anonymous GET %s disclosed node inventory: %q", target, rec.Body.String())
+		}
 	}
 }
 

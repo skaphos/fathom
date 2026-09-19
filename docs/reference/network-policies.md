@@ -28,13 +28,12 @@ NetworkPolicy is defense-in-depth, not the primary control.
 
 ## Node-agent DaemonSet (runtime-managed, always on)
 
-The node-agent's metrics endpoint is different: it serves **plaintext,
-unauthenticated** Prometheus gauges (`fathom_node_certificate_expiry_days`) on
-container port 8080 of a pod on every selected node. Without a policy, any pod
-in the cluster can enumerate the node cert inventory — paths and days-to-expiry
-for control-plane certificates. Adding TokenReview auth to the agent would
-force API-server-facing credentials into a per-node workload that today needs
-none for serving, so the guard is a NetworkPolicy instead.
+The node-agent retains its listener ports for liveness and upgrade
+compatibility, but it serves no inventory: `/healthz` remains available and
+`/metrics` returns 404 in both modes. Node detail metrics are reconstructed
+from accepted reports and served by the operator's authenticated and authorized
+endpoint. NetworkPolicy is therefore defense in depth for the remaining
+listener, not the authorization boundary for metrics.
 
 Because the DaemonSet itself is created at runtime in the check's namespace,
 the policy cannot ship statically. The `NodeCertificateCheckReconciler` creates
@@ -43,10 +42,11 @@ DaemonSet:
 
 - **Pod selector**: exactly the agent pods (the DaemonSet's own selector) —
   nothing else in the namespace is isolated by it.
-- **Ingress**: only TCP 8080 (metrics), and only from namespaces labeled
+- **Ingress**: only TCP 8080 (the liveness listener), and only from namespaces labeled
   `metrics: enabled` — the same label contract as the operator policy. **Label
   your monitoring namespace** (`kubectl label namespace <ns> metrics=enabled`)
-  or, on an enforcing CNI, scrapes of the agent will be dropped.
+  when directly diagnosing agent liveness from a pod. Prometheus should scrape
+  the operator ServiceMonitor instead.
 - **Egress**: only TCP destination ports 443 and 6443. This is a port-only
   filter; it does not restrict destinations to the API server. Both ports are
   allowed because service traffic to the `kubernetes` ClusterIP (443) is
@@ -61,12 +61,12 @@ DaemonSet:
 `NodeHealthCheck` agents get an identical per-check policy
 (`<check>-node-health-agent`), with one caveat that the check states on its own
 object: a `KubeletHealthz` item runs the agent with `hostNetwork: true`, and
-**NetworkPolicy does not apply to host-network pods**. The agent's metrics then
-bind on a per-check host port (20000–22767, named in the `AgentPrivileged`
-condition) reachable from the node's network, and its API-server egress is the
-node's. The policy is still created so the surface stays uniform, but it is
-inert for that check. Treat a `KubeletHealthz` opt-in as a decision about the
-node's network posture, not just the pod's.
+**NetworkPolicy does not apply to host-network pods**. The agent listener then
+binds on a per-check host port (20000–22767, named in the `AgentPrivileged`
+condition), and its API-server egress is the node's. That port serves liveness,
+not `/metrics`. The policy is still created so the surface stays uniform, but
+it is inert for that check. Treat a `KubeletHealthz` opt-in as a decision about
+the node's network posture, not just the pod's.
 
 ## Probe pods (deliberately no Fathom-shipped policy)
 
@@ -96,7 +96,8 @@ select on.
 
 ## The `metrics: enabled` label contract
 
-One label gates all Fathom metrics ingress rules:
+One label gates the opt-in operator metrics policy and the runtime agent
+listener policies:
 
 ```sh
 kubectl label namespace monitoring metrics=enabled
@@ -104,3 +105,5 @@ kubectl label namespace monitoring metrics=enabled
 
 Apply it to the namespace running your Prometheus/agent scrapers. It is
 honored by the opt-in operator policy and by every runtime node-agent policy.
+It does not grant access: secure operator metrics still require an authenticated
+identity authorized for `get /metrics`.

@@ -168,6 +168,12 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}()
 
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
+	metrics.DeleteNodeHealthSeries(req.Namespace, req.Name)
+	defer func() {
+		if err != nil {
+			metrics.DeleteNodeHealthSeries(req.Namespace, req.Name)
+		}
+	}()
 
 	var check fathomv1alpha1.NodeHealthCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
@@ -277,7 +283,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 	// Converge the NetworkPolicy before the DaemonSet so agent pods never start
-	// in a window where their metrics port is open cluster-wide (#153). For a
+	// with their liveness listener open cluster-wide (#153). For a
 	// host-network agent the policy is inert — see setAgentPrivileged.
 	if err := r.ensureAgentNetworkPolicy(ctx, &check, items); err != nil {
 		return r.failProvisioning(ctx, log, before, &check, "NetworkPolicyProvisioningFailed", err)
@@ -324,6 +330,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return r.failEvaluation(ctx, log, before, &check, "evaluate node conditions", err)
 	}
+	observeNodeHealthReports(check.Namespace, check.Name, reports, expected)
 	reported := nodeHealthNodeNameSet(evals)
 
 	token, triggerPending := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
@@ -361,6 +368,14 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// event, so only a timely requeue lets the stale-report window be seen.
 	// The roll-up transition cadence stays at interval inside rollup.
 	return r.finish(ctx, log, before, &check, nodeHealthRequeueAfter(&check))
+}
+
+func observeNodeHealthReports(namespace, check string, reports []nodehealth.NodeReport, expected map[string]struct{}) {
+	for _, report := range reports {
+		if _, ok := expected[report.Node]; ok {
+			metrics.ObserveNodeHealthReport(namespace, check, report)
+		}
+	}
 }
 
 func (r *NodeHealthCheckReconciler) roleName() string {
@@ -573,8 +588,8 @@ func (r *NodeHealthCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context
 	return err
 }
 
-// nodeHealthMetricsPort is the port the agent serves metrics on: the shared
-// container port normally, a per-check host port when the agent shares the
+// nodeHealthMetricsPort is the legacy-named port for the liveness listener:
+// the shared container port normally, a per-check host port when the agent shares the
 // node's network namespace.
 func nodeHealthMetricsPort(check *fathomv1alpha1.NodeHealthCheck, items []nodehealth.Item) int32 {
 	if nodeHealthNeedsHostNetwork(items) {
@@ -676,7 +691,7 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 		"--metrics-bind-address", ":" + strconv.Itoa(int(metricsPort)),
 	}
 	if hostNetwork {
-		// On the host network the metrics port is a host port: a collision must
+		// On the host network the liveness port is a host port: a collision must
 		// crash the agent (AgentReady=False) rather than be tolerated.
 		args = append(args, "--fatal-metrics-bind")
 	}

@@ -59,7 +59,7 @@ const (
 	// detects a transition within minutes.
 	maxNodeHealthAgentInterval = fathomv1alpha1.MaxNodeHealthCheckAgentInterval
 
-	// nodeHealthHostMetricsPortMin/Max bound the metrics port an agent binds
+	// nodeHealthHostMetricsPortMin/Max bound the liveness port an agent binds
 	// when it runs on the host network. Container port 8080 would then bind on
 	// the node itself and collide with any other host-network listener there,
 	// so the port is derived per check from this range instead. Two
@@ -338,8 +338,8 @@ func nodeHealthSocketPaths(items []nodehealth.Item) []string {
 	return out
 }
 
-// nodeHealthHostMetricsPort is the metrics port for a host-network agent: the
-// explicit spec.metricsHostPort when set, otherwise one derived from the
+// nodeHealthHostMetricsPort is the legacy-named liveness port for a
+// host-network agent: the explicit spec.metricsHostPort when set, otherwise one derived from the
 // check's namespaced name so it is stable across reconciles and operator
 // restarts (no template churn) without any state. The derived port is a hash,
 // so two host-network checks on one node can collide deterministically; the
@@ -782,7 +782,7 @@ func joinNodeHealthArgs(items []nodehealth.Item) string {
 func nodeHealthPrivilegeSummary(hostNetwork, root bool, port int32, sockets []string) string {
 	var parts []string
 	if hostNetwork {
-		parts = append(parts, fmt.Sprintf("hostNetwork (KubeletHealthz; the per-check NetworkPolicy does not isolate host-network pods; metrics on host port %d)", port))
+		parts = append(parts, fmt.Sprintf("hostNetwork (KubeletHealthz; the per-check NetworkPolicy does not isolate host-network pods; liveness on host port %d)", port))
 	}
 	if root {
 		parts = append(parts, fmt.Sprintf("runAsUser 0 with %s mounted (ContainerRuntime)", strings.Join(sockets, ", ")))

@@ -249,7 +249,7 @@ func TestNodeHealthHostMetricsPort(t *testing.T) {
 		t.Fatalf("port %d outside [%d, %d]", p1, nodeHealthHostMetricsPortMin, nodeHealthHostMetricsPortMax)
 	}
 	if p1 >= 30000 && p1 <= 32767 {
-		t.Fatalf("derived host metrics port %d overlaps Kubernetes' default NodePort range", p1)
+		t.Fatalf("derived host liveness port %d overlaps Kubernetes' default NodePort range", p1)
 	}
 	b := nhCheck()
 	b.Name = "other"
@@ -505,9 +505,9 @@ func TestNodeHealthReportFreshClampsTheFuture(t *testing.T) {
 }
 
 // TestDesiredDaemonSetLivenessAndFatalBind pins two agent-lifecycle details:
-// every health agent carries a liveness probe on its metrics port (a wedged
+// every health agent carries a liveness probe on its listener port (a wedged
 // pass must be restarted, not left Running), and only a host-network agent —
-// whose metrics port is a host port — is told to die on a bind failure.
+// whose listener port is a host port — is told to die on a bind failure.
 func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 	t.Parallel()
 	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
@@ -518,7 +518,7 @@ func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 	// NetworkPolicy would deny a kubelet-originated probe on an enforcing CNI.
 	if c.LivenessProbe == nil || c.LivenessProbe.Exec == nil || !slices.Contains(c.LivenessProbe.Exec.Command, "--probe-healthz") ||
 		!slices.Contains(c.LivenessProbe.Exec.Command, "http://127.0.0.1:"+strconv.Itoa(int(c.Ports[0].ContainerPort))+"/healthz") {
-		t.Fatalf("liveness probe = %+v, want an exec probe of /node-agent --probe-healthz against loopback on the metrics port", c.LivenessProbe)
+		t.Fatalf("liveness probe = %+v, want an exec probe of /node-agent --probe-healthz against loopback on the listener port", c.LivenessProbe)
 	}
 	if slices.Contains(c.Args, "--fatal-metrics-bind") {
 		t.Fatal("a pod-network agent must tolerate a metrics bind failure")

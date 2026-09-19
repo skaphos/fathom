@@ -100,6 +100,13 @@ var _ = Describe("NodeCertificateCheck", Ordered, Label(utils.CoreLabel), func()
 		By(fmt.Sprintf("observed HealthReport %q with node_certificate Pass", latest.Metadata.Name))
 	})
 
+	It("should keep liveness available, remove agent metrics, and export path-free operator metrics", func() {
+		assertAgentDoesNotServeMetrics(nodeCertDaemonSet, nodeCertSampleNS)
+		report, err := latestHealthReport(nodeCertSampleName, nodeCertSampleNS)
+		Expect(err).NotTo(HaveOccurred())
+		assertCertificateMetrics(report)
+	})
+
 	It("should mirror Ready=True and a reporting-node count into NodeCertificateCheck status", func() {
 		verify := func(g Gomega) {
 			status, err := nodeCertStatus(nodeCertSampleName, nodeCertSampleNS)

@@ -14,8 +14,8 @@ SPDX-License-Identifier: MIT
 //     container-runtime socket for NodeHealthCheck (#206).
 //
 // It is intentionally minimal and least-privilege: it reads from read-only
-// hostPath mounts, writes exactly one ConfigMap (its own), and serves a
-// Prometheus endpoint. All configuration is supplied by the operator via
+// hostPath mounts, writes exactly one ConfigMap (its own), and serves only a
+// liveness endpoint. All configuration is supplied by the operator via
 // flags/env, so the agent needs no read access to either check API.
 package main
 
@@ -33,7 +33,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,9 +40,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
-	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -116,14 +113,14 @@ func main() {
 	}
 }
 
-// run serves metrics and drives the evaluation loop until ctx is cancelled.
+// run serves liveness and drives the evaluation loop until ctx is cancelled.
 // With cfg.once it performs a single pass and returns.
 func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
-	// A metrics bind failure is fatal only when the operator says so
+	// A listener bind failure is fatal only when the operator says so
 	// (--fatal-metrics-bind, set for a host-network agent whose port is a host
 	// port): there a collision must surface as a crashing pod, AgentReady=False
 	// on the check, rather than an agent that keeps publishing while its
-	// metrics silently never serve. Everywhere else — the certificate agent on
+	// liveness silently never serves. Everywhere else — the certificate agent on
 	// its fixed pod-network port in particular — the listener is incidental to
 	// publishing, and a bind failure is logged and tolerated exactly as before.
 	liveness := newLiveness(cfg.interval, cfg.timeout)
@@ -135,7 +132,7 @@ func run(ctx context.Context, kube kubernetes.Interface, cfg config) error {
 	serveErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serveErr <- fmt.Errorf("metrics server on %s: %w", cfg.metricsAddr, err)
+			serveErr <- fmt.Errorf("health server on %s: %w", cfg.metricsAddr, err)
 		}
 	}()
 	defer func() {
@@ -270,7 +267,7 @@ func runPassLoop(ctx context.Context, serveErr <-chan error, fatalMetricsBind bo
 				if fatalMetricsBind {
 					return err
 				}
-				log.Printf("node-agent: %v (continuing; metrics will not serve)", err)
+				log.Printf("node-agent: %v (continuing; liveness will not serve)", err)
 			case <-timer:
 				published = scanOnce()
 				liveness.record(published)
@@ -348,7 +345,6 @@ func (l *liveness) healthy(now time.Time) bool {
 
 func metricsMux(l *liveness) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		if l != nil && !l.healthy(time.Now()) {
 			http.Error(w, "no completed pass within the liveness window", http.StatusServiceUnavailable)
@@ -359,11 +355,10 @@ func metricsMux(l *liveness) http.Handler {
 	return mux
 }
 
-// scanAndPublish runs one certificate scan, updates the expiry gauges, and
-// upserts the per-node report ConfigMap. It returns the report it published.
+// scanAndPublish runs one certificate scan and upserts the per-node report
+// ConfigMap. It returns the report it published.
 func scanAndPublish(ctx context.Context, kube kubernetes.Interface, cfg config, now time.Time) (nodecert.NodeReport, error) {
 	results := nodecert.Scan(nodecert.ScanOptions{Paths: cfg.paths, Thresholds: cfg.thresholds, Now: now})
-	publishGauges(cfg.nodeName, results)
 
 	report := nodecert.NodeReport{
 		Node:       cfg.nodeName,
@@ -389,8 +384,8 @@ func publishCertificateReport(ctx context.Context, kube kubernetes.Interface, cf
 	return nil
 }
 
-// scanAndPublishHealth runs one node-health evaluation, updates the
-// per-check gauges, and upserts the per-node report ConfigMap. Unlike the
+// scanAndPublishHealth runs one node-health evaluation and upserts the
+// per-node report ConfigMap. Unlike the
 // certificate scan, the evaluation itself reaches the network (kubelet,
 // runtime socket), so the evaluation is bounded by cfg.timeout — and the
 // publish gets a bound of its own, derived from the parent. A probe that
@@ -416,8 +411,6 @@ func scanAndPublishHealth(ctx context.Context, kube kubernetes.Interface, cfg co
 	// timeout publish an already nearly-stale report. now is the injected
 	// base clock; the elapsed scan time is added to it.
 	observedAt := now.Add(time.Since(scanStart)).UTC()
-	publishHealthGauges(cfg.nodeName, results)
-
 	report := nodehealth.NodeReport{
 		Node:        cfg.nodeName,
 		CheckName:   cfg.checkName,
@@ -450,36 +443,6 @@ func boundedContext(ctx context.Context, timeout time.Duration) (context.Context
 		return context.WithTimeout(ctx, timeout)
 	}
 	return ctx, func() {}
-}
-
-// publishGauges resets and repopulates this node's expiry-day series so a
-// certificate that disappears between scans does not leave a stale series.
-func publishGauges(node string, results []nodecert.CertResult) {
-	metrics.NodeCertificateExpiryDays.Reset()
-	for _, r := range results {
-		if r.NotAfter.IsZero() {
-			continue // Error/Skipped results carry no expiry to gauge.
-		}
-		metrics.NodeCertificateExpiryDays.WithLabelValues(node, r.Path).Set(float64(r.DaysRemaining))
-	}
-}
-
-// publishHealthGauges resets and repopulates this node's per-check result
-// series and the headroom percentages behind them, so a check or path the
-// spec dropped does not leave a stale series.
-func publishHealthGauges(node string, results []nodehealth.CheckResult) {
-	metrics.ResetNodeHealthSeries()
-	for _, r := range results {
-		metrics.ObserveNodeHealthCheck(node, r.Type, r.Path, string(r.Outcome))
-		if r.PercentFree == nil {
-			continue
-		}
-		resource := "bytes"
-		if r.Type == nodehealth.TypeInodeHeadroom {
-			resource = "inodes"
-		}
-		metrics.ObserveNodeHealthFilesystem(node, r.Path, resource, *r.PercentFree)
-	}
 }
 
 // upsertReportConfigMap writes the encoded report under the shared wire
@@ -567,8 +530,8 @@ func parseConfig(argv []string) (config, error) {
 		kubeletURL    = fs.String("kubelet-healthz-url", nodehealth.DefaultKubeletHealthzURL, "health mode: kubelet health endpoint a KubeletHealthz check probes")
 		interval      = fs.Duration("interval", time.Hour, "re-evaluation cadence")
 		timeout       = fs.Duration("timeout", 30*time.Second, "bound on the report publish (health mode: bounds the evaluation and, separately, the publish, so one pass takes at most twice this)")
-		metricsAddr   = fs.String("metrics-bind-address", ":8080", "address for the Prometheus metrics endpoint")
-		fatalBind     = fs.Bool("fatal-metrics-bind", false, "exit when the metrics endpoint cannot bind (set by the operator for host-network agents, whose port is a host port)")
+		metricsAddr   = fs.String("metrics-bind-address", ":8080", "address for the liveness endpoint (legacy flag name retained for compatibility)")
+		fatalBind     = fs.Bool("fatal-metrics-bind", false, "exit when the liveness endpoint cannot bind (legacy flag name; set by the operator for host-network agents, whose port is a host port)")
 		once          = fs.Bool("once", false, "run a single pass and exit")
 	)
 	if err := fs.Parse(argv); err != nil {

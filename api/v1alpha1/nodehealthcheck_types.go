@@ -224,8 +224,8 @@ type NodeHealthCheckSpec struct {
 	// +kubebuilder:default=false
 	IncludeControlPlaneNodes *bool `json:"includeControlPlaneNodes,omitempty"`
 
-	// MetricsHostPort is the host port a host-network agent (one running a
-	// KubeletHealthz item) serves its metrics on. When unset, the operator
+	// MetricsHostPort is the legacy-named host port where a host-network agent
+	// (one running a KubeletHealthz item) serves liveness. When unset, the operator
 	// derives a port in 20000–22767 from the check's namespaced name; that
 	// derivation is a hash, so two host-network checks scheduled on the same
 	// node can collide, which surfaces as the second agent crash-looping

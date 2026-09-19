@@ -38,8 +38,10 @@ node into a single `HealthReport` (one entry per `(node, check item)` — each
 headroom path, each socket, and each graded node condition is its own entry —
 folded to a worst-case aggregate), and mirrors the aggregate plus a per-node
 result list into the
-check's `status`. Each agent also exports per-check gauges (see
-[Monitoring](monitoring.md#node-health-metrics)).
+check's `status`. The operator projects accepted agent results into per-check
+gauges on its authenticated endpoint (see
+[Monitoring](monitoring.md#node-health-metrics)); the agent itself serves only
+`/healthz` and returns 404 for `/metrics`.
 
 ## A minimal check
 
@@ -161,7 +163,7 @@ paths only.
 | --- | --- | --- |
 | `DiskHeadroom`, `InodeHeadroom` | none beyond a read-only `hostPath` of the measured directory | `statfs` needs a path on the filesystem, nothing more. |
 | `NodeCondition` | a cluster-scoped `get` on **nodes** for the **operator** (not the agent) | The conditions live only on the Node object. The operator reads one node at a time, by name, only for the nodes agent pods landed on — never a `list` or `watch` — so it starts no Node informer and can enumerate nothing through this grant. See [Operator RBAC](../reference/operator-rbac.md). |
-| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**, and its metrics port binds on the node itself (a per-check port in 20000–22767 derived from the check's name, or `spec.metricsHostPort` when set), so the agent's plaintext gauges are reachable from the node's network. |
+| `KubeletHealthz` | `hostNetwork: true` on the agent pod | The kubelet's health endpoint binds to `127.0.0.1`. **A host-network pod is not isolated by the per-check NetworkPolicy**. The agent's liveness listener binds on a per-check host port in 20000–22767 derived from the check's name, or `spec.metricsHostPort` when set; `/metrics` is not served. |
 | `ContainerRuntime` | the CRI socket mounted (`hostPath` type `Socket`) and the agent running **as root** (`runAsUser: 0`), still with every capability dropped and a read-only root filesystem | The socket is root-owned on every mainstream runtime. The agent only dials and closes — it carries no CRI client — but a compromised agent process would hold the socket. |
 
 The check reports which of these are in effect on its own object: the
@@ -172,7 +174,7 @@ with a message naming the socket and host port. A namespace enforcing the
 DaemonSet is created but its pods are not admitted, which surfaces as
 `AgentReady=False` and `CoverageComplete=False`.
 
-For host-network checks, the derived metrics host port is in `20000–22767`,
+For host-network checks, the derived listener host port is in `20000–22767`,
 below Kubernetes' default NodePort range (`30000–32767`). Set
 `spec.metricsHostPort` explicitly when needed; explicit values from `1024` to
 `65535` are accepted. Choose a free port for the node and account for any
@@ -324,7 +326,7 @@ fathomctl reports nhc node-health
   `nodes` `get` grant was removed (a restricted install). Restore it or drop
   the item; the rest of the check is unaffected.
 - **Two host-network checks on one node, second agent in `CrashLoopBackOff`**:
-  a metrics host-port collision (the `AgentPrivileged` condition names each
+  a listener host-port collision (the `AgentPrivileged` condition names each
   check's port). Set `spec.metricsHostPort` on one of them to a free port.
 - **`Ready=False / EvaluationFailed`**: a ConfigMap or Pod list, Node read, or
   HealthReport write failed while evaluating the check. `CoverageComplete` is

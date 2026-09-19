@@ -32,9 +32,11 @@ For each node it targets, the agent:
 
 The operator then rolls all the per-node results into a single `HealthReport`
 (one entry per `(node, certificate)`, worst-case aggregate) and mirrors the
-aggregate into the check's `status`. Each agent also exports a Prometheus gauge,
-`fathom_node_certificate_expiry_days`, for alerting (see
-[Monitoring](monitoring.md)).
+aggregate into the check's `status`. From accepted reports, the operator also
+exports the earliest known expiry per check and node as
+`fathom_node_certificate_expiry_days` through its authenticated metrics
+endpoint (see [Monitoring](monitoring.md)). Paths, subjects, and issuers remain
+in report detail and never become metric labels.
 
 ## A minimal check
 
@@ -332,10 +334,10 @@ The agent is built for least privilege:
 
   Requires ServiceAccount-token node info (GA in Kubernetes 1.33) and the
   `ValidatingAdmissionPolicy` feature (GA 1.30).
-- **Hardened and dedicated.** It runs from its own image and serves only a
-  Prometheus metrics endpoint and a health check.
+- **Hardened and dedicated.** It runs from its own image. Its existing listener
+  and port remain for compatibility and `/healthz`; `/metrics` returns 404.
 - **Network-isolated.** The operator creates a NetworkPolicy with each
-  DaemonSet: metrics ingress only from namespaces labeled `metrics: enabled`,
+  DaemonSet: listener ingress only from namespaces labeled `metrics: enabled`,
   egress limited to TCP destination ports 443 and 6443. This is a port-only
   filter and does not restrict destination addresses. See
   [Network policies](../reference/network-policies.md) for the label contract

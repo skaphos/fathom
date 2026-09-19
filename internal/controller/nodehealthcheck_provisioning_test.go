@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"k8s.io/utils/ptr"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -93,9 +95,17 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 		Build()
 
 	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img:test"}
+	metrics.ObserveNodeHealthReport(check.Namespace, check.Name, nodehealth.NodeReport{
+		Node: "node-old", Checks: []nodehealth.CheckResult{{Type: nodehealth.TypeKubeletHealthz, Outcome: nodehealth.OutcomePass}},
+	})
 	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 	if err == nil {
 		t.Fatal("expected the provisioning error to be returned for retry")
+	}
+	for _, result := range checkResultValuesForTest {
+		if metrics.NodeHealthCheckResult.DeleteLabelValues(check.Namespace, check.Name, "node-old", nodehealth.TypeKubeletHealthz, "", result) {
+			t.Fatal("provisioning failure left obsolete node-health detail metrics")
+		}
 	}
 
 	persisted := &fathomv1alpha1.NodeHealthCheck{}
@@ -838,7 +848,6 @@ func TestNodeHealthExpectedAgentNodesIgnoresTerminatingPods(t *testing.T) {
 // after the agent has been provisioned. Each failure must be observable on the
 // current generation without rewriting the last complete roll-up (COR-3).
 func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name          string
 		stage         string
@@ -853,7 +862,8 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			metrics.NodeHealthCheckResult.Reset()
+			metrics.NodeHealthFilesystemFreePercent.Reset()
 			scheme := newProvisioningScheme(t)
 			lastRun := metav1.NewTime(time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC))
 			resultObservedAt := metav1.NewTime(lastRun.Add(-time.Minute))
@@ -968,9 +978,22 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 				Client: cl, APIReader: cl, Scheme: scheme, NodeAgentImage: "img:test",
 				Clock: func() time.Time { return lastRun.Add(time.Minute) },
 			}
+			percentFree := 12.5
+			metrics.ObserveNodeHealthReport(check.Namespace, check.Name, nodehealth.NodeReport{
+				Node: "node-old", Checks: []nodehealth.CheckResult{{
+					Type: nodehealth.TypeDiskHeadroom, Path: "/var/lib/kubelet",
+					Outcome: nodehealth.OutcomePass, PercentFree: &percentFree,
+				}},
+			})
 			_, err = r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 			if !errors.Is(err, injected) {
 				t.Fatalf("Reconcile error = %v, want original %v", err, injected)
+			}
+			if got := testutil.CollectAndCount(metrics.NodeHealthCheckResult); got != 0 {
+				t.Fatalf("failed reconcile left %d node-health result series, want none", got)
+			}
+			if got := testutil.CollectAndCount(metrics.NodeHealthFilesystemFreePercent); got != 0 {
+				t.Fatalf("failed reconcile left %d filesystem series, want none", got)
 			}
 
 			persisted := &fathomv1alpha1.NodeHealthCheck{}

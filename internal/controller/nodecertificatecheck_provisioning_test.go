@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
@@ -552,9 +553,15 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 	}
 
 	key := client.ObjectKeyFromObject(check)
+	metrics.ObserveNodeCertificateReport(check.Namespace, check.Name, nodecert.NodeReport{
+		Node: "node-old", Certs: []nodecert.CertResult{{NotAfter: time.Now(), DaysRemaining: 10}},
+	})
 	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key})
 	if err == nil {
 		t.Fatal("expected the provisioning error to be returned so the controller retries")
+	}
+	if metrics.NodeCertificateExpiryDays.DeleteLabelValues(check.Namespace, check.Name, "node-old") {
+		t.Fatal("provisioning failure left obsolete certificate detail metrics")
 	}
 
 	var persisted fathomv1alpha1.NodeCertificateCheck

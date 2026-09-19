@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,7 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
@@ -127,11 +125,6 @@ func TestScanAndPublishCreatesAndUpdatesConfigMap(t *testing.T) {
 	}
 	if decoded.Node != "node-1" || len(decoded.Certs) != 1 {
 		t.Errorf("decoded report wrong: %+v", decoded)
-	}
-
-	// Gauge is populated for the parsed certificate.
-	if got := testutil.CollectAndCount(metrics.NodeCertificateExpiryDays); got < 1 {
-		t.Errorf("expected at least one expiry-days series, got %d", got)
 	}
 
 	// A second publish updates the same ConfigMap (no duplicate, no error).
