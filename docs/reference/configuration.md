@@ -110,7 +110,7 @@ inconsistent configuration, including:
 
 ## Probe Image Default
 
-`--probe-image` (default `ghcr.io/skaphos/fathom-probe:v0.5.1`, <!-- x-release-please-version -->
+`--probe-image` (default `ghcr.io/skaphos/fathom-probe:v0.5.1` <!-- x-release-please-version -->,
 `DefaultProbeImage` in `options.go`) is the cluster-wide default container image
 for adapter probe pods. It is forwarded into each adapter run as
 `adapter.Request.ProbeImage`. Adapters resolve the actual image with this
