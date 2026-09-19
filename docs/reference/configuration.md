@@ -57,8 +57,8 @@ metrics:
   bind_address: ":8443"
   secure: true
 leader_elect: true
-probe_image: "ghcr.io/skaphos/fathom-probe:v0.4.0"
-node_agent_image: "ghcr.io/skaphos/fathom-node-agent:v0.4.0"
+probe_image: "ghcr.io/skaphos/fathom-probe:v0.5.1" # x-release-please-version
+node_agent_image: "ghcr.io/skaphos/fathom-node-agent:v0.5.1" # x-release-please-version
 ```
 
 ## Options
@@ -81,8 +81,8 @@ the viper key by the rule above.
 | `--leader-elect` | `leader_elect` | `FATHOM_LEADER_ELECT` | `true` | Enable leader election so only one manager replica is active. On by default; set `--leader-elect=false` for single-process local runs. |
 | `--leader-election-id` | `leader_election_id` | `FATHOM_LEADER_ELECTION_ID` | `2d3dbc4f.skaphos.io` | Name of the lease resource used for leader election (must be a DNS-1123 subdomain). |
 | `--enable-http2` | `enable_http2` | `FATHOM_ENABLE_HTTP2` | `false` | Enable HTTP/2 for the metrics and webhook servers. Off by default to mitigate CVE-2023-44487 / CVE-2023-39325. |
-| `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.4.0` | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |
-| `--node-agent-image` | `node_agent_image` | `FATHOM_NODE_AGENT_IMAGE` | `ghcr.io/skaphos/fathom-node-agent:v0.4.0` | Container image used by the `NodeCertificateCheck` controller for the managed node-agent DaemonSet. See [Node-agent image default](#node-agent-image-default). |
+| `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.5.1` <!-- x-release-please-version --> | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |
+| `--node-agent-image` | `node_agent_image` | `FATHOM_NODE_AGENT_IMAGE` | `ghcr.io/skaphos/fathom-node-agent:v0.5.1` <!-- x-release-please-version --> | Container image used by the `NodeCertificateCheck` controller for the managed node-agent DaemonSet. See [Node-agent image default](#node-agent-image-default). |
 | `--namespace` | `namespace` | `FATHOM_NAMESPACE` | _(empty)_ | Operator namespace where per-addon ServiceAccounts live for adapter impersonation. In-cluster deployments set it from the pod namespace via downward API; empty disables impersonation for local out-of-cluster runs. |
 | `--dnscheck-max-concurrent-probes` | `dnscheck.max_concurrent_probes` | `FATHOM_DNSCHECK_MAX_CONCURRENT_PROBES` | `4` | Maximum probe pods a single `DNSCheck` may run at once. See [DNSCheck fan-out](#dnscheck-fan-out). |
 | `--tracing-enabled` | `tracing.enabled` | `FATHOM_TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead). See [Tracing](#tracing). |
@@ -110,7 +110,7 @@ inconsistent configuration, including:
 
 ## Probe Image Default
 
-`--probe-image` (default `ghcr.io/skaphos/fathom-probe:v0.4.0`,
+`--probe-image` (default `ghcr.io/skaphos/fathom-probe:v0.5.1`, <!-- x-release-please-version -->
 `DefaultProbeImage` in `options.go`) is the cluster-wide default container image
 for adapter probe pods. It is forwarded into each adapter run as
 `adapter.Request.ProbeImage`. Adapters resolve the actual image with this
@@ -120,14 +120,14 @@ precedence:
 per-AddonCheck probeImage threshold  >  --probe-image (Request.ProbeImage)  >  adapter-hardcoded fallback
 ```
 
-The hardcoded fallback (also `ghcr.io/skaphos/fathom-probe:v0.4.0`) lives in the
+The hardcoded fallback (also `ghcr.io/skaphos/fathom-probe:v0.5.1`) lives in the <!-- x-release-please-version -->
 CoreDNS adapter so a probe-using check still has an image when neither the
 operator default nor a per-check override is set. Operators running a private
 GHCR mirror set `--probe-image` once instead of on every `AddonCheck`.
 
 ## Node-agent Image Default
 
-`--node-agent-image` (default `ghcr.io/skaphos/fathom-node-agent:v0.4.0`,
+`--node-agent-image` (default `ghcr.io/skaphos/fathom-node-agent:v0.5.1`, <!-- x-release-please-version -->
 `DefaultNodeAgentImage` in `options.go`) is the cluster-wide image used by the
 `NodeCertificateCheck` and `NodeHealthCheck` controllers when they create their
 managed node-agent DaemonSets. The one binary serves both kinds, selected per

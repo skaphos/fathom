@@ -24,7 +24,11 @@
         "internal/adapter/kubestatemetrics/adapter.go",
         {"type": "generic", "path": "deploy/helm/fathom-operator/Chart.yaml"},
         {"type": "generic", "path": "Taskfile.yml"},
-        {"type": "generic", "path": "config/samples/fathom_v1alpha1_addoncheck_coredns.yaml"}
+        {"type": "generic", "path": "config/samples/fathom_v1alpha1_addoncheck_coredns.yaml"},
+        {"type": "generic", "path": "docs/architecture.md"},
+        {"type": "generic", "path": "docs/guides/addon-checks.md"},
+        {"type": "generic", "path": "docs/guides/node-certificate-checks.md"},
+        {"type": "generic", "path": "docs/reference/configuration.md"}
       ]
     }
   }

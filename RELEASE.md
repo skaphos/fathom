@@ -305,15 +305,17 @@ Container builds are hardened for reproducibility and supply-chain integrity:
 
 - **Base images are pinned by digest** (SKA-295). `Dockerfile` pins the
   `golang` builder and the `gcr.io/distroless/static:nonroot` runtime;
-  `Dockerfile.probe` pins the `golang` builder (its runtime is `scratch`). The
-  readable tag is retained alongside the digest (`golang:1.27.0@sha256:...`).
+  `Dockerfile.probe` and `Dockerfile.node-agent` pin the `golang` builder (their
+  runtime is `scratch`). The readable tag is retained alongside the digest
+  (`golang:1.27.1@sha256:...`).
   Refresh the digests with `go -C tools tool task images:refresh`, which
   re-resolves each multi-arch index digest (via `crane` or
   `docker buildx imagetools`) and rewrites the pins in place. Run it ad hoc or
   on a schedule and review the diff in a PR.
 - **BuildKit cache mounts** (SKA-305) keep the Go module and build caches out of
-  image layers. Both Dockerfiles declare `# syntax=docker/dockerfile:1.7`, so
-  builds require BuildKit (the default for modern `docker build` / `buildx`).
+  image layers. All three Dockerfiles pin the Dockerfile frontend at
+  `docker/dockerfile:1.27.0`, so builds require BuildKit (the default for modern
+  `docker build` / `buildx`).
 
 **Releases MUST deploy the manager by digest, never by a mutable tag.** The
 `config/manager/kustomization.yaml` `images:` transformer maps the placeholder
