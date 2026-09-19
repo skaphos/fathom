@@ -299,6 +299,13 @@ only on canonical report names for their current DaemonSet pods. Admission
 also requires the exact ServiceAccount derived from each report's immutable
 source labels and a matching node-bound token claim.
 
+Each node-scoped check owns that report Role and RoleBinding in its namespace;
+the operator no longer provisions the legacy shared node-agent ClusterRole or
+its per-check bindings. Existing installations retain the old ClusterRole while
+the controller migrates owner-controlled bindings; administrators may clean it
+up after all checks have migrated and external RoleBindings and
+ClusterRoleBindings have been checked.
+
 ```yaml
 apiVersion: fathom.skaphos.io/v1alpha1
 kind: NodeHealthCheck

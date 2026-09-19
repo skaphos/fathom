@@ -255,24 +255,21 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 
 		sa := &corev1.ServiceAccount{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-provision-node-agent", Namespace: "default"}, sa)).To(Succeed())
-		rb := &rbacv1.RoleBinding{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nc-provision-node-agent", Namespace: "default"}, rb)).To(Succeed())
-		Expect(rb.RoleRef.Name).To(Equal(defaultNodeAgentRoleName))
-		Expect(rb.RoleRef.Kind).To(Equal("ClusterRole"))
-
-		// The operator owns the referenced ClusterRole at runtime so its name
-		// survives kustomize/OLM name prefixing.
-		cr := &rbacv1.ClusterRole{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: defaultNodeAgentRoleName}, cr)).To(Succeed())
-		Expect(cr.Rules).To(HaveLen(1))
-		Expect(cr.Rules[0].Resources).To(ContainElement("configmaps"))
+		legacyBinding := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "nc-provision-node-agent", Namespace: "default"}, legacyBinding)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "new checks must not create a legacy ClusterRole binding")
+		scopedRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: scopedReportAccessName(sa.Name), Namespace: "default"}, scopedRole)).To(Succeed())
+		Expect(scopedRole.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"},
+		}))
 
 		updated := &fathomv1alpha1.NodeCertificateCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionAccepted).Status).To(Equal(metav1.ConditionTrue))
 	})
 
-	It("isolates the node-agent with a NetworkPolicy: metrics-only ingress, API-server-only egress (#153)", func() {
+	It("isolates the node-agent with a NetworkPolicy: metrics-only ingress and port-limited egress (#153)", func() {
 		name := types.NamespacedName{Name: "nc-netpol", Namespace: "default"}
 		check := &fathomv1alpha1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},

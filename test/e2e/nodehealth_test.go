@@ -135,6 +135,12 @@ var _ = Describe("NodeHealthCheck", Ordered, Label(utils.CoreLabel), func() {
 		Eventually(verify, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
 
+	It("should grant namespace-local creation and restrict report reads and updates", func() {
+		Eventually(func(g Gomega) {
+			assertNodeAgentReportRBAC(g, nodeHealthSampleNS, nodeHealthDaemonSet, "NodeHealthCheck", nodeHealthSampleName)
+		}, time.Minute, 5*time.Second).Should(Succeed())
+	})
+
 	It("should fail the node when a headroom threshold is deliberately unsatisfiable, and recover", func() {
 		before, err := nodeHealthStatus(nodeHealthSampleName, nodeHealthSampleNS)
 		Expect(err).NotTo(HaveOccurred())

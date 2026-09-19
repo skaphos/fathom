@@ -84,17 +84,16 @@ const (
 	defaultNodeCertWarnDays     = 30
 	defaultNodeCertCriticalDays = 7
 
-	// defaultNodeAgentRoleName is the static ClusterRole the per-check
-	// RoleBinding grants to the node-agent ServiceAccount (namespaced ConfigMap
-	// access only). It is shipped under config/rbac and the Helm chart.
+	// defaultNodeAgentRoleName identifies the legacy shared ClusterRole. Current
+	// reconciliation only uses it to validate and drain old per-check bindings.
 	defaultNodeAgentRoleName = "fathom-node-agent-role"
 
 	// reportAuthenticityPolicyName names the cluster-scoped
 	// ValidatingAdmissionPolicy (and its binding) the controller ensures at
 	// runtime to bind each per-node report ConfigMap to the writing node-agent's
 	// identity, so one node cannot forge or suppress another node's certificate
-	// verdict (#155). Like the node-agent ClusterRole it is created at runtime,
-	// not shipped statically, so kustomize's namePrefix and the OLM bundle
+	// verdict (#155). It is created at runtime, not shipped statically, so
+	// kustomize's namePrefix and the OLM bundle
 	// transforms cannot rename it and break the policy↔binding pairing.
 	reportAuthenticityPolicyName = "fathom-node-report-authenticity"
 
@@ -145,8 +144,9 @@ type NodeCertificateCheckReconciler struct {
 	// DaemonSet's pod spec.
 	NodeAgentImage string
 
-	// NodeAgentRoleName is the ClusterRole the per-check RoleBinding grants to
-	// the node-agent ServiceAccount. Defaults to defaultNodeAgentRoleName.
+	// NodeAgentRoleName identifies the legacy shared ClusterRole whose existing
+	// per-check bindings are drained during migration. Defaults to
+	// defaultNodeAgentRoleName.
 	NodeAgentRoleName string
 
 	// APIReader lists the agent pods for coverage. It MUST be an uncached
@@ -183,14 +183,13 @@ func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
 // removed by garbage collection, so those grants carry no patch/delete (#153).
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;delete
 // The node-agent ServiceAccount needs create/get/update on its own report
-// ConfigMap; the operator grants that via the runtime fathom-node-agent-role
-// ClusterRole. RBAC escalation prevention requires the operator to already hold
-// every verb it confers, so the manager must also hold create (not just
+// ConfigMap; the operator grants those verbs through a per-check namespaced
+// Role. RBAC escalation prevention requires the operator to already hold every
+// verb it confers, so the manager must also hold create (not just
 // get;list;watch;update) on configmaps.
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update
 // The per-check node-agent NetworkPolicy (#153) is owner-referenced, so
 // deletion rides garbage collection — no delete verb.
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update
@@ -277,10 +276,6 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		Message:            "NodeCertificateCheck is eligible for node-agent execution.",
 	})
 
-	if err := r.ensureNodeAgentClusterRole(ctx); err != nil {
-		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
-	}
-
 	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
 	if err != nil {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, false))
@@ -295,6 +290,15 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 
 	saName, err := r.ensureAgentRBAC(ctx, &check)
 	if err != nil {
+		if revokeErr := r.revokeNodeCertAgent(ctx, &check); revokeErr != nil {
+			cause := errors.Join(
+				fmt.Errorf("provision node-agent RBAC: %w", err),
+				fmt.Errorf("revoke node-agent after RBAC provisioning failed: %w", revokeErr),
+			)
+			r.invalidateAgentConditions(&check, "AgentRevocationFailed", "Node-agent RBAC provisioning failed and the existing agent could not be fully revoked; its state and coverage are unknown: "+cause.Error())
+			return r.failProvisioning(ctx, log, before, &check, "AgentRevocationFailed", cause)
+		}
+		r.invalidateAgentConditions(&check, "RBACProvisioningFailed", "Node-agent RBAC provisioning failed for this generation; existing agent access was revoked: "+err.Error())
 		return r.failProvisioning(ctx, log, before, &check, "RBACProvisioningFailed", err)
 	}
 
@@ -441,16 +445,16 @@ func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, ch
 	return nil
 }
 
-// revokeNodeCertAgent clears update access and removes the DaemonSet without
-// changing status. Both operations are attempted so either one can still
-// reduce authority when the other fails.
+// revokeNodeCertAgent clears all per-check report permissions and any legacy
+// binding subjects, then removes the DaemonSet without changing status. Both
+// operations are attempted so either one can still reduce authority when the
+// other fails.
 func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
 	var errs []error
-	if err := clearNodeAgentAccess(ctx, r.Client, check, agentResourceName(check), r.roleName()); err != nil {
+	if err := clearNodeAgentAccess(ctx, r.apiReader(), r.Client, check, agentResourceName(check), r.roleName()); err != nil {
 		errs = append(errs, fmt.Errorf("clear node-agent report access: %w", err))
 	}
-	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
-	if err := r.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
+	if err := deleteOwnedNodeAgentDaemonSet(ctx, r.apiReader(), r.Client, check, agentResourceName(check)); err != nil {
 		errs = append(errs, fmt.Errorf("delete node-agent DaemonSet: %w", err))
 	}
 	return errors.Join(errs...)
@@ -461,39 +465,6 @@ func (r *NodeCertificateCheckReconciler) roleName() string {
 		return defaultNodeAgentRoleName
 	}
 	return r.NodeAgentRoleName
-}
-
-// ensureNodeAgentClusterRole guarantees the ClusterRole the per-check
-// RoleBinding references exists with the exact name the controller uses. It is
-// created at runtime (rather than shipped statically) so the name stays stable
-// across deploy tooling — kustomize's namePrefix and OLM bundle transforms would
-// otherwise rename a static ClusterRole and break the binding. The role grants
-// only ConfigMap creation. Per-check Roles separately grant get/update on the
-// canonical reports for that check's current agent pods. The operator already
-// holds these ConfigMap verbs, so creating the role does not escalate privilege.
-func (r *NodeCertificateCheckReconciler) ensureNodeAgentClusterRole(ctx context.Context) error {
-	return ensureNodeAgentClusterRole(ctx, r.Client, r.roleName())
-}
-
-// ensureNodeAgentClusterRole is the shared implementation behind both
-// node-scoped reconcilers: the ClusterRole is a runtime singleton, so the two
-// controllers must converge it to one identical spec rather than fight over it
-// (#206).
-func ensureNodeAgentClusterRole(ctx context.Context, c client.Client, name string) error {
-	role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
-	_, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
-		role.Labels = mergeLabels(role.Labels, map[string]string{nodecert.LabelManagedBy: nodecert.ManagedByValue})
-		// Kubernetes cannot restrict create by resourceNames. Admission authenticates
-		// every managed report create; per-check namespaced Roles grant get/update
-		// only for reports belonging to current agent pods.
-		role.Rules = []rbacv1.PolicyRule{{
-			APIGroups: []string{""},
-			Resources: []string{"configmaps"},
-			Verbs:     []string{"create"},
-		}}
-		return nil
-	})
-	return err
 }
 
 // errReportAuthenticityUnavailable identifies a cluster that does not serve
@@ -674,11 +645,10 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 	}
 }
 
-// ensureAgentRBAC provisions the per-check ServiceAccount and RoleBinding (both
-// owner-referenced, in the check namespace) that grant the node-agent its
-// least-privilege ConfigMap-create access. A separate namespaced Role grants
-// get/update only on canonical reports for the current agent pods. It returns
-// the ServiceAccount name.
+// ensureAgentRBAC provisions the per-check ServiceAccount and drains any
+// owner-referenced legacy binding to the shared ClusterRole. The namespaced
+// report-access Role and RoleBinding grant the current permissions after pod
+// discovery. It returns the ServiceAccount name.
 func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (string, error) {
 	name := agentResourceName(check)
 	labels := agentLabels(check)
@@ -691,19 +661,7 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 		return "", err
 	}
 
-	rb := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
-		rb.Labels = mergeLabels(rb.Labels, labels)
-		expectedRoleRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: r.roleName()}
-		if rb.CreationTimestamp.IsZero() {
-			// RoleRef is immutable: set it only on create.
-			rb.RoleRef = expectedRoleRef
-		} else if rb.RoleRef != expectedRoleRef {
-			return fmt.Errorf("rolebinding %s/%s has immutable roleRef %s/%s, want ClusterRole/%s", rb.Namespace, rb.Name, rb.RoleRef.Kind, rb.RoleRef.Name, expectedRoleRef.Name)
-		}
-		rb.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: name, Namespace: check.Namespace}}
-		return controllerutil.SetControllerReference(check, rb, r.Scheme)
-	}); err != nil {
+	if err := clearSharedAgentBindingAccess(ctx, r.apiReader(), r.Client, check, name, r.roleName()); err != nil {
 		return "", err
 	}
 	return name, nil

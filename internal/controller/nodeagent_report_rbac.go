@@ -34,10 +34,12 @@ func scopedReportAccessName(serviceAccount string) string {
 }
 
 // clearScopedReportAccess revokes an existing check-owned Role without
-// creating RBAC for a check that never provisioned an agent.
-func clearScopedReportAccess(ctx context.Context, c client.Client, owner client.Object, serviceAccount string) error {
+// creating RBAC for a check that never provisioned an agent. reader must be
+// uncached: absence from a label-filtered cache is not proof that access has
+// already been revoked. Writes remain on c.
+func clearScopedReportAccess(ctx context.Context, reader client.Reader, c client.Client, owner client.Object, serviceAccount string) error {
 	role := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: scopedReportAccessName(serviceAccount), Namespace: owner.GetNamespace()}}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(role), role); err != nil {
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(role), role); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -53,12 +55,13 @@ func clearScopedReportAccess(ctx context.Context, c client.Client, owner client.
 	return c.Update(ctx, role)
 }
 
-// clearSharedAgentBindingAccess revokes the agent's create capability without
-// deleting its owner-referenced RoleBinding. Reconciliation restores the sole
-// expected subject when the check can safely run again.
-func clearSharedAgentBindingAccess(ctx context.Context, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
+// clearSharedAgentBindingAccess drains a legacy binding to the shared
+// ClusterRole without deleting or repurposing it. Current reconciliation uses
+// the per-check report-access RoleBinding for all ConfigMap access. reader must
+// be uncached because legacy bindings can predate the manager cache's label.
+func clearSharedAgentBindingAccess(ctx context.Context, reader client.Reader, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
 	binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: serviceAccount, Namespace: owner.GetNamespace()}}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(binding), binding); err != nil {
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(binding), binding); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -78,14 +81,37 @@ func clearSharedAgentBindingAccess(ctx context.Context, c client.Client, owner c
 	return c.Update(ctx, binding)
 }
 
-// clearNodeAgentAccess independently revokes the agent's named get/update and
-// shared create grants, returning every failure so callers can report partial
-// cleanup honestly.
-func clearNodeAgentAccess(ctx context.Context, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
+// clearNodeAgentAccess independently revokes the agent's per-check
+// create/get/update access and legacy shared grant, returning every failure so
+// callers can report partial cleanup honestly. reader must be uncached; a
+// filtered-cache miss cannot establish that either grant is absent.
+func clearNodeAgentAccess(ctx context.Context, reader client.Reader, c client.Client, owner client.Object, serviceAccount, expectedClusterRole string) error {
 	return errors.Join(
-		clearScopedReportAccess(ctx, c, owner, serviceAccount),
-		clearSharedAgentBindingAccess(ctx, c, owner, serviceAccount, expectedClusterRole),
+		clearScopedReportAccess(ctx, reader, c, owner, serviceAccount),
+		clearSharedAgentBindingAccess(ctx, reader, c, owner, serviceAccount, expectedClusterRole),
 	)
+}
+
+// deleteOwnedNodeAgentDaemonSet removes only the DaemonSet controlled by the
+// check. Preconditions bind the delete to the object that passed the ownership
+// check, so a same-name replacement cannot be deleted between Get and Delete.
+// reader must be uncached because an old or relabeled DaemonSet may be hidden
+// from the manager cache while it is still running.
+func deleteOwnedNodeAgentDaemonSet(ctx context.Context, reader client.Reader, c client.Client, owner client.Object, name string) error {
+	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: owner.GetNamespace()}}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(ds), ds); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !metav1.IsControlledBy(ds, owner) {
+		return fmt.Errorf("refusing to delete node-agent DaemonSet %s/%s not controlled by %s", ds.Namespace, ds.Name, owner.GetName())
+	}
+	return client.IgnoreNotFound(c.Delete(ctx, ds, client.Preconditions{
+		UID:             &ds.UID,
+		ResourceVersion: &ds.ResourceVersion,
+	}))
 }
 
 func activeAgentReportNames(ctx context.Context, reader client.Reader, namespace string, labels map[string]string, ds *appsv1.DaemonSet, reportName func(string) string) ([]string, error) {
@@ -110,22 +136,28 @@ func activeAgentReportNames(ctx context.Context, reader client.Reader, namespace
 	return names, nil
 }
 
-// ensureScopedReportRBAC grants a check's agent get/update only on reports for
-// its current pods. An empty fleet produces no rules: an empty resourceNames
-// list would otherwise match every ConfigMap.
+// ensureScopedReportRBAC grants a check's agent ConfigMap create access in its
+// namespace and get/update only on reports for its current pods. The create
+// rule has no resourceNames because Kubernetes RBAC cannot restrict create by
+// resourceNames. An empty fleet omits the named read/update rule: an empty
+// resourceNames list would otherwise match every ConfigMap.
 func ensureScopedReportRBAC(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, labels map[string]string, serviceAccount string, reportNames []string) error {
 	name := scopedReportAccessName(serviceAccount)
 	role := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: owner.GetNamespace()}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
 		role.Labels = mergeLabels(role.Labels, labels)
-		role.Rules = nil
+		role.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"configmaps"},
+			Verbs:     []string{"create"},
+		}}
 		if len(reportNames) > 0 {
-			role.Rules = []rbacv1.PolicyRule{{
+			role.Rules = append(role.Rules, rbacv1.PolicyRule{
 				APIGroups:     []string{""},
 				Resources:     []string{"configmaps"},
 				ResourceNames: append([]string(nil), reportNames...),
 				Verbs:         []string{"get", "update"},
-			}}
+			})
 		}
 		return controllerutil.SetControllerReference(owner, role, scheme)
 	}); err != nil {
