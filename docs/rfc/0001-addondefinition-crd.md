@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 # RFC 1. AddonDefinition as a CRD — make adapters installable, not compiled in
 
-- **Status**: proposed (draft revision; not accepted)
+- **Status**: proposed (in review; not accepted)
 - **Author and decider**: Shawn Stratton (`@mfacenet`)
 - **Created**: 2026-09-08
 - **Last updated**: 2026-09-20
@@ -464,12 +464,14 @@ interface and registry boundary. No accepted ADR is authored before approval.
 
 ## Review plan and decision questions
 
-Review forum: the documentation PR on `docs/addon-definition-rfc`. Shawn Stratton
+Review forum: [PR #349](https://github.com/skaphos/fathom/pull/349) on
+`docs/addon-definition-rfc`, opened 2026-09-20. Initial proposal revision:
+`7a860cb4dffb6c604103ba6a131beab865170f29`; final approval must name the
+then-current PR revision. Shawn Stratton
 is the decider; `@mfacenet` routes operator/API and RBAC/security perspectives
-(the same person may provide both). Proposed review window: 2026-09-20 through
+(the same person may provide both). Review window: 2026-09-20 through
 2026-09-25, five business days after the Sunday opening; a changed window needs
-an attributable decider decision. Record the actual PR URL and revision when
-opened. Explicit approval must identify the final proposal. Merge, silence and
+an attributable decider decision. Explicit approval must identify the final proposal. Merge, silence and
 authorship alone are insufficient; substantive edits require renewed review.
 
 The six sections provide one proposed outcome each. Review must explicitly

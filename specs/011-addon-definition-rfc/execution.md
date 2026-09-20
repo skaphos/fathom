@@ -61,3 +61,16 @@ collision suspension, observation-based revocation boundary, and initial caps.
   not run for this documentation-only work. #280 retains its e2e gate.
 - Remote main and feature branch still matched the inspected baseline immediately
   before publication. No existing PR was found for this branch.
+
+## Review publication
+
+T020: [PR #349](https://github.com/skaphos/fathom/pull/349) opened and attached to
+the task. Initial proposal revision: `7a860cb4dffb6c604103ba6a131beab865170f29`.
+Author, committer and DCO trailer all use `Shawn Stratton <shawn@skaphos.io>`.
+Review opened 2026-09-20, scheduled through 2026-09-25. The PR and RFC identify
+Shawn Stratton as decider and request operator/API and RBAC/security perspectives.
+No accepted decision or runtime implementation is implied by publication.
+
+T021 is awaiting explicit acceptance or revision of the final PR proposal.
+T022–T027 depend on that decision. T025 checks have been run before publication;
+the task remains open because it also covers subsequent substantive edits.
