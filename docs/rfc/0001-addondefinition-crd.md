@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 # RFC 1. AddonDefinition as a CRD — make adapters installable, not compiled in
 
-- **Status**: proposed (in review; not accepted)
+- **Status**: accepted (2026-09-20; implementation pending)
 - **Author and decider**: Shawn Stratton (`@mfacenet`)
 - **Created**: 2026-09-08
 - **Last updated**: 2026-09-20
@@ -21,7 +21,7 @@ Fathom. Keep the built-in pack compiled in, and authorize each runtime definitio
 through an independently administered binding to a dedicated ServiceAccount.
 Every evaluation uses an immutable definition revision and identity-scoped reads;
 missing authority or superseded inputs prevent fresh success from being published.
-This document proposes the contract. It neither implements nor approves it.
+This document records the accepted contract. It does not implement it.
 
 ## Motivation and current state
 
@@ -75,7 +75,9 @@ release changes and e2e execution belong to #280, not this documentation change.
 
 ## Decision ledger
 
-All six decisions are **Proposed** until the final revision is explicitly accepted.
+All six decisions were accepted by Shawn Stratton on 2026-09-20 against
+revision `80d1dd71033cd7cfa70a6680152d100118f8211a`. The decision is recorded
+in [ADR 0007](../adr/0007-runtime-addon-definition-loading.md).
 
 | Decision | Recommendation | Main tradeoff | Reversibility |
 | --- | --- | --- | --- |
@@ -86,7 +88,7 @@ All six decisions are **Proposed** until the final revision is explicitly accept
 | 5. Lifecycle | Immutable snapshots and publication revalidation | Lost work on edits; no atomic RBAC guarantee | Reconcile valid state again |
 | 6. Bounds | Fixed first-release caps and fair runtime scheduling | Large installations may need narrower checks | Revisit caps with measurements |
 
-## 1. Schema — Proposed
+## 1. Schema — Accepted
 
 Use cluster-scoped `fathom.skaphos.io/v1alpha1` AddonDefinition. A definition
 represents platform capability rather than a tenant's workload. A namespaced
@@ -147,7 +149,7 @@ reference cannot activate; an APIService Condition is supported.
 **Deferred:** New evaluators, namespace scope and expression languages.
 **Evidence:** definition.go, engine construction and §6's expression inventory.
 
-## 2. Authority — Proposed
+## 2. Authority — Accepted
 
 ### Explicit administrator binding
 
@@ -234,7 +236,7 @@ cross-namespace identity references. **Evidence:** current fallback/factory/RBAC
 paths above; [Kubernetes impersonation](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/)
 and [additive RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole).
 
-## 3. Versions — Proposed
+## 3. Versions — Accepted
 
 Keep four independent meanings: `apiVersion` versions schema, `semanticsVersion`
 versions evaluator interpretation, `adapterVersion` identifies the author's
@@ -266,7 +268,7 @@ unimplemented. **Deferred:** beta/GA promotion and the actual version bump.
 **Evidence:** [version.go](../../pkg/adapter/version.go),
 [ratio.go](../../pkg/adapter/ratio.go), and the open #256 acceptance criteria.
 
-## 4. Identity and precedence — Proposed
+## 4. Identity and precedence — Accepted
 
 Use an exact lowercase DNS-label addon identity, 1–63 characters. Enforce
 `metadata.name == spec.addonType`, with immutable addonType; no aliases,
@@ -298,7 +300,7 @@ upgrade collision suspends that identity visibly and preserves old evidence.
 **Deferred:** built-in overrides and pack migration. **Evidence:** registry
 name-based conflict behavior and object-local CRD validation.
 
-## 5. Loading, lifecycle and evidence — Proposed
+## 5. Loading, lifecycle and evidence — Accepted
 
 Build and validate off-lock, then atomically swap immutable snapshots. A runtime
 revision is `(definition UID, generation, schema, semantics)`; publication also
@@ -366,7 +368,7 @@ finishing after B becomes active cannot publish as B or refresh A's timestamp.
 **Deferred:** transactional revocation guarantees and out-of-process evaluators.
 **Evidence:** registry, engine shared-slice invariant and current controller above.
 
-## 6. Bounds and failure isolation — Proposed
+## 6. Bounds and failure isolation — Accepted
 
 These are conservative first-release design limits, not measured capacity claims.
 #280 must verify them on the supported Kubernetes version and representative
@@ -494,3 +496,13 @@ Rejection or withdrawal is recorded and does not satisfy feature completion.
 - [Feature research](../../specs/011-addon-definition-rfc/research.md): source evidence and alternatives.
 - [Review contract](../../specs/011-addon-definition-rfc/contracts/rfc-review.md): requirement and scenario traceability.
 - [Execution record](../../specs/011-addon-definition-rfc/execution.md): checks and governance state.
+
+## Acceptance record
+
+Shawn Stratton approved revision `80d1dd71033cd7cfa70a6680152d100118f8211a`
+on 2026-09-20 in the originating task: “approved update the pr, watch the copilot
+messages and merge once completed”. This authorizes shortening the scheduled
+review window to completion of Copilot review and required checks. The accepted
+technical content is unchanged; this revision records status and the linked ADR.
+The earlier review-plan language describes the process followed, not an additional
+outstanding approval. Substantive changes require renewed decision review.

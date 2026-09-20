@@ -74,3 +74,12 @@ No accepted decision or runtime implementation is implied by publication.
 T021 is awaiting explicit acceptance or revision of the final PR proposal.
 T022–T027 depend on that decision. T025 checks have been run before publication;
 the task remains open because it also covers subsequent substantive edits.
+
+## Acceptance — 2026-09-20
+
+Shawn Stratton approved revision `80d1dd71033cd7cfa70a6680152d100118f8211a`
+in the originating task and instructed updating the PR, watching Copilot and
+merging when complete. This shortens the proposed review window to completion of
+review/checks. T021 and T022 are complete: RFC status is accepted and ADR 0007
+records the narrow supersession without changing ADR 0001. Technical decision
+content is unchanged. Merge and implementation handoff remain pending.
