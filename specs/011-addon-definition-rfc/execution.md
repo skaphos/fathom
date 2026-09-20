@@ -131,3 +131,22 @@ These clarifications do not add a new execution architecture or redefine history
 - T023–T025 are complete. This follow-up branch records that evidence without
   editing accepted decisions. T026 merge and T027 final readback/issue closure
   remain pending; their final evidence belongs in the follow-up PR record.
+
+### T025 final post-edit validation — 2026-09-20
+
+After the RFC/ADR acceptance edits and handoff evidence changes, the expanded
+quickstart checks were rerun against `specs/011-addon-definition-rfc/`,
+`docs/rfc/0001-addondefinition-crd.md`, and `docs/adr/`, including untracked
+Markdown files:
+
+- Whitespace Python check: PASS, no trailing whitespace.
+- Relative Markdown file-target check: PASS, all local targets resolve;
+  fragment anchors and remote URL availability are not checked by this script.
+- Template-marker Python check: PASS, no unresolved markers.
+- `git diff --check`: PASS, no whitespace errors.
+- `reuse lint`: PASS, 631/631 files with copyright and license information;
+  no missing/bad licenses or read errors.
+
+These results were reconfirmed after adding this record for PR #350's Copilot
+comment. They supersede the earlier 630-file pre-review validation count for
+T025. Runtime/e2e tests were not run for these documentation-only changes.
