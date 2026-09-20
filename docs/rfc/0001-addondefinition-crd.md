@@ -201,6 +201,41 @@ bindings. These permissions must be generated through the repository tasks.
 The cluster administrator is trusted; an actor who can edit all these grants can
 intentionally delegate more authority. A definition-author role alone cannot.
 
+### Binding schema and invariants
+
+The binding GVK is `fathom.skaphos.io/v1alpha1, Kind=AddonDefinitionBinding`.
+It is namespaced, with the status subresource enabled. Required fields are
+`spec.definitionRef.name`, `spec.definitionRef.uid`,
+`spec.serviceAccountRef.name`, `spec.serviceAccountRef.uid`, and `spec.targetScope`.
+`spec.enabled` defaults false; `spec.targetScope.allowClusterScoped` defaults
+false; `spec.targetScope.namespaces` is a set of exact namespace names, default
+empty. At least one namespace or cluster-scoped access must be selected.
+No reference accepts an arbitrary kind, API group or namespace. The definition
+reference is cluster-scoped; the SA reference resolves only in the binding's
+namespace, which must equal the configured operator namespace for activation.
+
+Admission requires metadata.name=definitionRef.name, the canonical addon-name
+syntax from §4, nonempty UID strings of at most 128 bytes, valid SA names of at
+most 253 characters, unique namespace entries, and the §6 size limits. Both
+reference objects are immutable; to authorize a recreated definition or SA,
+disable/delete and recreate the binding with new references and a new binding
+UID. Enabled and targetScope are mutable spec fields: changes increment generation
+and invalidate captured authority. Live UID matches, dedicated-SA uniqueness,
+built-in/manager exclusions and actual namespace ownership are controller checks,
+not claims that object-local CEL can query other resources.
+
+Status has observedGeneration (nonnegative int64), activeRuns (integer 0–4),
+leaderIdentity (string ≤253 bytes), and conditions (map-list keyed by type,
+maximum 8). Each condition follows Kubernetes metav1.Condition: required type
+(≤64 bytes), status (True/False/Unknown), reason (≤128 bytes), message (≤1,024
+bytes), lastTransitionTime, and observedGeneration. Required condition types are
+Accepted, Ready and Drained. Accepted describes reference/schema eligibility;
+Ready requires enabled and eligible authority; Drained is valid only under §5's
+matching-generation/current-leader acknowledgement rules. Missing conditions,
+a stale generation or an unknown leader never constitute authority or drain
+completion. Only the controller may write status; admission must not use a
+caller-supplied status value to authorize a definition.
+
 ### All evaluation paths
 
 | Path | Required identity and restriction |
@@ -339,6 +374,12 @@ its observed resourceVersion and generation. Reject superseded runs rather than
 publishing under newer inputs. Serialize publication per AddonCheck and route all
 runtime status/report writes through this gate. Reports carry the same revision;
 report-write retries use the accepted run identifier, not a new evaluation time.
+HealthReport history remains transition-only: definition or authorization-context
+changes alone do not create a report when the aggregate verdict is unchanged.
+Every completed run updates the current status evidence and source context, so
+status may reference a newer revision than the latest historical report. Reports
+retain the revision of their own observation and are never relabeled. A later
+verdict transition creates a report with that run's revision/context.
 
 **Revocation boundary:** API requests are authorized individually. Revocation
 observed by the controller invalidates the snapshot and cancels work; a 403 aborts
@@ -454,9 +495,15 @@ same failure deduplication, avoiding an event on every unchanged retry.
 **Alternatives:** Timeout-only lists still allocate large responses; dynamic caps
 per author invite evasion; process-per-run isolates faults better but adds pod
 startup/privilege/operational costs beyond this release. Fixed limits may reject
-legitimate large workloads and require measurements to revise. Shared typed engine
-bugs can still crash the process; this is bounded input/work isolation, not a
-sandbox against arbitrary Go defects. **Acceptance example:** A 1,001-object
+legitimate large workloads and require measurements to revise. Runtime compilation and evaluation must each have a panic-recovery boundary
+in the goroutine executing the work, turning recoverable panics into a bounded
+EngineError for the responsible definition/check. Release slots, cancel child
+work and retain prior evidence; no panic-derived partial result is healthy.
+Runtime evaluators may not start goroutines outside that supervised boundary.
+#280 must test a panicking compiler and evaluator alongside a healthy definition.
+Fatal runtime faults and OS termination are not recoverable Go panics: a known
+definition-triggerable process-wide failure is a release blocker to fix or
+isolate before enabling runtime loading, not an accepted exception to FR-012. **Acceptance example:** A 1,001-object
 population yields WorkLimitExceeded, never success based on the first 1,000;
 a second eligible definition still receives a worker turn.
 **Deferred:** larger caps pending measurements and process isolation.

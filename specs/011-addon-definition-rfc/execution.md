@@ -102,3 +102,13 @@ status subresource; active-run/drain bookkeeping cannot invalidate authority.
 This corrects the mechanism for the already accepted spec-change fence. Missing
 and invalid-definition matrix rows also explicitly preserve old observations,
 revision and authority context while marking freshness Unavailable.
+
+## Additional Copilot contract clarifications
+
+The final pass requested explicit compile/evaluation panic containment and a
+concrete binding GVK/reference/status contract. Both now spell out enforcement
+of the accepted authority and failure-isolation requirements. Reference changes
+use binding recreation; mutable enabled/scope changes invalidate generation.
+HealthReports remain transition-only; unchanged-verdict revision changes are
+visible in current status, while historical reports retain their original source.
+These clarifications do not add a new execution architecture or redefine history.
