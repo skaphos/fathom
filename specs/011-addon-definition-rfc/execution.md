@@ -83,3 +83,13 @@ merging when complete. This shortens the proposed review window to completion of
 review/checks. T021 and T022 are complete: RFC status is accepted and ADR 0007
 records the narrow supersession without changing ADR 0001. Technical decision
 content is unchanged. Merge and implementation handoff remain pending.
+
+## Copilot review clarifications
+
+Seven comments on PR #349 were addressed with explicit roles, a same-UID
+retargeting acceptance scenario, uncached APIReader fences, ordered runtime
+conversion, binding drain status, preserved evidence wording, and portable
+cross-repository links. Earlier local link checks passed because the sibling
+checkout existed; the old links were not portable to a standalone checkout.
+The accepted decisions remain unchanged; these spell out their enforcement and
+observability obligations. Automated re-review is requested before merge.

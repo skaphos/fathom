@@ -15,9 +15,9 @@ SPDX-License-Identifier: MIT
 
 ## Context and Scope
 
-Fathom is a [standalone cluster-integrity primitive](../../../skaphos-resources/tools/fathom/FACTS.md)
+Fathom is a [standalone cluster-integrity primitive](https://github.com/skaphos/skaphos-resources/blob/main/tools/fathom/FACTS.md)
 whose published state is consumed one-way by other systems. The
-[ecosystem review](../../../skaphos-resources/tools/ECOSYSTEM.md#fathom--cluster-platform-integrity-health-gate)
+[ecosystem review](https://github.com/skaphos/skaphos-resources/blob/main/tools/ECOSYSTEM.md#fathom--cluster-platform-integrity-health-gate)
 supports building this capability while learning from existing evaluator models. This work completes
 the decisions in the [proposed RFC](../../docs/rfc/0001-addondefinition-crd.md)
 without treating its current recommendations as accepted decisions.

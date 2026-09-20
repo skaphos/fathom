@@ -124,7 +124,11 @@ an opaque Go-struct serialization. Every payload must declare target scope and
 use the bounds in §6. Resource GVK, names, namespace selection, posture, paths,
 version lists and condition predicates must survive deterministic conversion.
 Checks run in family order then declared check order; sample generation preserves
-the engine's existing bucket order. No embedded code or arbitrary expression field.
+the engine's existing bucket order. Runtime conversion must add an ordered
+evaluator sequence rather than round-trip through `FamilyDefinition.evaluators()`;
+that existing method groups by typed bucket and cannot preserve arbitrary CR
+order. Built-in definitions keep their existing bucket order. No embedded code
+or arbitrary expression field.
 
 OpenAPI plus fixed admission CEL validates the closed union, unique names,
 required relationships, syntax and collection limits. Unknown kinds are rejected.
@@ -161,6 +165,13 @@ Its spec contains definition name and UID, ServiceAccount name and UID,
 are owned by the platform administrator; definition authors get no create/update/
 delete permission on bindings, SAs, impersonation grants or underlying RBAC.
 The operator reads bindings and writes only their status, never their spec.
+Administrators grant a definition-author ClusterRole with get/list/watch/create
+on AddonDefinitions and get/update/patch/delete scoped by resourceNames for the
+identities that author maintains. Kubernetes RBAC cannot constrain create by
+resourceNames: authors with create can create other unbound definitions, which
+remain inert. Administrators separately control binding spec and all grants;
+neither author nor binding roles permit writing definition/binding status.
+Administrators may instead precreate definitions and omit author create access.
 
 A binding authorizes future edits of that exact definition UID under the dedicated
 SA's authority; this is delegated read authority to the definition author, not
@@ -174,6 +185,12 @@ The install sequence is declarative: apply definition and dedicated SA; read the
 UIDs; review and commit the binding and grant manifests to Git; apply grants and
 then enable the binding. The renderer assists both stages. UID discovery makes
 installation less convenient but prevents silent inheritance after recreation.
+Adversarial acceptance scenario: an authorized author changes a same-UID
+definition to read another GVK already granted to its dedicated SA. The run is
+allowed only within binding target scope and read-only evaluator capabilities;
+this is intentional delegated authority, not blocked by requestedReads. A GVK
+outside the SA grants is denied. Administrators requiring per-edit approval must
+withhold author update/patch permission and review updates themselves.
 The administrator installs both read RoleBindings/ClusterRoleBindings and a
 separate non-generated `addon-impersonator-external` Role/RoleBinding allowing the
 manager to impersonate only those named SAs. Generated built-in RBAC is untouched.
@@ -192,7 +209,7 @@ intentionally delegate more authority. A definition-author role alone cannot.
 | Addon objects, CRDs, APIServices | Bound SA; declared GVK/scope and binding target intersection |
 | Core reads including pods, ConfigMaps, services and EndpointSlices | Same bound SA and scope filter |
 | Version detection, fallback API versions and helper reads | Same transport, request counters and identity; no privileged fallback |
-| Definition/binding/SA metadata and own status | Manager control-plane client, never passed into the evaluator |
+| Definition/binding/SA metadata and own status | Manager control-plane identity; uncached APIReader for validation fences, never passed into the evaluator |
 
 Clear inherited impersonation headers and use only the canonical bound SA user
 identity; do not accept arbitrary groups, extras or user names from definitions.
@@ -310,8 +327,10 @@ This is the observed authority context, not a snapshot of every additive RBAC gr
 Registry removals must match the owner UID so an old delete cannot remove a new
 object. Index AddonChecks by addonType; definition/binding/SA changes enqueue them.
 
-Before starting, directly re-read the binding, SA and definition, validate scope
-and arbitration, and capture immutable input. Before publication, re-read them
+Before starting, use an uncached APIReader (or equivalent direct API-server
+client, never the informer-backed manager client) to re-read the binding, SA
+and definition, validate scope
+and arbitration, and capture immutable input. Before publication, use the same uncached path to re-read them
 again and compare identifiers, then compare-and-swap the AddonCheck status against
 its observed resourceVersion and generation. Reject superseded runs rather than
 publishing under newer inputs. Serialize publication per AddonCheck and route all
@@ -326,7 +345,15 @@ revocation not yet observed can race with the final check. Do not claim immediat
 linearizable revocation, rollback of already permitted reads, or that a successful
 run proves current RBAC. Administrators needing an orderly cutoff disable the
 binding and wait for `Ready=False/AuthorizationRevoked` plus zero active runs
-before removing grants. Status reports the observed context/time, not a stronger
+before removing grants. Expose the drain acknowledgement on binding status:
+`observedGeneration`, `activeRuns`, `Drained`, and the current leader identity.
+Only the leader that gates runtime admission may set Drained=True, after
+observing enabled=false and awaiting completion/cancellation of all runs for
+that binding across its AddonChecks. On leader change, invalidate the prior
+acknowledgement; the CLI must require current leader, matching generation,
+activeRuns=0 and Drained=True. This acknowledgement describes operator work,
+not rollback of reads already authorized by the API server.
+Status reports the observed context/time, not a stronger
 guarantee. An inability to complete final validation prevents publication.
 
 Retain `lastSuccessfulEvaluation` (verdict, observations, original `observedAt`,
@@ -351,7 +378,7 @@ reads only HealthCheck.status, never definitions or history.
 | Definition deleted | Remove matching UID only; Ready=False/DefinitionUnavailable | Keep original time and revision; recreation requires new UID binding |
 | Same name recreated | New UID has no authority inherited from old binding | Ready=False/BindingMismatch until administrator authorizes new UID |
 | Binding disabled/deleted or SA replaced | Revoke eligibility; Ready=False/AuthorizationRevoked or BindingMismatch | Cancel active work; final validation rejects changed context; explicit reauthorization recovers |
-| RBAC denies an API read | No completed health result; Ready=False/AccessDenied | Old evidence unavailable; bounded retries use actual current permissions |
+| RBAC denies an API read | No completed health result; Ready=False/AccessDenied | Old evidence retained with original observation/revision/context; freshness=Unavailable; bounded retries use actual current permissions |
 | Revocation during run | Observed revocation cancels/rejects; unobserved race has limits described above | Latest attempt explains discard; no newly dated old verdict |
 | Restart or partial informer sync | No runtime execution until synchronized and directly validated | Persisted evidence stays readable; no manager fallback; reconstruct from API objects |
 | Binding/grants recover | Capture new authority context; Ready remains false until evaluation succeeds | New run supplies fresh evidence; history remains attributable |
@@ -506,3 +533,11 @@ review window to completion of Copilot review and required checks. The accepted
 technical content is unchanged; this revision records status and the linked ADR.
 The earlier review-plan language describes the process followed, not an additional
 outstanding approval. Substantive changes require renewed decision review.
+
+### Copilot review clarifications
+
+Review clarified implementation obligations already implied by the accepted
+contract: explicit author/admin roles, intentional same-UID read delegation,
+uncached validation reads, an ordered runtime evaluator sequence, an observable
+binding drain acknowledgement and retained evidence with Unavailable freshness.
+These do not change the accepted scope or the non-atomic revocation limitation.
