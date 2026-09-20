@@ -82,6 +82,7 @@ specs/011-addon-definition-rfc/
 ├── spec.md
 ├── checklists/requirements.md
 ├── plan.md
+├── execution.md                 # implementation evidence; quality checklists stay read-only
 ├── research.md
 ├── data-model.md
 ├── quickstart.md
@@ -159,8 +160,14 @@ choices are the RFC work product; research recommendations do not approve them.
    acceptance. Verify that the merged RFC contains the accepted text. Report the
    feature as awaiting approval or merge if either event is outstanding.
 7. Update #280 with merged RFC/ADR references, scoped work, explicit deferrals,
-   #256 disposition and implementation validation needs. Read it back before
-   marking #278 complete.
+   #256 disposition and implementation validation needs. Read it back and
+   record the handoff evidence.
+8. Land post-merge evidence and task-status updates through a follow-up
+   documentation PR from current `main`, with identity/DCO verification and
+   required checks/review. Preserve accepted RFC/ADR content. Record this
+   follow-up PR's own merge/check evidence in its PR record; final repository
+   verification is read-only, avoiding a recursive evidence-commit requirement.
+   Only then mark #278 complete.
 
 This planning command stops after Phase 1. It does not open or merge a PR,
 change RFC status, or update GitHub issues during this turn.
@@ -168,7 +175,8 @@ change RFC status, or update GitHub issues during this turn.
 ## Validation and Reversibility
 
 Use [quickstart.md](quickstart.md) after drafting and substantive review changes.
-Local checks establish document consistency; decision evidence establishes
+The checks cover the feature directory, RFC and ADR directory, including new
+untracked Markdown files. Local checks establish document consistency; decision evidence establishes
 acceptance. Runtime e2e is unnecessary for this document-only change; #280
 retains its real-cluster validation requirement.
 

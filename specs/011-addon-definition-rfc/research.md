@@ -209,3 +209,20 @@ The RFC authoring work still must turn the recommendations into six complete
 proposals, concrete limits, and a decision on each listed alternative. That is
 the planned deliverable, not an unresolved prerequisite to planning. No approval,
 merge, epic update or runtime verification is claimed by this research.
+
+## Execution refresh — 2026-09-20
+
+HEAD `103e1a5` has no changes to `internal/`, `api/`, `pkg/`, or `config/`
+relative to the research baseline `92c5d8b`. Re-read the registry, client factory,
+reconciler fallback/requeue paths, definition vocabulary, ratio/version contracts,
+manager role and conditional metrics grants. The findings above still apply.
+Kubernetes primary references above were reopened: ServiceAccount impersonation
+is namespace-scoped, effective RBAC is additive, and admission CEL has its own
+cost budgets. These do not supply runtime evaluation bounds or an atomic
+cross-object revocation guarantee.
+
+Issue #256 remains open. Its proposed minor bump explicitly keeps 1.0 adapters
+loadable; it cannot by itself detect an adapter's conflicting ratio semantics.
+No PR existed for `docs/addon-definition-rfc` at the start of execution.
+The proposed binding resource, validation limits and lifecycle below are new
+RFC recommendations, not behavior verified in the existing implementation.

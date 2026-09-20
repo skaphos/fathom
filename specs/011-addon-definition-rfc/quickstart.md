@@ -47,28 +47,35 @@ bash .specify/scripts/bash/check-prerequisites.sh --json --paths-only
 ## Local checks
 
 Run these commands from the repository root. They include tracked and
-untracked files where the check needs to cover the new documentation.
+untracked files across the feature directory, the RFC, and `docs/adr/`.
+Checking the whole ADR directory includes the new decision record as soon as
+it is created, without guessing its number. This reads existing ADRs; it does
+not authorize changing accepted records.
 
-Check whitespace in the feature directory, including untracked files:
+Check whitespace across all deliverable paths, including untracked files:
 
 ```sh
-git diff --check -- specs/011-addon-definition-rfc
+git diff --check -- specs/011-addon-definition-rfc docs/rfc/0001-addondefinition-crd.md docs/adr/
 python3 - <<'PY'
 from pathlib import Path
 
 bad = []
-for doc in Path("specs/011-addon-definition-rfc").rglob("*"):
+docs = [*Path("specs/011-addon-definition-rfc").rglob("*.md"),
+        Path("docs/rfc/0001-addondefinition-crd.md"),
+        *Path("docs/adr").rglob("*.md")]
+for doc in docs:
     if doc.is_file():
         for line_no, line in enumerate(doc.read_text().splitlines(), 1):
             if line.endswith((" ", "\t")):
                 bad.append(f"{doc}:{line_no}")
 if bad:
     raise SystemExit("Trailing whitespace:\n" + "\n".join(bad))
-print("tracked and untracked feature-document whitespace: OK")
+print("tracked and untracked deliverable whitespace: OK")
 PY
 ```
 
-Check that every relative Markdown link in the feature directory resolves:
+Check that every relative Markdown file target across those paths resolves
+(fragment anchors are not checked):
 
 ```sh
 python3 - <<'PY'
@@ -76,10 +83,12 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-root = Path("specs/011-addon-definition-rfc")
+docs = [*Path("specs/011-addon-definition-rfc").rglob("*.md"),
+        Path("docs/rfc/0001-addondefinition-crd.md"),
+        *Path("docs/adr").rglob("*.md")]
 pattern = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 bad = []
-for doc in root.rglob("*.md"):
+for doc in docs:
     for target in pattern.findall(doc.read_text()):
         target = target.split("#", 1)[0].strip().strip("<>")
         if not target or urlsplit(target).scheme or target.startswith("//"):
@@ -94,20 +103,24 @@ PY
 
 Check for template markers or unresolved planning text. The expected literal
 `[NEEDS CLARIFICATION]` marker is excluded from the unresolved-marker scan.
+The word “placeholder” is a marker only when fully uppercase; ordinary prose
+may use its lowercase form, including in accepted ADRs.
 
 ```sh
 python3 - <<'PY'
 from pathlib import Path
 import re
 
-root = Path("specs/011-addon-definition-rfc")
+docs = [*Path("specs/011-addon-definition-rfc").rglob("*.md"),
+        Path("docs/rfc/0001-addondefinition-crd.md"),
+        *Path("docs/adr").rglob("*.md")]
 markers = re.compile(
-    r"\b(TODO|FIXME|TBD|PLACEHOLDER)\b|\{\{[^}]+\}\}|<INSERT[^>]*>"
+    r"\b(TODO|FIXME|TBD|(?-i:PLACEHOLDER))\b|\{\{[^}]+\}\}|<INSERT[^>]*>"
     r"|\[(FEATURE|DATE|###[-\w]+|REMOVE IF UNUSED|link)\]"
     r"|\[NEEDS CLARIFICATION:|\bNEEDS CLARIFICATION\b", re.I
 )
 bad = []
-for doc in root.rglob("*.md"):
+for doc in docs:
     fenced = False
     for line_no, line in enumerate(doc.read_text().splitlines(), 1):
         if line.strip().startswith("```"):
@@ -170,3 +183,9 @@ and its final text is recorded. Feature completion still waits for merge to
 `main`, an accepted-RFC readback, the linked ADR record, and the #280 handoff.
 A local pass therefore means “checks pass, RFC still proposed,” not “feature
 accepted.”
+
+After the RFC/ADR merge and #280 readback, publish the repository evidence
+updates through a follow-up documentation PR from current `main`, as specified
+in T026. Keep accepted RFC/ADR content unchanged. Put that follow-up PR's own
+merge/check readback in its PR record so verification does not require another
+self-referential repository edit. Final completion verification is read-only.

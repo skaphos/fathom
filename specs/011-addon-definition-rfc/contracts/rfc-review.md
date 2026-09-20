@@ -113,3 +113,52 @@ Completion requires all of the following, with no implementation claim:
 Local Markdown, link, SPDX, and whitespace checks establish artifact quality.
 They do not establish approval, merge, issue mutation, runtime correctness, or
 deployment. Implementation and real-cluster validation remain future #280 work.
+
+## Draft walkthrough — 2026-09-20
+
+This maps the revised proposal, not accepted architecture or passing runtime tests.
+All numbered references below point to RFC 0001's six Proposed sections.
+
+| Requirements | Draft evidence |
+| --- | --- |
+| FR-001 | Status, decision ledger, review plan: explicit final-revision approval |
+| FR-002 | Sections 1–6 each include alternatives, costs, evidence, examples and deferrals |
+| FR-003 | §1 typed union/relationships; §6 input and expression inventory |
+| FR-004 | §2 five-row grant-model comparison, admin binding/install sequence |
+| FR-005 | §2 all-path identity table, missing-client and local execution rules |
+| FR-006 | §2 requestedReads, additive authority and minimum-request diagnostics |
+| FR-007 | §3 five distinct version meanings and bounded #256 deferral |
+| FR-008 | §4 name equality, global uniqueness and upgrade conflict barrier |
+| FR-009 | §5 lifecycle matrix, restart and event/poll recovery |
+| FR-010 | §5 immutable revision/context, final validation and publication gate |
+| FR-011 | §5 separate last-success and latest-attempt evidence; freshness rule |
+| FR-012 | §6 numeric budgets, deterministic failure precedence and fair scheduling |
+| FR-013 | §1 scope and CLI/samples inclusion |
+| FR-014 | Goals/non-goals; §§1–2 and §4 execution and authority boundaries |
+| FR-015 | Rollout: new ADR narrowly supersedes startup-only loading; old ADR unchanged |
+| FR-016 | Review plan and tasks T023–T027; external completion evidence still pending |
+| SC-001 | Exactly six Proposed numbered decisions |
+| SC-002 | §5 matrix plus §4 collision arbitration |
+| SC-003 | §2 path table and no fallback; security acceptance remains pending |
+| SC-004 | §6 table plus expression inventory, policy-override and allocation checks |
+| SC-005 | §3 deferral and final review/handoff sequence; actual handoff pending |
+
+Scenario walkthrough, in the order of the matrix above:
+
+| Scenario group | Draft outcome/evidence |
+| --- | --- |
+| Borrowed identity; absent clients; discovery/core reads | §2 denies missing/mismatched UID bindings and routes all evaluation requests through one scoped transport |
+| Narrow requested permissions; metrics disabled; four grant models | §2 diagnostics cover actual minimum reads only, report limits, and add no SAR dependency; comparison includes every requested alternative |
+| Missing/added/edited/deleted/recreated definition | §5 matrix preserves original evidence and requires current UID authority before new execution |
+| In-flight revocation; invalid/unknown kind; partial startup; recovery | §5 distinguishes observed revocation from unavoidable API transaction races; rejection, cancellation and recovery have stated outcomes |
+| Runtime duplicates; new built-in; replacement request | §4 prevents valid duplicates by name, rejects invalid legacy objects, and suspends colliding dispatch until explicit migration |
+| Scope; authoring aids; evaluator inventory | §1 selects cluster scope, CLI plus samples, nine kinds with APIService mapped to Condition |
+| Schema/semantic change; #256 | §3 rejects unsupported interpretation and makes the separate compatibility PR a release dependency |
+| Large response; multiple limits/retries | §6 caps decoded bytes before parsing, counts pages/objects/requests, and defines failure precedence and fair scheduling |
+| Aged evidence; ClusterHealth consumption | §5 makes stale evidence visible without refreshing success; ClusterHealth still reads HealthCheck.status only |
+
+No scenario is left to arrival-order arbitration or implicit manager privileges.
+The principal review limitation is explicit: publication has an observation-based
+revocation fence, not a cross-resource transaction. If the decider requires
+linearizable revocation, FR-010 cannot be accepted under this proposal; change
+the design before implementation, rather than claiming that guarantee exists.
