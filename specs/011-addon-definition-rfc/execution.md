@@ -112,3 +112,22 @@ use binding recreation; mutable enabled/scope changes invalidate generation.
 HealthReports remain transition-only; unchanged-verdict revision changes are
 visible in current status, while historical reports retain their original source.
 These clarifications do not add a new execution architecture or redefine history.
+
+## Merge and handoff — 2026-09-20
+
+- [PR #349](https://github.com/skaphos/fathom/pull/349) merged at 18:01:32 UTC
+  as `39b3dc5abd7c91b82c357164b98ae35bacfe7587` after all applicable checks passed.
+  The workflow skipped runtime e2e for this documentation change; the kind-e2e
+  gate passed. CI Summary was skipped by the workflow. No protection bypass used.
+- All actionable Copilot threads were addressed and resolved, including binding
+  generation fencing, panic containment, binding schema and report semantics.
+- Readback: fetched main and compared both accepted RFC and ADR against reviewed
+  head `d721000`; contents match. ADR 0001 and quality checklist were unchanged.
+- [Epic #280](https://github.com/skaphos/fathom/issues/280) now references immutable
+  merged RFC/ADR links and includes accepted implementation work, deferrals,
+  #256 ownership/release dependency, and mandatory real-cluster e2e coverage.
+  Actual body was read back and matched submitted content (ignoring terminal
+  newline formatting). Implementation remains open and unshipped.
+- T023–T025 are complete. This follow-up branch records that evidence without
+  editing accepted decisions. T026 merge and T027 final readback/issue closure
+  remain pending; their final evidence belongs in the follow-up PR record.
