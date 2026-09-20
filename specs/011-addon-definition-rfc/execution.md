@@ -93,3 +93,12 @@ cross-repository links. Earlier local link checks passed because the sibling
 checkout existed; the old links were not portable to a standalone checkout.
 The accepted decisions remain unchanged; these spell out their enforcement and
 observability obligations. Automated re-review is requested before merge.
+
+## Final publication-fence correction
+
+Copilot identified that binding resourceVersion includes status-only writes.
+The RFC now explicitly uses binding UID plus spec generation and requires the
+status subresource; active-run/drain bookkeeping cannot invalidate authority.
+This corrects the mechanism for the already accepted spec-change fence. Missing
+and invalid-definition matrix rows also explicitly preserve old observations,
+revision and authority context while marking freshness Unavailable.

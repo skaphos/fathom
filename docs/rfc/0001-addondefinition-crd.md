@@ -322,7 +322,10 @@ name-based conflict behavior and object-local CRD validation.
 Build and validate off-lock, then atomically swap immutable snapshots. A runtime
 revision is `(definition UID, generation, schema, semantics)`; publication also
 records operator build and adapterVersion. Deep-copy payloads. Bind snapshots to
-`(binding UID, resourceVersion, SA UID)` independently of definition generation.
+`(binding UID, spec generation, SA UID)` independently of definition generation.
+Enable the binding status subresource and fence on its spec generation, not
+resourceVersion: activeRuns/Drained/leader status writes must not invalidate
+unchanged authority. Status-only writes are ignored by the authority fence.
 This is the observed authority context, not a snapshot of every additive RBAC grant.
 Registry removals must match the owner UID so an old delete cannot remove a new
 object. Index AddonChecks by addonType; definition/binding/SA changes enqueue them.
@@ -370,10 +373,10 @@ reads only HealthCheck.status, never definitions or history.
 
 | Event | Active state and visible outcome | Evidence and recovery |
 | --- | --- | --- |
-| Missing definition | No runtime snapshot; Ready=False/UnknownAddonType | Prior evidence unavailable, or Unknown if none; watch plus bounded retry |
+| Missing definition | No runtime snapshot; Ready=False/UnknownAddonType | Prior evidence retained with original time/revision/context, freshness=Unavailable; Unknown verdict only if none; watch plus bounded retry |
 | Valid definition added | Activate only after valid binding and compilation | Requeue; Current only after a valid completed run |
 | Edited to valid revision | Replace snapshot; old run becomes Superseded | Preserve old evidence with revision; evaluate new snapshot |
-| Invalid edit stored | Remove eligibility; Accepted=False/InvalidDefinition | Old evidence unavailable; fix spec to recover; no stale adapter fallback |
+| Invalid edit stored | Remove eligibility; Accepted=False/InvalidDefinition | Old evidence retained with original time/revision/context, freshness=Unavailable; fix spec to recover; no stale adapter fallback |
 | Unknown kind submitted | Admission rejects; stored revision unchanged | Existing valid snapshot remains; if legacy invalid storage is seen, previous row applies |
 | Definition deleted | Remove matching UID only; Ready=False/DefinitionUnavailable | Keep original time and revision; recreation requires new UID binding |
 | Same name recreated | New UID has no authority inherited from old binding | Ready=False/BindingMismatch until administrator authorizes new UID |
