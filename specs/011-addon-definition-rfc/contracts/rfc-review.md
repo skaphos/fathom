@@ -162,3 +162,18 @@ The principal review limitation is explicit: publication has an observation-base
 revocation fence, not a cross-resource transaction. If the decider requires
 linearizable revocation, FR-010 cannot be accepted under this proposal; change
 the design before implementation, rather than claiming that guarantee exists.
+
+## Accepted decision and handoff evidence
+
+The historical draft walkthrough above is retained as review evidence. The final
+RFC and ADR 0007 were accepted and merged in [PR #349](https://github.com/skaphos/fathom/pull/349)
+at `39b3dc5abd7c91b82c357164b98ae35bacfe7587`. The accepted text includes the
+addressed Copilot clarifications, binding-generation fence and transition-only
+report semantics. This supersedes the draft walkthrough's pending-approval notes.
+
+FR-001 and FR-015 now have accepted RFC/ADR records; FR-016 and SC-005 have the
+actual updated/read-back [#280 epic](https://github.com/skaphos/fathom/issues/280).
+All 16 functional requirements and five success criteria have document evidence;
+none is a claim that runtime behavior is implemented. Final feature completion
+still requires merging this evidence PR, its readback, and #278 closure (T026–T027).
+See [execution evidence](../execution.md) for check outcomes and exact revisions.
