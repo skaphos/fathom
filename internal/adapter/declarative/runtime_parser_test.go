@@ -84,11 +84,14 @@ func TestRuntimeAnnotationByteBoundary(t *testing.T) {
 		}
 		d.Spec.Families[0].DefaultEnabled = true
 		p := d.Spec.Families[0].Checks[0].AnnotationStaleness
+		p.TimestampJSONField = "time"
+		value := `{"time":"2000-01-01T00:00:00Z","padding":""}`
+		value = strings.Replace(value, `"padding":""`, `"padding":"`+strings.Repeat("x", size-len(value))+`"`, 1)
 		scheme := runtime.NewScheme()
 		if err := corev1.AddToScheme(scheme); err != nil {
 			t.Fatal(err)
 		}
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: string(p.DefaultName), Namespace: string(p.Target.Namespaces[0]), Annotations: map[string]string{p.AnnotationKey: strings.Repeat("x", size)}}}).Build()
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: string(p.DefaultName), Namespace: string(p.Target.Namespaces[0]), Annotations: map[string]string{p.AnnotationKey: value}}}).Build()
 		engine, err := declarative.CompileRuntime(context.Background(), &d)
 		if err != nil {
 			t.Fatal(err)

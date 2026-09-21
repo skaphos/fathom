@@ -97,7 +97,15 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	if ctx.Err() != nil {
 		return adapter.Result{}, ctx.Err()
 	}
-	return result, err
+	if err != nil {
+		return adapter.Result{}, err
+	}
+	if b != nil {
+		if err := b.ValidateResult(result); err != nil {
+			return adapter.Result{}, err
+		}
+	}
+	return result, nil
 }
 
 // runtimeStep supplies explicit namespaces even when the family has no override;
@@ -174,7 +182,12 @@ func lowerRuntime(ctx context.Context, source *api.AddonDefinition) (*Engine, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return NewEngine(def)
+	engine, err := NewEngine(def)
+	if err != nil {
+		return nil, err
+	}
+	engine.runtime = true
+	return engine, nil
 }
 
 func lowerCheck(c api.DefinitionCheck) (Evaluator, []string) {
