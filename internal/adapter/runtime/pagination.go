@@ -53,6 +53,9 @@ func WalkPages(ctx context.Context, budget *Budget, reader client.Reader, protot
 		}
 		page.SetContinue("")
 		if err := reader.List(ctx, page, options); err != nil {
+			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+				return err // Absence is graded by the evaluator, not a failed run.
+			}
 			if !apierrors.IsResourceExpired(err) {
 				return budget.Abort(err)
 			}
@@ -96,4 +99,9 @@ func WalkPages(ctx context.Context, budget *Budget, reader client.Reader, protot
 		options.Continue = token
 	}
 	return budget.Fail("WorkLimitExceeded", "pagination request limit exceeded")
+}
+
+// WalkPages implements the declarative execution boundary with this run's budget.
+func (b *Budget) WalkPages(ctx context.Context, reader client.Reader, prototype client.ObjectList, consume func(context.Context, client.ObjectList) error, reset func(context.Context) error, opts ...client.ListOption) error {
+	return WalkPages(ctx, b, reader, prototype, consume, reset, opts...)
 }

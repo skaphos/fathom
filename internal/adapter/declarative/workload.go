@@ -19,6 +19,7 @@ import (
 
 	"github.com/skaphos/fathom/internal/adapter/podutil"
 	"github.com/skaphos/fathom/pkg/adapter"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
 // Evaluate implements Evaluator for WorkloadCheck. It reads one controller
@@ -169,42 +170,44 @@ func checkPods(ec EvalContext, namespace string, selector *metav1.LabelSelector,
 	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeError, fmt.Sprintf("%s has an invalid pod selector: %v", component, err), map[string]string{"component": component}, started)}
 	}
-	var pods corev1.PodList
-	if err := ec.Client.List(ec.Ctx, &pods, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel}); err != nil {
+	matched, live := 0, 0
+	var checks []adapter.CheckResult
+	err = ec.walkPages(&corev1.PodList{}, func(raw client.ObjectList) error {
+		page := raw.(*corev1.PodList)
+		matched += len(page.Items)
+		for i := range page.Items {
+			pod := &page.Items[i]
+			if !podutil.Active(pod) {
+				continue
+			}
+			live++
+			if !podReady(pod) {
+				checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeWarn, fmt.Sprintf("%s pod is not ready", component), map[string]string{"component": component, "phase": string(pod.Status.Phase)}, started))
+				continue
+			}
+			if restarts := maxRestartCount(pod); restarts > restartWarnCount {
+				checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeWarn, fmt.Sprintf("%s pod restart count exceeds warning threshold", component), map[string]string{
+					"component":        component,
+					"restartCount":     strconv.FormatInt(int64(restarts), 10),
+					"restartWarnCount": strconv.FormatInt(int64(restartWarnCount), 10),
+				}, started))
+				continue
+			}
+			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomePass, fmt.Sprintf("%s pod is ready", component), map[string]string{"component": component}, started))
+		}
+		if ec.runtime && len(checks) > limits.MaxResults {
+			return ec.budget().Fail("ResultLimitExceeded", "pod result count exceeded")
+		}
+		return nil
+	}, func() { matched, live = 0, 0; checks = nil }, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel})
+	if err != nil {
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeError, fmt.Sprintf("failed to list %s pods: %v", component, err), map[string]string{"component": component}, started)}
 	}
-	if len(pods.Items) == 0 {
+	if matched == 0 {
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeFail, fmt.Sprintf("%s has no matching pods", component), map[string]string{"component": component}, started)}
 	}
-
-	live := make([]*corev1.Pod, 0, len(pods.Items))
-	for i := range pods.Items {
-		if podutil.Active(&pods.Items[i]) {
-			live = append(live, &pods.Items[i])
-		}
-	}
-	if len(live) == 0 {
-		// Every matching pod is terminating, failed, or completed (mid-rollout
-		// churn or lingering Evicted pods). Defer to the authoritative workload
-		// check — Skipped is informational and never drags the roll-up down.
+	if live == 0 {
 		return []adapter.CheckResult{result(ec.Family, target, adapter.OutcomeSkipped, fmt.Sprintf("%s has only terminating, failed, or completed pods", component), map[string]string{"component": component}, started)}
-	}
-
-	checks := make([]adapter.CheckResult, 0, len(live))
-	for _, pod := range live {
-		if !podReady(pod) {
-			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeWarn, fmt.Sprintf("%s pod is not ready", component), map[string]string{"component": component, "phase": string(pod.Status.Phase)}, started))
-			continue
-		}
-		if restarts := maxRestartCount(pod); restarts > restartWarnCount {
-			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomeWarn, fmt.Sprintf("%s pod restart count exceeds warning threshold", component), map[string]string{
-				"component":        component,
-				"restartCount":     strconv.FormatInt(int64(restarts), 10),
-				"restartWarnCount": strconv.FormatInt(int64(restartWarnCount), 10),
-			}, started))
-			continue
-		}
-		checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomePass, fmt.Sprintf("%s pod is ready", component), map[string]string{"component": component}, started))
 	}
 	return checks
 }

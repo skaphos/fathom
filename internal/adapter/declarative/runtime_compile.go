@@ -80,7 +80,24 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	if err != nil {
 		return adapter.Result{}, err
 	}
-	return engine.Run(ctx, req)
+	b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget)
+	if r.scope != nil && b == nil {
+		return adapter.Result{}, fmt.Errorf("AuthorizationUnavailable: scoped runtime execution requires a shared budget")
+	}
+	if b != nil {
+		if err := b.Err(); err != nil {
+			return adapter.Result{}, err
+		}
+		req.Client = workClient{Client: req.Client, work: b}
+	}
+	result, err := engine.Run(ctx, req)
+	if b != nil && b.Err() != nil {
+		return adapter.Result{}, b.Err()
+	}
+	if ctx.Err() != nil {
+		return adapter.Result{}, ctx.Err()
+	}
+	return result, err
 }
 
 // runtimeStep supplies explicit namespaces even when the family has no override;
@@ -91,6 +108,7 @@ type runtimeStep struct {
 }
 
 func (s runtimeStep) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
+	ec.runtime = true
 	ec.Policy.Namespaces = append([]string(nil), s.namespaces...)
 	// All named threshold overrides have already been validated and resolved.
 	ec.Policy.Thresholds = nil
@@ -98,6 +116,9 @@ func (s runtimeStep) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 		return nil, err
 	}
 	out, err := s.evaluator.Evaluate(ec)
+	if b := ec.budget(); b != nil && b.Err() != nil {
+		return nil, b.Err()
+	}
 	if err != nil {
 		return nil, err
 	}

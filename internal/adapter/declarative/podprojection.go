@@ -49,17 +49,34 @@ func (pc PodProjectionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, er
 	ref := adapter.TargetRef{APIVersion: "v1", Kind: "Pod", Name: pc.listName()}
 	details := pc.scanDetails()
 
-	var pods []corev1.Pod
+	matched, live, missingCount := 0, 0, 0
+	var missing []string
 	for _, ns := range policyNamespaces(ec.Policy, "") {
-		var list corev1.PodList
-		if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns), client.MatchingLabels(pc.Selector)); err != nil {
-			return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomeError,
-				fmt.Sprintf("failed to list opted-in pods in %s: %v", namespaceScope(ns), err), details, started)}, nil
+		oldMatched, oldLive, oldMissing, oldNames := matched, live, missingCount, len(missing)
+		err := ec.walkPages(&corev1.PodList{}, func(raw client.ObjectList) error {
+			page := raw.(*corev1.PodList)
+			matched += len(page.Items)
+			for i := range page.Items {
+				pod := &page.Items[i]
+				if !podutil.Active(pod) {
+					continue
+				}
+				live++
+				if !pc.podInjected(pod) {
+					missingCount++
+					if len(missing) < maxNamedPods {
+						missing = append(missing, pod.Namespace+"/"+pod.Name)
+					}
+				}
+			}
+			return nil
+		}, func() { matched, live, missingCount = oldMatched, oldLive, oldMissing; missing = missing[:oldNames] }, client.InNamespace(ns), client.MatchingLabels(pc.Selector))
+		if err != nil {
+			return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomeError, fmt.Sprintf("failed to list opted-in pods in %s: %v", namespaceScope(ns), err), details, started)}, nil
 		}
-		pods = append(pods, list.Items...)
 	}
 
-	if len(pods) == 0 {
+	if matched == 0 {
 		c := skippedResult(ec.Family, ref,
 			fmt.Sprintf("no pods carry the %s opt-in label", formatSelector(pc.Selector)), "NoMatchingObjects")
 		for k, v := range pc.scanDetails() {
@@ -68,19 +85,7 @@ func (pc PodProjectionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, er
 		return []adapter.CheckResult{c}, nil
 	}
 
-	live := 0
-	var missing []string
-	for i := range pods {
-		pod := &pods[i]
-		if !podutil.Active(pod) {
-			continue
-		}
-		live++
-		if !pc.podInjected(pod) {
-			missing = append(missing, pod.Namespace+"/"+pod.Name)
-		}
-	}
-	details["matchedPods"] = strconv.Itoa(len(pods))
+	details["matchedPods"] = strconv.Itoa(matched)
 	details["livePods"] = strconv.Itoa(live)
 
 	if live == 0 {
@@ -90,16 +95,19 @@ func (pc PodProjectionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, er
 		return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomeSkipped,
 			"all opted-in pods are terminating, failed, or completed", details, started)}, nil
 	}
-	if len(missing) > 0 {
+	if missingCount > 0 {
 		outcome := pc.MissingOutcome
 		if outcome == "" {
 			outcome = adapter.OutcomeFail
 		}
-		details["uninjectedCount"] = strconv.Itoa(len(missing))
-		details["uninjectedPods"] = capNames(missing, maxNamedPods)
+		details["uninjectedCount"] = strconv.Itoa(missingCount)
+		details["uninjectedPods"] = strings.Join(missing, ",")
+		if missingCount > len(missing) {
+			details["uninjectedPods"] += fmt.Sprintf(",+%d more", missingCount-len(missing))
+		}
 		return []adapter.CheckResult{result(ec.Family, ref, outcome,
 			fmt.Sprintf("%d of %d opted-in pods are missing the injected %s projection — admitted while the webhook was not mutating",
-				len(missing), live, pc.VolumeName), details, started)}, nil
+				missingCount, live, pc.VolumeName), details, started)}, nil
 	}
 	return []adapter.CheckResult{result(ec.Family, ref, adapter.OutcomePass,
 		fmt.Sprintf("all %d opted-in pods carry the injected %s projection", live, pc.VolumeName),

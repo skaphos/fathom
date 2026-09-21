@@ -155,23 +155,26 @@ func (wc WebhookCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 func (wc WebhookCheck) endpointsResult(ec EvalContext, namespace string) adapter.CheckResult {
 	started := time.Now()
 	ref := adapter.TargetRef{APIVersion: "discovery.k8s.io/v1", Kind: "EndpointSlice", Namespace: namespace, Name: wc.ExpectedService}
-	var slices discoveryv1.EndpointSliceList
-	if err := ec.Client.List(ec.Ctx, &slices, client.InNamespace(namespace),
-		client.MatchingLabels{"kubernetes.io/service-name": wc.ExpectedService}); err != nil {
-		return result(ec.Family, ref, adapter.OutcomeError,
-			fmt.Sprintf("failed to list EndpointSlices for service %s/%s: %v", namespace, wc.ExpectedService, err), nil, started)
-	}
-	ready := 0
-	for _, slice := range slices.Items {
-		for _, endpoint := range slice.Endpoints {
-			if endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready {
-				ready++
+	ready, count := 0, 0
+	err := ec.walkPages(&discoveryv1.EndpointSliceList{}, func(raw client.ObjectList) error {
+		page := raw.(*discoveryv1.EndpointSliceList)
+		count += len(page.Items)
+		for _, slice := range page.Items {
+			for _, endpoint := range slice.Endpoints {
+				if endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready {
+					ready++
+				}
 			}
 		}
+		return nil
+	}, func() { ready, count = 0, 0 }, client.InNamespace(namespace), client.MatchingLabels{"kubernetes.io/service-name": wc.ExpectedService})
+	if err != nil {
+		return result(ec.Family, ref, adapter.OutcomeError, fmt.Sprintf("failed to list EndpointSlices for service %s/%s: %v", namespace, wc.ExpectedService, err), nil, started)
 	}
+
 	details := map[string]string{
 		"service":        namespace + "/" + wc.ExpectedService,
-		"endpointSlices": strconv.Itoa(len(slices.Items)),
+		"endpointSlices": strconv.Itoa(count),
 		"readyEndpoints": strconv.Itoa(ready),
 	}
 	if ready == 0 {

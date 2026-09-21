@@ -12,6 +12,7 @@ import (
 
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/declarative"
+	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/pkg/adapter"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +35,7 @@ func TestRuntimeCompilationPreservesOrderAndSnapshot(t *testing.T) {
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	result, err := engine.Run(context.Background(), adapter.Request{Client: fake.NewClientBuilder().WithScheme(scheme).Build()})
+	result, err := engine.Run(runtimeTestContext(t), adapter.Request{Client: fake.NewClientBuilder().WithScheme(scheme).Build()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestRuntimePolicyRejectsInvalidOverridesBeforeReads(t *testing.T) {
 				t.Fatal(err)
 			}
 			// A nil client makes any accidental read panic instead of masking fallback.
-			_, err = engine.Run(context.Background(), adapter.Request{Policy: map[adapter.Family]adapter.FamilyPolicy{"health": tc.policy}})
+			_, err = engine.Run(runtimeTestContext(t), adapter.Request{Policy: map[adapter.Family]adapter.FamilyPolicy{"health": tc.policy}})
 			if err == nil {
 				t.Fatal("invalid override accepted")
 			}
@@ -156,7 +157,7 @@ func TestRuntimeScopeAppliesAfterPolicyResolutionBeforeReads(t *testing.T) {
 			if tc.valid {
 				req.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 			}
-			result, err := engine.Run(context.Background(), req)
+			result, err := engine.Run(runtimeTestContext(t), req)
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v err=%v", tc.valid, err)
 			}
@@ -165,4 +166,11 @@ func TestRuntimeScopeAppliesAfterPolicyResolutionBeforeReads(t *testing.T) {
 			}
 		})
 	}
+}
+
+func runtimeTestContext(t *testing.T) context.Context {
+	t.Helper()
+	b, done := execution.NewBudget(context.Background(), 0)
+	t.Cleanup(done)
+	return declarative.WithExecutionBudget(b.Context(), b)
 }

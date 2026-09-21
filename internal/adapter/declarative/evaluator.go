@@ -24,6 +24,7 @@ import (
 // already carries the AddonCheck timeout deadline (bounded by the controller's
 // WithTimeout).
 type EvalContext struct {
+	runtime bool
 	// Ctx carries the deadline and cancellation for this Run.
 	Ctx context.Context
 	// Client is the least-privilege controller-runtime client.
