@@ -11,6 +11,10 @@ Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API gro
 ### Resource Types
 - [AddonCheck](#addoncheck)
 - [AddonCheckList](#addonchecklist)
+- [AddonDefinition](#addondefinition)
+- [AddonDefinitionBinding](#addondefinitionbinding)
+- [AddonDefinitionBindingList](#addondefinitionbindinglist)
+- [AddonDefinitionList](#addondefinitionlist)
 - [ClusterHealth](#clusterhealth)
 - [ClusterHealthList](#clusterhealthlist)
 - [DNSCheck](#dnscheck)
@@ -125,6 +129,166 @@ _Appears in:_
 | `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected on the most<br />recent run (from the addon workload's app.kubernetes.io/version label, else<br />its container image tag). Empty when the adapter does not detect versions or<br />the version was undetectable — the run then proceeds best-effort (SKA-527). |  | Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent run. |  | Optional: \{\} <br /> |
 | `lastRunTrigger` _string_ | LastRunTrigger records the value of the fathom.skaphos.io/run-now<br />annotation most recently consumed to force an adapter run. The controller<br />re-runs the adapter whenever the annotation value differs from this, then<br />stores it here so a given on-demand trigger fires exactly once. |  | Optional: \{\} <br /> |
+
+
+#### AddonDefinition
+
+
+
+AddonDefinition declares administrator-bound runtime health checks.
+
+
+
+_Appears in:_
+- [AddonDefinitionList](#addondefinitionlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinition` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[AddonDefinitionSpec](#addondefinitionspec)_ |  |  |  |
+| `status` _[AddonDefinitionStatus](#addondefinitionstatus)_ |  |  | Optional: \{\} <br /> |
+
+
+#### AddonDefinitionBinding
+
+
+
+AddonDefinitionBinding delegates a definition to a dedicated identity.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingList](#addondefinitionbindinglist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionBinding` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[AddonDefinitionBindingSpec](#addondefinitionbindingspec)_ |  |  |  |
+| `status` _[AddonDefinitionBindingStatus](#addondefinitionbindingstatus)_ |  |  | Optional: \{\} <br /> |
+
+
+#### AddonDefinitionBindingList
+
+
+
+AddonDefinitionBindingList contains delegation bindings.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionBindingList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[AddonDefinitionBinding](#addondefinitionbinding) array_ |  |  |  |
+
+
+#### AddonDefinitionBindingSpec
+
+
+
+AddonDefinitionBindingSpec is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBinding](#addondefinitionbinding)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `definitionRef` _[DefinitionReference](#definitionreference)_ | DefinitionRef is the declared definitionRef. |  |  |
+| `serviceAccountRef` _[DefinitionObjectReference](#definitionobjectreference)_ | ServiceAccountRef is the declared serviceAccountRef. |  |  |
+| `enabled` _boolean_ | Enabled is the declared enabled. | false | Optional: \{\} <br /> |
+| `targetScope` _[DefinitionBindingScope](#definitionbindingscope)_ | TargetScope is the declared targetScope. |  |  |
+
+
+#### AddonDefinitionBindingStatus
+
+
+
+AddonDefinitionBindingStatus describes observation, never authorization.
+Accepted records spec/identity validity; Ready records eligibility; Drained is
+acknowledged only for disabled, observed-generation state with zero active
+runs in the current leadership epoch. Consumers must independently verify the
+epoch against the configured Lease before treating Drained as current.
+
+
+
+_Appears in:_
+- [AddonDefinitionBinding](#addondefinitionbinding)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `activeRuns` _integer_ | ActiveRuns is the declared activeRuns. |  | Maximum: 4 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `leaderIdentity` _string_ | LeaderIdentity is the declared leaderIdentity. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `leaderEpoch` _[DefinitionLeaderEpoch](#definitionleaderepoch)_ | LeaderEpoch is the declared leaderEpoch. |  | Optional: \{\} <br /> |
+| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
+
+
+#### AddonDefinitionList
+
+
+
+AddonDefinitionList contains runtime definitions.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[AddonDefinition](#addondefinition) array_ |  |  |  |
+
+
+#### AddonDefinitionSpec
+
+
+
+AddonDefinitionSpec is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinition](#addondefinition)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `addonType` _[DefinitionDNSLabel](#definitiondnslabel)_ | AddonType is the declared addonType. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `adapterVersion` _string_ | AdapterVersion is the declared adapterVersion. |  | MaxLength: 256 <br />MinLength: 1 <br /> |
+| `semanticsVersion` _integer_ | SemanticsVersion is the declared semanticsVersion. |  | Enum: [1] <br /> |
+| `optional` _boolean_ | Optional is the declared optional. | false | Optional: \{\} <br /> |
+| `supportedVersions` _string_ | SupportedVersions is the declared supportedVersions. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
+| `versionSource` _[DefinitionVersionSource](#definitionversionsource)_ | VersionSource is the declared versionSource. |  | Optional: \{\} <br /> |
+| `families` _[DefinitionFamily](#definitionfamily) array_ | Families is the declared families. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
+| `requestedReads` _[DefinitionReadRule](#definitionreadrule) array_ | RequestedReads is the declared requestedReads. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+
+
+#### AddonDefinitionStatus
+
+
+
+AddonDefinitionStatus is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinition](#addondefinition)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `revision` _string_ | Revision is the declared revision. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
+| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
 
 
 #### CheckTargetRef
@@ -470,6 +634,620 @@ _Appears in:_
 | `message` _string_ | Message says what was asked and what came back. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
 | `answers` _string array_ | Answers are the records returned, retained as the evidence behind the<br />verdict. |  | MaxItems: 16 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
 | `latencyMillis` _integer_ | LatencyMillis is how long the lookup took. It is recorded as evidence<br />only; slow resolution is not by itself a failure in this API version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+
+
+#### DefinitionAnnotationStaleness
+
+
+
+DefinitionAnnotationStaleness is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `apiVersion` _string_ | APIVersion is the declared apiVersion. |  | MaxLength: 507 <br />MinLength: 1 <br />Pattern: `^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$` <br /> |
+| `kind` _[DefinitionToken](#definitiontoken)_ | Kind is the declared kind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `listKind` _[DefinitionToken](#definitiontoken)_ | ListKind is the declared listKind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br />Optional: \{\} <br /> |
+| `listName` _[DefinitionIdentifier](#definitionidentifier)_ | ListName is the declared listName. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `defaultName` _[DefinitionResourceName](#definitionresourcename)_ | DefaultName is the declared defaultName. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `nameThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | NameThresholdKey is the declared nameThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `component` _[DefinitionIdentifier](#definitionidentifier)_ | Component is the declared component. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `annotationKey` _string_ | AnnotationKey is the declared annotationKey. |  | MaxLength: 317 <br />MinLength: 1 <br /> |
+| `timestampJSONField` _string_ | TimestampJSONField is the declared timestampJSONField. |  | MaxLength: 128 <br />MinLength: 1 <br />Optional: \{\} <br /> |
+| `maxAgeThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | MaxAgeThresholdKey is the declared maxAgeThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `defaultMaxAge` _[DefinitionDuration](#definitionduration)_ | DefaultMaxAge is the declared defaultMaxAge. |  | MaxLength: 256 <br />MinLength: 1 <br /> |
+| `staleOutcome` _[DefinitionOutcome](#definitionoutcome)_ | StaleOutcome is the declared staleOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionBindingScope
+
+
+
+DefinitionBindingScope is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingSpec](#addondefinitionbindingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `namespaces` _[DefinitionDNSLabel](#definitiondnslabel) array_ | Namespaces is the declared namespaces. |  | MaxItems: 32 <br />MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `allowClusterScoped` _boolean_ | AllowClusterScoped is the declared allowClusterScoped. | false | Optional: \{\} <br /> |
+
+
+#### DefinitionCRD
+
+
+
+DefinitionCRD is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `names` _[DefinitionResourceName](#definitionresourcename) array_ | Names is the declared names. |  | MaxItems: 32 <br />MaxLength: 253 <br />MinItems: 1 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `supportedVersions` _[DefinitionToken](#definitiontoken) array_ | SupportedVersions is the declared supportedVersions. |  | MaxItems: 8 <br />MaxLength: 253 <br />MinItems: 1 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `unsupportedVersionOutcome` _[DefinitionOutcome](#definitionoutcome)_ | UnsupportedVersionOutcome is the declared unsupportedVersionOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionCheck
+
+
+
+DefinitionCheck is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionFamily](#definitionfamily)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _[DefinitionIdentifier](#definitionidentifier)_ | Name is the declared name. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br /> |
+| `kind` _string_ | Kind is the declared kind. |  | Enum: [Workload CRD Condition Field Webhook CronJob ConfigMap AnnotationStaleness PodProjection] <br /> |
+| `workload` _[DefinitionWorkload](#definitionworkload)_ | Workload is the declared workload. |  | Optional: \{\} <br /> |
+| `crd` _[DefinitionCRD](#definitioncrd)_ | CRD is the declared crd. |  | Optional: \{\} <br /> |
+| `condition` _[DefinitionCondition](#definitioncondition)_ | Condition is the declared condition. |  | Optional: \{\} <br /> |
+| `field` _[DefinitionField](#definitionfield)_ | Field is the declared field. |  | Optional: \{\} <br /> |
+| `webhook` _[DefinitionWebhook](#definitionwebhook)_ | Webhook is the declared webhook. |  | Optional: \{\} <br /> |
+| `cronJob` _[DefinitionCronJob](#definitioncronjob)_ | CronJob is the declared cronJob. |  | Optional: \{\} <br /> |
+| `configMap` _[DefinitionConfigMap](#definitionconfigmap)_ | ConfigMap is the declared configMap. |  | Optional: \{\} <br /> |
+| `annotationStaleness` _[DefinitionAnnotationStaleness](#definitionannotationstaleness)_ | AnnotationStaleness is the declared annotationStaleness. |  | Optional: \{\} <br /> |
+| `podProjection` _[DefinitionPodProjection](#definitionpodprojection)_ | PodProjection is the declared podProjection. |  | Optional: \{\} <br /> |
+
+
+#### DefinitionCondition
+
+
+
+DefinitionCondition is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `apiVersion` _string_ | APIVersion is the declared apiVersion. |  | MaxLength: 507 <br />MinLength: 1 <br />Pattern: `^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$` <br /> |
+| `kind` _[DefinitionToken](#definitiontoken)_ | Kind is the declared kind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `listKind` _[DefinitionToken](#definitiontoken)_ | ListKind is the declared listKind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br />Optional: \{\} <br /> |
+| `listName` _[DefinitionIdentifier](#definitionidentifier)_ | ListName is the declared listName. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `names` _[DefinitionResourceName](#definitionresourcename) array_ | Names is the declared names. |  | MaxItems: 32 <br />MaxLength: 253 <br />MinItems: 1 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `versionCRD` _[DefinitionResourceName](#definitionresourcename)_ | VersionCRD is the declared versionCRD. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `supportedVersions` _[DefinitionToken](#definitiontoken) array_ | SupportedVersions is the declared supportedVersions. |  | MaxItems: 8 <br />MaxLength: 253 <br />MinItems: 1 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `conditionType` _string_ | ConditionType is the declared conditionType. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `expectedStatus` _string_ | ExpectedStatus is the declared expectedStatus. |  | Enum: [True False Unknown] <br /> |
+| `absentCondition` _[DefinitionOutcome](#definitionoutcome)_ | AbsentCondition is the declared absentCondition. | Fail | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+| `mismatch` _[DefinitionOutcome](#definitionoutcome)_ | Mismatch is the declared mismatch. | Fail | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionConfigMap
+
+
+
+DefinitionConfigMap is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `defaultName` _[DefinitionResourceName](#definitionresourcename)_ | DefaultName is the declared defaultName. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `nameThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | NameThresholdKey is the declared nameThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `component` _[DefinitionIdentifier](#definitionidentifier)_ | Component is the declared component. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `key` _string_ | Key is the declared key. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[-._a-zA-Z0-9]+$` <br /> |
+| `recognizedAPIVersions` _string array_ | RecognizedAPIVersions is the declared recognizedAPIVersions. |  | MaxItems: 8 <br />items:MaxLength: 507 <br />Optional: \{\} <br /> |
+| `unrecognizedOutcome` _[DefinitionOutcome](#definitionoutcome)_ | UnrecognizedOutcome is the declared unrecognizedOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+| `invalidOutcome` _[DefinitionOutcome](#definitionoutcome)_ | InvalidOutcome is the declared invalidOutcome. | Fail | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionCronJob
+
+
+
+DefinitionCronJob is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `defaultName` _[DefinitionResourceName](#definitionresourcename)_ | DefaultName is the declared defaultName. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `nameThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | NameThresholdKey is the declared nameThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `component` _[DefinitionIdentifier](#definitionidentifier)_ | Component is the declared component. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `successMaxAgeThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | SuccessMaxAgeThresholdKey is the declared successMaxAgeThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `defaultSuccessMaxAge` _[DefinitionDuration](#definitionduration)_ | DefaultSuccessMaxAge is the declared defaultSuccessMaxAge. | 0s | MaxLength: 256 <br />MinLength: 1 <br />Optional: \{\} <br /> |
+| `staleOutcome` _[DefinitionOutcome](#definitionoutcome)_ | StaleOutcome is the declared staleOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionDNSLabel
+
+_Underlying type:_ _string_
+
+DefinitionDNSLabel is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 63
+- MinLength: 1
+- Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+
+_Appears in:_
+- [AddonDefinitionSpec](#addondefinitionspec)
+- [DefinitionBindingScope](#definitionbindingscope)
+- [DefinitionPodProjection](#definitionpodprojection)
+- [DefinitionReference](#definitionreference)
+- [DefinitionTarget](#definitiontarget)
+- [DefinitionVersionSource](#definitionversionsource)
+- [DefinitionWebhook](#definitionwebhook)
+
+
+
+#### DefinitionDuration
+
+_Underlying type:_ _string_
+
+DefinitionDuration is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 256
+- MinLength: 1
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCronJob](#definitioncronjob)
+
+
+
+#### DefinitionFamily
+
+
+
+DefinitionFamily is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionSpec](#addondefinitionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _[DefinitionIdentifier](#definitionidentifier)_ | Name is the declared name. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br /> |
+| `defaultEnabled` _boolean_ | DefaultEnabled is the declared defaultEnabled. | false | Optional: \{\} <br /> |
+| `checks` _[DefinitionCheck](#definitioncheck) array_ | Checks is the declared checks. |  | MaxItems: 32 <br />MinItems: 1 <br /> |
+
+
+#### DefinitionField
+
+
+
+DefinitionField is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `apiVersion` _string_ | APIVersion is the declared apiVersion. |  | MaxLength: 507 <br />MinLength: 1 <br />Pattern: `^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$` <br /> |
+| `kind` _[DefinitionToken](#definitiontoken)_ | Kind is the declared kind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `listKind` _[DefinitionToken](#definitiontoken)_ | ListKind is the declared listKind. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `listName` _[DefinitionIdentifier](#definitionidentifier)_ | ListName is the declared listName. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `fieldPath` _string array_ | FieldPath is the declared fieldPath. |  | MaxItems: 16 <br />MinItems: 1 <br />items:MaxLength: 128 <br />items:MinLength: 1 <br /> |
+| `expectedValue` _[DefinitionText](#definitiontext)_ | ExpectedValue is the declared expectedValue. |  | MaxLength: 1024 <br />MinLength: 1 <br /> |
+| `valueOutcomes` _object (keys:string, values:[DefinitionOutcome](#definitionoutcome))_ | ValueOutcomes is the declared valueOutcomes. |  | MaxProperties: 32 <br />Optional: \{\} <br /> |
+| `absentOutcome` _[DefinitionOutcome](#definitionoutcome)_ | AbsentOutcome is the declared absentOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+| `otherOutcome` _[DefinitionOutcome](#definitionoutcome)_ | OtherOutcome is the declared otherOutcome. | Warn | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionIdentifier
+
+_Underlying type:_ _string_
+
+DefinitionIdentifier is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 63
+- MinLength: 1
+- Pattern: `^[a-z][a-z0-9_-]*$`
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCheck](#definitioncheck)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionFamily](#definitionfamily)
+- [DefinitionField](#definitionfield)
+- [DefinitionPodProjection](#definitionpodprojection)
+- [DefinitionVersionSource](#definitionversionsource)
+- [DefinitionWorkload](#definitionworkload)
+
+
+
+#### DefinitionLeaderEpoch
+
+
+
+DefinitionLeaderEpoch is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingStatus](#addondefinitionbindingstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `leaseUID` _string_ | LeaseUID is the declared leaseUID. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
+| `holderIdentity` _string_ | HolderIdentity is the declared holderIdentity. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `acquireTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | AcquireTime is the declared acquireTime. |  |  |
+| `leaseTransitions` _integer_ | LeaseTransitions is the declared leaseTransitions. |  | Minimum: 0 <br /> |
+
+
+#### DefinitionObjectReference
+
+
+
+DefinitionObjectReference is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingSpec](#addondefinitionbindingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _[DefinitionResourceName](#definitionresourcename)_ | Name is the declared name. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `uid` _string_ | UID is the declared uid. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
+
+
+#### DefinitionOutcome
+
+_Underlying type:_ _string_
+
+DefinitionOutcome is an evaluator result; Error is never completed evidence.
+
+_Validation:_
+- Enum: [Pass Warn Fail Error Skipped]
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCRD](#definitioncrd)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionField](#definitionfield)
+- [DefinitionPodProjection](#definitionpodprojection)
+
+
+
+#### DefinitionPodProjection
+
+
+
+DefinitionPodProjection is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `selector` _object (keys:string, values:[DefinitionSelectorValue](#definitionselectorvalue))_ | Selector is the declared selector. |  | MaxProperties: 32 <br />MinProperties: 1 <br /> |
+| `listName` _[DefinitionIdentifier](#definitionidentifier)_ | ListName is the declared listName. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `component` _[DefinitionIdentifier](#definitionidentifier)_ | Component is the declared component. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `volumeName` _[DefinitionDNSLabel](#definitiondnslabel)_ | VolumeName is the declared volumeName. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `envVar` _string_ | EnvVar is the declared envVar. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[A-Za-z_][A-Za-z0-9_]*$` <br />Optional: \{\} <br /> |
+| `missingOutcome` _[DefinitionOutcome](#definitionoutcome)_ | MissingOutcome is the declared missingOutcome. | Fail | Enum: [Pass Warn Fail Error Skipped] <br />Optional: \{\} <br /> |
+
+
+#### DefinitionPosture
+
+_Underlying type:_ _string_
+
+DefinitionPosture specifies how absent targets are scored.
+
+_Validation:_
+- Enum: [Required Optional]
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCRD](#definitioncrd)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionField](#definitionfield)
+- [DefinitionWebhook](#definitionwebhook)
+- [DefinitionWorkload](#definitionworkload)
+
+
+
+#### DefinitionReadRule
+
+
+
+DefinitionReadRule is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionSpec](#addondefinitionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiGroup` _string_ | APIGroup is the declared apiGroup. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `resources` _string array_ | Resources is the declared resources. |  | MaxItems: 32 <br />MinItems: 1 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
+| `resourceNames` _[DefinitionResourceName](#definitionresourcename) array_ | ResourceNames is the declared resourceNames. |  | MaxItems: 32 <br />MaxLength: 253 <br />MinItems: 1 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `nonResourceURLs` _string array_ | NonResourceURLs is the declared nonResourceURLs. |  | MaxItems: 32 <br />MinItems: 1 <br />items:MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `verbs` _string array_ | Verbs is the declared verbs. |  | MaxItems: 2 <br />MinItems: 1 <br />items:Enum: [get list] <br /> |
+
+
+#### DefinitionReference
+
+
+
+DefinitionReference identifies one canonical AddonDefinition revision owner.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingSpec](#addondefinitionbindingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _[DefinitionDNSLabel](#definitiondnslabel)_ | Name is the definition's canonical addon identity. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `uid` _string_ | UID prevents authority from surviving definition recreation. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
+
+
+#### DefinitionResourceName
+
+_Underlying type:_ _string_
+
+DefinitionResourceName is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 253
+- MinLength: 1
+- Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCRD](#definitioncrd)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionObjectReference](#definitionobjectreference)
+- [DefinitionReadRule](#definitionreadrule)
+- [DefinitionWebhook](#definitionwebhook)
+- [DefinitionWorkload](#definitionworkload)
+
+
+
+#### DefinitionSelectorValue
+
+_Underlying type:_ _string_
+
+DefinitionSelectorValue is a bounded Kubernetes label value.
+
+_Validation:_
+- MaxLength: 256
+
+_Appears in:_
+- [DefinitionPodProjection](#definitionpodprojection)
+
+
+
+#### DefinitionStatusCondition
+
+
+
+DefinitionStatusCondition is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingStatus](#addondefinitionbindingstatus)
+- [AddonDefinitionStatus](#addondefinitionstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | Type is the declared type. |  | MaxLength: 64 <br />MinLength: 1 <br /> |
+| `status` _[ConditionStatus](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#conditionstatus-v1-meta)_ | Status is the declared status. |  | Enum: [True False Unknown] <br /> |
+| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br /> |
+| `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastTransitionTime is the declared lastTransitionTime. |  |  |
+| `reason` _string_ | Reason is the declared reason. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
+| `message` _string_ | Message is the declared message. |  | MaxLength: 1024 <br /> |
+
+
+#### DefinitionTarget
+
+
+
+DefinitionTarget is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCRD](#definitioncrd)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionField](#definitionfield)
+- [DefinitionPodProjection](#definitionpodprojection)
+- [DefinitionWebhook](#definitionwebhook)
+- [DefinitionWorkload](#definitionworkload)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `scope` _string_ | Scope is the declared scope. |  | Enum: [Namespaced Cluster] <br /> |
+| `namespaces` _[DefinitionDNSLabel](#definitiondnslabel) array_ | Namespaces is the declared namespaces. |  | MaxItems: 32 <br />MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+
+
+#### DefinitionText
+
+_Underlying type:_ _string_
+
+DefinitionText is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 1024
+- MinLength: 1
+
+_Appears in:_
+- [DefinitionField](#definitionfield)
+
+
+
+#### DefinitionThresholdKey
+
+_Underlying type:_ _string_
+
+DefinitionThresholdKey is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 63
+- MinLength: 1
+- Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$`
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionConfigMap](#definitionconfigmap)
+- [DefinitionCronJob](#definitioncronjob)
+- [DefinitionWebhook](#definitionwebhook)
+- [DefinitionWorkload](#definitionworkload)
+
+
+
+#### DefinitionToken
+
+_Underlying type:_ _string_
+
+DefinitionToken is bounded before semantic compilation.
+
+_Validation:_
+- MaxLength: 253
+- MinLength: 1
+- Pattern: `^[A-Za-z][A-Za-z0-9]*$`
+
+_Appears in:_
+- [DefinitionAnnotationStaleness](#definitionannotationstaleness)
+- [DefinitionCRD](#definitioncrd)
+- [DefinitionCondition](#definitioncondition)
+- [DefinitionField](#definitionfield)
+
+
+
+#### DefinitionVersionSource
+
+
+
+DefinitionVersionSource is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionSpec](#addondefinitionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `fromFamily` _[DefinitionIdentifier](#definitionidentifier)_ | FromFamily is the declared fromFamily. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br /> |
+| `fromComponent` _[DefinitionIdentifier](#definitionidentifier)_ | FromComponent is the declared fromComponent. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br /> |
+| `container` _[DefinitionDNSLabel](#definitiondnslabel)_ | Container is the declared container. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+
+
+#### DefinitionWebhook
+
+
+
+DefinitionWebhook is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `kind` _string_ | Kind is the declared kind. |  | Enum: [MutatingWebhookConfiguration ValidatingWebhookConfiguration] <br /> |
+| `name` _[DefinitionResourceName](#definitionresourcename)_ | Name is the declared name. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `nameThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | NameThresholdKey is the declared nameThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `expectedService` _[DefinitionDNSLabel](#definitiondnslabel)_ | ExpectedService is the declared expectedService. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `serviceNamespace` _[DefinitionDNSLabel](#definitiondnslabel)_ | ServiceNamespace is the declared serviceNamespace. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `verifyEndpoints` _boolean_ | VerifyEndpoints is the declared verifyEndpoints. | false | Optional: \{\} <br /> |
+
+
+#### DefinitionWorkload
+
+
+
+DefinitionWorkload is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [DefinitionCheck](#definitioncheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `target` _[DefinitionTarget](#definitiontarget)_ | Target is the declared target. |  |  |
+| `kind` _string_ | Kind is the declared kind. |  | Enum: [Deployment DaemonSet StatefulSet] <br /> |
+| `defaultName` _[DefinitionResourceName](#definitionresourcename)_ | DefaultName is the declared defaultName. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$` <br /> |
+| `nameThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | NameThresholdKey is the declared nameThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `component` _[DefinitionIdentifier](#definitionidentifier)_ | Component is the declared component. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z][a-z0-9_-]*$` <br />Optional: \{\} <br /> |
+| `absence` _[DefinitionPosture](#definitionposture)_ | Absence is the declared absence. |  | Enum: [Required Optional] <br />Optional: \{\} <br /> |
+| `checkPods` _boolean_ | CheckPods is the declared checkPods. | false | Optional: \{\} <br /> |
+| `restartWarnThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | RestartWarnThresholdKey is the declared restartWarnThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
+| `defaultRestartWarn` _integer_ | DefaultRestartWarn is the declared defaultRestartWarn. | 0 | Minimum: 0 <br />Optional: \{\} <br /> |
 
 
 #### HealthCheck

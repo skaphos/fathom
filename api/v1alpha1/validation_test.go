@@ -66,20 +66,23 @@ func TestGeneratedCRDsEmbedCadenceFloors(t *testing.T) {
 // others is worse than none at all — `kubectl get fathom` would return a
 // partial answer that looks complete.
 //
-// HealthReport is excluded on purpose. Reports are evidence, retained
+// Definitions and bindings are catalog/authorization objects, not health intent,
+// and are excluded from the category. HealthReport is excluded on purpose. Reports are evidence, retained
 // HistoryLimit-deep per check, so including them would bury the checks the
 // grouping exists to surface. The exclusion is asserted too, so flipping it
 // has to be a deliberate edit rather than a side effect of adding a marker.
 func TestGeneratedCRDsDeclareTheFathomCategory(t *testing.T) {
 	const category = "fathom"
 	tests := map[string]bool{
-		"fathom.skaphos.io_addonchecks.yaml":           true,
-		"fathom.skaphos.io_healthchecks.yaml":          true,
-		"fathom.skaphos.io_clusterhealths.yaml":        true,
-		"fathom.skaphos.io_nodecertificatechecks.yaml": true,
-		"fathom.skaphos.io_nodehealthchecks.yaml":      true,
-		"fathom.skaphos.io_dnschecks.yaml":             true,
-		"fathom.skaphos.io_healthreports.yaml":         false,
+		"fathom.skaphos.io_addondefinitions.yaml":        false,
+		"fathom.skaphos.io_addondefinitionbindings.yaml": false,
+		"fathom.skaphos.io_addonchecks.yaml":             true,
+		"fathom.skaphos.io_healthchecks.yaml":            true,
+		"fathom.skaphos.io_clusterhealths.yaml":          true,
+		"fathom.skaphos.io_nodecertificatechecks.yaml":   true,
+		"fathom.skaphos.io_nodehealthchecks.yaml":        true,
+		"fathom.skaphos.io_dnschecks.yaml":               true,
+		"fathom.skaphos.io_healthreports.yaml":           false,
 	}
 	for name, want := range tests {
 		path := filepath.Join("..", "..", "config", "crd", "bases", name)
@@ -115,13 +118,15 @@ func TestEveryGeneratedCRDIsCategorised(t *testing.T) {
 		t.Fatalf("read CRD bases: %v", err)
 	}
 	known := map[string]bool{
-		"fathom.skaphos.io_addonchecks.yaml":           true,
-		"fathom.skaphos.io_healthchecks.yaml":          true,
-		"fathom.skaphos.io_clusterhealths.yaml":        true,
-		"fathom.skaphos.io_nodecertificatechecks.yaml": true,
-		"fathom.skaphos.io_nodehealthchecks.yaml":      true,
-		"fathom.skaphos.io_dnschecks.yaml":             true,
-		"fathom.skaphos.io_healthreports.yaml":         true,
+		"fathom.skaphos.io_addondefinitions.yaml":        true,
+		"fathom.skaphos.io_addondefinitionbindings.yaml": true,
+		"fathom.skaphos.io_addonchecks.yaml":             true,
+		"fathom.skaphos.io_healthchecks.yaml":            true,
+		"fathom.skaphos.io_clusterhealths.yaml":          true,
+		"fathom.skaphos.io_nodecertificatechecks.yaml":   true,
+		"fathom.skaphos.io_nodehealthchecks.yaml":        true,
+		"fathom.skaphos.io_dnschecks.yaml":               true,
+		"fathom.skaphos.io_healthreports.yaml":           true,
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {

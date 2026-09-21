@@ -388,6 +388,11 @@ func Run(
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts.Zap)))
 	setupLog := ctrl.Log.WithName("setup")
+	if opts.RuntimeLoading.Enabled {
+		if reason := opts.RuntimeLoadingDisabledReason(); reason != "" {
+			setupLog.Info("runtime addon loading unavailable", "reason", reason)
+		}
+	}
 
 	// Install the global tracer provider before controllers and adapters are
 	// constructed so the tracers they obtain from it are wired correctly. When
