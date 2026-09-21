@@ -799,3 +799,102 @@ and belong to T057's gate run.
 Remaining US3 work is the controller chain: T037-T040, T042, T044-T046, then
 T047 wiring, T048 RBAC and T049 gates. Runtime remains default-off and
 `runtime.Execute` still has no production caller. Total checked: 38/59.
+
+### US3 phase B1 — lifecycle fixtures, definition/binding reconcilers, drain (T037, T038, T042) — 2026-09-21
+
+The first reconcilers for this feature. Written test-first: the lifecycle-matrix
+fixture file was authored against absent reconcilers and watched fail to build,
+then the reconcilers were implemented against it.
+
+T037/T038 — `addondefinition_controller.go` and `addondefinitionbinding_controller.go`
+(both new). Semantic validation, dedicated-SA UID and name uniqueness with manager
+and built-in exclusions, invalid-snapshot removal, owner-aware delete by UID,
+three field indexes backing every dependency lookup, and a deterministic barrier
+seam that holds a reconcile at a chosen point with no sleeps. 16 of the 17
+lifecycle-matrix rows have fixtures; the rows that remain belong to T039/T040
+(publication fences, the AddonCheck-side UnknownAddonType condition) and T044
+(evidence preservation and the ages-out row, whose status fields do not exist yet).
+
+T042 — drain acknowledgement per contracts/leadership.md: enabled=false observed
+through an uncached read, work cancelled and awaited, activeRuns=0, both Lease and
+binding re-read uncached before publishing, and read failure or epoch mismatch
+treated as unverifiable rather than drained.
+
+Adversarial review rejected both on first pass and found THREE REAL BUGS, not
+merely missing tests. Each was reproduced by the reviewer with an overlay probe
+and then independently re-confirmed by exercise after the fix:
+
+1. Deleting a binding never cancelled this session's in-flight work. Both deletion
+   paths returned before touching the leadership session, so a run already
+   executing under the deleted binding's dedicated identity ran to completion —
+   against the matrix row "Binding disabled/deleted or SA replaced | ... Cancel
+   active work". Both the hard-delete and finalizer-held shapes are now covered
+   and are independently load-bearing: removing either cancellation fails exactly
+   one arm.
+2. An inventory-only built-in collision published a DISPATCHABLE snapshot while
+   reporting Ready=False/BuiltinCollision. The registry only bars dispatch for
+   built-ins the process actually registered, so a definition whose identity the
+   shipped inventory claims was published with no barrier while its status claimed
+   suppression. It was contained in production only because run.go registers every
+   built-in unconditionally — the safety rested entirely on a registry/inventory
+   agreement nothing asserted. The reconciler now fails closed before compiling,
+   withdraws its own and every other claimant's snapshot, and the tests assert the
+   OUTCOME the row names: a reported collision must resolve to no dispatchable
+   candidate.
+3. A disabled binding whose stored spec fails ValidateBinding was published as
+   Drained=True/DrainAcknowledged beside Ready=False/InvalidDefinition, while
+   contracts/leadership.md requires AuthorizationRevoked — so the operator claimed
+   drained while its own independent CLI verifier returned exit 1, not drained.
+   The verifier confirmed the fix by re-implementing the CLI's exit-0 conjunction
+   independently of internal/cli and asserting operator and CLI now agree.
+
+Also corrected: contested identities were compiled and published without a
+binding, spending the bounded compile budget on a revision that cannot activate,
+against "Activate only after valid binding and compilation".
+
+Mutation verification: 28 mutations re-applied independently; all 9 originally
+surviving ones are caught. Three of the verifier's own new mutations survived and
+were closed by hand — the activeRuns schema clamp, the 401/Unauthorized arm of the
+drain path's denied-read reporting (the Forbidden arm was proven but a 401 still
+reported AuthorizationRevoked instead of AccessDenied), and the definition
+reconciler's mandatory-OperatorBuild construction guard.
+
+RBAC. The new markers changed the generated ClusterRole, and the delta is exactly
+minimal: `addondefinitions` and `addondefinitionbindings` merged into the existing
+fathom.skaphos.io get/list/watch rule, and their `/status` into the existing
+status rule. No new rule block, no leases, no SubjectAccessReview, no grant write.
+`config/rbac/role.yaml`, the Helm `manager-rules.yaml` distribution and the
+`docs/reference/operator-rbac.md` justification rows are regenerated and updated
+together, as the repository's lockstep doc guard requires.
+
+The absences are this feature's security argument, so they are now asserted rather
+than reviewed: `internal/controller/runtime_rbac_guard_test.go` fails if the
+operator ever gains a write verb on either runtime kind (an operator that could
+write a binding spec could enable a disabled binding or retarget it at another
+identity — i.e. authorize itself), a cluster-wide Lease rule, an access-review
+grant, or a ClusterRole/ClusterRoleBinding or bind/escalate grant. It is paired
+with a positive test proving the two kinds ARE readable, so the absences cannot
+be satisfied vacuously by granting nothing.
+
+That work covers most of T048 (markers, namespaced election-Role Lease access,
+role.yaml and Helm generation, and the proofs for binding-spec writes, grant
+writes, cluster-wide Lease reads and SAR grants). T048 stays OPEN: its
+"addon standing reads" clause is not yet asserted, and the Helm/values surface it
+shares with T051 is untouched.
+
+Gate outcomes: `go build ./...`, `go vet ./...`, `gofmt -l` clean; pinned
+`task lint` 0 issues; full suite green across `./internal/...` and `./pkg/...`
+including the envtest-backed controller package; `-race` green on
+internal/controller. envtest assets are 1.37.0, matching ENVTEST_K8S_VERSION.
+
+Not run: `task test-e2e`. Neither reconciler is reachable in a cluster yet —
+SetupWithManager has no caller until T047 wires the manager — so an e2e run could
+only re-prove unchanged built-in behaviour. AGENTS.md requires it for
+internal/controller changes before the PR is ready, and it is recorded here as
+owed rather than skipped. kind is on PATH; docker is aliased to podman in this
+environment.
+
+Runtime remains default-off and `runtime.Execute` still has no production caller.
+Remaining US3: T039/T040 (publication fences and per-check CAS), T044-T046
+(evidence preservation, Skipped coverage, HealthCheck mirror), then T047 wiring,
+T048 completion and T049 gates. Total checked: 41/59.

@@ -58,6 +58,8 @@
   - fathom.skaphos.io
   resources:
   - addonchecks
+  - addondefinitionbindings
+  - addondefinitions
   - clusterhealths
   - healthchecks
   verbs:
@@ -79,6 +81,8 @@
   - fathom.skaphos.io
   resources:
   - addonchecks/status
+  - addondefinitionbindings/status
+  - addondefinitions/status
   - clusterhealths/status
   - dnschecks/status
   - healthchecks/status
