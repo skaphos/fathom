@@ -20,6 +20,7 @@ import (
 // declarative prevents evaluators from depending on the runtime implementation.
 type ExecutionBudget interface {
 	Visit(int) error
+	ValidateResult(adapter.Result) error
 	Fail(string, string) error
 	Err() error
 	WalkPages(context.Context, client.Reader, client.ObjectList, func(context.Context, client.ObjectList) error, func(context.Context) error, ...client.ListOption) error
@@ -57,6 +58,11 @@ func (ec EvalContext) appendResults(out *[]adapter.CheckResult, values ...adapte
 		return fmt.Errorf("ResultLimitExceeded: evaluator result count exceeded")
 	}
 	*out = append(*out, values...)
+	if ec.runtime {
+		if b := ec.budget(); b != nil {
+			return b.ValidateResult(adapter.Result{Checks: *out})
+		}
+	}
 	return nil
 }
 
@@ -133,4 +139,13 @@ func (c workClient) inspect(ctx context.Context, obj runtime.Object) error {
 		return nil
 	}
 	return visit(data, 0)
+}
+
+func (e *Engine) validateRuntimeResult(ctx context.Context, result adapter.Result) error {
+	if e.runtime {
+		if b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget); b != nil {
+			return b.ValidateResult(result)
+		}
+	}
+	return nil
 }

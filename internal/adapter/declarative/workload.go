@@ -19,7 +19,6 @@ import (
 
 	"github.com/skaphos/fathom/internal/adapter/podutil"
 	"github.com/skaphos/fathom/pkg/adapter"
-	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
 // Evaluate implements Evaluator for WorkloadCheck. It reads one controller
@@ -195,8 +194,10 @@ func checkPods(ec EvalContext, namespace string, selector *metav1.LabelSelector,
 			}
 			checks = append(checks, result(ec.Family, podTarget(pod), adapter.OutcomePass, fmt.Sprintf("%s pod is ready", component), map[string]string{"component": component}, started))
 		}
-		if ec.runtime && len(checks) > limits.MaxResults {
-			return ec.budget().Fail("ResultLimitExceeded", "pod result count exceeded")
+		if ec.runtime {
+			if err := ec.budget().ValidateResult(adapter.Result{Checks: checks}); err != nil {
+				return err
+			}
 		}
 		return nil
 	}, func() { matched, live = 0, 0; checks = nil }, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel})

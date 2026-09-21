@@ -418,3 +418,45 @@ this checkpoint does not claim release readiness or completed adversarial review
 Final evaluator checkpoint checks passed: pinned fmt/lint (0 issues), adapter-wide
 race suite, REUSE (715/715), diff whitespace validation and graphify update.
 No cluster resources were changed during this checkpoint.
+
+### US2 result gating and supervised execution
+
+T030 complete. The shared result gate validates accumulated runtime evidence
+before another declared evaluator executes and again at the final result boundary:
+1000 entries, 256 KiB of JSON-serialized adapter.Result, 1024 UTF-8 message bytes,
+and 32 detail entries. It bounds raw string allocation before JSON serialization,
+counts escaping in the exact serialized limit, and rejects malformed/unfinished
+outcomes. Completed Pass/Warn/Fail/Skipped remain evidence; a failed attempt
+returns no partial evidence. Sealing copies result slices and detail maps so the
+publication candidate does not alias evaluator-owned state. A separate fixed
+failure summary remains available even when evidence capacity is exhausted.
+Authority/revision publication precedence remains the controller work in T040.
+
+Boundary tests cover exact/over entries, message bytes, detail count and serialized
+bytes (262144/262145), UTF-8 versus rune count, JSON escaping, owned snapshots,
+first-error preservation and deadline precedence. The integration test first
+showed an overlong ConfigMap message accepted with the next declared check still
+executing; it now fails for ResultLimitExceeded after one read and returns no
+partial evidence. The annotation-input boundary test now uses valid JSON timestamp
+padding to isolate the input cap from the independent error-message output cap.
+
+T031 complete at the execution-component level. Execute runs compilation and
+adapter evaluation synchronously in the invoking worker, recovers panics in that
+same goroutine, cancels child contexts and releases the caller's held slot exactly
+once. It does not launch an evaluator goroutine or release its slot just because
+a deadline fired. The compiler receives a one-second child deadline; expired
+compilation cannot start evaluation. Successful execution leaves the shared outer
+budget available for final fencing. The caller must create that budget with the
+check timeout before pre-validation; full fence accounting remains T029/T039.
+
+Runner tests cover compilation/evaluation panic, normal compilation/evaluation
+errors, missing compiled output, result overflow, delayed cooperative cancellation,
+compile timeout, first failure, slot release, a subsequent healthy run, and a
+concurrent healthy peer. Adapter-wide race tests pass. The result/runner APIs are
+not production wiring or a completed scheduler. T032/T033 still own admission,
+fairness, cache/backoff and actual shared slots. Total checked: 26/59.
+
+Final result/runner checkpoint checks passed: pinned fmt/lint (0 issues),
+adapter-wide race suite plus a final focused race rerun, REUSE (720/720),
+git diff --check and graphify update. Runtime remains default-off; final
+adversarial review, full cluster qualification and release gates are still open.
