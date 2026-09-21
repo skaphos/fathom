@@ -30,12 +30,13 @@ var runtimeRequests = rate.NewLimiter(rate.Limit(limits.RequestsPerSecond), limi
 // Guard owns immutable binding scope and expected discovery scopes for one run.
 // A true expectation means namespaced; false means cluster-scoped.
 type Guard struct {
-	budget     *Budget
-	namespaces map[string]bool
-	cluster    bool
-	expected   map[schema.GroupVersionKind]bool
-	retryMu    sync.Mutex
-	retries    map[string]int
+	budget      *Budget
+	namespaces  map[string]bool
+	cluster     bool
+	expected    map[schema.GroupVersionKind]bool
+	retryMu     sync.Mutex
+	retries     map[string]int
+	permissions permissionObservations
 }
 
 func NewGuard(b *Budget, scope api.DefinitionBindingScope, expected map[schema.GroupVersionKind]bool) (*Guard, error) {
@@ -59,8 +60,9 @@ func (g *Guard) Wrap(next http.RoundTripper) http.RoundTripper {
 }
 
 type guardedTransport struct {
-	guard *Guard
-	next  http.RoundTripper
+	guard   *Guard
+	next    http.RoundTripper
+	control *ControlTargets
 }
 
 func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -75,6 +77,9 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	route, err := g.route(request)
 	if err != nil {
 		return nil, b.Fail("ScopeDenied", err.Error())
+	}
+	if t.control != nil && !t.control.permits(route) {
+		return nil, b.Fail("ScopeDenied", "request is outside the run's control-plane metadata targets")
 	}
 	ctx, done := b.RequestContext(request.Context())
 	defer done()
@@ -114,7 +119,17 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	if t.next == nil {
 		return nil, b.Fail("AuthorizationUnavailable", "missing transport")
 	}
+	permissionStatus := 0
+	if t.control == nil {
+		g.permissions.begin(route, req.URL.Path)
+		defer func() { g.permissions.finish(permissionStatus) }()
+	}
 	response, err := t.next.RoundTrip(req)
+	// A real 403 remains permission evidence even if its body is malformed or
+	// exceeds a budget. Keep execution failure precedence separate from diagnostics.
+	if response != nil && response.StatusCode == http.StatusForbidden {
+		permissionStatus = http.StatusForbidden
+	}
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()
@@ -167,6 +182,7 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 		if err := g.inspect(data, route); err != nil {
 			return nil, err
 		}
+		permissionStatus = response.StatusCode
 	}
 	// Release the network body before exposing a bounded in-memory page to the
 	// decoder. The returned body's lifetime is controlled by the ordinary client.
@@ -182,8 +198,9 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 type apiRoute struct {
-	list, discovery bool
-	groupVersion    string
+	list, discovery           bool
+	groupVersion              string
+	resource, name, namespace string
 }
 
 func (g *Guard) route(req *http.Request) (apiRoute, error) {
@@ -256,7 +273,11 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 	} else if !g.cluster {
 		return apiRoute{}, fmt.Errorf("cluster-scoped read is not authorized")
 	}
-	return apiRoute{list: len(tail) == 1, groupVersion: groupVersion}, nil
+	route := apiRoute{list: len(tail) == 1, groupVersion: groupVersion, resource: tail[0], namespace: namespace}
+	if len(tail) == 2 {
+		route.name = tail[1]
+	}
+	return route, nil
 }
 func apiToken(s string) bool {
 	if len(s) == 0 || len(s) > limits.MaxResourceSegmentBytes || s[0] < 'a' || s[0] > 'z' {
