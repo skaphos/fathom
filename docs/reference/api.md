@@ -925,7 +925,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `leaseUID` _string_ | LeaseUID is the declared leaseUID. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
 | `holderIdentity` _string_ | HolderIdentity is the declared holderIdentity. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
-| `acquireTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | AcquireTime is the declared acquireTime. |  |  |
+| `acquireTime` _[MicroTime](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#microtime-v1-meta)_ | AcquireTime is the declared acquireTime. |  |  |
 | `leaseTransitions` _integer_ | LeaseTransitions is the declared leaseTransitions. |  | Minimum: 0 <br /> |
 
 

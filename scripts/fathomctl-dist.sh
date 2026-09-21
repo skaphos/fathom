@@ -32,7 +32,8 @@ version="${VERSION:?VERSION is required, e.g. VERSION=0.6.0}"
 version="${version#v}"
 out="${OUT:-dist/fathomctl}"
 platforms="${FATHOMCTL_PLATFORMS:-linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64}"
-ldflags="-s -w -buildid= -X github.com/skaphos/fathom/internal/cli.Version=v${version}"
+revision="$(git rev-parse HEAD)"
+ldflags="-s -w -buildid= -X github.com/skaphos/fathom/internal/cli.Version=v${version} -X github.com/skaphos/fathom/internal/cli.BuildRevision=${revision}"
 
 case "$out" in
   /*) outabs="$out" ;;

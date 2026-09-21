@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	definitions "github.com/skaphos/fathom/pkg/addondefinition"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
@@ -28,7 +29,9 @@ const defaultNamespace = "default"
 // function fields are the injection seams: tests replace them so no verb
 // needs a kubeconfig or a live API server.
 type factory struct {
-	opts *globalOptions
+	opts                  *globalOptions
+	definitionInventory   func() []string
+	definitionReleaseInfo func() (string, string)
 
 	// clientConfig turns the global options into a deferred-loading kubeconfig
 	// view. The default honours --kubeconfig, --context, $KUBECONFIG, the home
@@ -54,12 +57,14 @@ const defaultPollInterval = 2 * time.Second
 
 func newFactory() *factory {
 	return &factory{
-		opts:         &globalOptions{},
-		clientConfig: defaultClientConfig,
-		newClient:    client.New,
-		stdin:        os.Stdin,
-		isTerminal:   func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
-		pollInterval: defaultPollInterval,
+		opts:                  &globalOptions{},
+		definitionInventory:   definitions.BuiltinNames,
+		definitionReleaseInfo: releaseInfo,
+		clientConfig:          defaultClientConfig,
+		newClient:             client.New,
+		stdin:                 os.Stdin,
+		isTerminal:            func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
+		pollInterval:          defaultPollInterval,
 	}
 }
 

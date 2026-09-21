@@ -68,7 +68,7 @@ type DefinitionLeaderEpoch struct {
 	// +kubebuilder:validation:MaxLength=253
 	HolderIdentity string `json:"holderIdentity"`
 	// AcquireTime is the declared acquireTime.
-	AcquireTime metav1.Time `json:"acquireTime"`
+	AcquireTime metav1.MicroTime `json:"acquireTime"`
 	// LeaseTransitions is the declared leaseTransitions.
 	// +kubebuilder:validation:Minimum=0
 	LeaseTransitions int32 `json:"leaseTransitions"`

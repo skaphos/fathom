@@ -1020,8 +1020,8 @@
     "semantic_hash": ""
   },
   "api/v1alpha1/zz_generated.deepcopy.go": {
-    "mtime": 1789950328.8637626,
-    "seen": 1789950338.9585621,
+    "mtime": 1789951576.3591583,
+    "seen": 1789951630.18456,
     "ast_hash": "6db8d157807f09faa6f210d7490461a6",
     "semantic_hash": ""
   },
@@ -1080,15 +1080,15 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1789869134.5274217,
-    "seen": 1789947568.7212641,
-    "ast_hash": "423070f4864bc38c36495a38e1e47891",
+    "mtime": 1789951318.0727842,
+    "seen": 1789951408.724272,
+    "ast_hash": "c9c3041eaa9da3feb1126f3e5cad3b75",
     "semantic_hash": ""
   },
   "RELEASE.md": {
-    "mtime": 1789869134.5280504,
-    "seen": 1789947568.7212641,
-    "ast_hash": "68779d937ceed6f79af63b792f56ea26",
+    "mtime": 1789951364.2235134,
+    "seen": 1789951408.724272,
+    "ast_hash": "4fc59a360bf3a96b1506a997da5ba2ba",
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
@@ -1284,9 +1284,9 @@
     "semantic_hash": ""
   },
   "docs/reference/api.md": {
-    "mtime": 1789948449.9391026,
-    "seen": 1789948520.701118,
-    "ast_hash": "42e94dcc18ee9900548ae973b840c5a5",
+    "mtime": 1789951573.398554,
+    "seen": 1789951630.1848478,
+    "ast_hash": "b097bf23b8cdca8303ff236fdfe696eb",
     "semantic_hash": ""
   },
   "docs/reference/api-versioning.md": {
@@ -1740,9 +1740,9 @@
     "semantic_hash": ""
   },
   "Taskfile.yml": {
-    "mtime": 1789947608.86999,
-    "seen": 1789948520.701034,
-    "ast_hash": "138dc836fde6c01472e5aa5f6a5dd091",
+    "mtime": 1789951364.2224133,
+    "seen": 1789951408.724274,
+    "ast_hash": "a895eee36a3784ac1d12ac548bd1419e",
     "semantic_hash": ""
   },
   "config/components/build-check/kustomization.yaml": {
@@ -1782,38 +1782,38 @@
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1789950320.9541123,
-    "seen": 1789950338.9587672,
+    "mtime": 1789951627.3222122,
+    "seen": 1789951630.1847649,
     "ast_hash": "dd1deb80005865de8f1baed151d52c9c",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1789950320.9838798,
-    "seen": 1789950338.9587681,
+    "mtime": 1789951627.3309216,
+    "seen": 1789951630.184767,
     "ast_hash": "5bd3c4de68eba225aee07d1337e6af70",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_dnschecks.yaml": {
-    "mtime": 1789950320.9924994,
-    "seen": 1789950338.9587688,
+    "mtime": 1789951627.3342168,
+    "seen": 1789951630.184767,
     "ast_hash": "fecce3b5e8951cca6ad0948b99a2773a",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1789950321.0000627,
-    "seen": 1789950338.95877,
+    "mtime": 1789951627.3357937,
+    "seen": 1789951630.184768,
     "ast_hash": "b7d9866cd2b2e560f6fc43ca33256078",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1789950321.0080729,
-    "seen": 1789950338.95877,
+    "mtime": 1789951627.337986,
+    "seen": 1789951630.184768,
     "ast_hash": "5759de0eea5a329c0de852b4eeadc09a",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1789950321.031721,
-    "seen": 1789950338.958771,
+    "mtime": 1789951627.3632247,
+    "seen": 1789951630.184769,
     "ast_hash": "80e3223c9fbfac4e348614e6e38d491a",
     "semantic_hash": ""
   },
@@ -2106,8 +2106,8 @@
     "semantic_hash": ""
   },
   "config/rbac/role.yaml": {
-    "mtime": 1789950320.8527482,
-    "seen": 1789950338.958803,
+    "mtime": 1789951627.2256267,
+    "seen": 1789951630.1848,
     "ast_hash": "29297fea96a0afcc0bdc21772eb4a8e1",
     "semantic_hash": ""
   },
@@ -2262,38 +2262,38 @@
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_addonchecks.yaml": {
-    "mtime": 1789948443.456182,
-    "seen": 1789948520.701091,
+    "mtime": 1789951570.3520885,
+    "seen": 1789951630.184822,
     "ast_hash": "dd1deb80005865de8f1baed151d52c9c",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_clusterhealths.yaml": {
-    "mtime": 1789948443.4601111,
-    "seen": 1789948520.7010932,
+    "mtime": 1789951570.3616014,
+    "seen": 1789951630.184824,
     "ast_hash": "5bd3c4de68eba225aee07d1337e6af70",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_dnschecks.yaml": {
-    "mtime": 1789948443.4621122,
-    "seen": 1789948520.701094,
+    "mtime": 1789951570.3642275,
+    "seen": 1789951630.184824,
     "ast_hash": "fecce3b5e8951cca6ad0948b99a2773a",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthchecks.yaml": {
-    "mtime": 1789948443.4638677,
-    "seen": 1789948520.701094,
+    "mtime": 1789951570.3669744,
+    "seen": 1789951630.1848252,
     "ast_hash": "b7d9866cd2b2e560f6fc43ca33256078",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_healthreports.yaml": {
-    "mtime": 1789948443.4655716,
-    "seen": 1789948520.7010949,
+    "mtime": 1789951570.3708882,
+    "seen": 1789951630.1848252,
     "ast_hash": "5759de0eea5a329c0de852b4eeadc09a",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodecertificatechecks.yaml": {
-    "mtime": 1789948443.4669027,
-    "seen": 1789948520.7010958,
+    "mtime": 1789951570.3738844,
+    "seen": 1789951630.1848261,
     "ast_hash": "80e3223c9fbfac4e348614e6e38d491a",
     "semantic_hash": ""
   },
@@ -2304,8 +2304,8 @@
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/files/manager-rules.yaml": {
-    "mtime": 1789948443.6435454,
-    "seen": 1789948520.701097,
+    "mtime": 1789951570.427307,
+    "seen": 1789951630.1848278,
     "ast_hash": "22c8aafce2d2ff35ff27945bdf474381",
     "semantic_hash": ""
   },
@@ -3006,9 +3006,9 @@
     "semantic_hash": ""
   },
   "cmd/fathomctl/main.go": {
-    "mtime": 1788840545.021345,
-    "seen": 1789947568.7210948,
-    "ast_hash": "c15727db922ebd78519f3d8f88b8e07d",
+    "mtime": 1789950934.4299734,
+    "seen": 1789951408.724075,
+    "ast_hash": "ac62a076cd5fa7401264af7d061f7eba",
     "semantic_hash": ""
   },
   "cmd/fathomctl/main_test.go": {
@@ -3024,9 +3024,9 @@
     "semantic_hash": ""
   },
   "internal/cli/client.go": {
-    "mtime": 1788840545.067185,
-    "seen": 1789947568.72115,
-    "ast_hash": "2fc678d68db9334a2c9ac9f53f23d24b",
+    "mtime": 1789950934.4776652,
+    "seen": 1789951408.7241411,
+    "ast_hash": "93af37a3c77eb86d768e5371f9cc424e",
     "semantic_hash": ""
   },
   "internal/cli/client_test.go": {
@@ -3102,15 +3102,15 @@
     "semantic_hash": ""
   },
   "internal/cli/root.go": {
-    "mtime": 1788840545.0718768,
-    "seen": 1789947568.721157,
-    "ast_hash": "d299d97df937b398e9d61f3759fc88fc",
+    "mtime": 1789951318.0718334,
+    "seen": 1789951408.724153,
+    "ast_hash": "b0559811133362bc953f4ba23393cd01",
     "semantic_hash": ""
   },
   "internal/cli/root_test.go": {
-    "mtime": 1788840545.0725646,
-    "seen": 1789947568.7211578,
-    "ast_hash": "c22b8947ed11c36fbb967ad3463ded31",
+    "mtime": 1789951318.0721052,
+    "seen": 1789951408.724154,
+    "ast_hash": "c026d2c02bcb0b02f4222d729565d3bc",
     "semantic_hash": ""
   },
   "internal/cli/run.go": {
@@ -3186,9 +3186,9 @@
     "semantic_hash": ""
   },
   "scripts/fathomctl-dist.sh": {
-    "mtime": 1788840545.0880601,
-    "seen": 1789947568.7212212,
-    "ast_hash": "a3585f685f02c725146e24daf5e99e92",
+    "mtime": 1789951364.2229404,
+    "seen": 1789951408.7242272,
+    "ast_hash": "cbc38e42fb0ce188eae05695e0e16aa0",
     "semantic_hash": ""
   },
   "scripts/fathomctl_dist_gate_test.go": {
@@ -3222,9 +3222,9 @@
     "semantic_hash": ""
   },
   "docs/reference/fathomctl.md": {
-    "mtime": 1789869134.598206,
-    "seen": 1789947568.721343,
-    "ast_hash": "bab39e4d770fef6207230341d0f8b17f",
+    "mtime": 1789951601.9926603,
+    "seen": 1789951630.18485,
+    "ast_hash": "6b44bdf0b6f17bb338288642f6eddbca",
     "semantic_hash": ""
   },
   "specs/009-fathomctl-cli/checklists/requirements.md": {
@@ -3402,8 +3402,8 @@
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_nodehealthchecks.yaml": {
-    "mtime": 1789950321.0413303,
-    "seen": 1789950338.958771,
+    "mtime": 1789951627.3665516,
+    "seen": 1789951630.184769,
     "ast_hash": "758efc4c3c0829491164281b3ecd4003",
     "semantic_hash": ""
   },
@@ -3432,8 +3432,8 @@
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_nodehealthchecks.yaml": {
-    "mtime": 1789948443.468726,
-    "seen": 1789948520.7010958,
+    "mtime": 1789951570.3763697,
+    "seen": 1789951630.1848269,
     "ast_hash": "758efc4c3c0829491164281b3ecd4003",
     "semantic_hash": ""
   },
@@ -3576,9 +3576,9 @@
     "semantic_hash": ""
   },
   "api/v1alpha1/addondefinitionbinding_types.go": {
-    "mtime": 1789947913.3923142,
-    "seen": 1789948520.700827,
-    "ast_hash": "fa95348afad598cb17bcf1698ccdbc0c",
+    "mtime": 1789951527.5257583,
+    "seen": 1789951630.184546,
+    "ast_hash": "aacd5693e8ad198e25303616e3ecc62e",
     "semantic_hash": ""
   },
   "api/v1alpha1/addondefinitionbinding_types_test.go": {
@@ -3648,26 +3648,26 @@
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_addondefinitionbindings.yaml": {
-    "mtime": 1789950320.9765968,
-    "seen": 1789950338.9587672,
+    "mtime": 1789951627.3288205,
+    "seen": 1789951630.184766,
     "ast_hash": "96ace1b6c33f127aa6792fd8a021fe60",
     "semantic_hash": ""
   },
   "config/crd/bases/fathom.skaphos.io_addondefinitions.yaml": {
-    "mtime": 1789950320.9678683,
-    "seen": 1789950338.9587681,
+    "mtime": 1789951627.3270197,
+    "seen": 1789951630.184766,
     "ast_hash": "37c182d4fee0d41cb9a13284544d92b5",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_addondefinitionbindings.yaml": {
-    "mtime": 1789948443.457535,
-    "seen": 1789948520.701092,
+    "mtime": 1789951570.355982,
+    "seen": 1789951630.184822,
     "ast_hash": "96ace1b6c33f127aa6792fd8a021fe60",
     "semantic_hash": ""
   },
   "deploy/helm/fathom-operator/crds/fathom.skaphos.io_addondefinitions.yaml": {
-    "mtime": 1789948443.4589517,
-    "seen": 1789948520.701092,
+    "mtime": 1789951570.358854,
+    "seen": 1789951630.184823,
     "ast_hash": "37c182d4fee0d41cb9a13284544d92b5",
     "semantic_hash": ""
   },
@@ -3768,9 +3768,9 @@
     "semantic_hash": ""
   },
   "specs/012-addon-definition-runtime/execution.md": {
-    "mtime": 1789950417.5811458,
-    "seen": 1789950424.1704671,
-    "ast_hash": "c2e61fac4abb04bd0d5672c5f36036ea",
+    "mtime": 1789951618.72271,
+    "seen": 1789951630.18492,
+    "ast_hash": "f608ffa0c35378d023ccdf49b500e10f",
     "semantic_hash": ""
   },
   "specs/012-addon-definition-runtime/plan.md": {
@@ -3798,9 +3798,9 @@
     "semantic_hash": ""
   },
   "specs/012-addon-definition-runtime/tasks.md": {
-    "mtime": 1789950318.2828312,
-    "seen": 1789950338.959096,
-    "ast_hash": "cf4146b1cb25eef342a125a93baf95ce",
+    "mtime": 1789951618.7222142,
+    "seen": 1789951630.184923,
+    "ast_hash": "52694b0cb8be26ac64854ed9110b1cc0",
     "semantic_hash": ""
   },
   "api/v1alpha1/addondefinition_payloads_test.go": {
@@ -3816,9 +3816,9 @@
     "semantic_hash": ""
   },
   "specs/012-addon-definition-runtime/review.md": {
-    "mtime": 1789950417.5808306,
-    "seen": 1789950424.17047,
-    "ast_hash": "d4c8d6001e2563e7f7e62b31bc7323e9",
+    "mtime": 1789951527.5263774,
+    "seen": 1789951630.1849222,
+    "ast_hash": "7b8998f8b906e3a36662c9e236c2a81e",
     "semantic_hash": ""
   },
   "pkg/addondefinition/grants.go": {
@@ -3843,6 +3843,144 @@
     "mtime": 1789950391.376999,
     "seen": 1789950424.1700768,
     "ast_hash": "f757a2cd65bb539edfeeed9ab703748f",
+    "semantic_hash": ""
+  },
+  "internal/adapter/rbacgen/runtime_samples.go": {
+    "mtime": 1789951318.2666273,
+    "seen": 1789951408.724129,
+    "ast_hash": "a9331793cbb1f9d92a12c4c09a9a7977",
+    "semantic_hash": ""
+  },
+  "internal/adapter/rbacgen/runtime_samples_test.go": {
+    "mtime": 1789951530.0509117,
+    "seen": 1789951630.184614,
+    "ast_hash": "858d1e172bfc1353e60150e6abe1f767",
+    "semantic_hash": ""
+  },
+  "internal/adapter/rbacgen/runtimecmd/main.go": {
+    "mtime": 1789951318.271893,
+    "seen": 1789951408.724131,
+    "ast_hash": "826c71206ba19f04a7611f4d9ceb6684",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition.go": {
+    "mtime": 1789951211.459062,
+    "seen": 1789951408.724143,
+    "ast_hash": "95beeb4e760f6ef816231a19c056a43b",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_bind.go": {
+    "mtime": 1789951085.698806,
+    "seen": 1789951408.724143,
+    "ast_hash": "8aa230f48d74ffb22132ec27ef9e3e5f",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_bind_test.go": {
+    "mtime": 1789951132.739213,
+    "seen": 1789951408.7241442,
+    "ast_hash": "66bf7467f2ce95302fee16fc62efc197",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_collisions.go": {
+    "mtime": 1789950934.4482284,
+    "seen": 1789951408.7241442,
+    "ast_hash": "bd2d041c5e09aedd6a7429e7965f34bf",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_collisions_test.go": {
+    "mtime": 1789950964.4001184,
+    "seen": 1789951408.724145,
+    "ast_hash": "1abc6f2ea0bcbfd6015a465cc12dfb1a",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_drain.go": {
+    "mtime": 1789951527.526131,
+    "seen": 1789951630.184629,
+    "ast_hash": "793727ecc4508b0b02377fb2552f910d",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_drain_test.go": {
+    "mtime": 1789951499.23042,
+    "seen": 1789951630.184629,
+    "ast_hash": "c874e78b6a5ddeec7cdc7b576d21c104",
+    "semantic_hash": ""
+  },
+  "internal/cli/definition_test.go": {
+    "mtime": 1789950881.0873077,
+    "seen": 1789951408.724146,
+    "ast_hash": "e0dc1e9ee3e677be7de43e8d47926bee",
+    "semantic_hash": ""
+  },
+  "pkg/addondefinition/inventory_generated.go": {
+    "mtime": 1789951323.5124073,
+    "seen": 1789951408.724216,
+    "ast_hash": "99ab99ea28daca646dd04f84a49a04e8",
+    "semantic_hash": ""
+  },
+  "pkg/addondefinition/scope.go": {
+    "mtime": 1789951085.703208,
+    "seen": 1789951408.7242198,
+    "ast_hash": "d5b3cc2ca25566efc4b4010261412b12",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/annotationstaleness.yaml": {
+    "mtime": 1789951323.5175772,
+    "seen": 1789951408.724315,
+    "ast_hash": "ca2f3a0b681a7cd473fc1a96ff9d20b7",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/condition.yaml": {
+    "mtime": 1789951323.515617,
+    "seen": 1789951408.724316,
+    "ast_hash": "995e9b8ca97dcc4551c3899f1099b920",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/configmap.yaml": {
+    "mtime": 1789951323.517289,
+    "seen": 1789951408.724316,
+    "ast_hash": "d1e5ff865184b12c78e7d4473bed2141",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/crd.yaml": {
+    "mtime": 1789951323.515182,
+    "seen": 1789951408.7243168,
+    "ast_hash": "882e3ee8539d159ff9ed41d3cf27c81b",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/cronjob.yaml": {
+    "mtime": 1789951323.5169282,
+    "seen": 1789951408.7243168,
+    "ast_hash": "a7e92f2805230c476deb5256ebc356c5",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/field.yaml": {
+    "mtime": 1789951323.516096,
+    "seen": 1789951408.724318,
+    "ast_hash": "14dbbbe4297dc18e6d6c9d5861a818b0",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/podprojection.yaml": {
+    "mtime": 1789951323.5178552,
+    "seen": 1789951408.724318,
+    "ast_hash": "53738181ebac8b710b75c86dc9d938f1",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/webhook.yaml": {
+    "mtime": 1789951323.516502,
+    "seen": 1789951408.724319,
+    "ast_hash": "9b1bf87b67fe2d8a637fefc1a2470641",
+    "semantic_hash": ""
+  },
+  "config/samples/addondefinition/workload.yaml": {
+    "mtime": 1789951323.5143514,
+    "seen": 1789951408.724319,
+    "ast_hash": "32be54eccbceb15821582182c150d37f",
+    "semantic_hash": ""
+  },
+  "pkg/addondefinition/scope_test.go": {
+    "mtime": 1789951431.9724317,
+    "seen": 1789951630.184706,
+    "ast_hash": "a3f1219850ce211207d557db41bc382f",
     "semantic_hash": ""
   }
 }
