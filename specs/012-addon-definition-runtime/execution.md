@@ -898,3 +898,108 @@ Runtime remains default-off and `runtime.Execute` still has no production caller
 Remaining US3: T039/T040 (publication fences and per-check CAS), T044-T046
 (evidence preservation, Skipped coverage, HealthCheck mirror), then T047 wiring,
 T048 completion and T049 gates. Total checked: 41/59.
+
+### US3 phase B2 — publication fences, evidence preservation, Skipped coverage (T039, T040, T044, T045, T046) — 2026-09-21
+
+This phase gives `runtime.Execute` its first production caller. `internal/controller/addoncheck_runtime.go`
+(AddonCheckRuntimeRunner) resolves through the registry's dispatch gate, takes a
+leadership admission slot, builds ONE execution.Budget for the whole run, fences
+pre-run and post-run through an uncached control reader, and publishes under a
+per-check serialized compare-and-swap. 63 test functions in its suite.
+
+T039/T040. The pre-run fence captures ten facts: definition UID, generation and
+revision; binding UID and SPEC generation; SA UID; check UID, generation and a
+policy digest; and the leadership epoch. Both fences read only through the
+control reader; the manager's cached client is used for exactly one thing, the
+status compare-and-swap. The same Budget counters and deadline cover the fence
+reads and the delegated evaluator traffic even though the identities are
+separate. Publication precedence is modelled as an explicit RANK ORDER rather
+than four branches, and is tested as an order: cases are built where two failures
+apply simultaneously and the earlier must win, plus the one adjacent pair the
+behavioural table cannot construct (invalid input vs execution failure) is pinned
+directly over synthetic candidates. A status-only binding write does not
+invalidate authority, because the fence compares metadata.generation and never
+resourceVersion.
+
+T044. A genuinely new evidence model on AddonCheckStatus: COMPLETED evidence (the
+last run that finished, with its ORIGINAL observedAt, revision and context) is
+separate from the LATEST ATTEMPT. A failed attempt updates the attempt fields and
+never touches the completed evidence or its timestamp. Freshness is derived:
+Current within two effective intervals plus the timeout, Stale beyond, Unavailable
+when the inputs are no longer eligible. A completed all-Skipped run REPLACES
+evidence and ADVANCES its observation, which is the one case that behaves unlike
+an Error attempt. The change is additive; `crd-compat` reports OK.
+
+T045/T046. Transition-only reporting with attribution, the five named transitions
+(Pass->Skipped, Skipped->Skipped, mixed-Skipped, zero-enabled-check,
+unchanged-verdict-with-changed-revision), and the HealthCheck readiness/freshness
+mirror.
+
+Adversarial review rejected two of the three engineers and found ONE REAL BUG.
+
+The lost-transition hole. A verdict change reached history only if
+createOrReuseHealthReport succeeded on the SAME in-process attempt that published
+the evidence. The runtime path publishes evidence first and records the report
+second, so a transient API error, a lost leadership or a restart lost the
+transition PERMANENTLY: the next run's previous evidence already carries the new
+verdict, the verdicts match, and no report is ever written. The built-in path is
+immune because it is ordered report-first and carries an explicit backfill clause;
+the runtime path had neither. It also left lastReportName naming a report whose
+result contradicted the status, which the T046 mirror then republished. Fixed by
+deciding the transition against what history actually holds. Confirmed by
+exercise, not by reading the diff:
+
+    STEP1 run with a failing HealthReport create: reportName="" storedReports=0
+    STEP2 next run (SAME verdict): reportName="custom-addon-check-d43c..." storedReports=1
+    STEP3 genuine no-change run: reportName="" storedReports=1
+    STEP4 second genuine no-change run: reportName="" storedReports=1
+
+so the transition backfills without turning every poll into a report, and the two
+halves of the property are separable: reverting the backfill fails STEP2 while the
+no-change test still passes.
+
+Three findings were test gaps that mattered more than they looked. The freshness
+ORDER (eligibility before age) was unproven: moving the age test ahead of the
+eligibility switch left all 259 specs green while converting every lifecycle row
+that names freshness=Unavailable for retained evidence into Stale — and
+aged+ineligible is the STEADY STATE of a prolonged revocation, since evidence
+stops being refreshed precisely while the binding is revoked. It is now pinned by
+four rows that vary both axes, with a control row proving the rows differ only in
+eligibility. The contract-verbatim message "no checks evaluated" was compared only
+against its own constant, so mutating the constant left the package green; the
+literal is now asserted directly and end-to-end. And `RuntimeRunClients.Control`
+was typed `client.Reader`, which the manager's cached client satisfies — the
+uncached property held only because nothing was wired yet. It is now the concrete
+`impersonation.RuntimeControlReader`, so the T047 wiring cannot hand the fences a
+cached client at compile time.
+
+Mutation verification: 25 mutations re-applied independently, 23 caught. The two
+survivors were closed by hand — the deterministic report-name key component (near
+equivalent; its sibling mutation on observedAt was already caught, so the
+uniqueness property is guarded) and the mis-wiring fail-closed guard in execute(),
+whose mutation produces exactly the nil dereference the guard exists to prevent.
+
+A previous self-report claimed "58 applied, 58 killed"; an independent harness
+found 3 survivors among 19 reproduced. The figure is corrected here rather than
+carried forward.
+
+Regression evidence, checked rather than assumed. `addoncheck_controller.go` is
+purely additive (228 inserted lines, zero removed). `clusterhealth_controller.go`
+is untouched, and its ClusterHealth contract is re-verified by a focused spec that
+reconciles through a HealthReport-blind client and asserts zero report reads while
+the result still mirrors HealthCheck.status. T046's named regression — a RETAINED
+Pass must not present as a fresh success — is live rather than vacuous: a mutation
+dropping the mirror's freshness reason kills it.
+
+Gate outcomes: `go build ./...`, `go vet ./...`, `gofmt -l` clean; pinned
+`task lint` 0 issues; full suite green across `./api/...`, `./internal/...`,
+`./pkg/...` and `./cmd/...`; `-race` green on internal/controller;
+`check-crd-compat: OK`.
+
+Not run: `task test-e2e`. The runtime runner and the transition backfill still have
+no production caller — T047 owns the manager wiring — so there is nothing new for a
+cluster to exercise yet. The obligation transfers to whoever lands T047 and is
+recorded here as owed, not skipped.
+
+Runtime remains default-off. Remaining US3: T047 wiring, T048 completion, T049
+gates. Total checked: 46/59.

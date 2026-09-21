@@ -106,6 +106,221 @@ type AddonCheckSpec struct {
 	HistoryLimit *int32 `json:"historyLimit,omitempty"`
 }
 
+// Completed-evidence, attempt and freshness vocabulary for runtime addon
+// checks (T044 of specs/012-addon-definition-runtime).
+//
+// The three axes are deliberately independent, because conflating any two of
+// them is how an old success gets presented as new coverage:
+//
+//   - the Ready condition says whether a run could EXECUTE and COMPLETE with
+//     eligible inputs — contracts/runtime.md: "Ready denotes executable/
+//     completed, freshness denotes recency, and neither means Pass";
+//   - [AddonCheckEvidence] says what the last COMPLETED run observed, carrying
+//     its own original observation time, revision and authority context;
+//   - [AddonCheckEvidenceFreshness] says whether that observation is still
+//     recent and still backed by eligible inputs.
+//
+// A failed attempt moves only the attempt fields. It never renews the
+// evidence or its timestamp: "Attempt Error still preserves previous completed
+// evidence."
+
+// AddonCheckEvidenceVerdict is the aggregate verdict of a COMPLETED runtime
+// evaluation.
+//
+// It is deliberately narrower than [AddonCheckStatus.LastResult]: Error and
+// Unknown are not completed evidence. Unknown is the absence of evidence
+// ("Unknown applies when no evidence exists"), and a run whose aggregate is
+// Error could not determine health, so it is recorded as an attempt error that
+// preserves whatever evidence was already stored.
+// +kubebuilder:validation:Enum=Pass;Warn;Fail;Skipped
+type AddonCheckEvidenceVerdict string
+
+// Completed-evidence verdicts. Skipped is evidence, not a failure: a completed
+// all-Skipped run replaces current evidence by the user's explicit
+// clarification (contracts/runtime.md, "Clarification additions").
+const (
+	AddonCheckEvidenceVerdictPass    AddonCheckEvidenceVerdict = "Pass"
+	AddonCheckEvidenceVerdictWarn    AddonCheckEvidenceVerdict = "Warn"
+	AddonCheckEvidenceVerdictFail    AddonCheckEvidenceVerdict = "Fail"
+	AddonCheckEvidenceVerdictSkipped AddonCheckEvidenceVerdict = "Skipped"
+)
+
+// AddonCheckEvidenceCoverage records what a completed run actually evaluated,
+// so a Skipped verdict cannot be mistaken for an assessed-and-healthy one.
+// +kubebuilder:validation:Enum=ChecksEvaluated;NoChecksEvaluated
+type AddonCheckEvidenceCoverage string
+
+const (
+	// AddonCheckCoverageChecksEvaluated means at least one check produced a
+	// health observation.
+	AddonCheckCoverageChecksEvaluated AddonCheckEvidenceCoverage = "ChecksEvaluated"
+	// AddonCheckCoverageNoChecksEvaluated means the run completed but every
+	// check was Skipped, or no check ran at all. Its message is exactly
+	// [AddonCheckNoChecksEvaluatedMessage].
+	AddonCheckCoverageNoChecksEvaluated AddonCheckEvidenceCoverage = "NoChecksEvaluated"
+)
+
+// AddonCheckNoChecksEvaluatedMessage is the exact message a completed
+// all-Skipped run records, fixed by the clarification in
+// specs/012-addon-definition-runtime/spec.md.
+const AddonCheckNoChecksEvaluatedMessage = "no checks evaluated"
+
+// AddonCheckEvidenceFreshness describes the recency and eligibility of the
+// stored completed evidence. It is derived, never authority: freshness says
+// nothing about health, and Current does not mean Pass.
+// +kubebuilder:validation:Enum=Current;Stale;Superseded;Unavailable
+type AddonCheckEvidenceFreshness string
+
+const (
+	// AddonCheckEvidenceCurrent means the evidence was observed at most two
+	// effective intervals plus one effective timeout ago, from inputs that are
+	// still eligible.
+	AddonCheckEvidenceCurrent AddonCheckEvidenceFreshness = "Current"
+	// AddonCheckEvidenceStale means the evidence aged past that window. It
+	// applies even when the stored verdict was Pass: "Evidence ages out |
+	// Freshness=Stale even if stored verdict was Pass".
+	AddonCheckEvidenceStale AddonCheckEvidenceFreshness = "Stale"
+	// AddonCheckEvidenceSuperseded means the revision or context the evidence
+	// was produced under has been replaced.
+	AddonCheckEvidenceSuperseded AddonCheckEvidenceFreshness = "Superseded"
+	// AddonCheckEvidenceUnavailable means the definition, binding or grants
+	// that produced the evidence are gone, invalid or denied — or no evidence
+	// has ever been recorded.
+	AddonCheckEvidenceUnavailable AddonCheckEvidenceFreshness = "Unavailable"
+)
+
+// AddonCheckAttemptOutcome is the outcome of the LATEST attempt, which may be
+// older evidence's failed successor.
+// +kubebuilder:validation:Enum=Completed;Error
+type AddonCheckAttemptOutcome string
+
+const (
+	// AddonCheckAttemptCompleted means the run executed to completion with
+	// eligible inputs. It is not a verdict.
+	AddonCheckAttemptCompleted AddonCheckAttemptOutcome = "Completed"
+	// AddonCheckAttemptError means the attempt did not produce completed
+	// evidence. Whatever evidence was already stored is preserved unchanged.
+	AddonCheckAttemptError AddonCheckAttemptOutcome = "Error"
+)
+
+// AddonCheckEvidenceRevision is the immutable runtime revision a completed
+// evaluation was produced by: the definition incarnation plus the publication
+// provenance (data-model.md, "Snapshot and publication context").
+type AddonCheckEvidenceRevision struct {
+	// DefinitionUID is the AddonDefinition incarnation. A recreated definition
+	// has a new UID and inherits no authority from the old one.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	DefinitionUID string `json:"definitionUID,omitempty"`
+
+	// DefinitionGeneration is the definition's spec generation.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	DefinitionGeneration int64 `json:"definitionGeneration,omitempty"`
+
+	// SchemaVersion is the API schema version the definition was compiled from.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	SchemaVersion string `json:"schemaVersion,omitempty"`
+
+	// SemanticsVersion is the declared evaluation semantics version.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SemanticsVersion int32 `json:"semanticsVersion,omitempty"`
+
+	// AdapterVersion is the compiled adapter's own version.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	AdapterVersion string `json:"adapterVersion,omitempty"`
+
+	// OperatorBuild is the operator build that compiled the snapshot.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	OperatorBuild string `json:"operatorBuild,omitempty"`
+}
+
+// AddonCheckEvidenceAuthority is the delegated authority and policy context a
+// completed evaluation was attributed to. It is recorded so an operator can
+// see which administrator-authorized incarnation produced a verdict, and so a
+// later run under different authority cannot be mistaken for the same
+// observation.
+type AddonCheckEvidenceAuthority struct {
+	// BindingUID is the AddonDefinitionBinding incarnation that authorized the
+	// run.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	BindingUID string `json:"bindingUID,omitempty"`
+
+	// BindingGeneration is the binding's spec generation. Status-only binding
+	// writes do not advance it and therefore do not invalidate evidence.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	BindingGeneration int64 `json:"bindingGeneration,omitempty"`
+
+	// ServiceAccountUID is the dedicated reader incarnation the evaluation
+	// impersonated.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	ServiceAccountUID string `json:"serviceAccountUID,omitempty"`
+
+	// CheckUID is this AddonCheck's incarnation.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	CheckUID string `json:"checkUID,omitempty"`
+
+	// CheckGeneration is the AddonCheck spec generation the run was attributed
+	// to.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	CheckGeneration int64 `json:"checkGeneration,omitempty"`
+
+	// PolicyDigest fingerprints spec.policy. The policy selects which families
+	// run, so evidence produced under one policy is not interchangeable with
+	// evidence produced under another at the same generation.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	PolicyDigest string `json:"policyDigest,omitempty"`
+
+	// LeaderEpoch is the leadership epoch observed when the run was admitted.
+	// +optional
+	LeaderEpoch *DefinitionLeaderEpoch `json:"leaderEpoch,omitempty"`
+}
+
+// AddonCheckEvidence is the last COMPLETED evaluation: its verdict, what it
+// covered, and the original observation time, revision and authority context
+// it was produced under.
+//
+// Nothing but another completed run replaces it. A failed attempt leaves every
+// field here untouched — including ObservedAt, which a failed attempt may never
+// renew.
+type AddonCheckEvidence struct {
+	// Verdict is the aggregate result of the completed run.
+	Verdict AddonCheckEvidenceVerdict `json:"verdict"`
+
+	// Coverage distinguishes an assessed verdict from a completed run that
+	// evaluated nothing.
+	Coverage AddonCheckEvidenceCoverage `json:"coverage"`
+
+	// Message explains the coverage in one line. A completed all-Skipped run
+	// records exactly [AddonCheckNoChecksEvaluatedMessage].
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Message string `json:"message,omitempty"`
+
+	// ObservedAt is when the completed run finished. It is the evidence's
+	// ORIGINAL observation time and is never advanced by a failed attempt.
+	ObservedAt metav1.Time `json:"observedAt"`
+
+	// Revision is the runtime definition revision that produced the evidence.
+	// +optional
+	Revision AddonCheckEvidenceRevision `json:"revision,omitempty"`
+
+	// Authority is the delegated authority and policy context the evidence was
+	// attributed to.
+	// +optional
+	Authority AddonCheckEvidenceAuthority `json:"authority,omitempty"`
+}
+
 // AddonCheckStatus defines the observed state of AddonCheck.
 type AddonCheckStatus struct {
 	// ObservedGeneration is the most recent metadata.generation reconciled by
@@ -153,6 +368,48 @@ type AddonCheckStatus struct {
 	// stores it here so a given on-demand trigger fires exactly once.
 	// +optional
 	LastRunTrigger string `json:"lastRunTrigger,omitempty"`
+
+	// LastSuccessfulEvaluation is the last COMPLETED evaluation, with its own
+	// original observation time, revision and authority context. It is replaced
+	// only by another completed run; a failed attempt preserves it byte for
+	// byte. Absent means no evidence exists at all, which reads as an Unknown
+	// verdict rather than as a healthy or unhealthy one.
+	// +optional
+	LastSuccessfulEvaluation *AddonCheckEvidence `json:"lastSuccessfulEvaluation,omitempty"`
+
+	// LatestAttemptAt is when the most recent attempt — successful or not —
+	// finished. It advances on every attempt, which is precisely what makes it
+	// distinguishable from LastSuccessfulEvaluation.ObservedAt.
+	// +optional
+	LatestAttemptAt *metav1.Time `json:"latestAttemptAt,omitempty"`
+
+	// LatestAttemptOutcome records whether the most recent attempt completed
+	// with eligible inputs. Completed is not a verdict and Error does not
+	// invalidate stored evidence.
+	// +optional
+	LatestAttemptOutcome AddonCheckAttemptOutcome `json:"latestAttemptOutcome,omitempty"`
+
+	// LatestAttemptReason is the contract reason for the most recent attempt's
+	// outcome, chosen by the publication precedence order.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	LatestAttemptReason string `json:"latestAttemptReason,omitempty"`
+
+	// LatestAttemptMessage explains the most recent attempt's outcome.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	LatestAttemptMessage string `json:"latestAttemptMessage,omitempty"`
+
+	// EvidenceFreshness describes the recency and eligibility of
+	// LastSuccessfulEvaluation as of the most recent attempt. It is derived,
+	// not authority, and it never implies a healthy verdict.
+	// +optional
+	EvidenceFreshness AddonCheckEvidenceFreshness `json:"evidenceFreshness,omitempty"`
+
+	// EvidenceFreshnessReason explains a freshness that is not Current.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	EvidenceFreshnessReason string `json:"evidenceFreshnessReason,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -8,7 +8,9 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -434,5 +436,451 @@ var _ = Describe("HealthCheck Controller", func() {
 			names = append(names, r.Name)
 		}
 		Expect(names).To(ConsistOf("hc-watch-a", "hc-watch-b"))
+	})
+})
+
+// ---------------------------------------------------------------------------
+// T046 — mirrored readiness and freshness, and the ClusterHealth contract
+// ---------------------------------------------------------------------------
+//
+// data-model.md: "HealthCheck mirrors current readiness/freshness;
+// ClusterHealth continues reading only HealthCheck.status."
+//
+// The bug these specs exist to prevent is named in spec.md: "Old success must
+// never be presented as new coverage." A retained Pass is legitimate — evidence
+// is preserved across a failed attempt precisely so an operator can still see
+// what was last observed — but it must never read as a FRESH success at the
+// layer operators actually watch.
+
+// healthReportBlindClient fails any read of a HealthReport and counts the
+// attempt. ClusterHealth's input is HealthCheck.status and nothing else
+// (AGENTS.md: "It is derived only from HealthCheck.status — never from
+// HealthReport history"), so under this client a correct aggregate is
+// unaffected and an incorrect one fails loudly instead of quietly consulting
+// history.
+type healthReportBlindClient struct {
+	client.Client
+	reads *int
+}
+
+func (c healthReportBlindClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*fathomv1alpha1.HealthReport); ok {
+		*c.reads++
+		return errors.New("ClusterHealth read a HealthReport; its only input is HealthCheck.status")
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c healthReportBlindClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*fathomv1alpha1.HealthReportList); ok {
+		*c.reads++
+		return errors.New("ClusterHealth listed HealthReports; its only input is HealthCheck.status")
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+var _ = Describe("HealthCheck readiness and freshness mirror", func() {
+	ctx := context.Background()
+
+	newReconciler := func() *HealthCheckReconciler {
+		return &HealthCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+	}
+
+	createAddonCheck := func(name string, status fathomv1alpha1.AddonCheckStatus) *fathomv1alpha1.AddonCheck {
+		ac := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "runtime-addon"},
+		}
+		Expect(k8sClient.Create(ctx, ac)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ac))).To(Succeed())
+		})
+		ac.Status = status
+		Expect(k8sClient.Status().Update(ctx, ac)).To(Succeed())
+		return ac
+	}
+
+	mirror := func(name, target string) fathomv1alpha1.HealthCheck {
+		hc := &fathomv1alpha1.HealthCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Spec: fathomv1alpha1.HealthCheckSpec{
+				CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: target},
+			},
+		}
+		Expect(k8sClient.Create(ctx, hc)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, hc))).To(Succeed())
+		})
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		var got fathomv1alpha1.HealthCheck
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, &got)).To(Succeed())
+		return got
+	}
+
+	// passEvidence is completed Pass evidence observed at observedAt, carrying
+	// the revision and authority a real run would have recorded.
+	passEvidence := func(observedAt metav1.Time) *fathomv1alpha1.AddonCheckEvidence {
+		return &fathomv1alpha1.AddonCheckEvidence{
+			Verdict:    fathomv1alpha1.AddonCheckEvidenceVerdictPass,
+			Coverage:   fathomv1alpha1.AddonCheckCoverageChecksEvaluated,
+			Message:    "4 checks evaluated",
+			ObservedAt: observedAt,
+			Revision: fathomv1alpha1.AddonCheckEvidenceRevision{
+				DefinitionUID: "definition-uid-1", DefinitionGeneration: 2,
+				SchemaVersion: "v1alpha1", SemanticsVersion: 1,
+			},
+		}
+	}
+
+	// THE regression this task exists for. Evidence is retained across a failed
+	// attempt with its ORIGINAL observation — "Attempt Error still preserves
+	// previous completed evidence" — so the wrapper keeps showing the stored
+	// Pass. What it must never do is present that Pass as current coverage:
+	// freshness says Unavailable, readiness says the run could not execute, and
+	// the mirrored observation is the evidence's own, not the failed attempt's.
+	It("never lets a retained Pass present as a fresh success", func() {
+		// Deliberately BOTH ineligible and aged: eligibility is the stronger
+		// statement, so Unavailable must not decay into a mere Stale. "Old" is
+		// something a later run can fix; "the inputs are gone" is not.
+		observed := metav1.NewTime(time.Now().Add(-time.Hour)).Rfc3339Copy()
+		attempted := metav1.NewTime(time.Now()).Rfc3339Copy()
+		createAddonCheck("ac-retained-pass", fathomv1alpha1.AddonCheckStatus{
+			LastResult:               "Pass",
+			LastRunTime:              &observed,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			LatestAttemptAt:          &attempted,
+			LatestAttemptOutcome:     fathomv1alpha1.AddonCheckAttemptError,
+			LatestAttemptReason:      reasonAccessDenied,
+			LatestAttemptMessage:     "the dedicated reader was denied a required read",
+			EvidenceFreshness:        fathomv1alpha1.AddonCheckEvidenceUnavailable,
+			EvidenceFreshnessReason:  "the inputs this evidence was produced from are no longer eligible",
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             reasonAccessDenied,
+				Message:            "the dedicated reader was denied a required read",
+				LastTransitionTime: attempted,
+			}},
+		})
+
+		got := mirror("hc-retained-pass", "ac-retained-pass")
+
+		// The stored verdict is still shown: preserved evidence is the point.
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		// ... but every signal that would make it read as a fresh success is
+		// explicitly negative.
+		Expect(got.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
+		Expect(got.Status.EvidenceFreshnessReason).NotTo(BeEmpty())
+		Expect(got.Status.SourceReady).NotTo(BeNil())
+		Expect(*got.Status.SourceReady).To(BeFalse())
+		Expect(got.Status.SourceReadyReason).To(Equal(reasonAccessDenied))
+		// The mirrored observation is the evidence's own. Publishing the failed
+		// attempt's timestamp here would re-date old evidence at the mirror
+		// boundary and make every downstream staleness rule read it as current.
+		Expect(got.Status.SourceObservedAt).NotTo(BeNil())
+		Expect(got.Status.SourceObservedAt.Time).To(BeTemporally("==", observed.Time))
+		Expect(got.Status.SourceObservedAt.Time).NotTo(BeTemporally("==", attempted.Time))
+	})
+
+	// An undeterminable run is the one case where the source's own lastRunTime
+	// advances past its evidence: the run completed, so it was a real run, but
+	// it could not determine health, so it produced no evidence. The mirrored
+	// observation answers "when was this addon's health last actually
+	// observed", and the answer is the retained evidence's time — pairing an
+	// Error verdict with "now" would let a check that has been undeterminable
+	// for a week read as freshly observed by every cadence-relative rule
+	// downstream.
+	It("mirrors the evidence's observation, not a run that determined nothing", func() {
+		observed := metav1.NewTime(time.Now().Add(-time.Hour)).Rfc3339Copy()
+		ran := metav1.NewTime(time.Now()).Rfc3339Copy()
+		createAddonCheck("ac-undeterminable", fathomv1alpha1.AddonCheckStatus{
+			// The most recent run aggregated to Error, so lastResult and
+			// lastRunTime both describe it, while the evidence it could not
+			// replace is preserved with its original observation.
+			LastResult:               "Error",
+			LastRunTime:              &ran,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			LatestAttemptAt:          &ran,
+			LatestAttemptOutcome:     fathomv1alpha1.AddonCheckAttemptError,
+			LatestAttemptReason:      reasonIncompleteEvaluation,
+			EvidenceFreshness:        fathomv1alpha1.AddonCheckEvidenceCurrent,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             reasonRunCompleted,
+				Message:            "runtime evaluation completed with eligible inputs",
+				LastTransitionTime: ran,
+			}},
+		})
+
+		got := mirror("hc-undeterminable", "ac-undeterminable")
+
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultError))
+		Expect(got.Status.SourceObservedAt).NotTo(BeNil())
+		Expect(got.Status.SourceObservedAt.Time).To(BeTemporally("==", observed.Time))
+		Expect(got.Status.SourceObservedAt.Time).NotTo(BeTemporally("==", ran.Time))
+		// And the retained evidence is an hour old, so it is not current
+		// coverage either, whatever the source last stored.
+		Expect(got.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceStale))
+	})
+
+	// contracts/runtime.md: "Evidence ages out | Freshness=Stale even if stored
+	// verdict was Pass". Freshness is re-derived from the evidence's age at
+	// MIRROR time, not copied: a stored freshness only advances when the source
+	// reconciles, and a check that has gone quiet is exactly the case where
+	// nothing reconciles it.
+	It("re-derives Stale from the evidence's age even when the source still says Current", func() {
+		// Two effective intervals plus one timeout is the window; the default
+		// cadence puts it at 10m30s, so an hour-old observation is far past it.
+		observed := metav1.NewTime(time.Now().Add(-time.Hour))
+		createAddonCheck("ac-aged-pass", fathomv1alpha1.AddonCheckStatus{
+			LastResult:               "Pass",
+			LastRunTime:              &observed,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			LatestAttemptAt:          &observed,
+			LatestAttemptOutcome:     fathomv1alpha1.AddonCheckAttemptCompleted,
+			// Current is what the source correctly wrote at publication time.
+			EvidenceFreshness: fathomv1alpha1.AddonCheckEvidenceCurrent,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             reasonRunCompleted,
+				Message:            "runtime evaluation completed with eligible inputs",
+				LastTransitionTime: observed,
+			}},
+		})
+
+		got := mirror("hc-aged-pass", "ac-aged-pass")
+
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(got.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceStale))
+		Expect(got.Status.EvidenceFreshnessReason).NotTo(BeEmpty())
+		// Ready still mirrors what it says — the last run DID complete. Ready
+		// is eligibility, not recency, and conflating them is how an aged Pass
+		// would look healthy again.
+		Expect(got.Status.SourceReady).NotTo(BeNil())
+		Expect(*got.Status.SourceReady).To(BeTrue())
+	})
+
+	It("reports Current only while eligible evidence is inside its window", func() {
+		observed := metav1.NewTime(time.Now().Add(-time.Minute))
+		createAddonCheck("ac-current-pass", fathomv1alpha1.AddonCheckStatus{
+			LastResult:               "Pass",
+			LastRunTime:              &observed,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			LatestAttemptAt:          &observed,
+			LatestAttemptOutcome:     fathomv1alpha1.AddonCheckAttemptCompleted,
+			EvidenceFreshness:        fathomv1alpha1.AddonCheckEvidenceCurrent,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             reasonRunCompleted,
+				Message:            "runtime evaluation completed with eligible inputs",
+				LastTransitionTime: observed,
+			}},
+		})
+
+		got := mirror("hc-current-pass", "ac-current-pass")
+		Expect(got.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceCurrent))
+		Expect(got.Status.EvidenceFreshnessReason).To(BeEmpty())
+	})
+
+	// A built-in AddonCheck has no evidence model at all, and this feature is
+	// default-off: its mirrored status must be exactly what it was before this
+	// task. Freshness stays unset — absent, not "Unavailable" — because an
+	// unknown freshness is a different statement from an unusable one.
+	It("leaves a built-in check's mirror unchanged", func() {
+		ran := metav1.NewTime(time.Now().Add(-time.Minute)).Rfc3339Copy()
+		createAddonCheck("ac-builtin-mirror", fathomv1alpha1.AddonCheckStatus{
+			LastResult:     "Warn",
+			LastRunTime:    &ran,
+			LastReportName: "ac-builtin-mirror-1",
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             "RunCompleted",
+				Message:            "AddonCheck adapter run completed.",
+				LastTransitionTime: ran,
+			}},
+		})
+
+		got := mirror("hc-builtin-mirror", "ac-builtin-mirror")
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultWarn))
+		Expect(got.Status.LastReportName).To(Equal("ac-builtin-mirror-1"))
+		Expect(got.Status.SourceObservedAt.Time).To(BeTemporally("==", ran.Time))
+		Expect(got.Status.EvidenceFreshness).To(BeEmpty())
+		Expect(got.Status.EvidenceFreshnessReason).To(BeEmpty())
+		Expect(got.Status.SourceReady).NotTo(BeNil())
+		Expect(*got.Status.SourceReady).To(BeTrue())
+	})
+
+	// A terminal mirror failure clears the mirrored snapshot, and the new
+	// fields are part of that snapshot: a freshness left behind from a target
+	// that no longer exists would describe evidence nothing can produce.
+	It("clears mirrored readiness and freshness when the target is gone", func() {
+		observed := metav1.NewTime(time.Now().Add(-time.Minute))
+		target := createAddonCheck("ac-deleted-target", fathomv1alpha1.AddonCheckStatus{
+			LastResult:               "Pass",
+			LastRunTime:              &observed,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			EvidenceFreshness:        fathomv1alpha1.AddonCheckEvidenceCurrent,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionTrue,
+				Reason:             reasonRunCompleted,
+				Message:            "runtime evaluation completed with eligible inputs",
+				LastTransitionTime: observed,
+			}},
+		})
+		got := mirror("hc-deleted-target", "ac-deleted-target")
+		Expect(got.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceCurrent))
+
+		Expect(k8sClient.Delete(ctx, target)).To(Succeed())
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-deleted-target", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "hc-deleted-target", Namespace: "default"}, &got)).To(Succeed())
+
+		Expect(got.Status.Result).To(BeEmpty())
+		Expect(got.Status.EvidenceFreshness).To(BeEmpty())
+		Expect(got.Status.EvidenceFreshnessReason).To(BeEmpty())
+		Expect(got.Status.SourceReady).To(BeNil())
+		Expect(got.Status.SourceReadyReason).To(BeEmpty())
+	})
+
+	// AGENTS.md: "Keep the ClusterHealth external contract stable. It is
+	// derived only from HealthCheck.status — never from HealthReport history."
+	// The aggregate here is offered a HealthReport that flatly contradicts its
+	// child, under a client that fails any attempt to read one.
+	It("aggregates ClusterHealth from HealthCheck.status alone", func() {
+		observed := metav1.NewTime(time.Now().Add(-90 * time.Second)).Rfc3339Copy()
+		createAddonCheck("ac-contract", fathomv1alpha1.AddonCheckStatus{
+			LastResult:               "Fail",
+			LastRunTime:              &observed,
+			LastSuccessfulEvaluation: passEvidence(observed),
+			EvidenceFreshness:        fathomv1alpha1.AddonCheckEvidenceUnavailable,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             reasonAccessDenied,
+				Message:            "the dedicated reader was denied a required read",
+				LastTransitionTime: observed,
+			}},
+		})
+		// History that says the opposite of the child's status, labelled so any
+		// history-consulting implementation would find it.
+		contradiction := &fathomv1alpha1.HealthReport{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "hr-contract-pass", Namespace: "default",
+				Labels: map[string]string{
+					fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+					fathomv1alpha1.LabelHealthReportSourceName: "ac-contract",
+				},
+			},
+			Spec: fathomv1alpha1.HealthReportSpec{
+				SourceRef: fathomv1alpha1.HealthReportTargetRef{
+					APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "AddonCheck",
+					Namespace: "default", Name: "ac-contract",
+				},
+				Result:     fathomv1alpha1.HealthReportResultPass,
+				ObservedAt: metav1.NewTime(time.Now()),
+			},
+		}
+		Expect(k8sClient.Create(ctx, contradiction)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, contradiction))).To(Succeed())
+		})
+
+		hc := &fathomv1alpha1.HealthCheck{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "hc-contract", Namespace: "default",
+				Labels: map[string]string{"suite": "clusterhealth-contract"},
+			},
+			Spec: fathomv1alpha1.HealthCheckSpec{
+				CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "ac-contract"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, hc)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, hc))).To(Succeed())
+		})
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "hc-contract", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		ch := &fathomv1alpha1.ClusterHealth{
+			ObjectMeta: metav1.ObjectMeta{Name: "ch-contract"},
+			Spec: fathomv1alpha1.ClusterHealthSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"suite": "clusterhealth-contract"}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ch)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ch))).To(Succeed())
+		})
+
+		reportReads := 0
+		blind := healthReportBlindClient{Client: k8sClient, reads: &reportReads}
+		_, err = (&ClusterHealthReconciler{Client: blind, Scheme: k8sClient.Scheme()}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "ch-contract"}})
+		Expect(err).NotTo(HaveOccurred())
+
+		var aggregate fathomv1alpha1.ClusterHealth
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-contract"}, &aggregate)).To(Succeed())
+		Expect(reportReads).To(Equal(0))
+		// The child's mirrored status, not the Pass sitting in history.
+		Expect(aggregate.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
+		Expect(aggregate.Status.Children).To(HaveLen(1))
+		Expect(aggregate.Status.Children[0].Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
+		// The aggregate's observation is the child's mirrored evidence time,
+		// which is the retained evidence's own — an aged child cannot make the
+		// roll-up look current.
+		Expect(aggregate.Status.ObservedAt).NotTo(BeNil())
+		Expect(aggregate.Status.ObservedAt.Time).To(BeTemporally("==", observed.Time))
+	})
+
+	// The mirror is itself a status write with its own API bounds. A source
+	// reason may be up to the 1024 characters metav1.Condition permits;
+	// SourceReadyReason admits 128. Mirroring one verbatim does not produce an
+	// over-long string in the status — it produces NO status at all: the API
+	// server rejects the whole update, so result, readiness, freshness and
+	// lastReportName stop being mirrored together, and the wrapper freezes on
+	// whatever it last showed. The bound is enforced at the mirror boundary for
+	// exactly the reason Summary's is.
+	It("truncates an over-long source reason instead of losing the whole status write", func() {
+		observed := metav1.NewTime(time.Now().Add(-time.Minute)).Rfc3339Copy()
+		// A legal condition reason (letters only, inside the source's own
+		// 1024-character bound) that is comfortably past the mirror's 128.
+		longReason := strings.Repeat("A", 200)
+		createAddonCheck("ac-long-reason", fathomv1alpha1.AddonCheckStatus{
+			LastResult:  "Pass",
+			LastRunTime: &observed,
+			Conditions: []metav1.Condition{{
+				Type:               addonCheckConditionReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             longReason,
+				Message:            "the dedicated reader was denied a required read",
+				LastTransitionTime: observed,
+			}},
+		})
+
+		got := mirror("hc-long-reason", "ac-long-reason")
+
+		Expect(utf8.RuneCountInString(got.Status.SourceReadyReason)).
+			To(Equal(healthCheckReadyReasonMaxLen))
+		// Truncated, not replaced: the surviving prefix still identifies the
+		// source's reason.
+		Expect(got.Status.SourceReadyReason).To(HavePrefix("AAAA"))
+		// And the rest of the snapshot landed, which is the whole point.
+		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(got.Status.SourceReady).NotTo(BeNil())
+		Expect(*got.Status.SourceReady).To(BeFalse())
+		Expect(got.Status.SourceObservedAt).NotTo(BeNil())
+		Expect(got.Status.SourceObservedAt.Time).To(BeTemporally("==", observed.Time))
 	})
 })

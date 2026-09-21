@@ -175,6 +175,26 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              evidenceFreshness:
+                description: |-
+                  EvidenceFreshness mirrors the recency and eligibility of the completed
+                  evidence behind Result, re-derived from the evidence's age at mirror
+                  time. Empty for checks that publish no evidence (every built-in adapter),
+                  which is "not applicable" rather than "unavailable".
+
+                  This is the field that keeps a retained Pass from reading as a fresh
+                  success: "Freshness=Stale even if stored verdict was Pass."
+                enum:
+                - Current
+                - Stale
+                - Superseded
+                - Unavailable
+                type: string
+              evidenceFreshnessReason:
+                description: EvidenceFreshnessReason explains a freshness that is
+                  not Current.
+                maxLength: 1024
+                type: string
               lastReportName:
                 description: |-
                   LastReportName names the most recent HealthReport produced by the
@@ -212,6 +232,26 @@ spec:
               sourceObservedAt:
                 description: SourceObservedAt is when the referenced check last completed.
                 format: date-time
+                type: string
+              sourceReady:
+                description: |-
+                  SourceReady mirrors whether the referenced check's most recent run could
+                  EXECUTE and COMPLETE with eligible inputs. It is not a verdict:
+                  contracts/runtime.md, "Ready denotes executable/completed, freshness
+                  denotes recency, and neither means Pass". A false SourceReady beside a
+                  Pass Result is the ordinary shape of preserved evidence — the last
+                  completed run passed, and the most recent attempt could not run at all.
+
+                  Nil when the referenced check has never published a readiness condition,
+                  which is a different statement from "the check is not ready".
+                type: boolean
+              sourceReadyReason:
+                description: |-
+                  SourceReadyReason is the referenced check's own reason for that
+                  readiness — UnknownAddonType, AuthorizationRevoked, AccessDenied,
+                  RunCompleted and so on — so an operator can tell why a mirrored verdict
+                  is not being refreshed without reading the wrapped check.
+                maxLength: 128
                 type: string
               summary:
                 description: Summary is a human-readable one-line outcome description.
