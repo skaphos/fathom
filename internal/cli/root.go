@@ -82,7 +82,8 @@ writes and never bypasses it.
 
 Cluster access follows kubectl: --kubeconfig, then $KUBECONFIG, then
 ~/.kube/config, then in-cluster configuration. Exit codes follow kubectl too:
-0 on success, 1 on any error.`,
+0 on success, 1 on ordinary errors or collisions; definition preflight returns
+2 when its result cannot be verified.`,
 		// Setup failures aren't usage problems; don't dump usage on RunE errors.
 		SilenceUsage: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
@@ -90,7 +91,7 @@ Cluster access follows kubectl: --kubeconfig, then $KUBECONFIG, then
 		},
 	}
 	registerGlobalFlags(cmd.PersistentFlags(), f.opts)
-	cmd.AddCommand(newLsCommand(f), newDescribeCommand(f), newReportsCommand(f), newRunCommand(f), newVersionCommand(f))
+	cmd.AddCommand(newLsCommand(f), newDescribeCommand(f), newReportsCommand(f), newRunCommand(f), newVersionCommand(f), newDefinitionCommand(f))
 	return cmd
 }
 

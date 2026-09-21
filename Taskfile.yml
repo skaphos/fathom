@@ -82,23 +82,29 @@ tasks:
     cmds:
       - go run ./internal/adapter/rbacgen/cmd
 
+  gen:runtime-definitions:
+    desc: Generate the runtime definition inventory and all-nine-kind samples
+    cmds:
+      - go run ./internal/adapter/rbacgen/runtimecmd
+
   verify-generated:
     desc: Re-run generators and fail if anything changed (CI gate against stale codegen)
     cmds:
       - task: manifests
       - task: generate
       - task: gen:addon-rbac
+      - task: gen:runtime-definitions
       - task: helm:sync
       - task: docs:api-ref
       - |
-        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
+        paths="api/ config/ pkg/addondefinition/inventory_generated.go {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
         untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
         if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
           fi
-          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
+          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task gen:runtime-definitions', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
 
@@ -258,8 +264,10 @@ tasks:
       # get the exact release version from scripts/fathomctl-dist.sh instead.
       FATHOMCTL_VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+      FATHOMCTL_REVISION:
+        sh: git rev-parse HEAD
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}}" -o bin/fathomctl ./cmd/fathomctl
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}}" -o bin/fathomctl ./cmd/fathomctl
 
   fathomctl-dist:
     desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})

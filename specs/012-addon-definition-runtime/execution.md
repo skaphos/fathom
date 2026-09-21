@@ -261,3 +261,53 @@ checked. Runtime activation and full implementation remain incomplete.
 Renderer checkpoint checks: `go -C tools tool task lint` passed (0 issues);
 `go test -race ./pkg/addondefinition` passed; `git diff --check` passed.
 Graphify AST update completed. No cluster resources or Git commits were created.
+
+
+### Authoring CLI and generated inventory — T021/T022
+
+Added read-only `definition render`, `bind`, `collisions`, and `drain` commands.
+Render does not load kubeconfig; strict bounded file input rejects unknown fields
+and multiple YAML documents. Bind reads live definition/SA UIDs, checks exact
+reviewed spec equality (including admission defaults), and emits a disabled
+binding with the bounded union of primary/helper scopes. It performs no writes.
+Collision preflight uses bundled inventory and binary version/build, rejects
+missing metadata/inventory, and distinguishes collision (1) from unverifiable (2).
+Drain uses independent uncached reads, progressing renewal of the same Lease
+epoch, current generation and acknowledgement conditions, at most 16 Lease reads
+plus one binding read, 5-second requests, and a 15-second outer deadline.
+
+Pinned `gen:runtime-definitions` generates inventory from app.BuiltInAdapters and
+nine validated non-built-in sample definitions. verify-generated includes both.
+Build/distribution tooling stamps the source revision alongside the version.
+The CLI imports no operator/app/adapter/controller implementation packages.
+
+Focused package tests passed for CLI, pure authoring, and rbacgen. Regression
+cases include offline/no-kubeconfig rendering; strict/multidocument rejection;
+live UID/spec mismatch/no-write binding; collision result codes and provenance;
+denied/stalled/changed/final-changed leadership, stale generations, active runs,
+old epochs, missing conditions, and bounded reads; inventory and sample drift.
+The synthetic Lease clock is in 2040 to ensure CLI wall-clock offset is irrelevant.
+T021/T022 checked: 16/59 total. Real manager drain integration remains US3.
+
+Remote checkpoint fc9ec3a was pushed to docs/280-addon-definition-implementation.
+SSH agent signing failed; the existing GitHub CLI login successfully pushed via
+HTTPS without changing Git configuration. Subsequent implementation is pending
+its own validated checkpoint push.
+
+Adversarial checkpoint R7: a wire-round-trip regression failed because metav1.Time
+truncated microseconds from Lease acquisition time. Binding leaderEpoch now uses
+metav1.MicroTime, matching coordination/v1 Lease. Race-enabled CLI, authoring and
+generator suites pass after the fix; regenerated API artifacts are under validation.
+
+T023 complete: pinned generate/manifests/helm:sync/docs:api-ref tasks passed,
+and test:api passed against envtest 1.37 (API and authoring packages).
+Registration, conversion, rendering and artifact evidence are recorded above.
+17/59 tasks are checked; remaining US1 exhaustive contract matrices still precede
+runtime authority/lifecycle implementation.
+
+Authoring checkpoint final gates: lint (0 issues), fathomctl-build,
+verify-generated, test:api, focused race suites, REUSE (697/697), and diff checks
+all passed. The built binary rendered the generated webhook example successfully
+with a nonexistent kubeconfig, confirming offline operation. No cluster writes
+were performed. Full runtime qualification and final adversarial review remain
+open; this checkpoint must not be interpreted as runtime release readiness.

@@ -48,6 +48,12 @@ diagnostics. CLI exposure and generated inventory remain pending in T021/T022.
   now has its own DNS-label type (63 characters) while the SA reference retains
   the resource-name bound. Both whole reference objects remain immutable.
 
+- **R7 — Drain epoch lost subsecond precision on the wire.** Binding status
+  originally stored Lease acquisition in metav1.Time, whose JSON encoding drops
+  microseconds. A persisted acknowledgement would then mismatch the live Lease.
+  `TestDrainEpochSurvivesSubsecondWireRoundTrip` reproduced this and now passes
+  with metav1.MicroTime, matching the Lease API.
+
 ## Verified boundaries and limitations
 
 - Compiler owns a deep copy and preserves mixed ConfigMap/CronJob declaration

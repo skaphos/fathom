@@ -399,3 +399,7 @@ default image tag are corrected per release but are not yet part of the gate.
   `build-installer`, `bundle`, `bundle-build`, `bundle-push`, `catalog-build`,
   `catalog-push`).
 - No Homebrew cask publishing — Fathom is delivered as container/bundle images.
+
+The fathomctl archives also stamp the source Git revision for runtime-definition
+collision preflight. `definition collisions` reports both version and build and
+refuses verification when either is unknown; use the target release binary.
