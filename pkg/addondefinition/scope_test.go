@@ -39,3 +39,39 @@ func TestTargetScopeUnion(t *testing.T) {
 		t.Fatal("union bypassed binding namespace cap")
 	}
 }
+
+func TestDefinitionScopeIntersectionRejectsPartialCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		checks []api.DefinitionCheck
+		scope  api.DefinitionBindingScope
+		valid  bool
+	}{
+		{"namespaced", []api.DefinitionCheck{payloadCases()[0]}, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}}, true},
+		{"missing primary namespace", []api.DefinitionCheck{payloadCases()[0]}, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"other"}}, false},
+		{"cluster", []api.DefinitionCheck{payloadCases()[1]}, api.DefinitionBindingScope{AllowClusterScoped: true}, true},
+		{"no cluster permission", []api.DefinitionCheck{payloadCases()[1]}, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}}, false},
+		{"mixed partial coverage", payloadCases(), api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}}, false},
+		{"mixed authorized", payloadCases(), api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}, AllowClusterScoped: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := validDefinition()
+			d.Spec.Families[0].Checks = tc.checks
+			if err := definitions.ValidateScope(d, tc.scope); (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+	d := validDefinition()
+	hook := payloadCases()[4]
+	hook.Webhook.ExpectedService = "hook"
+	hook.Webhook.ServiceNamespace = "helpers"
+	hook.Webhook.VerifyEndpoints = true
+	d.Spec.Families[0].Checks = []api.DefinitionCheck{hook}
+	if err := definitions.ValidateScope(d, api.DefinitionBindingScope{AllowClusterScoped: true}); err == nil {
+		t.Fatal("unauthorized helper namespace accepted")
+	}
+	if err := definitions.ValidateScope(d, api.DefinitionBindingScope{AllowClusterScoped: true, Namespaces: []api.DefinitionDNSLabel{"helpers"}}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -66,3 +66,38 @@ func TargetScope(d *api.AddonDefinition) (api.DefinitionBindingScope, error) {
 	sort.Slice(scope.Namespaces, func(i, j int) bool { return scope.Namespaces[i] < scope.Namespaces[j] })
 	return scope, nil
 }
+
+// ValidateScope requires every declared primary/helper target to be authorized.
+// Callers resolve policy overrides before this check. It never drops targets to
+// make an otherwise unauthorized definition appear to have partial coverage.
+// Transport must independently enforce scope against actual discovered requests.
+func ValidateScope(d *api.AddonDefinition, allowed api.DefinitionBindingScope) error {
+	if err := ValidateBindingScope(allowed); err != nil {
+		return err
+	}
+	required, err := TargetScope(d)
+	if err != nil {
+		return err
+	}
+	if required.AllowClusterScoped && !allowed.AllowClusterScoped {
+		return fmt.Errorf("ScopeDenied: cluster-scoped target or helper is not authorized")
+	}
+	permitted := make(map[api.DefinitionDNSLabel]bool, len(allowed.Namespaces))
+	for _, namespace := range allowed.Namespaces {
+		permitted[namespace] = true
+	}
+	for _, namespace := range required.Namespaces {
+		if !permitted[namespace] {
+			return fmt.Errorf("ScopeDenied: namespace %q is not authorized", namespace)
+		}
+	}
+	return nil
+}
+
+// ValidateBindingScope validates the complete namespace/cluster allowlist.
+func ValidateBindingScope(scope api.DefinitionBindingScope) error {
+	if len(scope.Namespaces) == 0 && !scope.AllowClusterScoped {
+		return fmt.Errorf("InvalidBinding: target scope is empty")
+	}
+	return namespaces(scope.Namespaces)
+}
