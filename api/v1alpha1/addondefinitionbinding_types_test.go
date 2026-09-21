@@ -110,3 +110,66 @@ func TestAddonDefinitionBindingStatusBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestBindingMaximumContractAndStatusAdmission(t *testing.T) {
+	requireAPIServer(t)
+	obj := runtimeBinding(strings.Repeat("b", 63))
+	spec := obj.Object["spec"].(map[string]any)
+	spec["definitionRef"].(map[string]any)["uid"] = strings.Repeat("d", 128)
+	spec["serviceAccountRef"] = map[string]any{"name": strings.Repeat("s", 253), "uid": strings.Repeat("u", 128)}
+	ns := make([]any, 32)
+	for i := range ns {
+		ns[i] = fmt.Sprintf("ns-%02d-%s", i, strings.Repeat("n", 57))
+	}
+	spec["targetScope"] = map[string]any{"namespaces": ns, "allowClusterScoped": true}
+	if err := k8sClient.Create(context.Background(), obj); err != nil {
+		t.Fatalf("maximum binding admission/CEL cost: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
+	conditions := make([]any, 8)
+	for i := range conditions {
+		conditions[i] = map[string]any{"type": fmt.Sprintf("%s%d", strings.Repeat("C", 63), i), "status": "Unknown", "reason": strings.Repeat("R", 128), "message": strings.Repeat("m", 1024), "observedGeneration": obj.GetGeneration(), "lastTransitionTime": "2026-09-20T00:00:00Z"}
+	}
+	obj.Object["status"] = map[string]any{"observedGeneration": obj.GetGeneration(), "activeRuns": int64(4), "leaderIdentity": strings.Repeat("l", 253), "leaderEpoch": map[string]any{"leaseUID": strings.Repeat("u", 128), "holderIdentity": strings.Repeat("h", 253), "acquireTime": "2026-09-20T00:00:00.123456Z", "leaseTransitions": int64(2147483647)}, "conditions": conditions}
+	if err := k8sClient.Status().Update(context.Background(), obj); err != nil {
+		t.Fatalf("maximum status admission/CEL cost: %v", err)
+	}
+	valid := obj.DeepCopy()
+	for _, tc := range []struct {
+		name  string
+		path  []string
+		value any
+	}{
+		{"lease UID", []string{"leaderEpoch", "leaseUID"}, strings.Repeat("u", 129)},
+		{"holder", []string{"leaderEpoch", "holderIdentity"}, strings.Repeat("h", 254)},
+		{"condition count", []string{"conditions"}, append(conditions, map[string]any{"type": "extra", "status": "True", "reason": "Extra", "message": "extra", "observedGeneration": int64(1), "lastTransitionTime": "2026-09-20T00:00:00Z"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := valid.DeepCopy()
+			if err := unstructured.SetNestedField(invalid.Object, tc.value, append([]string{"status"}, tc.path...)...); err != nil {
+				t.Fatal(err)
+			}
+			if err := k8sClient.Status().Update(context.Background(), invalid); err == nil {
+				t.Fatal("over-limit status accepted")
+			}
+		})
+	}
+	for _, field := range []string{"type", "reason", "message"} {
+		t.Run(field, func(t *testing.T) {
+			invalid := valid.DeepCopy()
+			condition := invalid.Object["status"].(map[string]any)["conditions"].([]any)[0].(map[string]any)
+			condition[field] = condition[field].(string) + "x"
+			if err := k8sClient.Status().Update(context.Background(), invalid); err == nil {
+				t.Fatal("over-limit condition accepted")
+			}
+		})
+	}
+	// With the same UID, retargeting the service account name is still forbidden.
+	invalid := valid.DeepCopy()
+	if err := unstructured.SetNestedField(invalid.Object, "another", "spec", "serviceAccountRef", "name"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k8sClient.Update(context.Background(), invalid); err == nil {
+		t.Fatal("same-UID service account retarget accepted")
+	}
+}

@@ -21,11 +21,26 @@ import (
 type runtimeAdapter struct {
 	source    *api.AddonDefinition
 	prototype *Engine
+	scope     *api.DefinitionBindingScope
 }
 
 // CompileRuntime converts an admitted or offline definition without cluster I/O.
 // It snapshots all caller-owned collections and preserves declared check order.
 func CompileRuntime(ctx context.Context, source *api.AddonDefinition) (adapter.Adapter, error) {
+	return compileRuntime(ctx, source, nil)
+}
+
+// CompileRuntimeScoped enforces the binding allowlist after policy resolution,
+// before version detection or evaluator reads. Transport still enforces actual
+// discovered scope and every helper request independently.
+func CompileRuntimeScoped(ctx context.Context, source *api.AddonDefinition, scope api.DefinitionBindingScope) (adapter.Adapter, error) {
+	if err := definitions.ValidateBindingScope(scope); err != nil {
+		return nil, err
+	}
+	return compileRuntime(ctx, source, scope.DeepCopy())
+}
+
+func compileRuntime(ctx context.Context, source *api.AddonDefinition, scope *api.DefinitionBindingScope) (*runtimeAdapter, error) {
 	ctx, cancel := context.WithTimeout(ctx, definitions.MaxCompileDuration)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
@@ -39,7 +54,7 @@ func CompileRuntime(ctx context.Context, source *api.AddonDefinition) (adapter.A
 	if err != nil {
 		return nil, err
 	}
-	return &runtimeAdapter{source: snapshot, prototype: engine}, nil
+	return &runtimeAdapter{source: snapshot, prototype: engine, scope: scope}, nil
 }
 func (r *runtimeAdapter) ContractVersion() string            { return adapter.ContractVersion }
 func (r *runtimeAdapter) Name() string                       { return r.prototype.Name() }
@@ -55,6 +70,11 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	resolved := r.source.DeepCopy()
 	if err := resolveRuntimePolicy(ctx, resolved, req.Policy); err != nil {
 		return adapter.Result{}, err
+	}
+	if r.scope != nil {
+		if err := definitions.ValidateScope(resolved, *r.scope); err != nil {
+			return adapter.Result{}, err
+		}
 	}
 	engine, err := lowerRuntime(ctx, resolved)
 	if err != nil {

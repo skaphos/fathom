@@ -8,6 +8,7 @@ package v1alpha1_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -47,6 +48,10 @@ func TestAddonDefinitionAdmission(t *testing.T) {
 		{"identity mismatch", func(s map[string]any) { s["addonType"] = "other" }, false},
 		{"no families", func(s map[string]any) { s["families"] = []any{} }, false},
 		{"unknown kind", func(s map[string]any) { firstRuntimeCheck(s)["kind"] = "Expression" }, false},
+		{"two payloads", func(s map[string]any) {
+			firstRuntimeCheck(s)["configMap"] = map[string]any{"target": map[string]any{"scope": "Namespaced", "namespaces": []any{"default"}}, "defaultName": "config", "key": "config.yaml"}
+		}, false},
+		{"range without source", func(s map[string]any) { s["supportedVersions"] = ">=1.0.0" }, false},
 		{"missing payload", func(s map[string]any) { delete(firstRuntimeCheck(s), "workload") }, false},
 		{"mismatched kind", func(s map[string]any) { firstRuntimeCheck(s)["kind"] = "Field" }, false},
 		{"duplicate checks", func(s map[string]any) {
@@ -96,5 +101,29 @@ func TestAddonDefinitionUnknownFieldHandling(t *testing.T) {
 	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
 	if _, exists := firstRuntimeCheck(obj.Object["spec"].(map[string]any))["script"]; exists {
 		t.Fatal("opaque executable field survived pruning")
+	}
+}
+
+func TestDefinitionEnvelopeDefaultsAndImmutability(t *testing.T) {
+	requireAPIServer(t)
+	obj := runtimeDefinition("runtime-envelope")
+	if err := k8sClient.Create(context.Background(), obj); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
+	spec := obj.Object["spec"].(map[string]any)
+	if spec["optional"] != false || spec["families"].([]any)[0].(map[string]any)["defaultEnabled"] != false {
+		t.Fatal("envelope must default off/required")
+	}
+	spec["adapterVersion"] = "1.1.0"
+	if err := k8sClient.Update(context.Background(), obj); err != nil {
+		t.Fatalf("valid revision update: %v", err)
+	}
+	invalid := obj.DeepCopy()
+	if err := unstructured.SetNestedField(invalid.Object, "renamed", "spec", "addonType"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k8sClient.Update(context.Background(), invalid); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("expected immutable identity error: %v", err)
 	}
 }

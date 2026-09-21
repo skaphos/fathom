@@ -136,11 +136,7 @@ func ValidateBinding(b *api.AddonDefinitionBinding) error {
 	if !dnsLabel(b.Namespace) {
 		return fmt.Errorf("InvalidBinding: explicit operator namespace required")
 	}
-	s := b.Spec.TargetScope
-	if len(s.Namespaces) == 0 && !s.AllowClusterScoped {
-		return fmt.Errorf("InvalidBinding: target scope is empty")
-	}
-	return namespaces(s.Namespaces)
+	return ValidateBindingScope(b.Spec.TargetScope)
 }
 
 // boundedSpec limits recursive work before canonical JSON allocation. The typed

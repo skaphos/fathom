@@ -311,3 +311,66 @@ all passed. The built binary rendered the generated webhook example successfully
 with a nonexistent kubeconfig, confirming offline operation. No cluster writes
 were performed. Full runtime qualification and final adversarial review remain
 open; this checkpoint must not be interpreted as runtime release readiness.
+
+
+### US1 contract matrix completion
+
+T007–T009 and T017–T019 are complete. Admission suites now cover every payload's
+required fields, enums, declared scalar/list/map bounds, all published defaults,
+immutable envelope identity, union mismatches, maximum binding/status CEL cost,
+and same-UID SA-name retargeting. Rejection tests assert the corresponding API
+error category so another constraint cannot silently mask a missing bound.
+The compiler suite covers non-default mappings across all nine payloads, threshold
+consumption and resolved override validation, inherited Optional behavior,
+version-reference ambiguity, order, and owned snapshots. Pure scope validation
+rejects missing primary/helper permissions without dropping targets; transport
+must still enforce the discovered scope independently in US2.
+
+`TestCanonicalDefinitionByteBoundary` admits exactly 262144 canonical spec bytes
+and rejects 262145 for DefinitionTooLarge. Additional tests cover structural caps,
+UTF-8 bytes versus runes, comparator/alternative/range limits, selector term/value
+limits, and closed resource/discovery grammar. Existing fixture tests cover bounds
+that cannot exceed the cap within the typed schema (such as binding spec size).
+Focused authoring/declarative tests and pinned test:api pass. Scope intersection
+was first demonstrated failing because ValidateScope did not exist, then passed
+with explicit all-target validation. US1 complete; 23/59 total tasks checked.
+
+### US2 authority and transport primitives (partial)
+
+Added an isolated runtime factory with live definition/binding/ServiceAccount UID
+validation, manager/builtin/shared identity rejection, canonical final-hop
+impersonation headers, and a fresh delegated discovery mapper. Tests inject
+inherited and wrapper-added admin headers and mutate the guard callback's copy;
+neither can change the captured reader identity. Forbidden discovery never falls
+back to manager reads. CompileRuntimeScoped checks all effective primary/helper
+scopes after policy resolution, allowing an authorized override while rejecting
+out-of-scope defaults and overrides before reads.
+
+The new shared Budget and Guard bound read-only routes, actual namespaces and
+cluster scope, discovered GVK scope, request/run deadlines, process-wide QPS,
+request retries, decoded success/error bodies (including gzip), cumulative bytes,
+page/object counts, JSON nodes/depth and visits. Continuation at the object cap
+fails rather than publishing a truncated list. Tests cover all nine payloads'
+discovery expectations, Pod/EndpointSlice helpers and cancellation while blocked
+reading a response body. The retry regression first accepted a fourth request;
+it now rejects that request before network I/O.
+
+Focused race tests passed for runtime, impersonation, declarative and authoring
+packages. These primitives are not an activated runtime: evaluator pagination,
+parser budgets, control-plane fence accounting, scheduling, lifecycle publication
+and cluster qualification remain open. T024–T029 remain unchecked until their
+complete integrated acceptance criteria pass; 23/59 tasks remain checked.
+
+Added WalkPages for one-page-at-a-time consumption through the guarded reader.
+Its tests verify continuation propagation, repeated-token rejection, restart
+allowance shared across all lists in one run, and discarding earlier derived
+evidence before restarting an expired snapshot. These tests first failed because
+the walker was absent, then passed with the implementation. The walker still
+needs integration into declarative collection/helper paths; it does not by itself
+make existing evaluators pagination-complete. Pinned lint reports zero issues for
+the authority/transport checkpoint; subsequent pagination lint is recorded below.
+
+Checkpoint validation including pagination: pinned fmt/lint passed (0 issues),
+focused race suites passed, REUSE passed (710/710 files), git diff --check passed,
+and graphify update completed. Runtime activation and full cluster/adversarial
+qualification remain pending; no real-cluster resources were changed here.

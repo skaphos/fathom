@@ -38,6 +38,11 @@ func TestRuntimeCompilationPreservesOrderAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, check := range result.Checks {
+		if check.Outcome != adapter.OutcomeSkipped {
+			t.Fatalf("optional missing target must inherit Skipped: %+v", check)
+		}
+	}
 	if len(result.Checks) != 2 {
 		t.Fatalf("checks=%#v", result.Checks)
 	}
@@ -80,5 +85,84 @@ func TestRuntimeCompilerRejectsUnsupportedAndCancelledInput(t *testing.T) {
 	d := &api.AddonDefinition{ObjectMeta: metav1.ObjectMeta{Name: "custom"}, Spec: api.AddonDefinitionSpec{AddonType: "custom", AdapterVersion: "1.0.0", SemanticsVersion: 2}}
 	if _, err := declarative.CompileRuntime(context.Background(), d); err == nil {
 		t.Fatal("unsupported semantics accepted")
+	}
+}
+
+func runtimeVersionDefinition() *api.AddonDefinition {
+	return &api.AddonDefinition{ObjectMeta: metav1.ObjectMeta{Name: "custom"}, Spec: api.AddonDefinitionSpec{AddonType: "custom", AdapterVersion: "1.0.0", SemanticsVersion: 1, SupportedVersions: ">=1.0.0", VersionSource: &api.DefinitionVersionSource{FromFamily: "health", FromComponent: "controller"}, Families: []api.DefinitionFamily{{Name: "health", DefaultEnabled: true, Checks: []api.DefinitionCheck{{Name: "controller", Kind: "Workload", Workload: &api.DefinitionWorkload{Target: api.DefinitionTarget{Scope: "Namespaced", Namespaces: []api.DefinitionDNSLabel{"default"}}, Kind: "Deployment", DefaultName: "controller"}}}}}}}
+}
+
+func TestRuntimeVersionSourceMustResolveExactlyOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		edit  func(*api.AddonDefinition)
+		valid bool
+	}{
+		{"default component", func(*api.AddonDefinition) {}, true},
+		{"explicit component", func(d *api.AddonDefinition) {
+			d.Spec.Families[0].Checks[0].Workload.Component = "selected"
+			d.Spec.VersionSource.FromComponent = "selected"
+		}, true},
+		{"missing family", func(d *api.AddonDefinition) { d.Spec.VersionSource.FromFamily = "missing" }, false},
+		{"missing component", func(d *api.AddonDefinition) { d.Spec.VersionSource.FromComponent = "missing" }, false},
+		{"missing reference", func(d *api.AddonDefinition) { d.Spec.VersionSource = nil }, false},
+		{"ambiguous component", func(d *api.AddonDefinition) {
+			c := d.Spec.Families[0].Checks[0]
+			c.Name = "second"
+			c.Workload = c.Workload.DeepCopy()
+			c.Workload.Component = "controller"
+			d.Spec.Families[0].Checks = append(d.Spec.Families[0].Checks, c)
+		}, false},
+		{"detect only", func(d *api.AddonDefinition) { d.Spec.SupportedVersions = "" }, true},
+		{"nonworkload source", func(d *api.AddonDefinition) {
+			d.Spec.Families[0].Checks[0] = api.DefinitionCheck{Name: "controller", Kind: "ConfigMap", ConfigMap: &api.DefinitionConfigMap{Target: api.DefinitionTarget{Scope: "Namespaced", Namespaces: []api.DefinitionDNSLabel{"default"}}, DefaultName: "controller", Key: "config"}}
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := runtimeVersionDefinition()
+			tc.edit(d)
+			if _, err := declarative.CompileRuntime(context.Background(), d); (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
+func TestRuntimeScopeAppliesAfterPolicyResolutionBeforeReads(t *testing.T) {
+	d := runtimeVersionDefinition()
+	d.Spec.VersionSource = nil
+	d.Spec.SupportedVersions = ""
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, namespace string
+		valid           bool
+	}{
+		{"default unauthorized", "", false}, {"override authorized", "authorized", true}, {"override unauthorized", "other", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine, err := declarative.CompileRuntimeScoped(context.Background(), d, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"authorized"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := adapter.Request{}
+			if tc.namespace != "" {
+				req.Policy = map[adapter.Family]adapter.FamilyPolicy{"health": {Enabled: true, Namespaces: []string{tc.namespace}}}
+			}
+			// Invalid scope must fail before accessing the nil client. The valid branch
+			// uses a fake reader and verifies the effective namespace in its observation.
+			if tc.valid {
+				req.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			}
+			result, err := engine.Run(context.Background(), req)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+			if tc.valid && (len(result.Checks) != 1 || result.Checks[0].TargetRef.Namespace != "authorized") {
+				t.Fatalf("override not used: %+v", result)
+			}
+		})
 	}
 }
