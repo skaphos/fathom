@@ -696,3 +696,106 @@ only thing driving the real path, and the production caller remains owed by
 T039/T040. US2's real-cluster acceptance stays open until US4 (T050/T055) as the
 task text requires; this is the harness checkpoint only. Total checked: 35/59.
 Runtime remains default-off.
+
+### US3 phase A — registry snapshots, leadership session, CLI drain (T036, T041, T043) — 2026-09-21
+
+Three tasks in independent packages, built in parallel, then adversarially
+reviewed and mutation-verified. T043 repeated the US2 pattern: its production
+file `internal/cli/definition_drain.go` was byte-identical to HEAD, so the task
+was entirely test coverage, not new code.
+
+T036 — `internal/adapter/registry`. An owner-keyed copy-on-write runtime
+snapshot layer now sits beside the untouched built-in map. `SetRuntime` validates
+the full (definition UID, generation, schema, semantics) revision plus
+operator-build/adapterVersion provenance, reads adapter capabilities and builds
+the replacement off-lock, then publishes with one atomic store. `RemoveRuntime`
+removes only a matching UID (lifecycle row "Definition deleted | Remove matching
+UID only"). `Resolve` raises dispatch barriers for built-in collisions in BOTH
+directions, for two runtime owners claiming one identity (fail closed, no
+arrival-order winner) and for un-admitted dispatch. Decided and documented: an
+EQUAL generation republishes, because a republished generation is a recompile of
+the same definition revision under a new schema, semantics or operator build, and
+refusing it would pin dispatch to the superseded compilation; only a strictly
+older generation is stale. Built-in registration, lookup and capability semantics
+are unchanged and still proven by the pre-existing suite.
+
+T041 — `internal/app/runtime_leadership.go` (new). Configured namespaced Lease,
+process-unique holder, terminate on loss with no reacquisition, per-binding
+revoke/restore and active-run accounting, and a takeover grace measured on
+monotonic elapsed time that ignores wall-clock jumps.
+
+T043 — `internal/cli`. All four epoch fields (leaseUID, holderIdentity,
+acquireTime, leaseTransitions) are now individually pinned, per leadership.md's
+"Epoch equality uses all four fields ... resourceVersion is excluded because
+normal renewal changes it"; the resourceVersion carve-out keeps its own test.
+Deadline, poll pacing, the 16-read ceiling with a reserved final read, and the
+no-writes property are all asserted.
+
+52 test functions across the three packages. Names are listed in the git history
+for this commit; the load-bearing ones are called out below by what they guard.
+
+Adversarial review rejected all three on first pass. Reviewers applied mutations
+to the production code and found 23 behaviours that NO test caught, including:
+the empty- and duplicate-addon-type rejections (no coverage at all); "ordered by
+definition UID" and collision claimant order (both unpinned, so a reversed sort
+was invisible); `DispatchBarrier.Is` returning true for everything, making a
+barrier indistinguishable from ErrNotFound; `Revoke` cancelling only the first
+in-flight run of a binding; `ActiveRuns` summing across all bindings instead of
+per binding, which is what drain correctness rests on; `Epoch()` handing out
+aliased internal state; and deleting either the acquireTime or the
+leaseTransitions comparison from the CLI's epoch equality.
+
+Two findings were structural rather than per-test. First, a prerequisite that
+failed OPEN: `waitForCacheSync` defaulted to `func(context.Context) bool { return
+true }`, so a T047 that forgot to wire `mgr.GetCache().WaitForCacheSync` would
+silently satisfy "the runtime admission runnable starts only after election and
+cache sync" with a no-op — undetectable, because the default WAS the mutation.
+The gate now has no usable zero value: `NewRuntimeLeadership` leaves it nil,
+`WithCacheSync` is the only way to supply it, `Start` returns
+`ErrCacheSyncUnwired`, and every Admit/AcknowledgeDrain/EpochValid refuses with
+the same error.
+
+Second, a duplicated admission gate. The registry had grown
+Open/CloseRuntimeDispatch while the leadership session independently implemented
+a complete gate of its own, with neither file referencing the other. Resolved by
+decision: the REGISTRY keeps the barrier, because a barrier is only worth
+anything at the enforcement point where dispatch happens, and the leadership
+session is the single decider and only intended driver. `OpenRuntimeDispatch`
+now requires the driving session's holder identity and returns
+`ErrAdmissionDriverRequired` with the gate left closed when it is absent, so a
+mis-wiring fails loudly instead of admitting undriven dispatch; the recorded
+driver is surfaced in the revocation the registry reports, and pinned by
+TestAdmittedDispatchIsAttributableToItsDriver. `CloseRuntimeDispatch` needs no
+driver because barring dispatch is the safe direction and must never be refused.
+
+The coupling itself — a leadership session actually driving the registry gate —
+is deliberately still absent, because that wiring is T047. Independent
+verification states the position precisely: one enforcement point, one decider,
+zero code connecting them. The disagreement window is real but unreachable in
+production today, since runtime leadership has no production caller at all. T047
+must close it, and the fail-loud driver requirement is what makes a wrong wiring
+visible when it does.
+
+Mutation verification: 57 mutations applied via `go test -overlay` against scratch
+copies, repository never written. 55 caught. The 23 originally-surviving ones are
+all now caught, and 2 of the verifier's 33 new ones survived and were then closed
+by hand (the registry's driver attribution, and `stopGracefully` skipping the work
+drain — the latter verified by observing "stopGracefully returned after 1.917us,
+less than the 250ms drain bound"). One reported survivor proved to be a no-op
+mutation rather than a gap: the CLI's election-ID test reads
+`internal/app/options.go` from disk with `go/parser`, which an overlay cannot
+affect, so the verifier rsynced the repository to a scratch path, applied the edit
+on disk and confirmed the kill there. That test now binds the CLI default to both
+the operator source and `docs/reference/configuration.md` without importing
+`internal/app`, which the AGENTS.md boundary rule forbids.
+
+Gate outcomes: `go build ./...`, `go vet ./...`, `gofmt -l` all clean; pinned
+`task lint` 0 issues; `-race` clean on registry and app; full suite green for
+registry, app and cli. The pre-existing `staticcheck` ST1000 on generated
+`pkg/addondefinition/inventory_generated.go` and the 0%-coverage
+`internal/adapter/rbacgen/runtimecmd` package remain outstanding from T021/T022
+and belong to T057's gate run.
+
+Remaining US3 work is the controller chain: T037-T040, T042, T044-T046, then
+T047 wiring, T048 RBAC and T049 gates. Runtime remains default-off and
+`runtime.Execute` still has no production caller. Total checked: 38/59.
