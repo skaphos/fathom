@@ -507,3 +507,70 @@ outer 30-second deadline covering setup/execution/final-validation phases; the
 check-specific shared budget still needs to be created before pre-validation.
 No cluster resources changed. Runtime activation and final adversarial/cluster
 qualification remain pending.
+
+### US2 actual-request permission diagnostics
+
+T034 is complete at the component level. Each delegated Guard records only
+charged network attempts, independently of metrics, and produces bounded
+PermissionsVerified status data. Before requests it reports Unknown/NotEvaluated;
+a 403 reports False/AccessDenied even when its body is missing or oversized.
+Transport failures, incomplete requests and non-success responses report
+Unknown/AccessCheckUnavailable; later successes cannot erase that uncertainty.
+Successful responses confirm only the requests actually made. Local scope
+rejections do not become API permission observations.
+
+The diagnostic also compares requestedReads locally with typed default reads,
+helper reads, group/version discovery and actual observed requests. Missing
+resource names, verbs, discovery declarations, helper list access and effective
+name overrides are reported without changing request authorization. Arbitrary
+GVK mappings and override names remain explicitly unresolved rather than guessing
+plurals or claiming full coverage. Declarations never authorize new grants,
+and diagnostics make no speculative requests or SubjectAccessReviews.
+
+TestPermissionsUseOnlyActualRequests, TestPermissionDeclarationsAreAdvisory,
+TestPermissionFailuresSurviveLaterSuccess,
+TestPermissionsObserveOverridesAndConcurrentRequests,
+TestPermissionsDoNotCountLocallyDeniedRequests,
+TestPermissionDeclarationHelpersAndUnknownMappings and
+TestPermissionDiscoverySuccessDoesNotClaimTargetAccess cover these cases,
+including concurrent snapshots and bounded messages without raw transport errors.
+The initial tests failed before the Diagnostics API existed, then passed.
+Controller status/event publication remains part of the lifecycle integration.
+Total checked: 29/59.
+
+### US2 shared control-plane and evaluator budgets
+
+T029 is complete at the component level. NewRuntimeControlReader constructs a
+fresh uncached reader for each run, with a fixed mapper restricted to definitions,
+bindings, service accounts, AddonChecks and the manager Lease. ControlGuard pins
+the definition/check/Lease names and operator namespace; only the binding
+inventory may be listed. Target resources, discovery, writes, watches, subresources
+and unrelated metadata are rejected. This reader retains manager authentication
+while stripping inherited impersonation and transport wrappers. Delegated clients
+continue to use only the canonical bound service-account identity.
+
+Both transports use the same Budget and process-wide rate limiter. Metadata reads
+therefore share requests, decoded bytes, objects, visits, retries and remaining
+deadline with delegated discovery and evaluator reads. Manager observations never
+enter PermissionsVerified. The fixed mapper avoids unbudgeted discovery on the
+control path. NewRuntimeControlReader exposes only client.Reader methods.
+
+TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity exercises actual HTTP
+authority reads, delegated root/resource discovery and ConfigMap reads, then
+AddonCheck/Lease fence reads. It verifies identity headers, no target fallback,
+no manager discovery and no extra request after the shared request cap.
+TestControlGuardRestrictsManagerReads exercises the exact metadata allowlist.
+TestControlAndDelegatedRequestsShareBudget,
+TestControlAndDelegatedRequestsShareResponseBytes and
+TestControlGuardSharesRemainingDeadline verify combined request/byte/deadline
+limits. Existing runner, request-retry and pagination tests cover the one-second
+compile child, two retries and one shared pagination restart.
+
+Controller pre/final revision comparison and publication wiring remain T039.
+This checkpoint supplies and tests their bounded reader, not an implemented
+publication fence. Total checked: 30/59. Runtime remains default-off.
+
+Final diagnostics/control-reader checkpoint checks passed: pinned fmt/lint
+(0 issues), adapter-wide race tests, REUSE (732/732), git diff --check and
+graphify update. No cluster resources changed. Full real-cluster qualification,
+controller wiring and final adversarial review remain pending.

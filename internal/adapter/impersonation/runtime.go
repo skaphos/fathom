@@ -210,6 +210,8 @@ func (t runtimeIdentityTransport) RoundTrip(req *http.Request) (*http.Response, 
 			delete(clean.Header, key)
 		}
 	}
-	clean.Header.Set("Impersonate-User", t.username)
+	if t.username != "" {
+		clean.Header.Set("Impersonate-User", t.username)
+	}
 	return t.next.RoundTrip(clean)
 }
