@@ -8,12 +8,14 @@ package runtime_test
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/pkg/adapter"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
 type runAdapter struct {
@@ -96,9 +98,14 @@ func TestRunnerCompilationDeadlineAndFailurePrecedence(t *testing.T) {
 	b := resultBudget(t)
 	called := false
 	compiler := func(ctx context.Context) (adapter.Adapter, error) {
+		// contracts/runtime.md: compilation ≤1s. Assert both sides of the window:
+		// an upper bound alone is also satisfied by a context that is already a
+		// microsecond from expiry, which would starve compilation instead of
+		// bounding it. The lower edge allows only scheduling slack.
 		deadline, ok := ctx.Deadline()
-		if !ok || time.Until(deadline) > time.Second {
-			t.Fatal("compile deadline missing")
+		remaining := time.Until(deadline)
+		if !ok || remaining > limits.MaxCompileDuration || remaining <= limits.MaxCompileDuration-50*time.Millisecond {
+			t.Fatalf("compile window=%v want (%v, %v]", remaining, limits.MaxCompileDuration-50*time.Millisecond, limits.MaxCompileDuration)
 		}
 		_ = b.Fail("AccessDenied", "first failure")
 		return runAdapter{run: func(context.Context, adapter.Request) (adapter.Result, error) {
@@ -203,5 +210,78 @@ func TestRunnerReleasesSlotOnErrorAndResultLimit(t *testing.T) {
 				t.Fatalf("attempt=%+v released=%d", attempt, released)
 			}
 		})
+	}
+}
+
+// contracts/runtime.md: "Compilation and evaluation recover panics in their
+// executing goroutine, cancel children and release slots; no unsupervised
+// evaluator goroutines." Returning a bounded failure is not enough - a helper
+// left running after Execute returns still consumes the process. Each row is
+// repeated so a per-attempt leak accumulates well past scheduling noise.
+func TestRunnerLeavesNoUnsupervisedEvaluatorGoroutines(t *testing.T) {
+	const repeats = 8
+	for _, tc := range []struct {
+		name    string
+		attempt func(*testing.T)
+	}{
+		{"panicking compiler", func(t *testing.T) {
+			helperERequireBoundedFailure(t, execution.Execute(resultBudget(t),
+				func(context.Context) (adapter.Adapter, error) { panic("untrusted compile payload") },
+				adapter.Request{}, func() {}))
+		}},
+		{"panicking evaluator", func(t *testing.T) {
+			helperERequireBoundedFailure(t, execution.Execute(resultBudget(t),
+				func(context.Context) (adapter.Adapter, error) {
+					return runAdapter{run: func(context.Context, adapter.Request) (adapter.Result, error) {
+						panic("untrusted evaluation payload")
+					}}, nil
+				}, adapter.Request{}, func() {}))
+		}},
+		{"cancelled evaluator", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			b, done := execution.NewBudget(ctx, 0)
+			defer done()
+			// The evaluator revokes its own run and then cooperates, so the
+			// cancellation is observed without a helper goroutine of our own.
+			helperERequireBoundedFailure(t, execution.Execute(b, func(context.Context) (adapter.Adapter, error) {
+				return runAdapter{run: func(ctx context.Context, _ adapter.Request) (adapter.Result, error) {
+					cancel()
+					<-ctx.Done()
+					return adapter.Result{Checks: []adapter.CheckResult{checkResult()}}, nil
+				}}, nil
+			}, adapter.Request{}, func() {}))
+		}},
+		{"exhausted run budget", func(t *testing.T) {
+			b := resultBudget(t)
+			helperERequireBoundedFailure(t, execution.Execute(b, func(context.Context) (adapter.Adapter, error) {
+				return runAdapter{run: func(context.Context, adapter.Request) (adapter.Result, error) {
+					for b.ChargeRequest() == nil {
+					}
+					return adapter.Result{Checks: []adapter.CheckResult{checkResult()}}, nil
+				}}, nil
+			}, adapter.Request{}, func() {}))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// One warm-up attempt first: lazily started package machinery would
+			// otherwise be charged to the measured window as a false leak.
+			tc.attempt(t)
+			helperEGoroutinesSettle(t, runtime.NumGoroutine())
+			baseline := runtime.NumGoroutine()
+			for i := 0; i < repeats; i++ {
+				tc.attempt(t)
+			}
+			helperEGoroutinesSettle(t, baseline)
+		})
+	}
+}
+
+// helperERequireBoundedFailure asserts the shape every supervised failure owes
+// its caller: no evidence, not completed, and a reserved diagnostic summary.
+func helperERequireBoundedFailure(t *testing.T, attempt execution.Attempt) {
+	t.Helper()
+	if attempt.Err == nil || attempt.Completed || len(attempt.Evidence.Checks) != 0 || attempt.Summary == "" {
+		t.Fatalf("attempt=%+v", attempt)
 	}
 }

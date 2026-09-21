@@ -574,3 +574,125 @@ Final diagnostics/control-reader checkpoint checks passed: pinned fmt/lint
 (0 issues), adapter-wide race tests, REUSE (732/732), git diff --check and
 graphify update. No cluster resources changed. Full real-cluster qualification,
 controller wiring and final adversarial review remain pending.
+
+### US2 completion — authority scope, transport boundaries and hostile input (T024–T027, T035) — 2026-09-21
+
+T024–T027 target files already existed when this session began; the work was
+gap closure against the contract rows, not greenfield. A twelve-assessor audit
+(two opposing lenses per task plus numeric-row, boundary-discipline, test-theater
+and hostile-input sweeps) was adversarially reconciled into 32 work items; ten
+assessor claims were discarded as unreachable or wrong and are recorded in that
+reconciliation rather than implemented.
+
+Source changes. `ClientFor` now calls `definitions.ValidateScope` before
+`buildGuard` and fails closed with `ScopeDenied` (T025's "intersect explicit
+target scope"): the intersection previously existed only downstream in
+`declarative` and in the transport guard, so a caller ignoring
+`Binding.Spec.TargetScope` still received a working impersonating client.
+`NewRuntimeFactory` now rejects any reader that is not a `RuntimeControlReader`,
+making the uncached-control-plane requirement enforceable rather than comment-only.
+`runtimeAdapter.Run` demands the shared budget for scoped *and* unscoped adapters
+before any read; previously an adapter from the exported `CompileRuntime` ran with
+`ec.runtime = true` and no budget, silently skipping the per-object node/depth caps
+and the evidence cap. `scheduler.go` pins `MaxRunsPerCheck` and
+`MaxQueuedWakesPerCheck` with compile-time array assertions so neither can be
+retuned without the structural change a value above one would require.
+`transport.go` records why node/depth inspection is scoped to 2xx bodies: a
+non-2xx body never becomes a target object, so charging it would let a hostile
+error body exhaust a run's visits and mask the real failure, while
+`ChargeResponse` still caps it unconditionally.
+
+Numeric-row enforcement. `TestNumericRowsAreEnforced` drives `testutil.Boundaries()`,
+which until now had no callers at all. It went from 9 enforced / 56 skipped to
+31 enforced / 34 pinned, with skip hatches only for rows whose enforcer lives in
+another package, each naming that enforcer.
+
+Tests added or materially changed (36 functions):
+`TestNumericRowsAreEnforced`, `TestBudgetRequestContextClampsToRemaining`,
+`TestBudgetDeadlineClamps` (rewritten), `TestGuardRequiresExplicitScopeAndBudget`,
+`TestTransportRejectsUnauthorizedRoutesBeforeIO` (extended to 8 write-method and
+watch subtests), `TestTransportBoundsCallerSuppliedListOptions`,
+`TestTransportChargesRetriesAndDiscoveryToRunBudget`,
+`TestTransportDeliversDecompressedBodies`, `TestTransportForwardsContinuationBelowCap`,
+`TestTransportHelperReadsShareIdentityAndScope`,
+`TestTransportPassesThroughBoundedErrorBodies`, `TestTransportRejectsUndecodableResponses`,
+`TestTransportStopsAfterFirstFailure`, `TestTransportTreatsNamespacelessListAsClusterScoped`,
+`TestWalkPagesClampsCallerPageLimit`, `TestWalkPagesRefusesContinuationAtRunObjectCap`,
+`TestWalkPagesRejectsUnusablePreconditionsBeforeIO`, `TestWalkPagesStopsAtTheRequestCap`,
+`TestWalkPagesStopsOversizedPagesBeforeConsuming`,
+`TestWalkPagesStopsWhenTraversalBudgetIsSpent`, `TestSchedulerPerCheckRunAndWakeCaps`,
+`TestCacheRejectsIncompleteRevisionKey`, `TestEvidenceStringBudgetRejectsBeforeMarshal`,
+`TestDiscoveryExpectationsRejectContradictoryScope`,
+`TestRunnerLeavesNoUnsupervisedEvaluatorGoroutines`,
+`TestControlGuardClampsRequestToMaxRequestDuration`,
+`TestRuntimeSurvivesHostileDefinitionAndResponses`,
+`TestRuntimeAcceptsResponsesExactlyAtTheirBounds`,
+`TestRuntimeHealthyPeerCompletesAfterHostileNeighbour`,
+`TestRuntimeWalkStopsAtRunObjectCapThroughRealClient`,
+`TestRuntimeClientRefusesOutOfScopeDefinition`,
+`TestRuntimeClientRefusesUnsatisfiableTargetScope`,
+`TestRuntimeClientConstructionFailsClosed`, `TestRuntimeClientRefusesRedirects`,
+`TestRuntimeDiagnosticsSurviveWithMetricsOff`, `TestRuntimeDiscoveryIsKeyedPerIdentity`,
+`TestRuntimeAuthorityInventoryStaysInsideRunBudget`,
+`TestRuntimeAuthorityRejectsIdentityConfusion` (per-case reason assertions added),
+`TestRuntimeExecutionRequiresSharedBudget` (version-source cases added).
+
+Mutation testing. A passing test is not evidence, so every restored guard was
+verified by `go test -overlay` against a mutated copy, never by editing the tree.
+Twenty mutations across the three packages were applied and all are now caught,
+including: dropping the 30s run-duration clamp; off-by-one on `charge()`; doubling
+the per-request response cap; deleting the transport entry short-circuit; admitting
+non-GET methods; dropping the forced `Accept` header; dropping the depth half of
+the node/depth check; returning truncated success at the continuation cap; deleting
+the per-check active-run guard; removing the `ValidateScope` call; forcing the
+service-account UID comparison true; making the mandatory-budget check permissive;
+deleting the 5s per-request clamp; removing the watch rejection, the namespace
+allowlist, the global concurrency ceiling, the impersonation-header strip and the
+page-limit clamp.
+
+Two mutations initially survived and both were test defects, not production
+defects. The rewritten `TestBudgetDeadlineClamps` had swapped a grossly-over-cap
+input for cap+1ns while widening tolerance to 250ms, so deleting the run-duration
+clamp left the suite green — the contract's `min(timeout, 30s)` row was unguarded;
+it now reads remaining time at read time and accepts only `(want-50ms, want]`.
+`TestRuntimeExecutionRequiresSharedBudget` nilled `VersionSource`, deleting the one
+pre-step read (`Engine.detectAndGateVersion`) that escapes when `Run` does not fail
+closed, so its error assertion was satisfied by a redundant downstream guard;
+version-source cases were added and the mutation now fails them with
+"unbudgeted run performed 1 reads" while the original cases still pass — the
+distinction that proves the new cases carry the guard.
+
+No input-triggerable process-wide failure was found. Every hostile body driven
+through the assembled compiler → supervisor → guard → client path (oversize node
+count, oversize depth, oversized page, oversized decompressed body, continuation at
+the object cap, 403, non-object and items-less bodies) produced the correct named
+bounded failure with no evidence and a released slot; no panic escaped, no
+goroutine leaked, and a healthy peer definition still completed. Goroutine-delta
+assertions were added for the panicking-compiler, panicking-evaluator,
+cancelled-evaluator and budget-exhausted cases; before this session the repository
+had no `NumGoroutine`/`goleak` usage at all.
+
+Two contract observations, not defects. A single maximal 32,768-node object costs
+roughly 98,300 of the 100,000 `MaxObjectVisits` because the guard charges one visit
+per node during inspection and the evaluator charges two during pre-traversal, so a
+run can afford exactly one maximum-size object; that is
+`contracts/runtime.md`'s shared visit counter working as written, with under 2%
+headroom. A maximal dotted field path (2,063 bytes) makes a FieldCheck "field is not
+set" summary exceed `MaxMessageBytes`, so such a definition can only fail with
+`ResultLimitExceeded` once it scores an object — bounded and correct, an authoring
+foot-gun rather than a runtime bound.
+
+Gate outcomes: `go build ./...` clean; `go vet ./...` clean; `gofmt -l` empty;
+pinned `task lint` 0 issues; `-race` clean on runtime, declarative and impersonation;
+`-count=3` clean on the runtime package (goroutine baselines are not flaky);
+full `go test` green across `./internal/adapter/...`, `./pkg/...` and `./internal/cli/...`.
+Pinned `task staticcheck` reports one pre-existing ST1000 on the generated
+`pkg/addondefinition/inventory_generated.go` (unchanged since the previous commit;
+its package comment is emitted by the T022 generator, so the fix belongs to that
+generator and to T057's gate run, not to a hand edit of generated output).
+
+`runtime.Execute` still has no production caller — the component test is now the
+only thing driving the real path, and the production caller remains owed by
+T039/T040. US2's real-cluster acceptance stays open until US4 (T050/T055) as the
+task text requires; this is the harness checkpoint only. Total checked: 35/59.
+Runtime remains default-off.

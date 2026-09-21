@@ -156,3 +156,65 @@ func TestCompletedVerdictsAreEvidenceButEmptyRunIsNot(t *testing.T) {
 		t.Fatal("empty result counted as completed evidence")
 	}
 }
+
+// The pre-marshal string budget bounds allocation before JSON escaping, so it
+// must reject on raw accumulated bytes and on invalid UTF-8 that the encoder
+// would silently replace with U+FFFD. The invalid-UTF-8 arms isolate the guard
+// by construction: each marshals to a tiny document the serialized-size check
+// would wave through. The accumulated-bytes arm cannot be isolated that way —
+// raw bytes over the cap always serialize over it too — so it is isolated by the
+// rejection detail instead: every arm must be turned away by the string budget
+// specifically, not by whichever later check happens to also catch it.
+func TestEvidenceStringBudgetRejectsBeforeMarshal(t *testing.T) {
+	broken := "not\xffutf8"
+	withDetail := func(key, value string) adapter.Result {
+		c := checkResult()
+		c.Details = map[string]string{key: value}
+		return adapter.Result{Checks: []adapter.CheckResult{c}}
+	}
+	accumulated := adapter.Result{}
+	for i := 0; i < 400; i++ {
+		c := checkResult()
+		// Each summary is individually legal; only their sum crosses the cap.
+		c.Summary = strings.Repeat("x", limits.MaxMessageBytes)
+		accumulated.Checks = append(accumulated.Checks, c)
+	}
+	for _, tc := range []struct {
+		name         string
+		result       adapter.Result
+		marshalsOver bool
+	}{
+		{name: "raw bytes accumulated across checks", result: accumulated, marshalsOver: true},
+		{name: "invalid utf-8 detail value", result: withDetail("state", broken)},
+		{name: "invalid utf-8 detail key", result: withDetail(broken, "state")},
+		{name: "invalid utf-8 summary", result: func() adapter.Result {
+			c := checkResult()
+			c.Summary = broken
+			return adapter.Result{Checks: []adapter.CheckResult{c}}
+		}()},
+		{name: "invalid utf-8 detected version", result: adapter.Result{DetectedVersion: broken, Checks: []adapter.CheckResult{checkResult()}}},
+		{name: "invalid utf-8 target reference", result: func() adapter.Result {
+			c := checkResult()
+			c.TargetRef = adapter.TargetRef{APIVersion: "v1", Kind: "ConfigMap", Namespace: "default", Name: broken}
+			return adapter.Result{Checks: []adapter.CheckResult{c}}
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, marshalErr := json.Marshal(tc.result)
+			if marshalErr != nil {
+				t.Fatalf("fixture is not serializable: %v", marshalErr)
+			}
+			if over := len(raw) > limits.MaxEvidenceBytes; over != tc.marshalsOver {
+				t.Fatalf("serialized size %d does not isolate the pre-marshal guard", len(raw))
+			}
+			err := resultBudget(t).ValidateResult(tc.result)
+			var failure *execution.Failure
+			if !errors.As(err, &failure) || failure.Reason != "ResultLimitExceeded" {
+				t.Fatalf("evidence accepted before serialization: %v", err)
+			}
+			if failure.Detail != "evidence string budget exceeded" {
+				t.Fatalf("rejected by a later check, not the pre-marshal string budget: %v", err)
+			}
+		})
+	}
+}

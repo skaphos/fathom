@@ -7,7 +7,7 @@ package declarative
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/skaphos/fathom/pkg/adapter"
 	limits "github.com/skaphos/fathom/pkg/addondefinition"
@@ -36,6 +36,19 @@ func (ec EvalContext) budget() ExecutionBudget {
 	return b
 }
 
+// errUnbudgetedRuntime is the fail-closed answer for a runtime execution that
+// reached an evaluator without the shared budget. runtimeAdapter.Run refuses to
+// start without one, so this can only mean an unbudgeted caller got in.
+var errUnbudgetedRuntime = errors.New("AuthorizationUnavailable: runtime execution requires a shared budget")
+
+func (ec EvalContext) requireBudget() (ExecutionBudget, error) {
+	b := ec.budget()
+	if b == nil {
+		return nil, errUnbudgetedRuntime
+	}
+	return b, nil
+}
+
 func (ec EvalContext) walkPages(list client.ObjectList, consume func(client.ObjectList) error, reset func(), opts ...client.ListOption) error {
 	if !ec.runtime {
 		if err := ec.Client.List(ec.Ctx, list, opts...); err != nil {
@@ -43,27 +56,27 @@ func (ec EvalContext) walkPages(list client.ObjectList, consume func(client.Obje
 		}
 		return consume(list)
 	}
-	b := ec.budget()
-	if b == nil {
-		return fmt.Errorf("AuthorizationUnavailable: runtime pagination requires execution budget")
+	b, err := ec.requireBudget()
+	if err != nil {
+		return err
 	}
 	return b.WalkPages(ec.Ctx, ec.Client, list, func(_ context.Context, page client.ObjectList) error { return consume(page) }, func(context.Context) error { reset(); return nil }, opts...)
 }
 
 func (ec EvalContext) appendResults(out *[]adapter.CheckResult, values ...adapter.CheckResult) error {
-	if ec.runtime && len(*out)+len(values) > limits.MaxResults {
-		if b := ec.budget(); b != nil {
-			return b.Fail("ResultLimitExceeded", "evaluator result count exceeded")
-		}
-		return fmt.Errorf("ResultLimitExceeded: evaluator result count exceeded")
+	if !ec.runtime {
+		*out = append(*out, values...)
+		return nil
+	}
+	b, err := ec.requireBudget()
+	if err != nil {
+		return err
+	}
+	if len(*out)+len(values) > limits.MaxResults {
+		return b.Fail("ResultLimitExceeded", "evaluator result count exceeded")
 	}
 	*out = append(*out, values...)
-	if ec.runtime {
-		if b := ec.budget(); b != nil {
-			return b.ValidateResult(adapter.Result{Checks: *out})
-		}
-	}
-	return nil
+	return b.ValidateResult(adapter.Result{Checks: *out})
 }
 
 // workClient reserves traversal work before evaluators or version helpers
@@ -142,10 +155,12 @@ func (c workClient) inspect(ctx context.Context, obj runtime.Object) error {
 }
 
 func (e *Engine) validateRuntimeResult(ctx context.Context, result adapter.Result) error {
-	if e.runtime {
-		if b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget); b != nil {
-			return b.ValidateResult(result)
-		}
+	if !e.runtime {
+		return nil
 	}
-	return nil
+	b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget)
+	if b == nil {
+		return errUnbudgetedRuntime
+	}
+	return b.ValidateResult(result)
 }

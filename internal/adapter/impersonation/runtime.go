@@ -140,7 +140,8 @@ type RuntimeFactory struct {
 
 // NewRuntimeFactory snapshots credentials but never reuses inherited transport
 // wrappers or impersonation. Opaque custom transports cannot establish this
-// invariant and are rejected. Built-in client construction remains unchanged.
+// invariant and are rejected, as is any reader that is not the uncached
+// [RuntimeControlReader]. Built-in client construction remains unchanged.
 func NewRuntimeFactory(base *rest.Config, scheme *runtime.Scheme, reader client.Reader, namespace, managerSA string) (*RuntimeFactory, error) {
 	if base == nil || scheme == nil || reader == nil || namespace == "" || managerSA == "" {
 		return nil, fmt.Errorf("AuthorizationUnavailable: runtime factory prerequisites missing")
@@ -148,10 +149,16 @@ func NewRuntimeFactory(base *rest.Config, scheme *runtime.Scheme, reader client.
 	if base.Transport != nil {
 		return nil, fmt.Errorf("AuthorizationUnavailable: opaque base transport is unsupported for runtime")
 	}
+	// Authority resolution must read live objects, so a cached manager client is
+	// refused: only a reader declared as the uncached control reader is accepted.
+	if _, ok := reader.(RuntimeControlReader); !ok {
+		return nil, fmt.Errorf("AuthorizationUnavailable: runtime authority requires the uncached control-plane reader")
+	}
 	return &RuntimeFactory{base: rest.CopyConfig(base), scheme: scheme, reader: reader, namespace: namespace, managerSA: managerSA}, nil
 }
 
-// ClientFor resolves live identity and requires the caller's per-run scope/budget
+// ClientFor resolves live identity, intersects the declared targets with the
+// binding's explicit target scope, and requires the caller's per-run scope/budget
 // wrapper. Authentication credentials only authenticate impersonation; neither
 // evaluator nor discovery requests ever fall back to the manager identity.
 func (f *RuntimeFactory) ClientFor(ctx context.Context, name string, buildGuard func(*RuntimeAuthority) (func(http.RoundTripper) http.RoundTripper, error)) (client.Client, *RuntimeAuthority, error) {
@@ -161,6 +168,24 @@ func (f *RuntimeFactory) ClientFor(ctx context.Context, name string, buildGuard 
 	authority, err := ResolveRuntimeAuthority(ctx, f.reader, f.namespace, f.managerSA, name)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Intersect the definition's declared targets with the binding's explicit
+	// target scope before any delegated client exists, so a caller that ignores
+	// the scope cannot obtain one. The transport guard independently fences the
+	// effective policy scope against the requests actually issued; both must hold.
+	if err := definitions.ValidateScope(authority.Definition, authority.Binding.Spec.TargetScope); err != nil {
+		// ValidateScope labels an unauthorized target ScopeDenied itself, and its
+		// InvalidDefinition/InvalidBinding answers cannot be reached from here:
+		// ResolveRuntimeAuthority already ran Validate and ValidateBinding (which
+		// ends in ValidateBindingScope) against these very objects. The one error
+		// left carrying no reason is TargetScope's combined-namespace ceiling - a
+		// declared scope no binding can ever authorize, which is a scope denial.
+		// Label only that, so any reason that does arrive keeps its own instead of
+		// being mislabelled ScopeDenied by a blanket wrap.
+		if hasFailureReason(err) {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("ScopeDenied: %w", err)
 	}
 	username := SAUsername(f.namespace, authority.ServiceAccount.Name)
 	guardInput := &RuntimeAuthority{Definition: authority.Definition.DeepCopy(), Binding: authority.Binding.DeepCopy(), ServiceAccount: authority.ServiceAccount.DeepCopy()}
@@ -184,18 +209,35 @@ func (f *RuntimeFactory) ClientFor(ctx context.Context, name string, buildGuard 
 	}
 	httpClient, err := rest.HTTPClientFor(cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("AuthorizationUnavailable: runtime credentials cannot build a transport: %w", err)
 	}
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return fmt.Errorf("runtime API redirects are forbidden") }
 	mapper, err := apiutil.NewDynamicRESTMapper(cfg, httpClient)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("AuthorizationUnavailable: runtime discovery mapper cannot be built: %w", err)
 	}
 	c, err := client.New(cfg, client.Options{Scheme: f.scheme, Mapper: mapper, HTTPClient: httpClient})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("AuthorizationUnavailable: runtime client cannot be constructed: %w", err)
 	}
 	return c, authority, nil
+}
+
+// hasFailureReason reports whether err already carries a "Reason: " lifecycle
+// prefix. Every failure this package and pkg/addondefinition return is attributed
+// to a contract reason that way, so a prefixed error must be relayed untouched
+// rather than re-attributed by a caller that assumed a different cause.
+func hasFailureReason(err error) bool {
+	head, _, ok := strings.Cut(err.Error(), ": ")
+	if !ok || head == "" {
+		return false
+	}
+	for _, r := range head {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return true
 }
 
 type runtimeIdentityTransport struct {
