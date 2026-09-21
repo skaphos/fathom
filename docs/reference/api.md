@@ -50,6 +50,173 @@ _Appears in:_
 | `status` _[AddonCheckStatus](#addoncheckstatus)_ |  |  |  |
 
 
+#### AddonCheckAttemptOutcome
+
+_Underlying type:_ _string_
+
+AddonCheckAttemptOutcome is the outcome of the LATEST attempt, which may be
+older evidence's failed successor.
+
+_Validation:_
+- Enum: [Completed Error]
+
+_Appears in:_
+- [AddonCheckStatus](#addoncheckstatus)
+
+| Field | Description |
+| --- | --- |
+| `Completed` | AddonCheckAttemptCompleted means the run executed to completion with<br />eligible inputs. It is not a verdict.<br /> |
+| `Error` | AddonCheckAttemptError means the attempt did not produce completed<br />evidence. Whatever evidence was already stored is preserved unchanged.<br /> |
+
+
+#### AddonCheckEvidence
+
+
+
+AddonCheckEvidence is the last COMPLETED evaluation: its verdict, what it
+covered, and the original observation time, revision and authority context
+it was produced under.
+
+Nothing but another completed run replaces it. A failed attempt leaves every
+field here untouched — including ObservedAt, which a failed attempt may never
+renew.
+
+
+
+_Appears in:_
+- [AddonCheckStatus](#addoncheckstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `verdict` _[AddonCheckEvidenceVerdict](#addoncheckevidenceverdict)_ | Verdict is the aggregate result of the completed run. |  | Enum: [Pass Warn Fail Skipped] <br /> |
+| `coverage` _[AddonCheckEvidenceCoverage](#addoncheckevidencecoverage)_ | Coverage distinguishes an assessed verdict from a completed run that<br />evaluated nothing. |  | Enum: [ChecksEvaluated NoChecksEvaluated] <br /> |
+| `message` _string_ | Message explains the coverage in one line. A completed all-Skipped run<br />records exactly [AddonCheckNoChecksEvaluatedMessage]. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the completed run finished. It is the evidence's<br />ORIGINAL observation time and is never advanced by a failed attempt. |  |  |
+| `revision` _[AddonCheckEvidenceRevision](#addoncheckevidencerevision)_ | Revision is the runtime definition revision that produced the evidence. |  | Optional: \{\} <br /> |
+| `authority` _[AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)_ | Authority is the delegated authority and policy context the evidence was<br />attributed to. |  | Optional: \{\} <br /> |
+
+
+#### AddonCheckEvidenceAuthority
+
+
+
+AddonCheckEvidenceAuthority is the delegated authority and policy context a
+completed evaluation was attributed to. It is recorded so an operator can
+see which administrator-authorized incarnation produced a verdict, and so a
+later run under different authority cannot be mistaken for the same
+observation.
+
+
+
+_Appears in:_
+- [AddonCheckEvidence](#addoncheckevidence)
+- [HealthReportAttribution](#healthreportattribution)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `bindingUID` _string_ | BindingUID is the AddonDefinitionBinding incarnation that authorized the<br />run. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `bindingGeneration` _integer_ | BindingGeneration is the binding's spec generation. Status-only binding<br />writes do not advance it and therefore do not invalidate evidence. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `serviceAccountUID` _string_ | ServiceAccountUID is the dedicated reader incarnation the evaluation<br />impersonated. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `checkUID` _string_ | CheckUID is this AddonCheck's incarnation. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `checkGeneration` _integer_ | CheckGeneration is the AddonCheck spec generation the run was attributed<br />to. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `policyDigest` _string_ | PolicyDigest fingerprints spec.policy. The policy selects which families<br />run, so evidence produced under one policy is not interchangeable with<br />evidence produced under another at the same generation. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `leaderEpoch` _[DefinitionLeaderEpoch](#definitionleaderepoch)_ | LeaderEpoch is the leadership epoch observed when the run was admitted. |  | Optional: \{\} <br /> |
+
+
+#### AddonCheckEvidenceCoverage
+
+_Underlying type:_ _string_
+
+AddonCheckEvidenceCoverage records what a completed run actually evaluated,
+so a Skipped verdict cannot be mistaken for an assessed-and-healthy one.
+
+_Validation:_
+- Enum: [ChecksEvaluated NoChecksEvaluated]
+
+_Appears in:_
+- [AddonCheckEvidence](#addoncheckevidence)
+- [HealthReportAttribution](#healthreportattribution)
+
+| Field | Description |
+| --- | --- |
+| `ChecksEvaluated` | AddonCheckCoverageChecksEvaluated means at least one check produced a<br />health observation.<br /> |
+| `NoChecksEvaluated` | AddonCheckCoverageNoChecksEvaluated means the run completed but every<br />check was Skipped, or no check ran at all. Its message is exactly<br />[AddonCheckNoChecksEvaluatedMessage].<br /> |
+
+
+#### AddonCheckEvidenceFreshness
+
+_Underlying type:_ _string_
+
+AddonCheckEvidenceFreshness describes the recency and eligibility of the
+stored completed evidence. It is derived, never authority: freshness says
+nothing about health, and Current does not mean Pass.
+
+_Validation:_
+- Enum: [Current Stale Superseded Unavailable]
+
+_Appears in:_
+- [AddonCheckStatus](#addoncheckstatus)
+- [HealthCheckStatus](#healthcheckstatus)
+
+| Field | Description |
+| --- | --- |
+| `Current` | AddonCheckEvidenceCurrent means the evidence was observed at most two<br />effective intervals plus one effective timeout ago, from inputs that are<br />still eligible.<br /> |
+| `Stale` | AddonCheckEvidenceStale means the evidence aged past that window. It<br />applies even when the stored verdict was Pass: "Evidence ages out \|<br />Freshness=Stale even if stored verdict was Pass".<br /> |
+| `Superseded` | AddonCheckEvidenceSuperseded means the revision or context the evidence<br />was produced under has been replaced.<br /> |
+| `Unavailable` | AddonCheckEvidenceUnavailable means the definition, binding or grants<br />that produced the evidence are gone, invalid or denied — or no evidence<br />has ever been recorded.<br /> |
+
+
+#### AddonCheckEvidenceRevision
+
+
+
+AddonCheckEvidenceRevision is the immutable runtime revision a completed
+evaluation was produced by: the definition incarnation plus the publication
+provenance (data-model.md, "Snapshot and publication context").
+
+
+
+_Appears in:_
+- [AddonCheckEvidence](#addoncheckevidence)
+- [HealthReportAttribution](#healthreportattribution)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `definitionUID` _string_ | DefinitionUID is the AddonDefinition incarnation. A recreated definition<br />has a new UID and inherits no authority from the old one. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `definitionGeneration` _integer_ | DefinitionGeneration is the definition's spec generation. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `schemaVersion` _string_ | SchemaVersion is the API schema version the definition was compiled from. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
+| `semanticsVersion` _integer_ | SemanticsVersion is the declared evaluation semantics version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `adapterVersion` _string_ | AdapterVersion is the compiled adapter's own version. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `operatorBuild` _string_ | OperatorBuild is the operator build that compiled the snapshot. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+
+
+#### AddonCheckEvidenceVerdict
+
+_Underlying type:_ _string_
+
+AddonCheckEvidenceVerdict is the aggregate verdict of a COMPLETED runtime
+evaluation.
+
+It is deliberately narrower than [AddonCheckStatus.LastResult]: Error and
+Unknown are not completed evidence. Unknown is the absence of evidence
+("Unknown applies when no evidence exists"), and a run whose aggregate is
+Error could not determine health, so it is recorded as an attempt error that
+preserves whatever evidence was already stored.
+
+_Validation:_
+- Enum: [Pass Warn Fail Skipped]
+
+_Appears in:_
+- [AddonCheckEvidence](#addoncheckevidence)
+
+| Field | Description |
+| --- | --- |
+| `Pass` |  |
+| `Warn` |  |
+| `Fail` |  |
+| `Skipped` |  |
+
+
 #### AddonCheckFamilyPolicy
 
 
@@ -129,6 +296,13 @@ _Appears in:_
 | `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected on the most<br />recent run (from the addon workload's app.kubernetes.io/version label, else<br />its container image tag). Empty when the adapter does not detect versions or<br />the version was undetectable — the run then proceeds best-effort (SKA-527). |  | Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the HealthReport created for the most recent run. |  | Optional: \{\} <br /> |
 | `lastRunTrigger` _string_ | LastRunTrigger records the value of the fathom.skaphos.io/run-now<br />annotation most recently consumed to force an adapter run. The controller<br />re-runs the adapter whenever the annotation value differs from this, then<br />stores it here so a given on-demand trigger fires exactly once. |  | Optional: \{\} <br /> |
+| `lastSuccessfulEvaluation` _[AddonCheckEvidence](#addoncheckevidence)_ | LastSuccessfulEvaluation is the last COMPLETED evaluation, with its own<br />original observation time, revision and authority context. It is replaced<br />only by another completed run; a failed attempt preserves it byte for<br />byte. Absent means no evidence exists at all, which reads as an Unknown<br />verdict rather than as a healthy or unhealthy one. |  | Optional: \{\} <br /> |
+| `latestAttemptAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LatestAttemptAt is when the most recent attempt — successful or not —<br />finished. It advances on every attempt, which is precisely what makes it<br />distinguishable from LastSuccessfulEvaluation.ObservedAt. |  | Optional: \{\} <br /> |
+| `latestAttemptOutcome` _[AddonCheckAttemptOutcome](#addoncheckattemptoutcome)_ | LatestAttemptOutcome records whether the most recent attempt completed<br />with eligible inputs. Completed is not a verdict and Error does not<br />invalidate stored evidence. |  | Enum: [Completed Error] <br />Optional: \{\} <br /> |
+| `latestAttemptReason` _string_ | LatestAttemptReason is the contract reason for the most recent attempt's<br />outcome, chosen by the publication precedence order. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `latestAttemptMessage` _string_ | LatestAttemptMessage explains the most recent attempt's outcome. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `evidenceFreshness` _[AddonCheckEvidenceFreshness](#addoncheckevidencefreshness)_ | EvidenceFreshness describes the recency and eligibility of<br />LastSuccessfulEvaluation as of the most recent attempt. It is derived,<br />not authority, and it never implies a healthy verdict. |  | Enum: [Current Stale Superseded Unavailable] <br />Optional: \{\} <br /> |
+| `evidenceFreshnessReason` _string_ | EvidenceFreshnessReason explains a freshness that is not Current. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 
 
 #### AddonDefinition
@@ -919,6 +1093,7 @@ DefinitionLeaderEpoch is a bounded runtime definition contract.
 
 
 _Appears in:_
+- [AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)
 - [AddonDefinitionBindingStatus](#addondefinitionbindingstatus)
 
 | Field | Description | Default | Validation |
@@ -1332,6 +1507,10 @@ _Appears in:_
 | `sourceInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | SourceInterval is the cadence the referenced check is expected to run at,<br />after its own defaults and floor clamping. It is a fact about the wrapped<br />check, not a judgement about this one: it is what lets a ClusterHealth<br />aggregate judge staleness relative to cadence, since aggregates select<br />HealthChecks and never see the underlying checks (#277).<br />Empty when the cadence cannot be resolved — an unsupported checkRef kind,<br />a missing target, or a lookup failure — so consumers can tell "runs hourly"<br />from "cadence unknown" rather than reading an absent value as zero. |  | Optional: \{\} <br /> |
 | `sourceObservedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | SourceObservedAt is when the referenced check last completed. |  | Optional: \{\} <br /> |
 | `lastReportName` _string_ | LastReportName names the most recent HealthReport produced by the<br />referenced check, when one exists. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `sourceReady` _boolean_ | SourceReady mirrors whether the referenced check's most recent run could<br />EXECUTE and COMPLETE with eligible inputs. It is not a verdict:<br />contracts/runtime.md, "Ready denotes executable/completed, freshness<br />denotes recency, and neither means Pass". A false SourceReady beside a<br />Pass Result is the ordinary shape of preserved evidence — the last<br />completed run passed, and the most recent attempt could not run at all.<br />Nil when the referenced check has never published a readiness condition,<br />which is a different statement from "the check is not ready". |  | Optional: \{\} <br /> |
+| `sourceReadyReason` _string_ | SourceReadyReason is the referenced check's own reason for that<br />readiness — UnknownAddonType, AuthorizationRevoked, AccessDenied,<br />RunCompleted and so on — so an operator can tell why a mirrored verdict<br />is not being refreshed without reading the wrapped check. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `evidenceFreshness` _[AddonCheckEvidenceFreshness](#addoncheckevidencefreshness)_ | EvidenceFreshness mirrors the recency and eligibility of the completed<br />evidence behind Result, re-derived from the evidence's age at mirror<br />time. Empty for checks that publish no evidence (every built-in adapter),<br />which is "not applicable" rather than "unavailable".<br />This is the field that keeps a retained Pass from reading as a fresh<br />success: "Freshness=Stale even if stored verdict was Pass." |  | Enum: [Current Stale Superseded Unavailable] <br />Optional: \{\} <br /> |
+| `evidenceFreshnessReason` _string_ | EvidenceFreshnessReason explains a freshness that is not Current. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 
 
 #### HealthReport
@@ -1352,6 +1531,44 @@ _Appears in:_
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[HealthReportSpec](#healthreportspec)_ | Spec is immutable: a HealthReport is a point-in-time history record.<br />The operator only ever creates reports (createOrReuseHealthReport);<br />mutating one after the fact would rewrite history (SKA-576). |  |  |
 | `status` _[HealthReportStatus](#healthreportstatus)_ |  |  |  |
+
+
+#### HealthReportAttribution
+
+
+
+HealthReportAttribution records which runtime revision, under which
+delegated authority, produced a report, and how much that run actually
+covered (T045 of specs/012-addon-definition-runtime).
+
+A HealthReport is history, and history is only useful while it stays
+attributable: contracts/runtime.md requires that when a binding or grant
+recovers, "history remains attributable", and the lifecycle matrix keeps
+superseded evidence "with its original time/revision/context". Without this
+block a stored report is just a verdict and a timestamp, so a Pass produced
+under authority that has since been revoked, or under a definition revision
+that has since been replaced, reads exactly like one produced under the
+current one.
+
+It reuses the AddonCheck evidence vocabulary deliberately rather than
+restating it: the report is created FROM published evidence, and two
+independent spellings of the same context would be free to drift apart —
+which is precisely the divergence this field exists to make visible.
+
+It is optional and absent on reports from built-in adapters, which carry no
+runtime revision, no delegated binding and no dedicated identity to name.
+
+
+
+_Appears in:_
+- [HealthReportSpec](#healthreportspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `revision` _[AddonCheckEvidenceRevision](#addoncheckevidencerevision)_ | Revision is the runtime definition revision that produced the report:<br />the definition incarnation plus the operator build and adapter version<br />that compiled it. |  | Optional: \{\} <br /> |
+| `authority` _[AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)_ | Authority is the delegated binding, dedicated identity, check context and<br />leadership epoch the producing run was attributed to. |  | Optional: \{\} <br /> |
+| `coverage` _[AddonCheckEvidenceCoverage](#addoncheckevidencecoverage)_ | Coverage distinguishes an assessed verdict from a completed run that<br />evaluated nothing, so a Skipped entry in history cannot be mistaken for<br />an assessed-and-healthy one. |  | Enum: [ChecksEvaluated NoChecksEvaluated] <br />Optional: \{\} <br /> |
+| `message` _string_ | Message explains the coverage in one line. A report produced by a<br />completed all-Skipped run carries exactly<br />[AddonCheckNoChecksEvaluatedMessage]. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 
 
 #### HealthReportCheck
@@ -1443,6 +1660,7 @@ _Appears in:_
 | `checks` _[HealthReportCheck](#healthreportcheck) array_ | Checks are the individual observations produced by the adapter. |  | Optional: \{\} <br /> |
 | `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the adapter run completed. |  |  |
 | `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is the total adapter run duration. |  | Optional: \{\} <br /> |
+| `attribution` _[HealthReportAttribution](#healthreportattribution)_ | Attribution names the runtime revision and delegated authority this<br />report was produced under. Absent for built-in adapters, which have<br />neither. |  | Optional: \{\} <br /> |
 
 
 #### HealthReportStatus
