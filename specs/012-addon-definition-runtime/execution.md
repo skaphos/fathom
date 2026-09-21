@@ -460,3 +460,50 @@ Final result/runner checkpoint checks passed: pinned fmt/lint (0 issues),
 adapter-wide race suite plus a final focused race rerun, REUSE (720/720),
 git diff --check and graphify update. Runtime remains default-off; final
 adversarial review, full cluster qualification and release gates are still open.
+
+### US2 scheduling, worker isolation and revision cache
+
+T032/T033 complete at the component level. A manager-owned Scheduler admits at
+most four active runtime runs, one per definition name and one per namespaced
+check name. Stable name keys prevent UID/revision recreation or retargeting from
+escaping held slots or backoff. It coalesces queued work and notification wakes,
+rotates ready definitions round-robin, and resolves live revisions only after
+admission. A fixed four-worker Run loop waits on notifications/deadlines, joins
+all handlers on cancellation, and retains slots until handlers return. Unexpected
+handler panics cancel children, release admission and retry without stopping peers.
+The scheduler is separate from existing built-in controller workers; manager
+leadership/startup wiring is still T047.
+
+Retries follow 5/10/20/40/60 seconds with bounded positive jitter. The final delay
+is clamped to the absolute 60-second MaxRetryBackoff ceiling (so capped retries
+may receive zero added jitter); missing inputs poll after exactly 60 seconds.
+Informer churn cannot advance due times. Deleted failed checks retain temporary
+backoff state until its due time. Unchanged failure reasons are deduplicated;
+changed failure events have a five-second per-check cooldown. A regression first
+showed completion/recreation resetting that cooldown; separate expiring event
+timestamps now preserve it without retaining idle queue records indefinitely.
+
+Cache retains at most 128 idle LRU revisions plus four active reservations.
+Definition UID/generation, schema/semantics version, operator build and adapter
+version all participate in its key. Active snapshots cannot be evicted, releases
+are idempotent, and compilation occurs outside the mutex within a one-second
+child context. Panics/errors/cancellation release reservations and do not cache
+failed construction. Concurrent equivalent constructions reuse the already
+published immutable entry.
+
+Named scheduler/cache/pool tests cover at/over concurrent bounds, definition
+fairness, duplicate completions, deduplicated wakeups, retarget/delete/recreate
+churn, exact retry and missing-input delays, jitter ceiling, event cooldown,
+LRU refresh/eviction, active pins, all revision identity fields, cancellation,
+compile panic cleanup and concurrent off-lock construction. A two-transport test
+proves the 10 QPS/burst-20 bucket is shared: two independent burst buckets would
+incorrectly allow all 40 requests immediately. Adapter-wide race tests pass.
+Total checked: 28/59; production activation and cluster qualification remain open.
+
+Final scheduler/cache checkpoint checks passed: pinned fmt/lint (0 issues),
+adapter-wide race tests plus a final runtime race rerun, REUSE (726/726),
+git diff --check and graphify update. Every worker handler also receives an
+outer 30-second deadline covering setup/execution/final-validation phases; the
+check-specific shared budget still needs to be created before pre-validation.
+No cluster resources changed. Runtime activation and final adversarial/cluster
+qualification remain pending.

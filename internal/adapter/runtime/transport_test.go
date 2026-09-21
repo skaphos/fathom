@@ -227,3 +227,34 @@ func TestTransportCancellationClosesResponseBody(t *testing.T) {
 		t.Fatal("canceled response body remained blocked")
 	}
 }
+
+func TestIndependentRuntimeTransportsShareRequestRate(t *testing.T) {
+	first, closeFirst := execution.NewBudget(context.Background(), 0)
+	defer closeFirst()
+	second, closeSecond := execution.NewBudget(context.Background(), 0)
+	defer closeSecond()
+	next := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"ConfigMap"}`))}, nil
+	})
+	transports := []http.RoundTripper{runtimeGuard(t, first, false).Wrap(next), runtimeGuard(t, second, false).Wrap(next)}
+	started := time.Now()
+	for i := 0; i < 2*limits.RequestBurst; i++ {
+		request, err := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := transports[i%2].RoundTrip(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := response.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two independent burst-20 buckets would permit all 40 requests immediately.
+	// One shared bucket needs at least two seconds, even when initially full.
+	minimum := time.Duration(limits.RequestBurst) * time.Second / time.Duration(limits.RequestsPerSecond)
+	if elapsed := time.Since(started); elapsed < minimum-100*time.Millisecond {
+		t.Fatalf("per-transport buckets bypassed shared rate: %s", elapsed)
+	}
+}
