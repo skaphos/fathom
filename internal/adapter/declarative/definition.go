@@ -206,6 +206,9 @@ func (d AddonDefinition) defaultPosture() Posture {
 // then ManagedResources, then Fields, then APIServices, then Webhooks, then
 // CronJobs, then ConfigMaps, then Annotations, then PodProjections.
 type FamilyDefinition struct {
+	// ordered is populated only by the runtime compiler; built-ins retain bucket order.
+	ordered []Evaluator
+
 	// Name is the adapter-defined family identifier and the Request.Policy key.
 	Name adapter.Family
 	// DefaultEnabled gates the family when no policy entry is present.
@@ -253,6 +256,9 @@ type FamilyDefinition struct {
 
 // evaluators returns the family's components in the fixed within-family order.
 func (f FamilyDefinition) evaluators() []Evaluator {
+	if f.ordered != nil {
+		return f.ordered
+	}
 	evals := make([]Evaluator, 0,
 		len(f.Workloads)+len(f.CRDs)+len(f.ManagedResources)+len(f.Fields)+
 			len(f.APIServices)+len(f.Webhooks)+len(f.CronJobs)+len(f.ConfigMaps)+

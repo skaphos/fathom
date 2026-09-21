@@ -1,0 +1,1247 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: addondefinitions.fathom.skaphos.io
+spec:
+  group: fathom.skaphos.io
+  names:
+    kind: AddonDefinition
+    listKind: AddonDefinitionList
+    plural: addondefinitions
+    singular: addondefinition
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AddonDefinition declares administrator-bound runtime health checks.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AddonDefinitionSpec is a bounded runtime definition contract.
+            properties:
+              adapterVersion:
+                description: AdapterVersion is the declared adapterVersion.
+                maxLength: 256
+                minLength: 1
+                type: string
+              addonType:
+                description: AddonType is the declared addonType.
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+                x-kubernetes-validations:
+                - message: addonType is immutable
+                  rule: self == oldSelf
+              families:
+                description: Families is the declared families.
+                items:
+                  description: DefinitionFamily is a bounded runtime definition contract.
+                  properties:
+                    checks:
+                      description: Checks is the declared checks.
+                      items:
+                        description: DefinitionCheck is a bounded runtime definition
+                          contract.
+                        properties:
+                          annotationStaleness:
+                            description: AnnotationStaleness is the declared annotationStaleness.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              annotationKey:
+                                description: AnnotationKey is the declared annotationKey.
+                                maxLength: 317
+                                minLength: 1
+                                type: string
+                              apiVersion:
+                                description: APIVersion is the declared apiVersion.
+                                maxLength: 507
+                                minLength: 1
+                                pattern: ^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$
+                                type: string
+                              component:
+                                description: Component is the declared component.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              defaultMaxAge:
+                                description: DefaultMaxAge is the declared defaultMaxAge.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              defaultName:
+                                description: DefaultName is the declared defaultName.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                              kind:
+                                description: Kind is the declared kind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listKind:
+                                description: ListKind is the declared listKind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listName:
+                                description: ListName is the declared listName.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              maxAgeThresholdKey:
+                                description: MaxAgeThresholdKey is the declared maxAgeThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              nameThresholdKey:
+                                description: NameThresholdKey is the declared nameThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              staleOutcome:
+                                default: Warn
+                                description: StaleOutcome is the declared staleOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              timestampJSONField:
+                                description: TimestampJSONField is the declared timestampJSONField.
+                                maxLength: 128
+                                minLength: 1
+                                type: string
+                            required:
+                            - annotationKey
+                            - apiVersion
+                            - defaultMaxAge
+                            - kind
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: choose collection or named target
+                              rule: has(self.listKind) != has(self.defaultName)
+                            - message: collection cannot override a singleton name
+                              rule: '!has(self.listKind) || !has(self.nameThresholdKey)'
+                            - message: named target requires one namespace
+                              rule: has(self.listKind) || self.target.scope == 'Cluster'
+                                || size(self.target.namespaces) == 1
+                          condition:
+                            description: Condition is the declared condition.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              absentCondition:
+                                default: Fail
+                                description: AbsentCondition is the declared absentCondition.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              apiVersion:
+                                description: APIVersion is the declared apiVersion.
+                                maxLength: 507
+                                minLength: 1
+                                pattern: ^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$
+                                type: string
+                              conditionType:
+                                description: ConditionType is the declared conditionType.
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                              expectedStatus:
+                                description: ExpectedStatus is the declared expectedStatus.
+                                enum:
+                                - "True"
+                                - "False"
+                                - Unknown
+                                type: string
+                              kind:
+                                description: Kind is the declared kind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listKind:
+                                description: ListKind is the declared listKind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listName:
+                                description: ListName is the declared listName.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              mismatch:
+                                default: Fail
+                                description: Mismatch is the declared mismatch.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              names:
+                                description: Names is the declared names.
+                                items:
+                                  description: DefinitionResourceName is bounded before
+                                    semantic compilation.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                  type: string
+                                maxItems: 32
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                              supportedVersions:
+                                description: SupportedVersions is the declared supportedVersions.
+                                items:
+                                  description: DefinitionToken is bounded before semantic
+                                    compilation.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                  type: string
+                                maxItems: 8
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              versionCRD:
+                                description: VersionCRD is the declared versionCRD.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - apiVersion
+                            - conditionType
+                            - expectedStatus
+                            - kind
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: choose names or listKind
+                              rule: has(self.names) != has(self.listKind)
+                            - message: versionCRD and supportedVersions must be paired
+                              rule: has(self.versionCRD) == has(self.supportedVersions)
+                            - message: named target requires one namespace
+                              rule: '!has(self.names) || self.target.scope == ''Cluster''
+                                || size(self.target.namespaces) == 1'
+                          configMap:
+                            description: ConfigMap is the declared configMap.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              component:
+                                description: Component is the declared component.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              defaultName:
+                                description: DefaultName is the declared defaultName.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                              invalidOutcome:
+                                default: Fail
+                                description: InvalidOutcome is the declared invalidOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              key:
+                                description: Key is the declared key.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[-._a-zA-Z0-9]+$
+                                type: string
+                              nameThresholdKey:
+                                description: NameThresholdKey is the declared nameThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              recognizedAPIVersions:
+                                description: RecognizedAPIVersions is the declared
+                                  recognizedAPIVersions.
+                                items:
+                                  maxLength: 507
+                                  type: string
+                                maxItems: 8
+                                type: array
+                                x-kubernetes-list-type: set
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              unrecognizedOutcome:
+                                default: Warn
+                                description: UnrecognizedOutcome is the declared unrecognizedOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                            required:
+                            - defaultName
+                            - key
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires one namespaced target
+                              rule: self.target.scope == 'Namespaced' && has(self.target.namespaces)
+                                && size(self.target.namespaces) == 1
+                          crd:
+                            description: CRD is the declared crd.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              names:
+                                description: Names is the declared names.
+                                items:
+                                  description: DefinitionResourceName is bounded before
+                                    semantic compilation.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                  type: string
+                                maxItems: 32
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                              supportedVersions:
+                                description: SupportedVersions is the declared supportedVersions.
+                                items:
+                                  description: DefinitionToken is bounded before semantic
+                                    compilation.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                  type: string
+                                maxItems: 8
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              unsupportedVersionOutcome:
+                                default: Warn
+                                description: UnsupportedVersionOutcome is the declared
+                                  unsupportedVersionOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                            required:
+                            - names
+                            - supportedVersions
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires cluster target
+                              rule: self.target.scope == 'Cluster'
+                          cronJob:
+                            description: CronJob is the declared cronJob.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              component:
+                                description: Component is the declared component.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              defaultName:
+                                description: DefaultName is the declared defaultName.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                              defaultSuccessMaxAge:
+                                default: 0s
+                                description: DefaultSuccessMaxAge is the declared
+                                  defaultSuccessMaxAge.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              nameThresholdKey:
+                                description: NameThresholdKey is the declared nameThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              staleOutcome:
+                                default: Warn
+                                description: StaleOutcome is the declared staleOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              successMaxAgeThresholdKey:
+                                description: SuccessMaxAgeThresholdKey is the declared
+                                  successMaxAgeThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                            required:
+                            - defaultName
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires one namespaced target
+                              rule: self.target.scope == 'Namespaced' && has(self.target.namespaces)
+                                && size(self.target.namespaces) == 1
+                          field:
+                            description: Field is the declared field.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              absentOutcome:
+                                default: Warn
+                                description: AbsentOutcome is the declared absentOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              apiVersion:
+                                description: APIVersion is the declared apiVersion.
+                                maxLength: 507
+                                minLength: 1
+                                pattern: ^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z][a-z0-9]*$
+                                type: string
+                              expectedValue:
+                                description: ExpectedValue is the declared expectedValue.
+                                maxLength: 1024
+                                minLength: 1
+                                type: string
+                              fieldPath:
+                                description: FieldPath is the declared fieldPath.
+                                items:
+                                  maxLength: 128
+                                  minLength: 1
+                                  type: string
+                                maxItems: 16
+                                minItems: 1
+                                type: array
+                              kind:
+                                description: Kind is the declared kind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listKind:
+                                description: ListKind is the declared listKind.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                type: string
+                              listName:
+                                description: ListName is the declared listName.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              otherOutcome:
+                                default: Warn
+                                description: OtherOutcome is the declared otherOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              valueOutcomes:
+                                additionalProperties:
+                                  description: DefinitionOutcome is an evaluator result;
+                                    Error is never completed evidence.
+                                  enum:
+                                  - Pass
+                                  - Warn
+                                  - Fail
+                                  - Error
+                                  - Skipped
+                                  type: string
+                                description: ValueOutcomes is the declared valueOutcomes.
+                                maxProperties: 32
+                                type: object
+                            required:
+                            - apiVersion
+                            - expectedValue
+                            - fieldPath
+                            - kind
+                            - listKind
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: expectedValue outcome cannot be overridden
+                              rule: '!has(self.valueOutcomes) || !(self.expectedValue
+                                in self.valueOutcomes)'
+                          kind:
+                            description: Kind is the declared kind.
+                            enum:
+                            - Workload
+                            - CRD
+                            - Condition
+                            - Field
+                            - Webhook
+                            - CronJob
+                            - ConfigMap
+                            - AnnotationStaleness
+                            - PodProjection
+                            type: string
+                          name:
+                            description: Name is the declared name.
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z][a-z0-9_-]*$
+                            type: string
+                          podProjection:
+                            description: PodProjection is the declared podProjection.
+                            properties:
+                              component:
+                                description: Component is the declared component.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              envVar:
+                                description: EnvVar is the declared envVar.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                                type: string
+                              listName:
+                                description: ListName is the declared listName.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              missingOutcome:
+                                default: Fail
+                                description: MissingOutcome is the declared missingOutcome.
+                                enum:
+                                - Pass
+                                - Warn
+                                - Fail
+                                - Error
+                                - Skipped
+                                type: string
+                              selector:
+                                additionalProperties:
+                                  description: DefinitionSelectorValue is a bounded
+                                    Kubernetes label value.
+                                  maxLength: 256
+                                  type: string
+                                description: Selector is the declared selector.
+                                maxProperties: 32
+                                minProperties: 1
+                                type: object
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              volumeName:
+                                description: VolumeName is the declared volumeName.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - selector
+                            - target
+                            - volumeName
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires namespaced target
+                              rule: self.target.scope == 'Namespaced'
+                          webhook:
+                            description: Webhook is the declared webhook.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              expectedService:
+                                description: ExpectedService is the declared expectedService.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                              kind:
+                                description: Kind is the declared kind.
+                                enum:
+                                - MutatingWebhookConfiguration
+                                - ValidatingWebhookConfiguration
+                                type: string
+                              name:
+                                description: Name is the declared name.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                              nameThresholdKey:
+                                description: NameThresholdKey is the declared nameThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              serviceNamespace:
+                                description: ServiceNamespace is the declared serviceNamespace.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                              verifyEndpoints:
+                                default: false
+                                description: VerifyEndpoints is the declared verifyEndpoints.
+                                type: boolean
+                            required:
+                            - kind
+                            - name
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires cluster target
+                              rule: self.target.scope == 'Cluster'
+                            - message: service name and namespace must be paired
+                              rule: has(self.expectedService) == has(self.serviceNamespace)
+                            - message: endpoint verification requires a service
+                              rule: '!self.verifyEndpoints || has(self.expectedService)'
+                          workload:
+                            description: Workload is the declared workload.
+                            properties:
+                              absence:
+                                description: Absence is the declared absence.
+                                enum:
+                                - Required
+                                - Optional
+                                type: string
+                              checkPods:
+                                default: false
+                                description: CheckPods is the declared checkPods.
+                                type: boolean
+                              component:
+                                description: Component is the declared component.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z][a-z0-9_-]*$
+                                type: string
+                              defaultName:
+                                description: DefaultName is the declared defaultName.
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                                type: string
+                              defaultRestartWarn:
+                                default: 0
+                                description: DefaultRestartWarn is the declared defaultRestartWarn.
+                                format: int32
+                                minimum: 0
+                                type: integer
+                              kind:
+                                description: Kind is the declared kind.
+                                enum:
+                                - Deployment
+                                - DaemonSet
+                                - StatefulSet
+                                type: string
+                              nameThresholdKey:
+                                description: NameThresholdKey is the declared nameThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              restartWarnThresholdKey:
+                                description: RestartWarnThresholdKey is the declared
+                                  restartWarnThresholdKey.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+                                type: string
+                              target:
+                                description: Target is the declared target.
+                                properties:
+                                  namespaces:
+                                    description: Namespaces is the declared namespaces.
+                                    items:
+                                      description: DefinitionDNSLabel is bounded before
+                                        semantic compilation.
+                                      maxLength: 63
+                                      minLength: 1
+                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                      type: string
+                                    maxItems: 32
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  scope:
+                                    description: Scope is the declared scope.
+                                    enum:
+                                    - Namespaced
+                                    - Cluster
+                                    type: string
+                                required:
+                                - scope
+                                type: object
+                                x-kubernetes-validations:
+                                - message: Namespaced requires explicit namespaces;
+                                    Cluster has none
+                                  rule: 'self.scope == ''Cluster'' ? (!has(self.namespaces)
+                                    || size(self.namespaces) == 0) : (has(self.namespaces)
+                                    && size(self.namespaces) > 0)'
+                            required:
+                            - defaultName
+                            - kind
+                            - target
+                            type: object
+                            x-kubernetes-validations:
+                            - message: requires one namespaced target
+                              rule: self.target.scope == 'Namespaced' && has(self.target.namespaces)
+                                && size(self.target.namespaces) == 1
+                        required:
+                        - kind
+                        - name
+                        type: object
+                        x-kubernetes-validations:
+                        - message: payload must match kind Workload
+                          rule: has(self.workload) == (self.kind == 'Workload')
+                        - message: payload must match kind CRD
+                          rule: has(self.crd) == (self.kind == 'CRD')
+                        - message: payload must match kind Condition
+                          rule: has(self.condition) == (self.kind == 'Condition')
+                        - message: payload must match kind Field
+                          rule: has(self.field) == (self.kind == 'Field')
+                        - message: payload must match kind Webhook
+                          rule: has(self.webhook) == (self.kind == 'Webhook')
+                        - message: payload must match kind CronJob
+                          rule: has(self.cronJob) == (self.kind == 'CronJob')
+                        - message: payload must match kind ConfigMap
+                          rule: has(self.configMap) == (self.kind == 'ConfigMap')
+                        - message: payload must match kind AnnotationStaleness
+                          rule: has(self.annotationStaleness) == (self.kind == 'AnnotationStaleness')
+                        - message: payload must match kind PodProjection
+                          rule: has(self.podProjection) == (self.kind == 'PodProjection')
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
+                    defaultEnabled:
+                      default: false
+                      description: DefaultEnabled is the declared defaultEnabled.
+                      type: boolean
+                    name:
+                      description: Name is the declared name.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z][a-z0-9_-]*$
+                      type: string
+                  required:
+                  - checks
+                  - name
+                  type: object
+                maxItems: 16
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              optional:
+                default: false
+                description: Optional is the declared optional.
+                type: boolean
+              requestedReads:
+                description: RequestedReads is the declared requestedReads.
+                items:
+                  description: DefinitionReadRule is a bounded runtime definition
+                    contract.
+                  properties:
+                    apiGroup:
+                      description: APIGroup is the declared apiGroup.
+                      maxLength: 253
+                      type: string
+                    nonResourceURLs:
+                      description: NonResourceURLs is the declared nonResourceURLs.
+                      items:
+                        maxLength: 1024
+                        type: string
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                    resourceNames:
+                      description: ResourceNames is the declared resourceNames.
+                      items:
+                        description: DefinitionResourceName is bounded before semantic
+                          compilation.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                        type: string
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                    resources:
+                      description: Resources is the declared resources.
+                      items:
+                        maxLength: 253
+                        type: string
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                    verbs:
+                      description: Verbs is the declared verbs.
+                      items:
+                        enum:
+                        - get
+                        - list
+                        type: string
+                      maxItems: 2
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                  required:
+                  - verbs
+                  type: object
+                  x-kubernetes-validations:
+                  - message: choose resource or discovery reads
+                    rule: has(self.resources) != has(self.nonResourceURLs)
+                  - message: resource rules require apiGroup, including core empty
+                      string
+                    rule: has(self.resources) == has(self.apiGroup)
+                  - message: discovery rules allow get only
+                    rule: '!has(self.nonResourceURLs) || (!has(self.resourceNames)
+                      && self.verbs.all(v, v == ''get''))'
+                maxItems: 32
+                type: array
+              semanticsVersion:
+                description: SemanticsVersion is the declared semanticsVersion.
+                enum:
+                - 1
+                format: int32
+                type: integer
+              supportedVersions:
+                description: SupportedVersions is the declared supportedVersions.
+                maxLength: 256
+                type: string
+              versionSource:
+                description: VersionSource is the declared versionSource.
+                properties:
+                  container:
+                    description: Container is the declared container.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  fromComponent:
+                    description: FromComponent is the declared fromComponent.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z][a-z0-9_-]*$
+                    type: string
+                  fromFamily:
+                    description: FromFamily is the declared fromFamily.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z][a-z0-9_-]*$
+                    type: string
+                required:
+                - fromComponent
+                - fromFamily
+                type: object
+            required:
+            - adapterVersion
+            - addonType
+            - families
+            - semanticsVersion
+            type: object
+            x-kubernetes-validations:
+            - message: version gate requires versionSource
+              rule: '!has(self.supportedVersions) || size(self.supportedVersions)
+                == 0 || has(self.versionSource)'
+          status:
+            description: AddonDefinitionStatus is a bounded runtime definition contract.
+            properties:
+              conditions:
+                description: Conditions is the declared conditions.
+                items:
+                  description: DefinitionStatusCondition is a bounded runtime definition
+                    contract.
+                  properties:
+                    lastTransitionTime:
+                      description: LastTransitionTime is the declared lastTransitionTime.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message is the declared message.
+                      maxLength: 1024
+                      type: string
+                    observedGeneration:
+                      description: ObservedGeneration is the declared observedGeneration.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: Reason is the declared reason.
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                    status:
+                      description: Status is the declared status.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: Type is the declared type.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - observedGeneration
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the declared observedGeneration.
+                format: int64
+                minimum: 0
+                type: integer
+              revision:
+                description: Revision is the declared revision.
+                maxLength: 256
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: name must equal addonType
+          rule: self.metadata.name == self.spec.addonType
+    served: true
+    storage: true
+    subresources:
+      status: {}

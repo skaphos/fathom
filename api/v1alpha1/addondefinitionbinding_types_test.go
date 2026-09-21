@@ -1,0 +1,112 @@
+/*
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
+SPDX-License-Identifier: MIT
+*/
+
+package v1alpha1_test
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+func runtimeBinding(name string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "fathom.skaphos.io/v1alpha1", "kind": "AddonDefinitionBinding",
+		"metadata": map[string]any{"name": name, "namespace": "default"},
+		"spec": map[string]any{
+			"definitionRef":     map[string]any{"name": name, "uid": "definition-uid"},
+			"serviceAccountRef": map[string]any{"name": "dedicated", "uid": "sa-uid"},
+			"targetScope":       map[string]any{"namespaces": []any{"default"}},
+		},
+	}}
+}
+
+func TestAddonDefinitionBindingAdmission(t *testing.T) {
+	requireAPIServer(t)
+	for i, tc := range []struct {
+		name   string
+		mutate func(map[string]any)
+		valid  bool
+	}{
+		{"disabled by default", func(map[string]any) {}, true},
+		{"empty UID", func(s map[string]any) { s["definitionRef"].(map[string]any)["uid"] = "" }, false},
+		{"oversize UID", func(s map[string]any) { s["serviceAccountRef"].(map[string]any)["uid"] = strings.Repeat("x", 129) }, false},
+		{"identity mismatch", func(s map[string]any) { s["definitionRef"].(map[string]any)["name"] = "another" }, false},
+		{"no scope", func(s map[string]any) { s["targetScope"] = map[string]any{} }, false},
+		{"wildcard scope", func(s map[string]any) { s["targetScope"] = map[string]any{"namespaces": []any{"*"}} }, false},
+		{"cluster only", func(s map[string]any) { s["targetScope"] = map[string]any{"allowClusterScoped": true} }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := runtimeBinding(fmt.Sprintf("runtime-binding-%d", i))
+			tc.mutate(obj.Object["spec"].(map[string]any))
+			err := k8sClient.Create(context.Background(), obj)
+			if (err == nil) != tc.valid {
+				t.Fatalf("accepted=%v want %v: %v", err == nil, tc.valid, err)
+			}
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
+			enabled, found, err := unstructured.NestedBool(obj.Object, "spec", "enabled")
+			if err != nil || !found || enabled {
+				t.Fatalf("expected disabled default: found=%v enabled=%v err=%v", found, enabled, err)
+			}
+			original := obj.DeepCopy()
+			if err := unstructured.SetNestedField(obj.Object, "recreated", "spec", "serviceAccountRef", "uid"); err != nil {
+				t.Fatal(err)
+			}
+			if err := k8sClient.Update(context.Background(), obj); err == nil {
+				t.Fatal("mutable SA UID accepted")
+			}
+			obj = original.DeepCopy()
+			if err := unstructured.SetNestedField(obj.Object, "recreated", "spec", "definitionRef", "uid"); err != nil {
+				t.Fatal(err)
+			}
+			if err := k8sClient.Update(context.Background(), obj); err == nil {
+				t.Fatal("mutable definition UID accepted")
+			}
+		})
+	}
+}
+
+func TestAddonDefinitionBindingStatusBounds(t *testing.T) {
+	requireAPIServer(t)
+	obj := runtimeBinding("runtime-status-bounds")
+	if err := k8sClient.Create(context.Background(), obj); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
+	condition := map[string]any{"type": "Ready", "status": "False", "reason": "AuthorizationRevoked", "message": "disabled", "observedGeneration": obj.GetGeneration(), "lastTransitionTime": "2026-09-20T00:00:00Z"}
+	obj.Object["status"] = map[string]any{"observedGeneration": obj.GetGeneration(), "activeRuns": int64(0), "leaderIdentity": "leader", "leaderEpoch": map[string]any{"leaseUID": "lease", "holderIdentity": "leader", "acquireTime": "2026-09-20T00:00:00Z", "leaseTransitions": int64(0)}, "conditions": []any{condition}}
+	if err := k8sClient.Status().Update(context.Background(), obj); err != nil {
+		t.Fatal(err)
+	}
+	valid := obj.DeepCopy()
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"negative active runs", func(s map[string]any) { s["activeRuns"] = int64(-1) }},
+		{"excess active runs", func(s map[string]any) { s["activeRuns"] = int64(5) }},
+		{"negative generation", func(s map[string]any) { s["observedGeneration"] = int64(-1) }},
+		{"empty lease UID", func(s map[string]any) { s["leaderEpoch"].(map[string]any)["leaseUID"] = "" }},
+		{"negative transitions", func(s map[string]any) { s["leaderEpoch"].(map[string]any)["leaseTransitions"] = int64(-1) }},
+		{"oversize leader", func(s map[string]any) { s["leaderIdentity"] = strings.Repeat("x", 254) }},
+		{"oversize message", func(s map[string]any) {
+			s["conditions"].([]any)[0].(map[string]any)["message"] = strings.Repeat("x", 1025)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := valid.DeepCopy()
+			tc.mutate(invalid.Object["status"].(map[string]any))
+			if err := k8sClient.Status().Update(context.Background(), invalid); err == nil {
+				t.Fatal("invalid status accepted")
+			}
+		})
+	}
+}

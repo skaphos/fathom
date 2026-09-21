@@ -1,0 +1,229 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: addondefinitionbindings.fathom.skaphos.io
+spec:
+  group: fathom.skaphos.io
+  names:
+    kind: AddonDefinitionBinding
+    listKind: AddonDefinitionBindingList
+    plural: addondefinitionbindings
+    singular: addondefinitionbinding
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AddonDefinitionBinding delegates a definition to a dedicated
+          identity.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AddonDefinitionBindingSpec is a bounded runtime definition
+              contract.
+            properties:
+              definitionRef:
+                description: DefinitionRef is the declared definitionRef.
+                properties:
+                  name:
+                    description: Name is the definition's canonical addon identity.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  uid:
+                    description: UID prevents authority from surviving definition
+                      recreation.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - uid
+                type: object
+                x-kubernetes-validations:
+                - message: reference is immutable
+                  rule: self == oldSelf
+              enabled:
+                default: false
+                description: Enabled is the declared enabled.
+                type: boolean
+              serviceAccountRef:
+                description: ServiceAccountRef is the declared serviceAccountRef.
+                properties:
+                  name:
+                    description: Name is the declared name.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                    type: string
+                  uid:
+                    description: UID is the declared uid.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - uid
+                type: object
+                x-kubernetes-validations:
+                - message: reference is immutable
+                  rule: self == oldSelf
+              targetScope:
+                description: TargetScope is the declared targetScope.
+                properties:
+                  allowClusterScoped:
+                    default: false
+                    description: AllowClusterScoped is the declared allowClusterScoped.
+                    type: boolean
+                  namespaces:
+                    description: Namespaces is the declared namespaces.
+                    items:
+                      description: DefinitionDNSLabel is bounded before semantic compilation.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    maxItems: 32
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+                x-kubernetes-validations:
+                - message: at least one scope is required
+                  rule: self.allowClusterScoped || (has(self.namespaces) && size(self.namespaces)
+                    > 0)
+            required:
+            - definitionRef
+            - serviceAccountRef
+            - targetScope
+            type: object
+          status:
+            description: |-
+              AddonDefinitionBindingStatus describes observation, never authorization.
+              Accepted records spec/identity validity; Ready records eligibility; Drained is
+              acknowledged only for disabled, observed-generation state with zero active
+              runs in the current leadership epoch. Consumers must independently verify the
+              epoch against the configured Lease before treating Drained as current.
+            properties:
+              activeRuns:
+                description: ActiveRuns is the declared activeRuns.
+                format: int32
+                maximum: 4
+                minimum: 0
+                type: integer
+              conditions:
+                description: Conditions is the declared conditions.
+                items:
+                  description: DefinitionStatusCondition is a bounded runtime definition
+                    contract.
+                  properties:
+                    lastTransitionTime:
+                      description: LastTransitionTime is the declared lastTransitionTime.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message is the declared message.
+                      maxLength: 1024
+                      type: string
+                    observedGeneration:
+                      description: ObservedGeneration is the declared observedGeneration.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: Reason is the declared reason.
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                    status:
+                      description: Status is the declared status.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: Type is the declared type.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - observedGeneration
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              leaderEpoch:
+                description: LeaderEpoch is the declared leaderEpoch.
+                properties:
+                  acquireTime:
+                    description: AcquireTime is the declared acquireTime.
+                    format: date-time
+                    type: string
+                  holderIdentity:
+                    description: HolderIdentity is the declared holderIdentity.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  leaseTransitions:
+                    description: LeaseTransitions is the declared leaseTransitions.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  leaseUID:
+                    description: LeaseUID is the declared leaseUID.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - acquireTime
+                - holderIdentity
+                - leaseTransitions
+                - leaseUID
+                type: object
+              leaderIdentity:
+                description: LeaderIdentity is the declared leaderIdentity.
+                maxLength: 253
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the declared observedGeneration.
+                format: int64
+                minimum: 0
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: name must equal definitionRef.name
+          rule: self.metadata.name == self.spec.definitionRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}

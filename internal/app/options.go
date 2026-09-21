@@ -90,16 +90,23 @@ type DNSCheckOptions struct {
 	MaxConcurrentProbes int `mapstructure:"max_concurrent_probes"`
 }
 
+// RuntimeLoadingOptions controls administrator-authorized external definitions.
+type RuntimeLoadingOptions struct {
+	// Enabled opts in to runtime definitions; execution also requires leader election.
+	Enabled bool `mapstructure:"enabled"`
+}
+
 // Options is the resolved runtime configuration for the operator.
 type Options struct {
-	Metrics                MetricsOptions  `mapstructure:"metrics"`
-	Webhook                WebhookOptions  `mapstructure:"webhook"`
-	Tracing                TracingOptions  `mapstructure:"tracing"`
-	DNSCheck               DNSCheckOptions `mapstructure:"dnscheck"`
-	HealthProbeBindAddress string          `mapstructure:"health_probe_bind_address"`
-	LeaderElect            bool            `mapstructure:"leader_elect"`
-	LeaderElectionID       string          `mapstructure:"leader_election_id"`
-	EnableHTTP2            bool            `mapstructure:"enable_http2"`
+	RuntimeLoading         RuntimeLoadingOptions `mapstructure:"runtimeLoading"`
+	Metrics                MetricsOptions        `mapstructure:"metrics"`
+	Webhook                WebhookOptions        `mapstructure:"webhook"`
+	Tracing                TracingOptions        `mapstructure:"tracing"`
+	DNSCheck               DNSCheckOptions       `mapstructure:"dnscheck"`
+	HealthProbeBindAddress string                `mapstructure:"health_probe_bind_address"`
+	LeaderElect            bool                  `mapstructure:"leader_elect"`
+	LeaderElectionID       string                `mapstructure:"leader_election_id"`
+	EnableHTTP2            bool                  `mapstructure:"enable_http2"`
 
 	// ProbeImage is the cluster-wide default container image for adapter
 	// probe pods (see internal/probe). Adapters consult adapter.Request.ProbeImage
@@ -285,6 +292,8 @@ type flagBinding struct {
 
 func bindings(defaults Options) []flagBinding {
 	return []flagBinding{
+		{flagName: "runtime-loading-enabled", viperKey: "runtimeLoading.enabled", isBool: true, boolDef: defaults.RuntimeLoading.Enabled,
+			usage: "Enable administrator-bound runtime addon definitions. Requires leader election and an explicit operator namespace. Disabled by default."},
 		{flagName: "metrics-bind-address", viperKey: "metrics.bind_address", stringDef: defaults.Metrics.BindAddress,
 			usage: "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service."},
 		{flagName: "metrics-secure", viperKey: "metrics.secure", isBool: true, boolDef: defaults.Metrics.Secure,
@@ -412,4 +421,20 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 	}
 	opts.Zap = zapOpts
 	return opts, nil
+}
+
+// RuntimeLoadingDisabledReason returns a fail-closed activation reason without
+// rejecting startup of unrelated built-in controllers. Empty means the static
+// prerequisites hold; live authority and leadership must still be validated.
+func (o Options) RuntimeLoadingDisabledReason() string {
+	if !o.RuntimeLoading.Enabled {
+		return "RuntimeLoadingDisabled"
+	}
+	if !o.LeaderElect {
+		return "LeaderElectionRequired"
+	}
+	if o.Namespace == "" {
+		return "OperatorNamespaceRequired"
+	}
+	return ""
 }
