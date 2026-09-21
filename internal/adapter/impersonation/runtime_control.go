@@ -71,8 +71,12 @@ func NewRuntimeControlReader(base *rest.Config, budget *execution.Budget, target
 	if err != nil {
 		return nil, err
 	}
-	return runtimeControlReader{Reader: c}, nil
+	return RuntimeControlReader{Reader: c}, nil
 }
 
-// Do not expose write methods even through a client.Writer type assertion.
-type runtimeControlReader struct{ client.Reader }
+// RuntimeControlReader names the uncached, budget-shared control-plane reader that
+// authority resolution requires, so a manager cached client can no longer satisfy
+// that seam by accident: wrapping some other reader in this type is a deliberate,
+// greppable claim that it is uncached and budget-bound. It embeds only
+// client.Reader, so no write method is reachable even by type assertion.
+type RuntimeControlReader struct{ client.Reader }

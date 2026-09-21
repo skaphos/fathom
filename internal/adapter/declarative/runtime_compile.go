@@ -67,6 +67,13 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// The shared budget is the only enforcer of the per-object node/depth caps
+	// and the evidence cap, so no runtime execution -- scoped or not -- may
+	// begin without one.
+	b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget)
+	if b == nil {
+		return adapter.Result{}, errUnbudgetedRuntime
+	}
 	resolved := r.source.DeepCopy()
 	if err := resolveRuntimePolicy(ctx, resolved, req.Policy); err != nil {
 		return adapter.Result{}, err
@@ -80,19 +87,13 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	if err != nil {
 		return adapter.Result{}, err
 	}
-	b, _ := ctx.Value(executionBudgetKey{}).(ExecutionBudget)
-	if r.scope != nil && b == nil {
-		return adapter.Result{}, fmt.Errorf("AuthorizationUnavailable: scoped runtime execution requires a shared budget")
+	if err := b.Err(); err != nil {
+		return adapter.Result{}, err
 	}
-	if b != nil {
-		if err := b.Err(); err != nil {
-			return adapter.Result{}, err
-		}
-		req.Client = workClient{Client: req.Client, work: b}
-	}
+	req.Client = workClient{Client: req.Client, work: b}
 	result, err := engine.Run(ctx, req)
-	if b != nil && b.Err() != nil {
-		return adapter.Result{}, b.Err()
+	if berr := b.Err(); berr != nil {
+		return adapter.Result{}, berr
 	}
 	if ctx.Err() != nil {
 		return adapter.Result{}, ctx.Err()
@@ -100,10 +101,8 @@ func (r *runtimeAdapter) Run(ctx context.Context, req adapter.Request) (adapter.
 	if err != nil {
 		return adapter.Result{}, err
 	}
-	if b != nil {
-		if err := b.ValidateResult(result); err != nil {
-			return adapter.Result{}, err
-		}
+	if err := b.ValidateResult(result); err != nil {
+		return adapter.Result{}, err
 	}
 	return result, nil
 }
@@ -120,12 +119,16 @@ func (s runtimeStep) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) {
 	ec.Policy.Namespaces = append([]string(nil), s.namespaces...)
 	// All named threshold overrides have already been validated and resolved.
 	ec.Policy.Thresholds = nil
+	b, err := ec.requireBudget()
+	if err != nil {
+		return nil, err
+	}
 	if err := ec.Ctx.Err(); err != nil {
 		return nil, err
 	}
 	out, err := s.evaluator.Evaluate(ec)
-	if b := ec.budget(); b != nil && b.Err() != nil {
-		return nil, b.Err()
+	if berr := b.Err(); berr != nil {
+		return nil, berr
 	}
 	if err != nil {
 		return nil, err

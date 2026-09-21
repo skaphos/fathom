@@ -8,15 +8,18 @@ package declarative_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/declarative"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/pkg/adapter"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -163,6 +166,71 @@ func TestRuntimeScopeAppliesAfterPolicyResolutionBeforeReads(t *testing.T) {
 			}
 			if tc.valid && (len(result.Checks) != 1 || result.Checks[0].TargetRef.Namespace != "authorized") {
 				t.Fatalf("override not used: %+v", result)
+			}
+		})
+	}
+}
+
+// helperAReadCounter proves the refusal lands before any cluster read.
+type helperAReadCounter struct {
+	client.Client
+	gets int
+}
+
+func (c *helperAReadCounter) Get(ctx context.Context, key client.ObjectKey, out client.Object, opts ...client.GetOption) error {
+	c.gets++
+	return c.Client.Get(ctx, key, out, opts...)
+}
+
+// Without the shared budget nothing enforces the per-object node and depth caps
+// or the evidence cap, so every runtime execution must be refused before any
+// read -- scoped or not.
+func TestRuntimeExecutionRequiresSharedBudget(t *testing.T) {
+	// A definition with no version source has no pre-step read, so Run's own
+	// refusal is indistinguishable from the identical one in runtimeStep.Evaluate.
+	// Retaining the version source keeps Engine.detectAndGateVersion in play: it
+	// reads before any step runs and bypasses the workClient wrapper, so only the
+	// fail-closed check at the top of Run can keep the read count at zero.
+	versionless := func() *api.AddonDefinition {
+		d := runtimeVersionDefinition()
+		d.Spec.VersionSource = nil
+		d.Spec.SupportedVersions = ""
+		return d
+	}
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		definition func() *api.AddonDefinition
+		compile    func(*api.AddonDefinition) (adapter.Adapter, error)
+	}{
+		{"unscoped", versionless, func(d *api.AddonDefinition) (adapter.Adapter, error) {
+			return declarative.CompileRuntime(context.Background(), d)
+		}},
+		{"scoped", versionless, func(d *api.AddonDefinition) (adapter.Adapter, error) {
+			return declarative.CompileRuntimeScoped(context.Background(), d, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}})
+		}},
+		{"unscoped with version source", runtimeVersionDefinition, func(d *api.AddonDefinition) (adapter.Adapter, error) {
+			return declarative.CompileRuntime(context.Background(), d)
+		}},
+		{"scoped with version source", runtimeVersionDefinition, func(d *api.AddonDefinition) (adapter.Adapter, error) {
+			return declarative.CompileRuntimeScoped(context.Background(), d, api.DefinitionBindingScope{Namespaces: []api.DefinitionDNSLabel{"default"}})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine, err := tc.compile(tc.definition())
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &helperAReadCounter{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "controller", Namespace: "default"}}).Build()}
+			result, err := engine.Run(context.Background(), adapter.Request{Client: c})
+			if err == nil || !strings.Contains(err.Error(), "AuthorizationUnavailable") {
+				t.Fatalf("unbudgeted run accepted: result=%+v err=%v", result, err)
+			}
+			if c.gets != 0 {
+				t.Fatalf("unbudgeted run performed %d reads", c.gets)
 			}
 		})
 	}

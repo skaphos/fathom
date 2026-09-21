@@ -15,6 +15,7 @@ import (
 
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/pkg/adapter"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -32,12 +33,12 @@ func TestCacheIdleLRUAndActiveBounds(t *testing.T) {
 		}
 		return snapshot
 	}
-	for i := 0; i < 128; i++ {
+	for i := 0; i < limits.MaxCachedRevisions; i++ {
 		acquire(revision(i)).Release()
 	}
 	// Refresh key 0; insertion must evict key 1, not key 0.
 	acquire(revision(0)).Release()
-	acquire(revision(128)).Release()
+	acquire(revision(limits.MaxCachedRevisions)).Release()
 	acquire(revision(0)).Release()
 	if builds[revision(0)] != 1 {
 		t.Fatal("cache hit did not refresh LRU")
@@ -47,11 +48,11 @@ func TestCacheIdleLRUAndActiveBounds(t *testing.T) {
 		t.Fatal("least-recently-used revision was not evicted")
 	}
 	var pinned []*execution.Snapshot
-	for i := 0; i < 4; i++ {
+	for i := 0; i < limits.MaxConcurrentRuns; i++ {
 		pinned = append(pinned, acquire(revision(200+i)))
 	}
 	if _, err := cache.Acquire(context.Background(), revision(300), successfulCompiler); err == nil {
-		t.Fatal("fifth active snapshot accepted")
+		t.Fatal("active snapshot accepted past the concurrency cap")
 	}
 	pinned[0].Release()
 	pinned[0].Release()
@@ -109,7 +110,7 @@ func TestCachePinsSurviveIdleEvictionAndCompileOutsideLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pinned.Release()
-	for i := 1; i <= 130; i++ {
+	for i := 1; i <= limits.MaxCachedRevisions+2; i++ {
 		snapshot, err := cache.Acquire(context.Background(), revision(i), successfulCompiler)
 		if err != nil {
 			t.Fatal(err)
@@ -176,14 +177,71 @@ func TestCacheCanceledCompilationIsNotCachedOrPinned(t *testing.T) {
 			snapshot.Release()
 		}
 	}()
-	for i := 0; i < 4; i++ {
+	for i := 0; i < limits.MaxConcurrentRuns; i++ {
 		snapshot, err := cache.Acquire(context.Background(), revision(i), func(ctx context.Context) (adapter.Adapter, error) { calls++; return successfulCompiler(ctx) })
 		if err != nil {
 			t.Fatal(err)
 		}
 		active = append(active, snapshot)
 	}
-	if calls != 5 {
+	if calls != limits.MaxConcurrentRuns+1 {
 		t.Fatalf("canceled result reused: compiler calls=%d", calls)
+	}
+}
+
+// A revision key missing any provenance field cannot name a compiled snapshot,
+// so the cache must reject it before compiling and without burning a reservation
+// — otherwise a stale name could reuse another revision's compiled semantics.
+func TestCacheRejectsIncompleteRevisionKey(t *testing.T) {
+	complete := revision(0)
+	missingUID, oldGeneration, noSchema, noSemantics := complete, complete, complete, complete
+	noBuild, noAdapterVersion := complete, complete
+	missingUID.DefinitionUID = ""
+	oldGeneration.Generation = 0
+	noSchema.SchemaVersion = ""
+	noSemantics.SemanticsVersion = 0
+	noBuild.OperatorBuild = ""
+	noAdapterVersion.AdapterVersion = ""
+	for _, tc := range []struct {
+		name     string
+		key      execution.RevisionKey
+		compiler func(context.Context) (adapter.Adapter, error)
+	}{
+		{name: "missing definition UID", key: missingUID},
+		{name: "unset generation", key: oldGeneration},
+		{name: "missing schema version", key: noSchema},
+		{name: "missing semantics version", key: noSemantics},
+		{name: "missing operator build", key: noBuild},
+		{name: "missing adapter version", key: noAdapterVersion},
+		{name: "missing compiler", key: complete, compiler: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := execution.NewCache()
+			compiler := tc.compiler
+			if tc.name != "missing compiler" {
+				compiler = func(context.Context) (adapter.Adapter, error) {
+					t.Error("incomplete revision key reached the compiler")
+					return nil, errors.New("unexpected compile")
+				}
+			}
+			snapshot, err := cache.Acquire(context.Background(), tc.key, compiler)
+			if err == nil || snapshot != nil {
+				t.Fatalf("incomplete revision key admitted: %+v %v", snapshot, err)
+			}
+			// The rejected attempt must not have consumed an active reservation.
+			var held []*execution.Snapshot
+			defer func() {
+				for _, snapshot := range held {
+					snapshot.Release()
+				}
+			}()
+			for i := 0; i < limits.MaxConcurrentRuns; i++ {
+				snapshot, err := cache.Acquire(context.Background(), revision(i), successfulCompiler)
+				if err != nil {
+					t.Fatalf("rejected key consumed an active slot: %v", err)
+				}
+				held = append(held, snapshot)
+			}
+		})
 	}
 }

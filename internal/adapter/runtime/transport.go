@@ -178,6 +178,13 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	if response.StatusCode == http.StatusForbidden {
 		return nil, b.Fail("AccessDenied", "delegated API request was forbidden")
 	}
+	// Node/depth inspection is deliberately scoped to bodies the evaluator can
+	// actually traverse. A non-2xx body never becomes a target object: client-go
+	// turns it into a Status error, so charging it against the traversal budget
+	// would let a hostile aggregated-APIService or conversion-webhook error body
+	// exhaust a run's visits and mask the real failure. It stays bounded anyway -
+	// ChargeResponse above caps it unconditionally and encoding/json enforces its
+	// own nesting ceiling when the client decodes it.
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
 		if err := g.inspect(data, route); err != nil {
 			return nil, err

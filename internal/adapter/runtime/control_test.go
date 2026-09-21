@@ -134,6 +134,39 @@ func TestControlAndDelegatedRequestsShareResponseBytes(t *testing.T) {
 	}
 }
 
+// The shared-deadline test below runs a 50ms budget, so the run deadline is always
+// the binding one and the per-request clamp is invisible to it. Control-plane reads
+// go through the same Budget.RequestContext as delegated reads, so the 5s cap must
+// bind whenever the run has more time left than that.
+func TestControlGuardClampsRequestToMaxRequestDuration(t *testing.T) {
+	b, closeBudget := execution.NewBudget(context.Background(), limits.MaxRunDuration)
+	defer closeBudget()
+	control, err := execution.NewControlGuard(b, controlTargets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := control.Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		deadline, ok := r.Context().Deadline()
+		if !ok {
+			t.Fatal("control request has no deadline")
+		}
+		// Read the remaining time rather than measuring from a start stamp: the
+		// deadline is fixed at construction, so an over-grant fails however small.
+		// The lower bound absorbs scheduling delay under a loaded test binary while
+		// staying far tighter than either direction a lost clamp moves it -- the run
+		// deadline is 30s out, and halving the cap would land at 2.5s.
+		floor := limits.MaxRequestDuration * 3 / 4
+		if grants := time.Until(deadline); grants > limits.MaxRequestDuration || grants <= floor {
+			t.Errorf("control request grants %v, want (%v, %v]", grants, floor, limits.MaxRequestDuration)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}))
+	req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/operator/serviceaccounts/reader", nil)
+	if _, err := transport.RoundTrip(req); err != nil {
+		t.Fatalf("control read: %v", err)
+	}
+}
+
 func TestControlGuardSharesRemainingDeadline(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 50*time.Millisecond)
 	defer closeBudget()

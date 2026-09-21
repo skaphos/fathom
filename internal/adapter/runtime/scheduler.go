@@ -33,6 +33,11 @@ const (
 	MissingInput
 )
 
+// queuedCheck holds at most one in-flight run (active) and one queued wake
+// (node) per check object, whatever the event rate: that single pair of slots is
+// the entire enforcement of the scheduling row's ≤1 run/check and ≤1 queued
+// wake/check. Raising either cap demands a different structure here, so the
+// constants are pinned to it below rather than merely mirrored in the contract.
 type queuedCheck struct {
 	desired    Work
 	active     *Admission
@@ -42,6 +47,16 @@ type queuedCheck struct {
 	failures   uint8
 	lastReason string
 }
+
+// These declarations stop compiling if either per-check cap is retuned without
+// the structural work that a value other than one would require.
+var (
+	_ [limits.MaxRunsPerCheck - 1]struct{}
+	_ [1 - limits.MaxRunsPerCheck]struct{}
+	_ [limits.MaxQueuedWakesPerCheck - 1]struct{}
+	_ [1 - limits.MaxQueuedWakesPerCheck]struct{}
+)
+
 type definitionQueue struct {
 	name   string
 	checks list.List

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -234,5 +235,74 @@ func TestSchedulerEventRateSurvivesSuccessfulRunAndRecreation(t *testing.T) {
 	}
 	if !s.ShouldReport(w.Check, "AccessDenied", now.Add(5*time.Second)) {
 		t.Fatal("changed failure remained suppressed after cooldown")
+	}
+}
+
+// The scheduling row caps a single check at one in-flight run and one queued
+// wake no matter how many events arrive or how often the check is retargeted.
+// Both are enforced structurally (one active slot, one queue node per check), so
+// the observed counts are asserted against the constants that state the contract:
+// a retune the scheduler cannot honour fails here instead of passing silently.
+//
+// Churn is delivered in two windows. The first only exercises coalescing into a
+// single queue node. The second arrives while the admitted run is still held and
+// retargets the check onto a definition with no active run, so the entry sits at
+// the head of a ring queue with its own admission outstanding — the only state in
+// which a second concurrent run for one check could be handed out, and therefore
+// the state the run cap has to be asserted against.
+func TestSchedulerPerCheckRunAndWakeCaps(t *testing.T) {
+	s := execution.NewScheduler(func() float64 { return 0 })
+	now := time.Now()
+	// Every drain is bounded by the global concurrency cap: at a fixed instant the
+	// scheduler can never hold more admissions than that. A scheduler that keeps
+	// handing out work therefore fails an assertion instead of spinning forever.
+	drain := func() []*execution.Admission {
+		t.Helper()
+		var admitted []*execution.Admission
+		for len(admitted) <= limits.MaxConcurrentRuns {
+			a, _ := s.Next(now)
+			if a == nil {
+				return admitted
+			}
+			admitted = append(admitted, a)
+		}
+		t.Fatalf("scheduler kept admitting past the %d concurrent-run cap", limits.MaxConcurrentRuns)
+		return nil
+	}
+	churn := func(prefix string) {
+		t.Helper()
+		w := work(prefix+"-0", "shared")
+		for i := 0; i < 1000; i++ {
+			w.Definition = fmt.Sprint(prefix, "-", i%3)
+			enqueue(t, s, w, now)
+		}
+	}
+	churn("def")
+	live := drain()
+	if len(live) != limits.MaxRunsPerCheck {
+		t.Fatalf("concurrent runs for one check=%d want %d", len(live), limits.MaxRunsPerCheck)
+	}
+	// The admission above is still outstanding, so these events re-queue a check
+	// that already owns its run slot, under an otherwise idle definition.
+	churn("alt")
+	if extra := drain(); len(extra) != 0 {
+		t.Fatalf("concurrent runs for one check=%d want %d", len(live)+len(extra), limits.MaxRunsPerCheck)
+	}
+	// Completing a run releases the check slot; the 2000 coalesced events behind
+	// it must have collapsed into one queued wake rather than a backlog.
+	wakes := 0
+	for len(live) > 0 {
+		if wakes > limits.MaxQueuedWakesPerCheck {
+			t.Fatalf("queued wakes for one check exceeded %d", limits.MaxQueuedWakesPerCheck)
+		}
+		admission := live[0]
+		live = live[1:]
+		admission.Finish(execution.Completed, now)
+		woken := drain()
+		wakes += len(woken)
+		live = append(live, woken...)
+	}
+	if wakes != limits.MaxQueuedWakesPerCheck {
+		t.Fatalf("queued wakes for one check=%d want %d", wakes, limits.MaxQueuedWakesPerCheck)
 	}
 }
