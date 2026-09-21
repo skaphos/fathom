@@ -374,3 +374,47 @@ Checkpoint validation including pagination: pinned fmt/lint passed (0 issues),
 focused race suites passed, REUSE passed (710/710 files), git diff --check passed,
 and graphify update completed. Runtime activation and full cluster/adversarial
 qualification remain pending; no real-cluster resources were changed here.
+
+### US2 evaluator pagination and parser integration
+
+Every declarative collection read now uses a common page-consumer seam. Runtime
+consumers invoke the shared-budget walker; compiled-in adapters retain their
+existing client behavior. Field, Condition, AnnotationStaleness, workload Pod,
+PodProjection and webhook EndpointSlice evaluators score one page at a time.
+They retain derived results/counts only, restore the collection's pre-run state
+on snapshot restart, and refuse partial completion. PodProjection retains at
+most five offending names while counting all matches. Tests cover every runtime
+collection/helper path and final-page contributions to verdicts.
+
+`TestRuntimeFieldConsumesFinalPageAndRestartsTransactionally` initially failed
+because the integration seam was missing. `TestRuntimeMissingOptionalAPIIsCompletedSkipped`
+then exposed a walker regression: mapper absence canceled the whole budget.
+Expected API absence now returns to the evaluator for grading, while operational
+failures still abort. Both tests pass.
+
+T028 complete: a narrow ExecutionBudget interface carries cancellation, traversal
+charges and pagination into runtime evaluators without importing runtime into
+declarative. The runtime-only client reserves a full bounded object traversal
+before evaluator/version-helper inspection and charges the reservation scan as
+well. YAML checks bound bytes before parsing, then reject excess nodes/depth and
+aliases before expansion; syntax errors retain the declared invalid outcome.
+Annotation values are bounded before timestamp/JSON parsing. Scoped runtime
+execution refuses a missing shared budget before I/O. The compiler's unscoped
+conversion API remains available for isolated authoring tests.
+
+`TestRuntimeConfigMapParserBoundaries` first accepted each over-limit/alias case;
+it now passes exact/over byte, node and depth boundaries plus alias rejection.
+`TestRuntimeAnnotationByteBoundary` covers 1024/1025 bytes.
+`TestRuntimeEvaluatorAndVersionHelperShareVisitBudget` verifies exhausted work
+prevents publication from both paths. All-disabled checks intentionally skip
+version detection and perform no reads. The adapter-wide race suite passes,
+including shipped adapters using the shared evaluators. Total checked: 24/59.
+
+Runtime activation, authority/final-fence accounting, result serialization caps,
+scheduling, lifecycle wiring and full Kind qualification remain outstanding.
+The previous Kind bootstrap failure is still not a successful e2e qualification;
+this checkpoint does not claim release readiness or completed adversarial review.
+
+Final evaluator checkpoint checks passed: pinned fmt/lint (0 issues), adapter-wide
+race suite, REUSE (715/715), diff whitespace validation and graphify update.
+No cluster resources were changed during this checkpoint.

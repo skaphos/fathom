@@ -76,46 +76,37 @@ func (cc ConditionCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error)
 	// a legacy version (e.g. external-secrets.io/v1beta1); falls back to gv.Version.
 	listGVK := schema.GroupVersionKind{Group: gv.Group, Version: cc.resolveVersion(ec, gv.Version), Kind: cc.ListKind}
 
-	var items []unstructured.Unstructured
+	var out []adapter.CheckResult
+	namespaces := policyNamespaces(ec.Policy, cc.DefaultNamespace)
 	if cc.ClusterScoped {
-		var list unstructured.UnstructuredList
+		namespaces = []string{""}
+	}
+	for _, ns := range namespaces {
+		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(listGVK)
-		if err := ec.Client.List(ec.Ctx, &list, client.MatchingLabelsSelector{Selector: sel}); err != nil {
+		before := len(out)
+		err := ec.walkPages(list, func(raw client.ObjectList) error {
+			page := raw.(*unstructured.UnstructuredList)
+			for i := range page.Items {
+				if err := ec.appendResults(&out, cc.scoreObject(ec, &page.Items[i], absent, mismatch, time.Now())); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, func() { out = out[:before] }, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: sel})
+		if err != nil {
 			if resourceAbsent(err) {
 				return []adapter.CheckResult{cc.absentListResult(ec, kindRef, started)}, nil
 			}
-			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-				fmt.Sprintf("failed to list %s: %v", cc.Kind, err), cc.listDetails(), started)}, nil
-		}
-		items = append(items, list.Items...)
-	} else {
-		for _, ns := range policyNamespaces(ec.Policy, cc.DefaultNamespace) {
-			var list unstructured.UnstructuredList
-			list.SetGroupVersionKind(listGVK)
-			if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: sel}); err != nil {
-				if resourceAbsent(err) {
-					return []adapter.CheckResult{cc.absentListResult(ec, kindRef, started)}, nil
-				}
-				return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError,
-					fmt.Sprintf("failed to list %s in %s: %v", cc.Kind, namespaceScope(ns), err), cc.listDetails(), started)}, nil
-			}
-			items = append(items, list.Items...)
+			return []adapter.CheckResult{result(ec.Family, kindRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s in %s: %v", cc.Kind, namespaceScope(ns), err), cc.listDetails(), started)}, nil
 		}
 	}
-
-	if len(items) == 0 {
-		c := skippedResult(ec.Family, kindRef,
-			fmt.Sprintf("no %s objects matched", cc.Kind), "NoMatchingObjects")
-		if cc.ConditionType != "" {
-			c.Details["conditionType"] = cc.ConditionType
+	if len(out) == 0 {
+		c := skippedResult(ec.Family, kindRef, fmt.Sprintf("no %s objects matched", cc.Kind), "NoMatchingObjects")
+		for k, v := range cc.listDetails() {
+			c.Details[k] = v
 		}
 		return []adapter.CheckResult{c}, nil
-	}
-
-	out := make([]adapter.CheckResult, 0, len(items))
-	for i := range items {
-		obj := &items[i]
-		out = append(out, cc.scoreObject(ec, obj, absent, mismatch, time.Now()))
 	}
 	return out, nil
 }

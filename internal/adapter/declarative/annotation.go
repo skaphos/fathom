@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/skaphos/fathom/pkg/adapter"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
 // Evaluate implements Evaluator for AnnotationStalenessCheck. It reads an
@@ -77,23 +78,35 @@ func (a AnnotationStalenessCheck) evaluateNamed(ec EvalContext, gv schema.GroupV
 func (a AnnotationStalenessCheck) evaluateList(ec EvalContext, gv schema.GroupVersion) []adapter.CheckResult {
 	listRef := adapter.TargetRef{APIVersion: a.APIVersion, Kind: a.Kind, Name: a.listName()}
 
-	items, errResult := a.list(ec, gv)
-	if errResult != nil {
-		return []adapter.CheckResult{*errResult}
+	var out []adapter.CheckResult
+	namespaces := policyNamespaces(ec.Policy, a.DefaultNamespace)
+	if a.ClusterScoped {
+		namespaces = []string{""}
+	}
+	for _, ns := range namespaces {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(gv.WithKind(a.ListKind))
+		before := len(out)
+		err := ec.walkPages(list, func(raw client.ObjectList) error {
+			page := raw.(*unstructured.UnstructuredList)
+			for i := range page.Items {
+				obj := &page.Items[i]
+				value, present := obj.GetAnnotations()[a.AnnotationKey]
+				if !present {
+					continue
+				}
+				ref := adapter.TargetRef{APIVersion: a.APIVersion, Kind: a.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}
+				if err := ec.appendResults(&out, a.scoreAnnotation(ec, ref, value, time.Now())); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, func() { out = out[:before] }, client.InNamespace(ns))
+		if err != nil {
+			return []adapter.CheckResult{result(ec.Family, listRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s: %v", a.Kind, err), a.baseDetails(), time.Now())}
+		}
 	}
 
-	out := make([]adapter.CheckResult, 0, len(items))
-	for i := range items {
-		obj := &items[i]
-		value, present := obj.GetAnnotations()[a.AnnotationKey]
-		if !present {
-			// Objects that carry no annotation are not part of the check's
-			// concern (e.g. a node with no pending reboot); stay quiet.
-			continue
-		}
-		ref := adapter.TargetRef{APIVersion: a.APIVersion, Kind: a.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}
-		out = append(out, a.scoreAnnotation(ec, ref, value, time.Now()))
-	}
 	if len(out) == 0 {
 		// Carry the same annotation/component details the scored and error results
 		// include, so a NoMatchingObjects skip stays disambiguated when a family
@@ -108,40 +121,16 @@ func (a AnnotationStalenessCheck) evaluateList(ec EvalContext, gv schema.GroupVe
 	return out
 }
 
-// list returns the matched objects, or a single error CheckResult (never both).
-func (a AnnotationStalenessCheck) list(ec EvalContext, gv schema.GroupVersion) ([]unstructured.Unstructured, *adapter.CheckResult) {
-	started := time.Now()
-	listRef := adapter.TargetRef{APIVersion: a.APIVersion, Kind: a.Kind, Name: a.listName()}
-	listGVK := gv.WithKind(a.ListKind)
-
-	if a.ClusterScoped {
-		var list unstructured.UnstructuredList
-		list.SetGroupVersionKind(listGVK)
-		if err := ec.Client.List(ec.Ctx, &list); err != nil {
-			r := result(ec.Family, listRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s: %v", a.Kind, err), a.baseDetails(), started)
-			return nil, &r
-		}
-		return list.Items, nil
-	}
-
-	var items []unstructured.Unstructured
-	for _, ns := range policyNamespaces(ec.Policy, a.DefaultNamespace) {
-		var list unstructured.UnstructuredList
-		list.SetGroupVersionKind(listGVK)
-		if err := ec.Client.List(ec.Ctx, &list, client.InNamespace(ns)); err != nil {
-			r := result(ec.Family, listRef, adapter.OutcomeError, fmt.Sprintf("failed to list %s in %s: %v", a.Kind, namespaceScope(ns), err), a.baseDetails(), started)
-			return nil, &r
-		}
-		items = append(items, list.Items...)
-	}
-	return items, nil
-}
-
 // scoreAnnotation parses the timestamp out of a present annotation value and
 // scores its age against the resolved window. An unparseable timestamp is a
 // Warn (the annotation is held but its age cannot be determined) rather than an
 // Error — the object is reachable, only its payload is unexpected.
 func (a AnnotationStalenessCheck) scoreAnnotation(ec EvalContext, ref adapter.TargetRef, value string, started time.Time) adapter.CheckResult {
+	if ec.runtime && len(value) > limits.MaxAnnotationBytes {
+		err := ec.inputFailure("annotation value exceeds byte limit")
+		return result(ec.Family, ref, adapter.OutcomeError, err.Error(), a.baseDetails(), started)
+	}
+
 	stale := a.StaleOutcome
 	if stale == "" {
 		stale = adapter.OutcomeWarn
