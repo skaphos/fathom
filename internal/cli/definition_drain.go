@@ -99,9 +99,11 @@ func verifyDefinitionDrain(ctx context.Context, reader client.Reader, namespace,
 		if !sameEpoch(epoch, observed) {
 			return nil, &commandError{2, fmt.Errorf("leadership changed during verification")}
 		}
-		if last.Spec.RenewTime.Before(first.Spec.RenewTime) {
-			return nil, &commandError{2, fmt.Errorf("lease renewal regressed")}
-		}
+		// renewTime is a writer-supplied wall-clock value. Even direct,
+		// resource-version-ordered Lease reads can briefly observe it move
+		// backwards within one stable epoch. A lower or equal sample proves
+		// nothing, so keep polling from the original high-water baseline; only
+		// a later strict advance can establish live renewal.
 		if last.Spec.RenewTime.After(first.Spec.RenewTime.Time) {
 			progressed = true
 			break

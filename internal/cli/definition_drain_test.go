@@ -74,6 +74,8 @@ func (r *drainReader) Get(ctx context.Context, key types.NamespacedName, obj cli
 		case r.mode == "stalled":
 		case r.mode == "regressed" && r.leases > 1:
 			target.Spec.RenewTime = &metav1.MicroTime{Time: r.lease.Spec.RenewTime.Add(-time.Second)}
+		case (r.mode == "transient regressed" || r.mode == "regressed transitioned") && r.leases == 2:
+			target.Spec.RenewTime = &metav1.MicroTime{Time: r.lease.Spec.RenewTime.Add(-time.Second)}
 		case r.leases >= progressAt:
 			target.Spec.RenewTime = &metav1.MicroTime{Time: r.lease.Spec.RenewTime.Add(time.Second)}
 		}
@@ -115,12 +117,13 @@ var epochDamage = map[string]struct {
 	after int
 	apply func(observed, first *coordinationv1.Lease)
 }{
-	"recreated":          {1, recreateLease},
-	"final recreated":    {2, recreateLease},
-	"reacquired":         {1, reacquireLease},
-	"final reacquired":   {2, reacquireLease},
-	"transitioned":       {1, transitionLease},
-	"final transitioned": {2, transitionLease},
+	"recreated":              {1, recreateLease},
+	"final recreated":        {2, recreateLease},
+	"reacquired":             {1, reacquireLease},
+	"final reacquired":       {2, reacquireLease},
+	"transitioned":           {1, transitionLease},
+	"regressed transitioned": {1, transitionLease},
+	"final transitioned":     {2, transitionLease},
 }
 
 // recreateLease models a deleted and recreated Lease: a brand new UID behind an
@@ -176,7 +179,8 @@ func TestIndependentDrainVerification(t *testing.T) {
 		{"healthy", 0}, {"denied", 2}, {"stalled", 2}, {"handoff", 2}, {"final handoff", 2}, {"enabled", 1}, {"active", 1}, {"stale generation", 1}, {"old epoch", 2}, {"missing condition", 1},
 		// Added rows: every remaining shape of incomplete, stale or denied
 		// evidence contracts/leadership.md enumerates for the CLI verifier.
-		{"regressed", 2}, {"binding denied", 2}, {"final denied", 2}, {"identity mismatch", 2}, {"missing epoch", 2},
+		{"regressed", 2}, {"transient regressed", 0}, {"regressed transitioned", 2},
+		{"binding denied", 2}, {"final denied", 2}, {"identity mismatch", 2}, {"missing epoch", 2},
 		{"not drained", 1}, {"wrong reason", 1}, {"stale conditions", 1}, {"deleting", 1},
 		// One row per epoch field the contract names, at both fences, plus a
 		// final read that regresses without changing the epoch at all.
@@ -236,11 +240,20 @@ func TestIndependentDrainVerification(t *testing.T) {
 			if tc.mode == "stalled" && reader.leases != 15 {
 				t.Fatal("did not reserve final read")
 			}
-			// A renewTime that moves backwards is its own failure: it must be
-			// reported as a regression on the very read that observed it, not
-			// absorbed into "no progress" after the whole poll budget burns.
-			if tc.mode == "regressed" && (reader.leases != 2 || !strings.Contains(fmt.Sprint(err), "regress")) {
-				t.Fatalf("regressed renewal: reads=%d err=%v; want a regression failure on read 2", reader.leases, err)
+			// A permanently regressed renewTime contributes no liveness proof
+			// and exhausts the bounded polling window. A transient lower sample
+			// is tolerated only after a later value strictly exceeds the original
+			// baseline, while an epoch change on that lower sample still fails
+			// immediately.
+			if tc.mode == "regressed" && (reader.leases != definitions.MaxDrainLeaseReads-1 ||
+				!strings.Contains(fmt.Sprint(err), "no progressing lease renewal")) {
+				t.Fatalf("permanently regressed renewal: reads=%d err=%v", reader.leases, err)
+			}
+			if tc.mode == "transient regressed" && (reader.leases != 4 || reader.bindings != 1) {
+				t.Fatalf("transient regression recovery: leases=%d bindings=%d, want 4 and 1", reader.leases, reader.bindings)
+			}
+			if tc.mode == "regressed transitioned" && (reader.leases != 2 || reader.bindings != 0) {
+				t.Fatalf("epoch change on lower sample: leases=%d bindings=%d, want 2 and 0", reader.leases, reader.bindings)
 			}
 		})
 	}
