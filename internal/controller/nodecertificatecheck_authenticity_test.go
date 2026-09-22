@@ -15,6 +15,7 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,6 +42,32 @@ func reportWriterClient(namespace, serviceAccount, claimNode string) client.Clie
 	c, err := client.New(impersonated, client.Options{Scheme: k8sClient.Scheme()})
 	Expect(err).NotTo(HaveOccurred())
 	return c
+}
+
+func reportWriterCan(namespace, serviceAccount, verb, name string) (bool, error) {
+	review := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
+		User: "system:serviceaccount:" + namespace + ":" + serviceAccount,
+		ResourceAttributes: &authorizationv1.ResourceAttributes{
+			Namespace: namespace, Verb: verb, Resource: "configmaps", Name: name,
+		},
+	}}
+	if err := k8sClient.Create(ctx, review); err != nil {
+		return false, err
+	}
+	return review.Status.Allowed, nil
+}
+
+func reportAuthenticityAdmissionDeniesIdentityChange(ctx context.Context, writer client.Client, key client.ObjectKey) (bool, error) {
+	current := &corev1.ConfigMap{}
+	if err := k8sClient.Get(ctx, key, current); err != nil {
+		return false, err
+	}
+	delete(current.Labels, nodecert.LabelManagedBy)
+	err := writer.Update(ctx, current, client.DryRunAll)
+	if err == nil || !apierrors.IsForbidden(err) {
+		return false, err
+	}
+	return strings.Contains(err.Error(), "identity must not change after creation"), nil
 }
 
 // writeReportWithAnnotation writes a per-node report ConfigMap where the payload's
@@ -359,8 +386,23 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 			// Grant this deliberately non-canonical fixture's name so every update
 			// reaches admission; these assertions exercise the policy, not RBAC.
 			Expect(ensureScopedReportRBAC(ctx, k8sClient, k8sClient.Scheme(), check, agentLabels(check), serviceAccount, []string{cm.Name})).To(Succeed())
+			// The API server's RBAC authorizer may observe a new RoleBinding just
+			// after its storage write completes. Wait for the exact create and
+			// update grants before using it so a propagation race cannot mask
+			// the admission assertions below.
+			Eventually(func(g Gomega) {
+				createAllowed, err := reportWriterCan(check.Namespace, serviceAccount, "create", "")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(createAllowed).To(BeTrue())
+				updateAllowed, err := reportWriterCan(check.Namespace, serviceAccount, "update", cm.Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updateAllowed).To(BeTrue())
+			}).Within(5 * time.Second).Should(Succeed())
 			Expect(writer("node-a").Create(ctx, cm)).To(Succeed())
 			DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cm))).To(Succeed()) })
+			Eventually(func() (bool, error) {
+				return reportAuthenticityAdmissionDeniesIdentityChange(ctx, writer("node-b"), client.ObjectKeyFromObject(cm))
+			}).Within(5 * time.Second).Should(BeTrue())
 
 			mutations := []struct {
 				name   string

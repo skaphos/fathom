@@ -292,10 +292,9 @@ spec:
 			g.Expect(status.ObservedGeneration).To(Equal(quiesced.Generation))
 			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastRunTime).NotTo(BeNil())
-			g.Expect(status.LastRunTime.Time).To(BeTemporally(">", initial.LastRunTime.Time))
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
-			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
-				To(BeTemporally(">", initial.LastSuccessfulEvaluation.ObservedAt.Time))
+			g.Expect(status.LastSuccessfulEvaluation.Authority.CheckUID).To(Equal(string(quiesced.UID)))
+			g.Expect(status.LastSuccessfulEvaluation.Authority.CheckGeneration).To(Equal(quiesced.Generation))
 		}, 2*time.Minute, time.Second).Should(Succeed())
 
 		beforeInvalid := definitionE2ECheckStatus()
