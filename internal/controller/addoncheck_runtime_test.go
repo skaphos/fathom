@@ -2041,6 +2041,104 @@ func TestRatioThresholdedEvidenceUsesTheFamilyAwareAggregate(t *testing.T) {
 	}
 }
 
+// Runtime work is queued from a cached reconcile and may execute after the
+// policy changes. The uncached pre-run fence must validate that fresh policy
+// before Adapter.Run, retain prior evidence/history, and attribute the
+// InvalidPolicy conditions to the generation it actually read.
+func TestRuntimePolicyIsValidatedOnTheFencedCheckBeforeRun(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	if _, name := f.runAndRecord(); name == "" {
+		t.Fatal("the seed run created no history entry")
+	}
+	beforeEvidence := f.evidence().DeepCopy()
+	beforeReports := f.reports()
+	_, _, _, beforeRuns := f.counters()
+
+	queued := f.check()
+	invalid := queued.DeepCopy()
+	invalid.Generation = 2
+	invalid.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+		Enabled: ptr.To(false),
+		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+			adapter.ThresholdKeyFailRatio: "150",
+		},
+	}
+	f.update(invalid)
+
+	attempt, err := f.runner.Run(context.Background(), queued)
+	if err != nil {
+		t.Fatalf("runtime check run: %v", err)
+	}
+	if attempt.Completed || attempt.Published || attempt.Reason != reasonInvalidPolicy {
+		t.Fatalf("attempt = %+v, want an unpublished %s refusal", attempt, reasonInvalidPolicy)
+	}
+	if disposition := runtimeDisposition(attempt); disposition != execution.MissingInput {
+		t.Fatalf("InvalidPolicy disposition = %v, want MissingInput pacing", disposition)
+	}
+	_, _, _, afterRuns := f.counters()
+	if afterRuns != beforeRuns {
+		t.Fatalf("invalid fenced policy ran the adapter %d additional times", afterRuns-beforeRuns)
+	}
+	got := f.check()
+	accepted := apiMeta.FindStatusCondition(got.Status.Conditions, addonCheckConditionAccepted)
+	if accepted == nil || accepted.Status != metav1.ConditionFalse || accepted.Reason != reasonInvalidPolicy || accepted.ObservedGeneration != 2 {
+		t.Fatalf("Accepted = %+v, want False/%s at generation 2", accepted, reasonInvalidPolicy)
+	}
+	ready := runtimeReadyCondition(t, got)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != reasonInvalidPolicy || ready.ObservedGeneration != 2 {
+		t.Fatalf("Ready = %+v, want False/%s at generation 2", ready, reasonInvalidPolicy)
+	}
+	if !equality.Semantic.DeepEqual(got.Status.LastSuccessfulEvaluation, beforeEvidence) {
+		t.Fatalf("invalid policy replaced prior evidence: got %+v, want %+v", got.Status.LastSuccessfulEvaluation, beforeEvidence)
+	}
+	if reports := f.reports(); !equality.Semantic.DeepEqual(reports, beforeReports) {
+		t.Fatalf("invalid policy changed history: got %d reports, want unchanged %d", len(reports), len(beforeReports))
+	}
+
+	corrected := got.DeepCopy()
+	corrected.Generation = 3
+	corrected.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+		Enabled: ptr.To(true),
+		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+			adapter.ThresholdKeyFailRatio: "10",
+		},
+	}
+	f.update(corrected)
+	f.script(func(context.Context, adapter.Request) (adapter.Result, error) {
+		return adapter.Result{}, errors.New("ExecutionFailed: target API is unavailable")
+	})
+	failed := f.runOK()
+	if failed.Completed || failed.Published || failed.Reason != "ExecutionFailed" {
+		t.Fatalf("corrected policy execution failure = %+v, want an unpublished ExecutionFailed attempt", failed)
+	}
+	failedCheck := f.check()
+	accepted = apiMeta.FindStatusCondition(failedCheck.Status.Conditions, addonCheckConditionAccepted)
+	if accepted == nil || accepted.Status != metav1.ConditionTrue || accepted.Reason != "SpecAccepted" || accepted.ObservedGeneration != 3 {
+		t.Fatalf("Accepted after corrected policy execution failure = %+v, want True/SpecAccepted at generation 3", accepted)
+	}
+	ready = runtimeReadyCondition(t, failedCheck)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "ExecutionFailed" || ready.ObservedGeneration != 3 {
+		t.Fatalf("Ready after corrected policy execution failure = %+v, want False/ExecutionFailed at generation 3", ready)
+	}
+	if !equality.Semantic.DeepEqual(failedCheck.Status.LastSuccessfulEvaluation, beforeEvidence) {
+		t.Fatalf("corrected policy execution failure replaced prior evidence: got %+v, want %+v", failedCheck.Status.LastSuccessfulEvaluation, beforeEvidence)
+	}
+	if reports := f.reports(); !equality.Semantic.DeepEqual(reports, beforeReports) {
+		t.Fatalf("corrected policy execution failure changed history: got %d reports, want unchanged %d", len(reports), len(beforeReports))
+	}
+
+	f.script(nil)
+	if recovered := f.runOK(); !recovered.Completed || !recovered.Published {
+		t.Fatalf("corrected ratio policy did not complete: %+v", recovered)
+	}
+	recovered := f.check()
+	accepted = apiMeta.FindStatusCondition(recovered.Status.Conditions, addonCheckConditionAccepted)
+	if accepted == nil || accepted.Status != metav1.ConditionTrue || accepted.Reason != "SpecAccepted" || accepted.ObservedGeneration != 3 {
+		t.Fatalf("recovered Accepted = %+v, want True/SpecAccepted at generation 3", accepted)
+	}
+}
+
 // A check-level Error cannot reach this package: runtime.SealResult rejects a
 // result carrying one as ExecutionFailed before evidence is ever sealed. That
 // is asserted here rather than assumed, because the narrow evidence enum

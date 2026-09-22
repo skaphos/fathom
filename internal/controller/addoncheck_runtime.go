@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -93,6 +94,9 @@ const (
 	// this is recorded as an attempt error and the previous observation is
 	// preserved ("Attempt Error still preserves previous completed evidence").
 	reasonIncompleteEvaluation = "IncompleteEvaluation"
+	// reasonInvalidPolicy marks an AddonCheck policy rejected against the exact
+	// runtime adapter and check generation captured by the pre-run fence.
+	reasonInvalidPolicy = "InvalidPolicy"
 )
 
 // Status text bounds. contracts/runtime.md: "Strings ≤1,024 UTF-8 bytes and
@@ -250,6 +254,14 @@ type RuntimeAttempt struct {
 	// from the manager cache, which can lag behind this publication.
 	publication      *fathomv1alpha1.AddonCheck
 	previousEvidence *fathomv1alpha1.AddonCheckEvidence
+	// recordBase is the uncached, fenced AddonCheck whose resourceVersion and
+	// generation an early refusal describes. Nil uses the caller's check.
+	recordBase *fathomv1alpha1.AddonCheck
+	// policyValidated asks record to publish policy acceptance through the same
+	// epoch-checked status CAS: false with policyErrs for InvalidPolicy, or true
+	// with no errors when execution failed after validation succeeded.
+	policyValidated bool
+	policyErrs      []string
 	// Reason and Message are the operator-visible outcome, chosen by the
 	// publication precedence order.
 	Reason  string
@@ -328,7 +340,11 @@ func (r *AddonCheckRuntimeRunner) Run(ctx context.Context, check *fathomv1alpha1
 		// place completed evidence is written.
 		return attempt, nil
 	}
-	if err := r.record(ctx, check, attempt); err != nil {
+	recordBase := check
+	if attempt.recordBase != nil {
+		recordBase = attempt.recordBase
+	}
+	if err := r.record(ctx, recordBase, attempt); err != nil {
 		return attempt, err
 	}
 	return attempt, nil
@@ -434,6 +450,17 @@ func (r *AddonCheckRuntimeRunner) execute(ctx context.Context, check *fathomv1al
 		// nothing is written.
 		return r.discarded(budget, err), nil
 	}
+	if policyErrs := validateAddonCheckPolicy(fenced, resolution.Adapter); len(policyErrs) > 0 {
+		return RuntimeAttempt{
+			Fence:           fence,
+			Reason:          reasonInvalidPolicy,
+			Message:         "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + ".",
+			Requeue:         runtimeFenceRequeue,
+			recordBase:      fenced,
+			policyValidated: true,
+			policyErrs:      append([]string(nil), policyErrs...),
+		}, nil
+	}
 	r.hold(ctx, runtimeBarrierAfterPreFence)
 
 	attempt := execution.Execute(budget,
@@ -451,7 +478,15 @@ func (r *AddonCheckRuntimeRunner) execute(ctx context.Context, check *fathomv1al
 		}, release)
 	r.hold(ctx, runtimeBarrierAfterExecute)
 
-	return r.finalFence(ctx, budget, clients, fence, addonType, targets.Check, attempt)
+	result, err := r.finalFence(ctx, budget, clients, fence, addonType, targets.Check, attempt)
+	if !result.Completed {
+		// A failed evaluation still proved that this exact fenced policy is
+		// accepted. Record from the fenced resourceVersion so a later spec edit
+		// wins the CAS and never inherits that conclusion.
+		result.recordBase = fenced
+		result.policyValidated = true
+	}
+	return result, err
 }
 
 // preRunFence resolves live authority and captures the exact context this run
@@ -846,6 +881,7 @@ func (r *AddonCheckRuntimeRunner) publish(
 		Reason:             reasonRunCompleted,
 		Message:            boundedText(message, addonCheckStatusTextLimit),
 	})
+	setAddonCheckAccepted(published, nil)
 	if equality.Semantic.DeepEqual(fenced.Status, published.Status) {
 		// Nothing changed, not even a timestamp: rewriting it would churn
 		// resourceVersion and re-trigger the very watch that scheduled this run.
@@ -914,6 +950,9 @@ func (r *AddonCheckRuntimeRunner) record(
 	recorded.Status.LatestAttemptReason = boundedText(attempt.Reason, addonCheckStatusReasonLimit)
 	recorded.Status.LatestAttemptMessage = boundedText(attempt.Message, addonCheckStatusTextLimit)
 	setAddonCheckFreshness(recorded, attempt.Reason, now)
+	if attempt.policyValidated {
+		setAddonCheckAccepted(recorded, attempt.policyErrs)
+	}
 	apiMeta.SetStatusCondition(&recorded.Status.Conditions, metav1.Condition{
 		Type:   addonCheckConditionReady,
 		Status: metav1.ConditionFalse,

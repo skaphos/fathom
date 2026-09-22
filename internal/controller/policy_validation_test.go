@@ -270,4 +270,17 @@ func TestSetAddonCheckAccepted(t *testing.T) {
 	if !strings.Contains(cond.Message, `unknown family "bogus"`) {
 		t.Errorf("message missing problem: %q", cond.Message)
 	}
+
+	// Runtime status uses the same helper, and status text is bounded to 1,024
+	// UTF-8 bytes. A full policy can report many independent problems, so the
+	// combined condition must be bounded before the API server sees it.
+	problems := make([]string, 32)
+	for i := range problems {
+		problems[i] = strings.Repeat("x", 64)
+	}
+	setAddonCheckAccepted(check, problems)
+	cond = apiMeta.FindStatusCondition(check.Status.Conditions, addonCheckConditionAccepted)
+	if got := len(cond.Message); got > addonCheckStatusTextLimit {
+		t.Fatalf("Accepted message is %d bytes, want at most %d", got, addonCheckStatusTextLimit)
+	}
 }

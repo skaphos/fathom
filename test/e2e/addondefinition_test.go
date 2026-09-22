@@ -273,6 +273,88 @@ spec:
 		Eventually(definitionE2EReportCount, time.Minute, 3*time.Second).Should(Equal(1),
 			"first completed Pass should create one transition report")
 		passReports = 1
+
+		By("rejecting a stored invalid ratio policy before runtime evaluation and recovering on correction")
+		initial := definitionE2ECheckStatus()
+		Expect(initial.LastRunTime).NotTo(BeNil())
+		Expect(initial.LastSuccessfulEvaluation).NotTo(BeNil())
+		// Move the periodic run out of the test window, then wait for the
+		// generation-triggered valid run to finish. This makes the baseline
+		// independent of the prior 10-second cadence and leaves no valid run in
+		// flight when the invalid generation is stored.
+		out, err := utils.Run(exec.Command("kubectl", "patch", "addoncheck", definitionE2EName,
+			"-n", definitionE2ENS, "--type=merge", "-p", `{"spec":{"interval":"5m"}}`))
+		Expect(err).NotTo(HaveOccurred(), out)
+		var quiesced fathomv1alpha1.AddonCheck
+		definitionE2EGetJSON(&quiesced, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
+		Eventually(func(g Gomega) {
+			status := definitionE2ECheckStatus()
+			g.Expect(status.ObservedGeneration).To(Equal(quiesced.Generation))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LastRunTime).NotTo(BeNil())
+			g.Expect(status.LastRunTime.Time).To(BeTemporally(">", initial.LastRunTime.Time))
+			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
+			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
+				To(BeTemporally(">", initial.LastSuccessfulEvaluation.ObservedAt.Time))
+		}, 2*time.Minute, time.Second).Should(Succeed())
+
+		beforeInvalid := definitionE2ECheckStatus()
+		beforeInvalidRun := beforeInvalid.LastRunTime.DeepCopy()
+		beforeInvalidEvidence := beforeInvalid.LastSuccessfulEvaluation.DeepCopy()
+		beforeInvalidReports := definitionE2EReportCount()
+		out, err = utils.Run(exec.Command("kubectl", "patch", "addoncheck", definitionE2EName,
+			"-n", definitionE2ENS, "--type=merge", "-p",
+			`{"spec":{"policy":{"health":{"thresholds":{"failRatio":"150"}}}}}`))
+		Expect(err).NotTo(HaveOccurred(), out)
+		var invalid fathomv1alpha1.AddonCheck
+		definitionE2EGetJSON(&invalid, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
+		Eventually(func(g Gomega) {
+			status := definitionE2ECheckStatus()
+			g.Expect(status.ObservedGeneration).To(Equal(invalid.Generation))
+			g.Expect(status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Accepted"), HaveField("Status", metav1.ConditionFalse),
+				HaveField("Reason", "InvalidPolicy"))))
+			g.Expect(status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse),
+				HaveField("Reason", "InvalidPolicy"))))
+			g.Expect(status.LastRunTime).To(Equal(beforeInvalidRun))
+			g.Expect(status.LastSuccessfulEvaluation).To(Equal(beforeInvalidEvidence))
+			g.Expect(definitionE2EReportCount()).To(Equal(beforeInvalidReports))
+		}, 2*time.Minute, time.Second).Should(Succeed())
+		Consistently(func(g Gomega) {
+			status := definitionE2ECheckStatus()
+			g.Expect(status.LastRunTime).To(Equal(beforeInvalidRun))
+			g.Expect(status.LastSuccessfulEvaluation).To(Equal(beforeInvalidEvidence))
+			g.Expect(definitionE2EReportCount()).To(Equal(beforeInvalidReports))
+		}, 8*time.Second, time.Second).Should(Succeed(),
+			"the invalid stored ratio policy produced runtime evidence or history")
+
+		// failRatio=0 is valid engine policy and preserves worst-of behavior for
+		// the later lifecycle scenarios while restoring the normal cadence.
+		out, err = utils.Run(exec.Command("kubectl", "patch", "addoncheck", definitionE2EName,
+			"-n", definitionE2ENS, "--type=merge", "-p",
+			`{"spec":{"interval":"10s","policy":{"health":{"thresholds":{"failRatio":"0"}}}}}`))
+		Expect(err).NotTo(HaveOccurred(), out)
+		var corrected fathomv1alpha1.AddonCheck
+		definitionE2EGetJSON(&corrected, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
+		Eventually(func(g Gomega) {
+			status := definitionE2ECheckStatus()
+			g.Expect(status.ObservedGeneration).To(Equal(corrected.Generation))
+			g.Expect(status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Accepted"), HaveField("Status", metav1.ConditionTrue))))
+			g.Expect(status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionTrue))))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LastRunTime).NotTo(BeNil())
+			g.Expect(status.LastRunTime.Time).To(BeTemporally(">", beforeInvalidRun.Time))
+			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).
+				To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
+				To(BeTemporally(">", beforeInvalidEvidence.ObservedAt.Time))
+		}, 2*time.Minute, time.Second).Should(Succeed())
+		Expect(definitionE2EReportCount()).To(Equal(beforeInvalidReports),
+			"same-verdict recovery must not add transition history")
 	})
 
 	It("fences delegated discovery, timeout, revocation and valid edits without manager fallback", func() {

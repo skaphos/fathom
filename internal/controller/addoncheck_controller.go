@@ -267,7 +267,11 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			ready.Message = "AddonCheck policy is invalid; adapter execution is skipped until it is corrected."
 		}
 		apiMeta.SetStatusCondition(&check.Status.Conditions, ready)
-	} else {
+	} else if !runtimeBacked {
+		// Runtime-backed checks publish Accepted from the worker after validating
+		// the uncached, fenced check against the exact snapshot that would run.
+		// Rewriting it from this cached reconcile would both misattribute policy
+		// validation and churn an InvalidPolicy check between true and false.
 		setAddonCheckAccepted(&check, nil)
 	}
 
@@ -726,6 +730,7 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 func runtimeDisposition(attempt RuntimeAttempt) execution.Disposition {
 	switch attempt.Reason {
 	case reasonUnknownAddonType,
+		reasonInvalidPolicy,
 		reasonAuthorizationUnavailable,
 		reasonAuthorizationRevoked,
 		reasonDefinitionUnavailable,
@@ -1049,7 +1054,7 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 	if len(policyErrs) > 0 {
 		cond.Status = metav1.ConditionFalse
 		cond.Reason = "InvalidPolicy"
-		cond.Message = "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + "."
+		cond.Message = boundedText("AddonCheck policy is invalid: "+strings.Join(policyErrs, "; ")+".", addonCheckStatusTextLimit)
 	} else if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
 		cond.Reason = conditionReasonSpecClamped
 		cond.Message = strings.Join(msgs, "; ") + "."

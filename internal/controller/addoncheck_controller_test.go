@@ -1455,6 +1455,44 @@ func TestReconcileEnqueuesRuntimeChecksInsteadOfRunningThemInline(t *testing.T) 
 	}
 }
 
+// Accepted for a runtime identity belongs to the worker's uncached policy
+// validation. A cached reconcile may enqueue the next run, but it must not
+// turn a worker-published InvalidPolicy back into SpecAccepted and create a
+// self-triggering true/false status loop.
+func TestReconcilePreservesRuntimeWorkerPolicyConditions(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	invalid := f.check()
+	invalid.Generation = 2
+	invalid.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+			adapter.ThresholdKeyFailRatio: "150",
+		},
+	}
+	f.update(invalid)
+	if attempt := f.runOK(); attempt.Reason != reasonInvalidPolicy {
+		t.Fatalf("worker attempt = %+v, want %s", attempt, reasonInvalidPolicy)
+	}
+
+	queue := &fakeRuntimeQueue{}
+	r := runtimeWiredReconciler(f, queue)
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	accepted := apiMeta.FindStatusCondition(f.check().Status.Conditions, addonCheckConditionAccepted)
+	if accepted == nil || accepted.Status != metav1.ConditionFalse || accepted.Reason != reasonInvalidPolicy || accepted.ObservedGeneration != 2 {
+		t.Fatalf("Accepted after cached reconcile = %+v, want worker-owned False/%s at generation 2", accepted, reasonInvalidPolicy)
+	}
+	_, _, writesBefore, _ := f.counters()
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	_, _, writesAfter, _ := f.counters()
+	if writesAfter != writesBefore {
+		t.Fatalf("unchanged invalid runtime policy caused %d extra status writes", writesAfter-writesBefore)
+	}
+}
+
 // The same reconcile, with runtime loading off. This is the default-off
 // property stated as behaviour rather than as configuration: nothing is
 // enqueued, and the answer is the one the operator has always given.

@@ -1612,3 +1612,22 @@ resolved #256 decision; see [draft PR #351](https://github.com/skaphos/fathom/pu
 The feature's 105/105 result,
 operations record and component/live test split remain the current feature
 evidence.
+
+### Runtime policy validation review — 2026-09-22
+
+Qualification commit `04f88ca` and signed merge commit `1cf52bb` (bringing in
+compatibility commit `a7e3a3e` from [#351](https://github.com/skaphos/fathom/pull/351))
+were recorded for the feature review. Before the current policy correction,
+combined CI, coverage, generated-output checks, REUSE (754 files) and race tests
+passed. A full Kind attempt was interrupted during addon setup, before any spec
+ran, after an independent review found the runtime-policy validation bypass. This
+is neither a failed test nor a passed full suite; the owned
+`fathom-feature012-contract11` cluster was removed. Raw logs remain under
+`/tmp/fathom-feature012-contract11*.log`.
+
+The reproducer admitted policy 150, but runtime bypassed its validation gate and
+the aggregate ignored the parse error. The correction is underway: resolve and
+fresh-fence the policy, invoke shared validation before execution, publish
+`Accepted=False/InvalidPolicy`, preserve prior evidence and recover with a valid
+policy. Component and live verification are still required; no verification
+claim is made. T054 and T059 remain open, and this finding is tracked as T064.
