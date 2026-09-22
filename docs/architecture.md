@@ -385,7 +385,7 @@ registers every built-in adapter at startup via `builtInAdapters()`.
 At registration, `Registry.Register` calls
 `adapter.EnsureCompatible(a.ContractVersion())` (`pkg/adapter/version.go`). The
 host contract version is the constant `adapter.ContractVersion` (currently
-`1.0.0`). Compatibility rules:
+`1.1.0`). Compatibility rules:
 
 - `>= 1.0.0`: same major version, and the adapter's minor must not exceed the
   host's (a newer-minor adapter may rely on contract surface the host lacks).
@@ -396,6 +396,10 @@ An adapter that reports an incompatible contract version is rejected at
 registration, so the operator fails fast at startup rather than at reconcile
 time. Registration also rejects nil adapters and adapters advertising no add-on
 types, and treats a fully-overlapping re-registration as an idempotent no-op.
+Compatible older-minor adapters remain loadable, but feature-specific policy
+validation can require a newer minor. In particular, the engine-reserved
+`warnRatio` and `failRatio` keys require adapter contract 1.1.0 or newer; a
+ratio-bearing policy for a 1.0 adapter is rejected before `Run`.
 
 ### Built-in adapters
 

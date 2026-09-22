@@ -18,6 +18,10 @@ import (
 // exempts them from [ThresholdAdvertiser] key validation; adapters must not
 // consume or advertise them.
 const (
+	// RatioThresholdsContractVersion is the first adapter contract that
+	// reserves warnRatio and failRatio for engine-level aggregation. Older 1.x
+	// adapters remain compatible unless a policy configures either key.
+	RatioThresholdsContractVersion = "1.1.0"
 	// ThresholdKeyWarnRatio holds the warn-level ratio threshold: the family
 	// verdict is at least Warn when the degraded (Warn+Fail) fraction of the
 	// evaluated population strictly exceeds this percentage.
@@ -27,6 +31,14 @@ const (
 	// population strictly exceeds this percentage.
 	ThresholdKeyFailRatio = "failRatio"
 )
+
+// SupportsRatioThresholds reports whether an adapter contract recognizes
+// warnRatio and failRatio as engine-reserved keys. It is intentionally based
+// only on the reported contract version: ThresholdAdvertiser is optional and
+// cannot prove that an older adapter does not privately consume these names.
+func SupportsRatioThresholds(reportedContractVersion string) bool {
+	return contractVersionAtLeast(reportedContractVersion, RatioThresholdsContractVersion)
+}
 
 // RatioPercent is a percentage threshold parsed from a reserved ratio key.
 // It is held in hundredths of a percent so verdict comparisons are

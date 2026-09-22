@@ -18,10 +18,15 @@ SPDX-License-Identifier: MIT
 // adapters) and adapters each report a contract version; an adapter is
 // considered compatible with a Fathom build when the two share a major
 // component and the adapter's minor does not exceed the host's. Minor and
-// patch releases are additive: an adapter built against 1.0.0 keeps working
-// on any 1.x host, while an adapter targeting a newer minor than the host is
-// rejected (it may rely on surface the host lacks). Use [EnsureCompatible] to
-// validate an adapter's reported contract version before invoking it.
+// patch releases are load-compatible at registration: an adapter built against
+// 1.0.0 keeps working on a 1.x host for policies without newly reserved keys,
+// while an adapter targeting a newer minor than the host is rejected (it may
+// rely on surface the host lacks). Feature-specific policy validation may
+// require a minimum minor before use; policies using warnRatio or failRatio
+// require adapter contract 1.1.0 or later so older private meanings cannot be
+// reinterpreted. Use
+// [EnsureCompatible] to validate an adapter's reported contract version before
+// invoking it.
 //
 // The current contract version is exported as [ContractVersion].
 //
@@ -61,6 +66,7 @@ SPDX-License-Identifier: MIT
 //
 // The current contract version is [ContractVersion]. From 1.0.0 the contract
 // is a stable public extension point: breaking changes require a major bump,
-// and minor/patch releases only add surface (new Request fields, new optional
-// interfaces) that existing adapters may ignore.
+// and minor/patch releases preserve registration compatibility. New surface may
+// be ignored; feature-specific policy validation gates newly reserved host keys
+// from older adapters before Run.
 package adapter

@@ -570,8 +570,13 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 // unregistered addonType), since the valid family set is not yet known; selector
 // validation is adapter-independent and always runs. Threshold keys are
 // validated only when the adapter implements [adapter.ThresholdAdvertiser]
-// and advertises keys for the family; threshold values remain adapter-private
-// and are never validated here.
+// and advertises keys for the family.
+//
+// The reserved engine keys warnRatio and failRatio are the one exception to
+// threshold values being adapter-private: they are parsed here, and rejected
+// outright when the selected adapter predates contract
+// [adapter.RatioThresholdsContractVersion]. Every other threshold value remains
+// adapter-private and is never validated here.
 func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) []string {
 	if len(check.Spec.Policy) == 0 {
 		return nil
@@ -609,7 +614,15 @@ func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter 
 			}
 		}
 		thresholds := thresholdStringMap(check.Spec.Policy[family].Thresholds)
-		if _, err := adapter.ParseRatioThresholds(thresholds); err != nil {
+		_, warnRatioConfigured := thresholds[adapter.ThresholdKeyWarnRatio]
+		_, failRatioConfigured := thresholds[adapter.ThresholdKeyFailRatio]
+		ratioConfigured := warnRatioConfigured || failRatioConfigured
+		if ratioConfigured && selectedAdapter != nil && !adapter.SupportsRatioThresholds(selectedAdapter.ContractVersion()) {
+			problems = append(problems, fmt.Sprintf(
+				"family %q configures engine ratio thresholds, but adapter %q uses contract version %s; warnRatio and failRatio require contract version %s or newer (rename legacy private keys and rebuild the adapter before using engine ratio thresholds)",
+				family, selectedAdapter.Name(), selectedAdapter.ContractVersion(), adapter.RatioThresholdsContractVersion,
+			))
+		} else if _, err := adapter.ParseRatioThresholds(thresholds); err != nil {
 			problems = append(problems, fmt.Sprintf("family %q has an invalid ratio threshold: %v", family, err))
 		}
 		problems = append(problems, unknownThresholdKeys(family, thresholds, advertised)...)

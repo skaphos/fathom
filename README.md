@@ -186,6 +186,10 @@ reason `InvalidPolicy` before anything runs):
   budget, so it is enforced here instead.
 - Threshold semantics: the 0–100 range of `warnRatio`/`failRatio` and
   cross-key rules.
+- Adapter contract coordination: either ratio key requires adapter contract
+  `1.1.0` or newer. An older 1.0 adapter still loads and runs policies without
+  these keys, but a ratio-bearing policy is rejected before the adapter runs so
+  a formerly private threshold meaning cannot be reinterpreted by the engine.
 
 ## DNS checks
 

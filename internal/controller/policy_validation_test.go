@@ -83,6 +83,10 @@ type fakeAdvertisingAdapter struct {
 
 func (f fakeAdvertisingAdapter) ThresholdKeys() map[adapter.Family][]string { return f.keys }
 
+type legacyAdvertisingAdapter struct{ fakeAdvertisingAdapter }
+
+func (legacyAdvertisingAdapter) ContractVersion() string { return "1.0.0" }
+
 func TestValidateAddonCheckPolicy_ThresholdKeys(t *testing.T) {
 	advertising := fakeAdvertisingAdapter{
 		fakePolicyAdapter: fakePolicyAdapter{families: []adapter.Family{"system_health", "cert_health"}},
@@ -174,6 +178,10 @@ func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
 		keys:              map[adapter.Family][]string{"system_health": {"restartWarnCount"}},
 	}
 	plain := fakePolicyAdapter{families: []adapter.Family{"system_health"}}
+	legacy := legacyAdvertisingAdapter{fakeAdvertisingAdapter{
+		fakePolicyAdapter: fakePolicyAdapter{families: []adapter.Family{"system_health"}},
+		keys:              map[adapter.Family][]string{"system_health": {"warnRatio", "failRatio"}},
+	}}
 
 	tests := []struct {
 		name         string
@@ -196,6 +204,16 @@ func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
 			"reserved keys coexist with advertised adapter keys",
 			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3", "failRatio": "5"}}},
 			advertising, 0, nil,
+		},
+		{
+			"warnRatio is rejected for a legacy adapter even when it advertises the key",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "5"}}},
+			legacy, 1, []string{"adapter \"fake\" uses contract version 1.0.0", "warnRatio and failRatio require contract version 1.1.0 or newer"},
+		},
+		{
+			"an empty reserved value still requires the new contract for a legacy adapter",
+			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": ""}}},
+			legacy, 1, []string{"adapter \"fake\" uses contract version 1.0.0", "warnRatio and failRatio require contract version 1.1.0 or newer"},
 		},
 		{
 			"non-numeric ratio value rejected, naming family and key",
