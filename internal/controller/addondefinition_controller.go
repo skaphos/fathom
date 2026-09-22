@@ -145,13 +145,24 @@ func (r *AddonDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := r.writeStatus(ctx, &def, accepted, ready); err != nil {
 		return ctrl.Result{}, err
 	}
-	if retry == nil {
+	if retry == nil && !r.builtinClaimsIdentity(def.Name) {
 		// Startup's direct-read reservation outlives informer sync. Release it
 		// only after this UID's current eligibility was established and status
-		// was published; transient control-plane reads retain the barrier.
+		// was published; transient control-plane reads retain the barrier. A
+		// live definition whose name is claimed by a built-in keeps the collision
+		// reservation regardless of eligibility. Only a later direct not-found
+		// observation can prove that stored claim has gone away.
 		r.Registry.ReleaseStartupClaim(def.Name, def.UID, def.Generation)
 	}
 	return result, retry
+}
+
+func (r *AddonDefinitionReconciler) builtinClaimsIdentity(addonType string) bool {
+	inventory := definitions.BuiltinNames()
+	if r.Builtins != nil {
+		inventory = r.Builtins()
+	}
+	return identityShippedAsBuiltin(inventory, addonType) || r.Registry.BuiltinClaims(addonType)
 }
 
 // evaluate decides eligibility and performs the registry side effects. It

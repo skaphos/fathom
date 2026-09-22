@@ -151,6 +151,14 @@ func (r *Registry) builtin(addonType string) (adapter.Adapter, bool) {
 	return a, ok
 }
 
+// BuiltinClaims reports whether a registered built-in adapter owns addonType.
+// It does not resolve dispatch, so startup reservations and admission state
+// cannot obscure the underlying ownership decision.
+func (r *Registry) BuiltinClaims(addonType string) bool {
+	_, claimed := r.builtin(addonType)
+	return claimed
+}
+
 // Capabilities returns a snapshot of every registered adapter's capabilities,
 // keyed by [adapter.Adapter.Name]. The returned maps and slices are safe for
 // the caller to retain; mutation will not affect the registry.

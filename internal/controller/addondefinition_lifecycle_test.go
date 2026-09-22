@@ -458,34 +458,40 @@ func TestValidDefinitionActivatesOnlyAfterValidBindingAndCompilation(t *testing.
 	}
 }
 
-func TestStartupReservationReleasesAfterTerminalEligibility(t *testing.T) {
+func TestLiveBuiltinDefinitionRetainsStartupCollisionWithoutEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		def  *fathomv1alpha1.AddonDefinition
+		objs []client.Object
 	}{
-		{name: "missing binding", def: lifecycleDefinition()},
-		{name: "invalid stored revision", def: func() *fathomv1alpha1.AddonDefinition {
+		{name: "missing binding", objs: []client.Object{lifecycleDefinition()}},
+		{name: "invalid binding", objs: []client.Object{lifecycleDefinition(), func() *fathomv1alpha1.AddonDefinitionBinding {
+			binding := lifecycleBinding()
+			binding.Spec.DefinitionRef.UID = "a-different-definition"
+			return binding
+		}(), lifecycleServiceAccount()}},
+		{name: "invalid stored revision", objs: []client.Object{func() *fathomv1alpha1.AddonDefinition {
 			def := lifecycleDefinition()
 			def.Spec.SemanticsVersion = 0
 			return def
-		}()},
+		}()}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newLifecycleFixture(t, tc.def)
+			f := newLifecycleFixture(t, tc.objs...)
 			if err := f.registry.Register(lifecycleStubAdapter{name: "builtin", addonTypes: []string{lifecycleAddon}}); err != nil {
 				t.Fatal(err)
 			}
 			f.registry.ReserveStartupClaims([]string{lifecycleAddon})
 			f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
 			f.reconcileDefinitionOK(lifecycleAddon)
-			if claims := f.registry.StartupClaims(); len(claims) != 0 {
-				t.Fatalf("terminal reconciliation retained startup reservation: %v", claims)
+			if claim, retained := f.registry.StartupClaims()[lifecycleAddon]; !retained || claim != lifecycleDefUID {
+				t.Fatalf("live built-in definition lost its startup collision reservation: %v", f.registry.StartupClaims())
 			}
+			_ = requireBarrier(t, f.registry, lifecycleAddon, registry.ReasonBuiltinCollision)
 		})
 	}
 }
 
-func TestStartupReservationWaitsForDirectReadAfterCachedInvalidRevision(t *testing.T) {
+func TestStartupReservationRetainsDirectlyObservedInvalidBuiltinUntilNotFound(t *testing.T) {
 	def := lifecycleDefinition()
 	def.Spec.SemanticsVersion = 0
 	f := newLifecycleFixture(t, def)
@@ -498,8 +504,76 @@ func TestStartupReservationWaitsForDirectReadAfterCachedInvalidRevision(t *testi
 		t.Fatal("cached invalid revision cleared a failed direct inventory read")
 	}
 	f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
+	if _, retained := f.registry.StartupClaims()[lifecycleAddon]; !retained {
+		t.Fatal("direct read of a live invalid built-in definition cleared its collision reservation")
+	}
+	_ = requireBarrier(t, f.registry, lifecycleAddon, registry.ReasonBuiltinCollision)
+	f.registry.ObserveStartupClaim(lifecycleAddon, "", 0)
 	if claims := f.registry.StartupClaims(); len(claims) != 0 {
-		t.Fatalf("direct read of already reconciled UID left startup blocked: %v", claims)
+		t.Fatalf("direct not-found observation did not clear startup reservation: %v", claims)
+	}
+	if resolution, err := f.registry.Resolve(lifecycleAddon); err != nil || resolution.Runtime {
+		t.Fatalf("built-in did not recover after direct not-found observation: resolution=%+v err=%v", resolution, err)
+	}
+}
+
+func TestValidBuiltinCollisionClearsOnlyAfterDeletionIsDirectlyObserved(t *testing.T) {
+	f := newLifecycleFixture(t, lifecycleDefinition(), lifecycleBinding(), lifecycleServiceAccount())
+	if err := f.registry.Register(lifecycleStubAdapter{name: "builtin", addonTypes: []string{lifecycleAddon}}); err != nil {
+		t.Fatal(err)
+	}
+	f.registry.ReserveStartupClaims([]string{lifecycleAddon})
+	f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
+	f.reconcileDefinitionOK(lifecycleAddon)
+	_ = requireBarrier(t, f.registry, lifecycleAddon, registry.ReasonBuiltinCollision)
+
+	f.delete(lifecycleDefinition())
+	f.reconcileDefinitionOK(lifecycleAddon)
+	if entries := f.registry.RuntimeEntries(); len(entries) != 0 {
+		t.Fatalf("deleted definition left a runtime snapshot published: %+v", entries)
+	}
+	_ = requireBarrier(t, f.registry, lifecycleAddon, registry.ReasonBuiltinCollision)
+
+	f.registry.ObserveStartupClaim(lifecycleAddon, "", 0)
+	if resolution, err := f.registry.Resolve(lifecycleAddon); err != nil || resolution.Runtime {
+		t.Fatalf("built-in did not recover after deletion was directly observed: resolution=%+v err=%v", resolution, err)
+	}
+}
+
+func TestOrdinaryDefinitionReleasesProvisionalStartupReservation(t *testing.T) {
+	f := newLifecycleFixture(t, lifecycleDefinition())
+	f.definitions.Builtins = func() []string { return nil }
+	f.registry.ReserveStartupClaims([]string{lifecycleAddon})
+	f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
+
+	f.reconcileDefinitionOK(lifecycleAddon)
+
+	if claims := f.registry.StartupClaims(); len(claims) != 0 {
+		t.Fatalf("ordinary definition leaked provisional startup reservation: %v", claims)
+	}
+}
+
+func TestShippedBuiltinInventoryRetainsStartupReservationUntilDirectNotFound(t *testing.T) {
+	const addon = "inventory-builtin"
+	const definitionUID = types.UID("inventory-definition-uid")
+	f := newLifecycleFixture(t, lifecycleDefinitionNamed(addon, definitionUID))
+	f.definitions.Builtins = func() []string { return []string{addon} }
+	f.registry.ReserveStartupClaims([]string{addon})
+	f.registry.ObserveStartupClaim(addon, definitionUID, 1)
+
+	f.reconcileDefinitionOK(addon)
+	if claim, retained := f.registry.StartupClaims()[addon]; !retained || claim != definitionUID {
+		t.Fatalf("shipped built-in definition lost its startup reservation: %v", f.registry.StartupClaims())
+	}
+
+	f.delete(lifecycleDefinitionNamed(addon, definitionUID))
+	f.reconcileDefinitionOK(addon)
+	if _, retained := f.registry.StartupClaims()[addon]; !retained {
+		t.Fatal("cached deletion cleared shipped built-in reservation before a direct observation")
+	}
+	f.registry.ObserveStartupClaim(addon, "", 0)
+	if claims := f.registry.StartupClaims(); len(claims) != 0 {
+		t.Fatalf("direct not-found observation left shipped built-in reservation: %v", claims)
 	}
 }
 
