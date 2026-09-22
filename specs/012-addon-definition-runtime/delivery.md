@@ -4,8 +4,8 @@ SPDX-License-Identifier: MIT
 -->
 # Delivery preparation
 
-Runtime release remains blocked by the separate #256 compatibility decision and
-the remaining PR/release gates. The isolated combined full suite passed. No pull request was opened or
+Runtime release remains gated by the upstream #351 merge and the remaining
+release gates. The pre-compatibility and combined 1.1 feature suites passed. No feature pull request was opened or
 published by this qualification run. The descriptions below are review sections
 for the one feature PR and retain existing checkpoint commits as landmarks.
 
@@ -15,9 +15,10 @@ Publish one feature PR, organized into four review sections matching the four
 milestones below. Existing checkpoint commits (`9ea1104`, `b4646f9` and
 `7c19435`) remain useful review landmarks, but they are not separate PR heads
 requiring independent CI. The #256 compatibility work is a separate prerequisite
-PR, [draft PR #351](https://github.com/skaphos/fathom/pull/351), with the chosen
-ContractVersion 1.1 decision validated separately. It is not merged; integration
-verification and T054 remain open.
+PR, [PR #351](https://github.com/skaphos/fathom/pull/351), with the chosen
+ContractVersion 1.1 decision validated separately. It is merged into the local
+feature branch, while upstream #351 remains open and is not draft; integration
+verification and T054 are complete, with the upstream merge still the release gate.
 
 | Review section | Scope | Evidence |
 | --- | --- | --- |
@@ -90,12 +91,12 @@ fields. A guarded restore under the current default-off binary preserved origina
 evidence and unchanged reports; fresh same-verdict re-enable, cross-version
 stored-collision handling and the T063 host-mode fix also passed in bounded
 trials. Full status exports and the tested restoration procedure are recorded in
-the operations qualification record. The 105/105 full Kind suite, CI, race
+the operations qualification record. Both 105/105 full Kind suites, CI, race
 checks, security review and bounded operations evidence support the feature PR;
-no released chart upgrade is claimed, and #256 remains a separate release gate.
+no released chart upgrade is claimed, and upstream #351 remains the separate
+release gate.
 
-T059 is draft PR preparation only: no PR was published and no working-branch commit
-was made by this qualification run. Local author/committer configuration was
-verified as Shawn Stratton `shawn@skaphos.io`, matching the existing feature
-commits. Any future commit must retain the mandatory Signed-off-by trailer;
-cryptographic signing is preferred.
+T059 remains open until the feature PR is published. Qualification, compatibility
+integration and the runtime-policy correction are committed with SSH signatures
+and DCO sign-offs as Shawn Stratton `shawn@skaphos.io`, matching the existing
+feature commits.

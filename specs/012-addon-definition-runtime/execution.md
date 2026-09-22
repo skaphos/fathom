@@ -1590,7 +1590,7 @@ On 2026-09-22 the approved publication shape became one feature PR organized
 around four review sections/milestones, plus a separate #256 compatibility PR.
 The feature result above remains the pre-compatibility 1.0-source 105/105
 qualification; the combined feature-plus-compatibility 1.1 tree has not been
-live-qualified. The separate compatibility work is [draft PR #351](https://github.com/skaphos/fathom/pull/351),
+live-qualified. The separate compatibility work is [PR #351](https://github.com/skaphos/fathom/pull/351),
 based on `main` at signed commit `a7e3a3e927f01de614e97677cb3e1d62aa86e932`.
 T054 remains open until that PR is merged and integration is verified; T059
 remains open because the feature PR has not yet been published.
@@ -1608,7 +1608,7 @@ zero failures/skips); its cluster was removed.
 
 The source patch applies cleanly to the feature branch in a dry run but has not
 been applied here. The compatibility proof is separate evidence, not a merged or
-resolved #256 decision; see [draft PR #351](https://github.com/skaphos/fathom/pull/351).
+resolved #256 decision; see [PR #351](https://github.com/skaphos/fathom/pull/351).
 The feature's 105/105 result,
 operations record and component/live test split remain the current feature
 evidence.
@@ -1631,3 +1631,51 @@ fresh-fence the policy, invoke shared validation before execution, publish
 `Accepted=False/InvalidPolicy`, preserve prior evidence and recover with a valid
 policy. Component and live verification are still required; no verification
 claim is made. T054 and T059 remain open, and this finding is tracked as T064.
+
+### ContractVersion 1.1 integration status — 2026-09-22 (historical in-progress snapshot)
+
+Signed T064 fix `e08f9af` is implemented on the local feature branch. Final CI
+passed (`/tmp/fathom-feature012-contract11-final-ci.log`), as did coverage,
+generated-output verification and REUSE for 754 files
+(`/tmp/fathom-feature012-contract11-final-{coverage,generated,reuse}.log`); the
+AST graph update passed with 7,216 nodes, 19,624 edges and 447 communities.
+The full controller suite passed in 39.487s. The first controller race attempt
+had one DNSCheck `lastRunTime` timing failure at line 588, with no race report;
+the unchanged-retry rerun passed in 45.453s. Exact policy evidence is in
+`/tmp/fathom-feature012-runtime-policy-validation.md`.
+
+The dedicated ContractVersion 1.1 Kind run is **RUNNING** with kubeconfig
+`/tmp/fathom-feature012-contract11.kubeconfig`, cluster/config
+`fathom-feature012-contract11`, and log
+`/tmp/fathom-feature012-contract11-final-e2e.log`. Do not treat it as passed
+yet. The local branch contains the #351 compatibility merge, but upstream #351
+is still open and not draft. T054's decision/regression/migration verification
+may complete after the combined run passes; the upstream merge remains the
+release gate. T059 remains open because no feature PR has been published. T064
+remains open until the fresh-fence/shared-validation correction and both
+component/live policy scenarios are verified.
+
+### Combined ContractVersion 1.1 qualification result — 2026-09-22
+
+The signed T064 source `e08f9af` and local #351 merge were verified by the
+dedicated command below; the `fathom-feature012-contract11` cluster was deleted
+by the task after completion:
+
+```sh
+KUBECONFIG=/tmp/fathom-feature012-contract11.kubeconfig \
+E2E_KIND_CLUSTER=fathom-feature012-contract11 \
+go -C tools tool task test-e2e \
+  E2E_KIND_CLUSTER=fathom-feature012-contract11 \
+  E2E_KIND_CONFIG=/tmp/fathom-feature012-contract11-kind.yaml \
+  > /tmp/fathom-feature012-contract11-final-e2e.log 2>&1
+```
+
+The combined ContractVersion 1.1 run exited 0 with 105/105 specs passed in
+1410.503s (Go package time 1412.630s), zero failures, pending or skips. The
+full controller suite passed in 39.487s; the first race attempt had one
+DNSCheck `lastRunTime` timing failure without race detection, and the corrected
+unchanged-retry race rerun passed in 45.453s. T054 is verified from the separate
+#351 decision/regression/migration evidence and the combined run; the upstream
+#351 merge remains the release gate. T064 is complete. T059 remains open until
+the feature PR is published. No merged upstream release or chart qualification
+claim is made.

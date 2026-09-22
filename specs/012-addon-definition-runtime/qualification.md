@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 # Runtime qualification evidence
 
 **Date**: 2026-09-22  
-**Status**: The isolated pre-compatibility full suite passed; draft compatibility PR [#351](https://github.com/skaphos/fathom/pull/351) contains the separately validated ContractVersion 1.1 decision, but remains unmerged. T054/#256 and T059 remain open release/PR gates.
+**Status**: The isolated pre-compatibility and combined ContractVersion 1.1 full suites passed. ContractVersion 1.1 is implemented and merged locally through [#351](https://github.com/skaphos/fathom/pull/351), whose upstream PR remains open (not draft); the upstream merge remains the release gate. 63 of 64 tasks are complete; T054 and T064 are complete and T059 remains open.
 
 This record preserves the FR, numeric and lifecycle coverage mapping from the
 2026-09-22 audit. Component evidence means unit, fake-client, envtest or started
@@ -21,12 +21,15 @@ contaminated runs remain explicitly historical in execution.md.
 
 ## Current qualification state
 
-- The isolated pinned full suite ran all 105 of 105 specs in 1422.543s (Go
-  package time 1424.597s): 105 passed, 0 failed, 0 pending and 0 skipped, with
+- The pre-compatibility isolated pinned full suite ran all 105 of 105 specs in
+  1422.543s (Go package time 1424.597s): 105 passed, 0 failed, 0 pending and 0
+  skipped, with
   all addons included. All ten runtime scenarios passed, including startup
   collision/restart and metrics-off actual Pass/403, preserved Pass, recovery
   and no duplicate report. The isolated `fathom-feature012-final` cluster was
   deleted by the task; the exact command and log are recorded in execution.md.
+  The combined ContractVersion 1.1 run then passed 105/105 in 1410.503s
+  (1412.630s package time), also with zero failures, pending or skips.
 - T062 is closed with registry (1.066s), app (13.102s), and controller (46.055s)
   race passes;
   `internal/app/runtime_wiring_test.go:TestStoredBuiltinCollisionIsBarredBeforeFirstReconcile`,
@@ -51,9 +54,14 @@ contaminated runs remain explicitly historical in execution.md.
   already ship CoreDNS, so this is not historical new-builtin coverage; component
   tests cover new-builtin registration. Exact operations evidence is recorded in
   [operations-qualification.md](operations-qualification.md) and [execution.md](execution.md).
-  T050, T055, T056, T061, T062 and T063 are complete. T054/#256 remains a
-  separate external release gate and T059 remains PR preparation; qualification
-  does not resolve either gate.
+  T050, T055, T056, T061, T062 and T063 are complete. T054 and T064 are
+  complete; T059 remains PR preparation and the upstream #351 merge remains the
+  external release gate.
+- T064's signed correction (`e08f9af`) adds the fresh policy fence and shared
+  validation path. Final CI, coverage, generated checks, REUSE and graph update
+  passed. The dedicated ContractVersion 1.1 Kind run passed all 105 specs; the
+  full controller suite passed and the corrected race rerun passed after an
+  initial timing-only failure.
 
 ## Functional requirements
 
@@ -72,9 +80,9 @@ contaminated runs remain explicitly historical in execution.md.
 | FR-011 all numeric caps/overrides | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced`; `internal/adapter/declarative/runtime_compile_test.go:TestRuntimePolicyRejectsInvalidOverridesBeforeReads` | Exact boundaries remain component evidence. The isolated suite passed hostile ConfigMap input, metrics-off 403/Pass/recovery and compiled-peer progress |
 | FR-012 panic isolation/partial verdict/fairness | `internal/adapter/runtime/runner_test.go:TestRunnerRecoversCompilationAndEvaluationPanic`, `TestRunnerPanicDoesNotCancelConcurrentPeer`; `internal/adapter/runtime/pool_test.go:TestRuntimePoolRecoversHandlerPanicAndPreservesPeer`; `internal/adapter/runtime/result_test.go:TestResultFailureDiscardsPartialSuccessAndOwnsSnapshot` | The isolated suite passed held timeouts with a compiled peer continuing and the oversized helper path; no production panic hook is used |
 | FR-013 default-off builtins/security gate | `internal/app/runtime_wiring_test.go:TestRuntimeLoadingUnavailableRegistersNothingRuntime`, `TestAttachedGateAndPoolDriveDispatchAndExecution`; `internal/adapter/registry/runtime_test.go:TestBuiltinSemanticsUnchangedByRuntimeEntries` | Default-off and opt-in runtime scenarios passed, including startup/restart and metrics-off paths |
-| FR-014 compatibility and #256 | `internal/adapter/declarative/runtime_compile_test.go:TestRuntimeCompilerRejectsUnsupportedAndCancelledInput`; `internal/adapter/registry/runtime_test.go:TestSetRuntimeEqualGenerationRepublishesTheRecompile` | v0.5.1 exact-Dockerfile downgrade, guarded restore, fresh same-verdict re-enable and cross-version stored-collision recovery passed separate Kind trials; chosen ContractVersion 1.1 compatibility was validated separately in draft [#351](https://github.com/skaphos/fathom/pull/351), but combined integration remains unverified |
+| FR-014 compatibility and #256 | `internal/adapter/declarative/runtime_compile_test.go:TestRuntimeCompilerRejectsUnsupportedAndCancelledInput`; `internal/adapter/registry/runtime_test.go:TestSetRuntimeEqualGenerationRepublishesTheRecompile`; `internal/controller/addoncheck_controller_test.go:TestReconcilePreservesRuntimeWorkerPolicyConditions`; `TestRuntimePolicyIsValidatedOnTheFencedCheckBeforeRun` | v0.5.1 exact-Dockerfile downgrade, guarded restore, fresh same-verdict re-enable and cross-version stored-collision recovery passed separate Kind trials; combined ContractVersion 1.1 passed, including `It("rejecting a stored invalid ratio policy before runtime evaluation and recovering on correction")`; upstream [#351](https://github.com/skaphos/fathom/pull/351) remains the release gate |
 | FR-015 installation/migration/rollback/limits | `pkg/addondefinition/render_test.go:TestRenderStagedIdentityAndGrants`; `internal/cli/definition_drain_test.go:TestDefinitionDrainCommandDisplaysObservedEpochAndNeverWrites` | Guarded v0.5.1 downgrade/restore and fresh same-verdict re-enable passed separately with identical reports; the operations record is complete |
-| FR-016 direct rows and real acceptance | `internal/controller/runtime_rbac_guard_test.go:TestRuntimeDefinitionsAddNoForbiddenOperatorGrants`, `TestRuntimeLeaseAccessStaysInNamespacedElectionRole` plus maps below | The isolated full 105-spec gate passed; T050/T055/T056/T062 are complete, while T054/#256 and T059 remain external release/PR gates |
+| FR-016 direct rows and real acceptance | `internal/controller/runtime_rbac_guard_test.go:TestRuntimeDefinitionsAddNoForbiddenOperatorGrants`, `TestRuntimeLeaseAccessStaysInNamespacedElectionRole`; `internal/controller/addoncheck_controller_test.go:TestReconcilePreservesRuntimeWorkerPolicyConditions` plus maps below | The pre-compatibility and combined ContractVersion 1.1 105-spec gates passed, including the second policy-validation scenario. T054 and T064 are complete; T059 remains open and #351 remains the upstream release gate |
 
 ## Numeric contract rows
 

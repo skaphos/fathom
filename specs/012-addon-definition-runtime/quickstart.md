@@ -6,8 +6,9 @@ SPDX-License-Identifier: MIT
 
 Runtime commands and packages are implemented behind the opt-in preview gate. Use
 this guide for the opt-in preview; current commands, environments and outcomes
-are recorded in [execution.md](execution.md). The isolated full suite passed,
-while #256 and PR/release gates remain open.
+are recorded in [execution.md](execution.md). The pre-compatibility and combined
+ContractVersion 1.1 full suites passed; upstream #351 and feature PR gates remain
+open.
 
 ## Repository checks
 
