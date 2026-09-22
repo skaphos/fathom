@@ -243,7 +243,9 @@ tasks:
       # runs (a Task var override must reach the test process env too).
       - |
         addons='{{.E2E_ADDONS}}'
-        E2E_ADDONS="${addons:-${E2E_ADDONS:-}}" go test ./test/e2e/ -v -ginkgo.v
+        cluster='{{.E2E_KIND_CLUSTER}}'
+        # Runtime serial scenarios include election grace/restarts and can exceed Go's 10m default.
+        E2E_ADDONS="${addons:-${E2E_ADDONS:-}}" E2E_KIND_CLUSTER="${cluster:-${E2E_KIND_CLUSTER:-}}" go test ./test/e2e/ -timeout=30m -v -ginkgo.v
 
   # --- Build ---
 

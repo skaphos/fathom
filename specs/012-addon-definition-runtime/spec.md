@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 # Feature Specification: Runtime Addon Definitions
 
-**Feature Branch**: `docs/280-addon-definition-implementation`
+**Feature Branch**: `feature/280-runtime-addon-definitions`
 **Created**: 2026-09-20
 **Status**: Draft implementation specification; design accepted, implementation unshipped
 **Input**: Create the implementation spec and task breakdown for [#280](https://github.com/skaphos/fathom/issues/280).
@@ -28,6 +28,14 @@ completed-evidence wording is recorded in the
 - Q: How should administrators check for addon-name collisions before upgrading to a different Fathom version? → A: Use the target release’s fathomctl, display its version, and compare its bundled built-in inventory against live definitions; a separately supplied inventory file is not part of this interface.
 
 - Q: How should offline rendering handle grants whose custom-resource plural or scope requires discovery? → A: Keep rendering offline. Emit only safely determined grants and explicit diagnostics requiring manual completion for custom-resource grants; never guess plurals or broaden scopes.
+
+### Session 2026-09-22
+
+- Q: Which test layer proves the exact numeric boundaries, impossible-under-normal-admission collision cases and injected compile/evaluation panics? → A: Deterministic component tests prove every limit at and over its boundary, legacy/impossible-under-normal-admission collision fixtures, recoverable injected panics, slot release and peer progress. Full Docker/kind tests prove real admission, RBAC, delegated execution, lifecycle, drain, rollback and hostile-input isolation; they do not need to inject every budget or execution panic through a live cluster.
+
+This split keeps fault-injection controls out of the shipped operator while making
+the boundary and recovery contract directly testable. The real-cluster gate still
+must demonstrate that hostile input cannot take down or starve unrelated work.
 
 ## User Scenarios & Testing
 
@@ -64,8 +72,10 @@ and target scope; unrelated workloads keep making progress on hostile input.
 **Why this priority**: Runtime execution creates a new authority boundary.
 
 **Independent Test**: Run one enabled definition alongside a healthy peer in a
-real cluster; deny discovery, change scope, exceed each budget and inject a
-recoverable panic. Verify isolation, attribution and continued peer progress.
+real cluster; deny discovery, change scope, exercise hostile input and verify
+actual delegated authority, isolation and continued peer progress. Deterministic
+component tests cover every budget at/over its boundary and inject recoverable
+compile/evaluation panics.
 
 **Acceptance Scenarios**:
 
@@ -195,7 +205,11 @@ unchanged-verdict revision changes and final validation failure.
 - **FR-015**: Installation, migration and rollback MUST preserve inspectable data,
   expose limits and state the observation-based revocation boundary (US4).
 - **FR-016**: Each requirement, RFC event and numeric boundary MUST have direct
-  tests; real admission/RBAC/evaluation MUST be exercised before release (all stories).
+  tests. Deterministic component tests MUST prove exact at/over boundaries,
+  impossible-under-normal-admission collision fixtures, injected recoverable panics
+  and slot/peer isolation; real Docker/kind tests MUST
+  exercise admission, RBAC, delegated execution, lifecycle, drain, rollback and
+  hostile-input isolation before release (all stories).
 
 ### Key Entities
 
@@ -219,8 +233,9 @@ unchanged-verdict revision changes and final validation failure.
   without fallback; every same-UID delegated-read scenario matches the RFC.
 - **SC-003**: Every lifecycle scenario retains attributable evidence and rejects
   superseded completion; unchanged verdicts create zero revision-only reports.
-- **SC-004**: Every numeric boundary has at-limit and over-limit evidence; a healthy
-  peer continues during failure/churn and no partial healthy result is published.
+- **SC-004**: Deterministic component evidence covers every numeric boundary at
+  and over its limit, injected recoverable panics, slot release and peer progress;
+  real-cluster evidence covers hostile-input isolation and no partial healthy result.
 - **SC-005**: All real-cluster acceptance scenarios pass and rollback preserves
   all prior history; #256 disposition is linked before runtime release.
 
@@ -233,4 +248,8 @@ unchanged-verdict revision changes and final validation failure.
   new resources' independent alpha track.
 - New evaluators, publisher signing, builtin replacement, generated live grants,
   cross-namespace identities and process isolation remain deferred.
-- This delivery creates planning artifacts only; unchecked tasks are unimplemented.
+- These artifacts began as the planning baseline. Implementation and qualification
+  evidence are tracked in [execution.md](execution.md),
+  [qualification.md](qualification.md), and
+  [operations-qualification.md](operations-qualification.md); unchecked tasks
+  remain incomplete, including validation and external release gates.

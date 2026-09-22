@@ -458,6 +458,51 @@ func TestValidDefinitionActivatesOnlyAfterValidBindingAndCompilation(t *testing.
 	}
 }
 
+func TestStartupReservationReleasesAfterTerminalEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		def  *fathomv1alpha1.AddonDefinition
+	}{
+		{name: "missing binding", def: lifecycleDefinition()},
+		{name: "invalid stored revision", def: func() *fathomv1alpha1.AddonDefinition {
+			def := lifecycleDefinition()
+			def.Spec.SemanticsVersion = 0
+			return def
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newLifecycleFixture(t, tc.def)
+			if err := f.registry.Register(lifecycleStubAdapter{name: "builtin", addonTypes: []string{lifecycleAddon}}); err != nil {
+				t.Fatal(err)
+			}
+			f.registry.ReserveStartupClaims([]string{lifecycleAddon})
+			f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
+			f.reconcileDefinitionOK(lifecycleAddon)
+			if claims := f.registry.StartupClaims(); len(claims) != 0 {
+				t.Fatalf("terminal reconciliation retained startup reservation: %v", claims)
+			}
+		})
+	}
+}
+
+func TestStartupReservationWaitsForDirectReadAfterCachedInvalidRevision(t *testing.T) {
+	def := lifecycleDefinition()
+	def.Spec.SemanticsVersion = 0
+	f := newLifecycleFixture(t, def)
+	if err := f.registry.Register(lifecycleStubAdapter{name: "builtin", addonTypes: []string{lifecycleAddon}}); err != nil {
+		t.Fatal(err)
+	}
+	f.registry.ReserveStartupClaims([]string{lifecycleAddon})
+	f.reconcileDefinitionOK(lifecycleAddon)
+	if _, reserved := f.registry.StartupClaims()[lifecycleAddon]; !reserved {
+		t.Fatal("cached invalid revision cleared a failed direct inventory read")
+	}
+	f.registry.ObserveStartupClaim(lifecycleAddon, lifecycleDefUID, 1)
+	if claims := f.registry.StartupClaims(); len(claims) != 0 {
+		t.Fatalf("direct read of already reconciled UID left startup blocked: %v", claims)
+	}
+}
+
 // Row: "Edited to valid revision | Replace snapshot; old run becomes
 // Superseded | Preserve old evidence with revision; evaluate new snapshot".
 // Marking the in-flight run Superseded belongs to T040; the reconciler half is
@@ -1197,6 +1242,45 @@ func TestBindingDependencyRequeuesAreIndexed(t *testing.T) {
 	}
 	if got := f.bindings.bindingsForDefinition(context.Background(), lifecycleDefinition()); len(got) != 1 || got[0].Name != lifecycleAddon {
 		t.Fatalf("a definition change must enqueue its binding through the index, got %+v", got)
+	}
+}
+
+func TestServiceAccountAndPeerBindingRequeuesUseBothIndexes(t *testing.T) {
+	peer := lifecycleBindingNamed("peer-addon", "peer-binding-uid", lifecycleDefUID, lifecycleSAName, lifecycleSAUID)
+	f := newLifecycleFixture(t, lifecycleDefinition(), lifecycleBinding(), peer, lifecycleServiceAccount())
+
+	requests := f.bindings.bindingsForServiceAccount(context.Background(), lifecycleServiceAccount())
+	if len(requests) != 2 || requests[0].Name != lifecycleAddon || requests[1].Name != "peer-addon" {
+		t.Fatalf("ServiceAccount event must enqueue both bindings, got %+v", requests)
+	}
+	definitions := f.definitions.definitionsForServiceAccount(context.Background(), lifecycleServiceAccount())
+	if len(definitions) != 2 {
+		t.Fatalf("ServiceAccount event must enqueue both definitions, got %+v", definitions)
+	}
+	requests = f.bindings.bindingsSharingServiceAccount(context.Background(), peer)
+	if len(requests) != 2 {
+		t.Fatalf("peer binding event must enqueue both bindings, got %+v", requests)
+	}
+	for i, opts := range f.lists {
+		if opts.FieldSelector == nil || opts.Namespace != lifecycleNamespace {
+			t.Fatalf("dependency lookup %d lacked a namespaced field index: %+v", i, opts)
+		}
+	}
+	foreign := lifecycleServiceAccount()
+	foreign.Namespace = "tenant"
+	if got := f.bindings.bindingsForServiceAccount(context.Background(), foreign); len(got) != 0 {
+		t.Fatalf("foreign ServiceAccount event enqueued operator bindings: %+v", got)
+	}
+}
+
+func TestAuthorizedBindingPeriodicallyRechecksMissedDependencyEvents(t *testing.T) {
+	f := newLifecycleFixture(t, lifecycleDefinition(), lifecycleBinding(), lifecycleServiceAccount())
+	result, err := f.bindings.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: lifecycleNamespace, Name: lifecycleAddon}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequeueAfter != definitions.MissingInputPoll {
+		t.Fatalf("authorized binding must recover from a missed dependency event within %s, got %+v", definitions.MissingInputPoll, result)
 	}
 }
 

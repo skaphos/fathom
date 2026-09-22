@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 # Implementation Plan: Runtime Addon Definitions
 
-**Branch**: `docs/280-addon-definition-implementation` | **Date**: 2026-09-20
+**Branch**: `feature/280-runtime-addon-definitions` | **Date**: 2026-09-20
 **Spec**: [spec.md](spec.md) | **Issue**: [#280](https://github.com/skaphos/fathom/issues/280)
 
 ## Summary
@@ -12,10 +12,24 @@ SPDX-License-Identifier: MIT
 Implement accepted typed runtime loading in reviewable increments behind a disabled
 configuration option. Schema/rendering lands first; scoped bounded execution and
 lifecycle publication must all be complete before runtime activation is qualified.
-This delivery is the specification and task breakdown only. The 2026-09-20
-clarifications require leader election, count completed Skipped as current evidence,
-and use the target release CLI for collision preflight. See
-[decision supplement](contracts/decision-supplement.md) for the narrow RFC refinement.
+This file records the original planning baseline. Implementation and qualification
+have progressed from that baseline; current outcomes are recorded in
+[execution.md](execution.md), [qualification.md](qualification.md), and
+[operations-qualification.md](operations-qualification.md). The 2026-09-20
+clarifications and 2026-09-22 test-contract supplement require leader election,
+count completed Skipped as current evidence, use the target release CLI for
+collision preflight, and separate deterministic boundary/panic tests from
+real-cluster authority and lifecycle tests. See the [decision supplement](contracts/decision-supplement.md)
+for the narrow RFC refinement.
+
+## Delivery shape (2026-09-22)
+
+The approved delivery is one feature PR organized into four review sections that
+follow Milestones 1–4 above. Existing checkpoint commits remain review landmarks,
+not separate PR heads that each require independent CI. The #256 compatibility
+work is a separate prerequisite PR; its implementation and tests are maintained
+in `/tmp/fathom-ratio-contract-256`, with the PR link to be added when published.
+It is not claimed merged or resolved here.
 
 ## Technical Context
 
@@ -37,7 +51,9 @@ Pre-design and post-design: PASS, with no requested exceptions.
 - V: no dependency on another Skaphos control plane; existing typed engine is adopted.
 - VI/VII: source-attributed evidence survives input loss; attempts/freshness remain explicit.
 - VIII: namespace/cluster target scope is declared and checked on every read.
-- IX: limits and observation-based revocation are explicit; tests are not claimed run.
+- IX: limits and observation-based revocation are explicit. The original plan did
+  not claim tests had run; current named results are linked from the execution and
+  qualification records.
 - Fathom constraints: minimal generated RBAC, bounded work, normal config precedence,
   and ClusterHealth consuming only HealthCheck.status remain intact.
 - Existing accepted ADR 0007 resolves adoption/architecture; no upstream decision is
@@ -58,7 +74,8 @@ quickstart, tasks and requirements checklist. Planned source changes:
 - `internal/app/`, `internal/cli/`: default-off wiring and read-only authoring commands.
 - `config/`, `deploy/helm/`, `docs/`, `test/e2e/`: generated distribution and validation.
 
-New paths are proposals; existing files cited in research were inspected.
+The paths below are the original implementation map; completed and pending work
+and named evidence are tracked in the execution and qualification records.
 
 ## Goal
 
@@ -68,8 +85,10 @@ under explicit authority, bounded work and inspectable lifecycle state.
 ## Acceptance Criteria
 
 All FR-001–FR-016, all six accepted decisions, every lifecycle row and every
-numeric row have named tests and recorded outcomes. Full kind verifies actual
-admission/RBAC and runtime behavior. #256 is resolved before release.
+numeric row have named tests and recorded outcomes. Deterministic component tests
+prove numeric at/over boundaries and injected recoverable panics; full kind
+verifies actual admission/RBAC, delegated execution, lifecycle, drain, rollback
+and hostile-input isolation. #256 is resolved before release.
 
 ## Assumptions and Unknowns
 
@@ -79,12 +98,14 @@ permission to weaken them. No open user decision blocks planning. The concrete w
 verification and CLI contracts are in [payloads](contracts/payloads.md),
 [leadership](contracts/leadership.md) and [runtime](contracts/runtime.md).
 
-## Current State
+## Original planning baseline
 
-Startup-only registry; shallow shared engine definitions; grouped evaluator order;
-manager RESTMapper and local client fallback; failed attempts refresh LastRunTime.
-Existing transition-only reports and CLI import restrictions must be preserved.
-See [research.md](research.md) for evidence and rejected alternatives.
+The planning baseline was a startup-only registry with shallow shared engine
+definitions, grouped evaluator order, manager RESTMapper/local-client fallback,
+and failed attempts refreshing LastRunTime. Existing transition-only reports and
+CLI import restrictions remain preservation requirements. See [research.md](research.md)
+for the original evidence and rejected alternatives; see [qualification.md](qualification.md)
+for current implementation and qualification state.
 
 ## Target State
 
@@ -105,10 +126,10 @@ Rollback: revert disabled code; retain installed CRDs/data if already used.
 
 Build dedicated discovery/read clients, scope intersections, shared counters,
 cooperative compile/decode limits, supervised panics and fair worker admission.
-Verify every cap at/over boundary, all helper identities and peer progress in the
-development harness. This milestone is a component checkpoint only: US2's spec
-acceptance remains open until production wiring and full real-cluster tests in
-milestones 3–4 pass.
+Verify every cap at/over boundary, injected panics, all helper identities and
+peer progress in deterministic component tests. This milestone is a component
+checkpoint only: US2's spec acceptance remains open until production wiring and
+real-cluster authority, hostile-input and lifecycle tests in milestones 3–4 pass.
 Risk: fallback privilege or hidden unbounded reads; detect with denied discovery,
 local/metrics-off and malicious fixture tests. Rollback: disable loader and drain.
 
@@ -126,8 +147,11 @@ record unavailable state and preserve history before binary downgrade.
 
 Wire default-off option and packaging, document installation/preflight/rollback,
 run full kind and CI (including final US2 acceptance), use target-version CLI
-preflight, and record #256 disposition. Risk: fake clients hide real
-RBAC/admission differences; only real-cluster evidence satisfies this milestone.
+preflight, and record #256 disposition. Real kind evidence covers actual
+RBAC/admission, authority, lifecycle, drain, rollback and hostile-input isolation;
+component evidence covers exact boundaries and injected panics. Risk: fake clients
+hide real RBAC/admission differences; only real-cluster evidence satisfies those
+runtime gates.
 Rollback: documented disable/drain/revoke sequence; do not delete stored APIs.
 
 ## Irreversible Steps
@@ -192,5 +216,10 @@ every payload mapping with executable tests before implementation qualification.
   US3. CLI contract tests use fake reads before live leader integration exists.
 - US2 harness completion does not satisfy its real-cluster independent test. US4
   explicitly closes that acceptance after US3 wiring; no phase marks US2 fully done early.
+- Test layers have distinct obligations: component tests use deterministic injected
+  faults for exact numeric boundaries, impossible-under-normal-admission collision
+  fixtures, recoverable panics, slot release and peer progress; Docker/kind tests
+  use real permissions, execution, lifecycle, drain, rollback and hostile inputs.
+  The shipped operator gains no fault-injection controls.
 - Constitution recheck after refinements: PASS. Minimal namespaced Lease read rights,
   unchanged built-in execution and attributed Skipped history preserve the principles.

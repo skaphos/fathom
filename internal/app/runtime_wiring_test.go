@@ -1201,3 +1201,93 @@ func TestAttachedGateAndPoolDriveDispatchAndExecution(t *testing.T) {
 		t.Error("runtime dispatch is still admitted after the elected session ended")
 	}
 }
+
+type selectiveStartupReader struct {
+	client.Reader
+	fail string
+}
+
+func (r selectiveStartupReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if key.Name == r.fail {
+		return errors.New("injected API read failure")
+	}
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
+func TestStartupInventoryDirectReadsBlockOnlyUnresolvedBuiltin(t *testing.T) {
+	scheme, err := NewScheme()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := &fathomv1alpha1.AddonDefinition{ObjectMeta: metav1.ObjectMeta{Name: "coredns", UID: "stored-uid"}}
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stored).Build()
+	reg, err := BuildAdapterRegistry(logr.Discard(), BuiltInAdapters()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.ReserveStartupClaims([]string{"coredns", "cert-manager", "external-secrets"})
+	refreshStartupClaims(t.Context(), selectiveStartupReader{Reader: reader, fail: "cert-manager"}, reg, logr.Discard())
+	for _, tc := range []struct{ name, reason string }{
+		{"coredns", registry.ReasonBuiltinCollision},
+		{"cert-manager", registry.ReasonAdmissionClosed},
+	} {
+		_, err := reg.Resolve(tc.name)
+		var barrier *registry.DispatchBarrier
+		if !errors.As(err, &barrier) || barrier.Reason != tc.reason {
+			t.Errorf("%s: got %v, want %s barrier", tc.name, err, tc.reason)
+		}
+	}
+	if _, err := reg.Resolve("external-secrets"); err != nil {
+		t.Fatalf("known absent definition blocked unrelated built-in: %v", err)
+	}
+	refreshStartupClaims(t.Context(), reader, reg, logr.Discard())
+	if _, err := reg.Resolve("cert-manager"); err != nil {
+		t.Fatalf("recovered API read did not release startup reservation: %v", err)
+	}
+}
+
+func TestStoredBuiltinCollisionIsBarredBeforeFirstReconcile(t *testing.T) {
+	if envtestCfg == nil {
+		t.Skip("envtest unavailable; run with KUBEBUILDER_ASSETS")
+	}
+	writeManagerToken(t, "system:serviceaccount:fathom-system:"+testManagerServiceAccount)
+	manager := newRecordingManager(t)
+	live, err := client.New(envtestCfg, client.Options{Scheme: manager.GetScheme()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := &fathomv1alpha1.AddonDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns"},
+		Spec: fathomv1alpha1.AddonDefinitionSpec{
+			AddonType: "coredns", AdapterVersion: "1.0.0", SemanticsVersion: 1,
+			Families: []fathomv1alpha1.DefinitionFamily{{Name: "health", Checks: []fathomv1alpha1.DefinitionCheck{{
+				Name: "controller", Kind: "Workload", Workload: &fathomv1alpha1.DefinitionWorkload{
+					Target: fathomv1alpha1.DefinitionTarget{Scope: "Namespaced", Namespaces: []fathomv1alpha1.DefinitionDNSLabel{"default"}},
+					Kind:   "Deployment", DefaultName: "controller",
+				},
+			}}}},
+		},
+	}
+	if err := live.Create(t.Context(), definition); err != nil {
+		t.Fatalf("create stored definition: %v", err)
+	}
+	t.Cleanup(func() { _ = live.Delete(context.Background(), definition) })
+	wiring, reason := newRuntimeWiring(eligibleRuntimeOptions())
+	if wiring == nil {
+		t.Fatal(reason)
+	}
+	controllers, err := defaultControllers(manager, eligibleRuntimeOptions(), wiring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addonCheck := controllers[0].(*controller.AddonCheckReconciler)
+	shared := addonCheck.Adapters.(*registry.Registry)
+	_, err = shared.Resolve("coredns")
+	var barrier *registry.DispatchBarrier
+	if !errors.As(err, &barrier) || barrier.Reason != registry.ReasonBuiltinCollision {
+		t.Fatalf("stored collision dispatched before definition controller started: %v", err)
+	}
+	if _, err := shared.Resolve("cert-manager"); err != nil {
+		t.Fatalf("unrelated builtin blocked at startup: %v", err)
+	}
+}

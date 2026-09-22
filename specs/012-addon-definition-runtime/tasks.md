@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md), [contracts/runtime.md](contracts/runtime.md).
 
-Tests are mandatory under FR-016 and repository policy. Write regression tests before implementation, demonstrate relevant failures, then make them pass. New file paths below are planned. Every unchecked item is unimplemented; this document does not authorize external grant installation.
+Tests are mandatory under FR-016 and repository policy. Write regression tests before implementation, demonstrate relevant failures, then make them pass. The paths below originated as the implementation plan; current evidence is recorded in [execution.md](execution.md), [qualification.md](qualification.md), and [operations-qualification.md](operations-qualification.md). An unchecked task is incomplete, including validation or an external release gate; this document does not authorize external grant installation.
 
 ## Phase 1: Setup
 
@@ -81,28 +81,28 @@ Independent test: controlled lifecycle races reject obsolete completion, retain 
 - [X] T045 [US3] Add Pass→Skipped, Skipped→Skipped, mixed-Skipped, zero-enabled-check and unchanged-verdict revision tests in internal/controller/addoncheck_runtime_test.go; extend api/v1alpha1/healthreport_types.go attribution and transition-only reporting in internal/controller/addoncheck_controller.go; preserve existing aggregate behavior and historical provenance, never renew old evidence on failed attempts.
 - [X] T046 [US3] Extend api/v1alpha1/healthcheck_types.go and internal/controller/healthcheck_controller.go to mirror readiness/freshness; add regression tests in internal/controller/healthcheck_controller_test.go proving retained Pass cannot become fresh success and ClusterHealth still uses only HealthCheck.status.
 - [X] T047 [US3] Wire shared registry/runtime pool, manager APIReader fences, informer sync, explicit operator namespace and required leader election into internal/app/run.go and internal/controller/addoncheck_controller.go behind default-off configuration; register all watches/indexes, never run runtime admission before election/sync/grace, preserve unrelated built-ins.
-- [ ] T048 [US3] Add minimal definition/binding read/watch/status RBAC markers in internal/controller/addondefinition_controller.go and addondefinitionbinding_controller.go; use existing namespaced election Role Lease access, generate config/rbac/role.yaml and Helm distribution, prove no binding-spec writes, new grant writes, cluster-wide Lease reads, addon standing reads or SAR grants.
-- [ ] T049 [US3] Run lifecycle race/envtest suites and regenerate manifests/API docs; record per-event evidence, observed revocation limitations and all changed outputs in specs/012-addon-definition-runtime/execution.md.
+- [X] T048 [US3] Add minimal definition/binding read/watch/status RBAC markers in internal/controller/addondefinition_controller.go and addondefinitionbinding_controller.go; use existing namespaced election Role Lease access, generate config/rbac/role.yaml and Helm distribution, prove no binding-spec writes, new grant writes, cluster-wide Lease reads, addon standing reads or SAR grants.
+- [X] T049 [US3] Run lifecycle race/envtest suites and regenerate manifests/API docs; record per-event evidence, observed revocation limitations and all changed outputs in specs/012-addon-definition-runtime/execution.md.
 
 ## Phase 6: US4 — Install and operate safely (P2)
 
 Independent test: clean install through opt-in with leader election, target-version CLI collision preflight, independently verified drain, rollback and re-enable works in full kind with preserved history. This phase also completes US2 real-cluster acceptance.
 
-- [ ] T050 [US4] Add full real-cluster tests in test/e2e/addondefinition_test.go and fixtures under test/e2e/fixtures/ for admission/RBAC/discovery, same-UID delegation, identity recreation/borrowing, local/metrics-off denial, required election, renewal/epoch/takeover drain, all-Skipped history/freshness, every lifecycle row, budgets/panics/fairness and target-version upgrade collisions; explicitly complete US2 real-cluster acceptance.
-- [ ] T051 [US4] Expose default-off configuration through deploy/helm/fathom-operator/values.yaml and configuration templates; add tests for required election, configured operator namespace/Lease name and disabled-runtime compatibility without changing built-ins.
-- [ ] T052 [P] [US4] Document two-stage Git-reviewed UID installation, minimal grants, diagnostics, exact caps and declared order in docs/guides/addon-definitions.md; update README.md and docs/reference/operator-rbac.md, checking actual reference filenames before editing.
-- [ ] T053 [US4] Document target-version CLI inventory, clarification supplement, same-UID delegation, non-atomic revocation, Lease read permission and independent drain verification, Skipped coverage, disable/revoke/preserve rollback and re-enable validation in RELEASE.md and docs/guides/addon-definitions.md; keep #149 separate.
+- [X] T050 [US4] Add full real-cluster tests in test/e2e/addondefinition_test.go and fixtures under test/e2e/fixtures/ for admission/RBAC/discovery, same-UID delegation, identity recreation/borrowing, local/metrics-off denial, required election, renewal/epoch/takeover drain, all-Skipped history/freshness, every lifecycle row, hostile-input isolation/peer progress and target-version upgrade collisions; explicitly complete US2 real-cluster authority and lifecycle acceptance. Exact numeric boundaries, impossible-under-normal-admission collision fixtures and injected panics remain component-test obligations.
+- [X] T051 [US4] Expose default-off configuration through deploy/helm/fathom-operator/values.yaml and configuration templates; add tests for required election, configured operator namespace/Lease name and disabled-runtime compatibility without changing built-ins.
+- [X] T052 [P] [US4] Document two-stage Git-reviewed UID installation, minimal grants, diagnostics, exact caps and declared order in docs/guides/addon-definitions.md; update README.md and docs/reference/operator-rbac.md, checking actual reference filenames before editing.
+- [X] T053 [US4] Document target-version CLI inventory, clarification supplement, same-UID delegation, non-atomic revocation, Lease read permission and independent drain verification, Skipped coverage, disable/revoke/preserve rollback and re-enable validation in RELEASE.md and docs/guides/addon-definitions.md; keep #149 separate.
 - [ ] T054 [US4] Record #256 separate PR decision, older-adapter warnRatio/failRatio regression and migration/rejection behavior in specs/012-addon-definition-runtime/execution.md; leave this task open and block runtime release until verified, without implementing or closing #256 here.
-- [ ] T055 [US4] Run the complete quickstart installation/upgrade/rollback and full go -C tools tool task test-e2e; record exact environment, named scenarios and results in specs/012-addon-definition-runtime/execution.md; absent required tools are an explicit blocker.
+- [X] T055 [US4] Run the complete quickstart installation/upgrade/rollback and full go -C tools tool task test-e2e; record exact environment, named real-cluster scenarios and results in specs/012-addon-definition-runtime/execution.md, including actual permissions, delegated execution, lifecycle, drain, rollback and hostile-input isolation/peer progress. Exact numeric boundaries and injected panics are recorded from deterministic component tests; absent required tools are an explicit blocker.
 
 ## Phase 7: Polish and cross-cutting qualification
 
 No epic completion or release without every prior gate.
 
-- [ ] T056 Complete one-to-one requirement/lifecycle/numeric-row coverage audit in specs/012-addon-definition-runtime/execution.md; document security review and absence of known definition-triggerable fatal faults before enabling/releasing runtime loading.
-- [ ] T057 Run pinned verify-generated, crd-compat, ci, race checks and reuse lint; update specs/012-addon-definition-runtime/execution.md with exact outcomes; do not lower coverage thresholds or silently bypass compatibility findings.
-- [ ] T058 Update AGENTS.md and docs/architecture.md for final package boundaries, update generated samples/docs through tasks and run graphify update . after source changes; record results in specs/012-addon-definition-runtime/execution.md.
-- [ ] T059 Prepare focused PRs following plan.md milestones with exact validation evidence, verify repository-specific author/committer/DCO identity before commits, and record PR/release dependency links in specs/012-addon-definition-runtime/execution.md.
+- [X] T056 Complete one-to-one requirement/lifecycle/numeric-row coverage audit in specs/012-addon-definition-runtime/execution.md across the deterministic component and real-cluster obligations; document security review, hostile-input isolation and absence of known definition-triggerable fatal faults before enabling/releasing runtime loading.
+- [X] T057 Run pinned verify-generated, crd-compat, ci, race checks and reuse lint; update specs/012-addon-definition-runtime/execution.md with exact outcomes; do not lower coverage thresholds or silently bypass compatibility findings.
+- [X] T058 Update AGENTS.md and docs/architecture.md for final package boundaries, update generated samples/docs through tasks and run graphify update . after source changes; record results in specs/012-addon-definition-runtime/execution.md.
+- [ ] T059 Prepare one feature PR with four review sections following plan.md milestones, exact validation evidence, repository-specific author/committer/DCO identity before commit, and dependency/release links in specs/012-addon-definition-runtime/execution.md. The separate #256 prerequisite PR link is added when published; this task remains open until the feature PR is published.
 
 ## Dependencies and parallel opportunities
 
@@ -122,9 +122,16 @@ before wiring; US4 authoring documentation can proceed alongside kind fixtures.
 
 ## Implementation strategy
 
-Deliver plan milestones as focused PRs. Keep runtime disabled while partial work
-lands; do not substitute US1 for epic completion. Tests should exercise observable
+Deliver the four plan milestones as review sections in one feature PR. Keep runtime
+disabled while partial work lands; do not substitute US1 for epic completion. Tests should exercise observable
 contracts rather than mirror implementation. Update the execution ledger with
 named evidence after each phase and preserve historical results when superseded.
 Do not edit accepted RFC/ADR decisions or mark implementation tasks done from
 planning. A failed qualification gate keeps runtime release blocked.
+
+## Phase 8: Docker integration fixes
+
+- [X] T060 Requeue definition bindings when their dedicated ServiceAccount changes or another binding begins/stops sharing that identity, using the existing dependency indexes in internal/controller/addondefinitionbinding_controller.go; prove invalidation and recovery through a started manager and the Docker identity-recreation scenario per FR-002, FR-006, FR-008 and T038/T047 (partial). Direct execution fences already reject replacement UIDs; this closes stale binding readiness and eligibility between dependency events.
+- [X] T061 Correct runtime transition-report creation so same-verdict reevaluations and revision changes add no history, and each new report's checks, observedAt and attribution describe the same published completion; reproduce the second Docker trial's duplicate Pass/stale attribution in controller regression tests and rerun the real-cluster history scenarios per FR-008, FR-009 and T045.
+- [X] T062 Prevent compiled adapters from executing through a stored runtime identity collision during manager startup, before initial definition reconciliation has populated the registry; reproduce the full Docker suite's CoreDNS restart failure with a deterministic startup regression, preserve default-off behavior and unrelated built-ins, and rerun the real startup-collision scenario and full suite per FR-006, FR-013 and T047/T050.
+- [X] T063 Honor the configured operator namespace in ordinary manager leader election so a host-local process can refuse runtime authority while continuing built-in checks; add a manager-options regression for explicit namespace and empty fallback, then verify AuthorizationUnavailable and built-in progress against the isolated kind cluster per FR-003 and T050.

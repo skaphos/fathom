@@ -125,6 +125,18 @@ Ready denotes executable/completed, freshness denotes recency, and neither means
 Pass. Attempt Error still preserves previous completed evidence. Mixed results
 use existing aggregate semantics. No-change verdicts do not create reports.
 
+### Test-layer clarification — 2026-09-22
+
+Deterministic component tests are the authoritative evidence for every numeric row
+at and over its limit, impossible-under-normal-admission collision fixtures,
+injected recoverable compile/evaluation panics, slot release and healthy-peer
+progress. Docker/kind tests are the authoritative evidence for
+real admission and permissions, delegated execution, lifecycle, drain, rollback
+and isolation from hostile input. The live-cluster suite therefore does not need to
+inject every budget or execution panic; the shipped operator remains free of
+fault-injection controls. Both layers are required, with their obligations kept
+distinct in the task and execution ledgers.
+
 
 ## Coverage ledger
 

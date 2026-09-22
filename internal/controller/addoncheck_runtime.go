@@ -245,6 +245,11 @@ type RuntimeAttempt struct {
 	Evidence  adapter.Result
 	Completed bool
 	Published bool
+	// publication is the exact status object accepted by the API server and
+	// the evidence it replaced. The report path must not reconstruct either
+	// from the manager cache, which can lag behind this publication.
+	publication      *fathomv1alpha1.AddonCheck
+	previousEvidence *fathomv1alpha1.AddonCheckEvidence
 	// Reason and Message are the operator-visible outcome, chosen by the
 	// publication precedence order.
 	Reason  string
@@ -646,6 +651,8 @@ func (r *AddonCheckRuntimeRunner) finalFence(
 		return result, err
 	}
 	result.Published = published.Published
+	result.publication = published.publication
+	result.previousEvidence = published.previousEvidence
 	if published.Reason != "" {
 		result.Reason, result.Message, result.Requeue = published.Reason, published.Message, published.Requeue
 	}
@@ -854,7 +861,11 @@ func (r *AddonCheckRuntimeRunner) publish(
 		}
 		return RuntimeAttempt{}, fmt.Errorf("controller: publish runtime AddonCheck %s status: %w", key, err)
 	}
-	return RuntimeAttempt{Published: true}, nil
+	return RuntimeAttempt{
+		Published:        true,
+		publication:      published.DeepCopy(),
+		previousEvidence: fenced.Status.LastSuccessfulEvaluation.DeepCopy(),
+	}, nil
 }
 
 // record writes the LATEST ATTEMPT for a run that produced no completed

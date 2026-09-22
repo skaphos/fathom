@@ -7,10 +7,14 @@ package v1alpha1_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
+	api "github.com/skaphos/fathom/api/v1alpha1"
+	limits "github.com/skaphos/fathom/pkg/addondefinition"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -172,4 +176,48 @@ func TestBindingMaximumContractAndStatusAdmission(t *testing.T) {
 	if err := k8sClient.Update(context.Background(), invalid); err == nil {
 		t.Fatal("same-UID service account retarget accepted")
 	}
+}
+
+func TestBindingTypedSpecCannotReachSixteenKiB(t *testing.T) {
+	// NUL escapes as six JSON bytes per UID byte, so this is larger than a
+	// binding made with real Kubernetes UIDs. Every bounded name and namespace
+	// is also at its maximum legal length and count.
+	maxName := strings.Repeat("s", 63) + "." + strings.Repeat("s", 63) + "." +
+		strings.Repeat("s", 63) + "." + strings.Repeat("s", 61)
+	namespaces := make([]api.DefinitionDNSLabel, limits.MaxNamespaces)
+	for i := range namespaces {
+		namespaces[i] = api.DefinitionDNSLabel(fmt.Sprintf("n%02d%s", i, strings.Repeat("n", 60)))
+	}
+	name := strings.Repeat("d", limits.MaxIdentifierBytes)
+	binding := &api.AddonDefinitionBinding{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"}, Spec: api.AddonDefinitionBindingSpec{
+		DefinitionRef:     api.DefinitionReference{Name: api.DefinitionDNSLabel(name), UID: strings.Repeat("\x00", limits.MaxUIDBytes)},
+		ServiceAccountRef: api.DefinitionObjectReference{Name: api.DefinitionResourceName(maxName), UID: strings.Repeat("\x00", limits.MaxUIDBytes)},
+		Enabled:           true,
+		TargetScope:       api.DefinitionBindingScope{Namespaces: namespaces, AllowClusterScoped: true},
+	}}
+	if err := limits.ValidateBinding(binding); err != nil {
+		t.Fatalf("maximum typed binding fixture is invalid: %v", err)
+	}
+	raw, err := json.Marshal(binding.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutFlags := binding.DeepCopy()
+	withoutFlags.Spec.Enabled = false
+	withoutFlags.Spec.TargetScope.AllowClusterScoped = false
+	shorter, err := json.Marshal(withoutFlags.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both bools have omitempty: false disappears, so true (used above) is
+	// the maximum serialized form even though the word "false" is longer.
+	if len(shorter) >= len(raw) || !strings.Contains(string(raw), `"enabled":true`) ||
+		!strings.Contains(string(raw), `"allowClusterScoped":true`) ||
+		strings.Contains(string(shorter), `"enabled"`) || strings.Contains(string(shorter), `"allowClusterScoped"`) {
+		t.Fatalf("maximum bool encoding is not the true/true fixture: true=%d false=%d", len(raw), len(shorter))
+	}
+	if len(raw) >= 4200 || len(raw) >= limits.MaxBindingBytes {
+		t.Fatalf("maximum typed spec is %d bytes; expected under 4200 and far below 16 KiB", len(raw))
+	}
+	t.Logf("maximum typed binding spec with escaped UIDs: %d bytes of %d-byte limit", len(raw), limits.MaxBindingBytes)
 }

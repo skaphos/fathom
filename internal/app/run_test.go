@@ -155,6 +155,33 @@ func TestBuildManagerOptions_DefaultsHaveNoCertWatchers(t *testing.T) {
 	}
 }
 
+func TestBuildManagerOptions_LeaderElectionNamespace(t *testing.T) {
+	scheme, err := NewScheme()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		namespace string
+	}{
+		{name: "explicit host namespace", namespace: "fathom-host"},
+		{name: "default fallback", namespace: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.Namespace = tc.namespace
+			opts.LeaderElect = true
+			manager, _, err := BuildManagerOptions(opts, scheme)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if manager.LeaderElectionNamespace != tc.namespace {
+				t.Fatalf("leader election namespace = %q, want %q", manager.LeaderElectionNamespace, tc.namespace)
+			}
+		})
+	}
+}
+
 // TestBuildManagerOptions_ScopesCacheByManagedByLabel is the regression guard
 // for SKA-581 / #164: the manager cache must restrict ConfigMap, DaemonSet,
 // RoleBinding, and NetworkPolicy informers to Fathom-managed objects

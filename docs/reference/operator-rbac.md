@@ -138,6 +138,15 @@ ClusterRole:
 - **`fathom-addon-impersonator`** (namespaced Role in `fathom-system`):
   `impersonate` on the per-addon ServiceAccounts only — see
   [Addon adapter RBAC](rbac.md#operator-impersonation-grant).
+- **Administrator-installed runtime definition grants**: the offline
+  [`fathomctl definition render`](../guides/addon-definitions.md) output proposes
+  a dedicated reader ServiceAccount, target read Roles/ClusterRoles and bindings,
+  plus an operator-namespace Role granting the actual operator ServiceAccount
+  `impersonate` on `serviceaccounts` with only the named reader account in
+  `resourceNames`. These are reviewed and installed by an administrator; the
+  operator does not create them. Custom-resource mappings and helper reads may
+  need manually completed narrow grants. The operator's own ClusterRole gains
+  no add-on target read rules from runtime definitions.
 - **Per-addon ServiceAccounts and roles** (`config/rbac/addons/`): generated
   from adapter declarations; every grant is justified in
   [Addon adapter RBAC](rbac.md).
@@ -156,6 +165,13 @@ ClusterRole:
   trusted to trigger runs. Neither role is bound by default, neither is used
   by the operator, and the operator's own ClusterRole is unchanged by the
   CLI. See [fathomctl](fathomctl.md#rbac-for-fathomctl-users).
+
+`fathomctl definition drain` uses a caller-supplied CLI identity. Give that
+identity `get` on the exact binding and exact leader-election Lease in the
+operator namespace through separately reviewed grants. It does not need
+cluster-wide Lease reads, list/watch, status writes or grant writes. The
+operator's existing namespaced leader-election Role already covers its own
+Lease access; it does not automatically authorize the CLI caller.
 
 ## Runtime-created RBAC
 

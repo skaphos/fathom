@@ -6,8 +6,8 @@ SPDX-License-Identifier: MIT
 
 This document describes how Fathom is put together: the custom resources it
 reconciles, how their statuses flow into one another, what each controller
-owns, and the two extension surfaces (the in-process adapter contract and the
-probe-pod model). It is the design reference the repository previously pointed
+owns, and its extension surfaces (compiled adapters, runtime definitions and
+probe pods). It is the design reference the repository previously pointed
 at as `DESIGN.md`.
 
 Architecturally significant decisions are recorded as ADRs and linked from the
@@ -22,7 +22,7 @@ relevant sections rather than restated here:
 
 Fathom is a Kubernetes operator (API group `fathom.skaphos.io`) that validates
 the health of platform add-ons — cert-manager, CoreDNS, External Secrets
-Operator, and others reachable through an adapter. It reconciles six custom
+Operator, and others reachable through an adapter. It reconciles the custom
 resources, runs adapter-defined checks against the cluster, persists the
 results as history, and rolls those results up into a single cluster-wide
 verdict that dashboards, alerting, and deployment gates can consume.
@@ -40,8 +40,10 @@ short-lived pods (see [Probe-pod model](#probe-pod-model)).
 - `ClusterHealth` is **not** derived from `HealthReport` history. It is derived
   *only* from `HealthCheck.status` (the `AGENTS.md` invariant; see
   [Aggregation chain](#the-aggregation--status-mirror-chain)).
-- Adapters are **not** out-of-process plugins, sidecars, or DaemonSets. They are
-  compiled into the operator (see [ADR-0001](adr/0001-in-process-adapter-contract.md)).
+- Built-in adapters are **not** out-of-process plugins, sidecars, or DaemonSets.
+  They are compiled into the operator (see
+  [ADR-0001](adr/0001-in-process-adapter-contract.md)). Runtime definitions
+  supply typed coverage inside the same process.
 
 ## The CRD Model
 
@@ -52,6 +54,8 @@ section is the conceptual overview.
 | Kind | File | Role | Executes checks? |
 | --- | --- | --- | --- |
 | `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
+| `AddonDefinition` | `api/v1alpha1/addondefinition_types.go` | Cluster-scoped typed coverage for one add-on identity and ordered families/checks. | No |
+| `AddonDefinitionBinding` | `api/v1alpha1/addondefinitionbinding_types.go` | Namespaced authorization binding one definition UID to one dedicated reader ServiceAccount UID and target scope. | No |
 | `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
 | `NodeHealthCheck` | `api/v1alpha1/nodehealthcheck_types.go` | Declares node-local health assertions (filesystem headroom, node conditions, kubelet, container runtime); the operator runs the agent-side ones via the node-agent in health mode and grades node conditions itself. | Yes (via the node-agent + operator) |
 | `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. See [DNS checks](guides/dns-checks.md). | Yes (via probe Pods) |
@@ -65,6 +69,28 @@ kinds that drive work — `AddonCheck` in-process via an adapter,
 DaemonSet, and `DNSCheck` from short-lived probe Pods in
 the check's own namespace. `HealthCheck` and `ClusterHealth` are
 projection/aggregation layers; `HealthReport` is the audit trail.
+
+Runtime definitions are an opt-in extension of `AddonCheck` dispatch, as
+decided in [ADR-0007](adr/0007-runtime-addon-definition-loading.md). Built-ins stay
+compiled and their names remain reserved; a canonical name collision blocks
+both candidates until an administrator explicitly resolves it. Definition and
+binding controllers maintain eligibility and status; runtime compilation
+creates immutable revision snapshots in `internal/adapter/declarative`, with
+bounded scheduling and transport in `internal/adapter/runtime`.
+`internal/adapter/impersonation` gives the evaluator only the dedicated reader
+identity. The manager's own Lease gates admission and publication; an uncached
+authority read validates the definition, binding and ServiceAccount again
+before publishing. The [operations guide](guides/addon-definitions.md)
+describes installation and rollback. Runtime release qualification is pending,
+including the separate #256 contract decision.
+
+Before controllers start, opt-in loading reserves built-in names and uses bounded
+uncached exact-name GETs to establish provisional UID/generation claims for stored
+definitions; nonconflicting names are released. Matching UID and generation at
+terminal reconciliation plus direct observation clears provisional claims, while
+API errors hold only the affected identity and retries recover. This is not a
+permanent inventory reservation or an atomic revocation guarantee; default-off
+behavior is unchanged.
 
 `DNSCheck` is the one kind whose workloads carry an `ownerReference`. Its probe
 Pods run in the *check's* namespace — which is what makes a check author's reach

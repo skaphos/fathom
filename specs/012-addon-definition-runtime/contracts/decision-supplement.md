@@ -22,6 +22,19 @@ Implementation planning reconciles the RFC wording by citing this supplement;
 accepted ADRs and historical RFC text remain unchanged. Publish this supplement
 with the feature planning PR so the clarified contract is durable and reviewable.
 
+### Test contract clarification (2026-09-22)
+
+Q: Must the full Docker/kind suite inject every budget and execution panic?
+
+A: No. Deterministic component tests prove each numeric boundary at and over its
+limit, impossible-under-normal-admission collision fixtures, injected recoverable
+compile/evaluation panics, slot release and healthy peer progress. Docker/kind
+tests prove real admission, permissions, delegated execution, lifecycle, drain,
+rollback and hostile-input isolation. This keeps
+fault-injection controls out of the shipped operator while preserving both exact
+failure evidence and real authority/lifecycle evidence. The RFC numeric and
+lifecycle tables remain unchanged.
+
 
 ### Offline renderer clarification — option A
 

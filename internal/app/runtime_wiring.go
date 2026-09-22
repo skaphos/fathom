@@ -12,11 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -219,6 +222,17 @@ func (w *runtimeWiring) attach(mgr ctrl.Manager, adapterRegistry *registry.Regis
 	if mgr == nil || adapterRegistry == nil || addonCheck == nil {
 		return nil, errors.New("runtime wiring requires a manager, the shared adapter registry and the AddonCheck reconciler")
 	}
+	// Controllers may start reconciling AddonChecks before the definition
+	// controller has processed its initial informer list. Reserve only the
+	// built-in names, then read each exact definition directly before manager
+	// startup. An unavailable read remains barred and is retried after startup.
+	var builtinNames []string
+	for _, capabilities := range adapterRegistry.Capabilities() {
+		builtinNames = append(builtinNames, capabilities.AddonTypes...)
+	}
+	sort.Strings(builtinNames)
+	adapterRegistry.ReserveStartupClaims(builtinNames)
+	refreshStartupClaims(context.Background(), mgr.GetAPIReader(), adapterRegistry, mgr.GetLogger())
 
 	// The informer sync gate. Without it the session refuses to start with
 	// ErrCacheSyncUnwired rather than assuming caches it cannot observe, which
@@ -355,6 +369,34 @@ type runtimeDispatchGate struct {
 	retry time.Duration
 }
 
+// refreshStartupClaims only revisits reservations that startup could not yet
+// hand to ordinary definition reconciliation. The direct GETs avoid a broad,
+// unbounded List and make API errors affect only the corresponding built-in.
+func refreshStartupClaims(ctx context.Context, reader client.Reader, reg *registry.Registry, log logr.Logger) {
+	claims := reg.StartupClaims()
+	names := make([]string, 0, len(claims))
+	for name := range claims {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		var definition fathomv1alpha1.AddonDefinition
+		read, cancel := context.WithTimeout(ctx, limits.MaxRequestDuration)
+		err := reader.Get(read, types.NamespacedName{Name: name}, &definition)
+		cancel()
+		switch {
+		case err == nil:
+			reg.ObserveStartupClaim(name, definition.UID, definition.Generation)
+		case apierrors.IsNotFound(err):
+			reg.ObserveStartupClaim(name, "", 0)
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Error(err, "startup definition inventory remains unresolved", "addonType", name)
+		}
+	}
+}
+
 var (
 	_ manager.Runnable               = (*runtimeDispatchGate)(nil)
 	_ manager.LeaderElectionRunnable = (*runtimeDispatchGate)(nil)
@@ -366,6 +408,26 @@ func (g *runtimeDispatchGate) NeedLeaderElection() bool { return true }
 func (g *runtimeDispatchGate) Start(ctx context.Context) error {
 	// Deferred first: nothing below may leave the gate admitted.
 	defer g.registry.CloseRuntimeDispatch("the elected runtime leadership session ended")
+	// Retry incomplete startup inventory independently of runtime admission.
+	// A definition deleted before its first reconcile also releases its stale
+	// reservation here. The loop exits once normal reconciliation has cleared
+	// the remaining claims.
+	inventoryCtx, cancelInventory := context.WithCancel(ctx)
+	inventoryDone := make(chan struct{})
+	go func() {
+		defer close(inventoryDone)
+		ticker := time.NewTicker(runtimeLeaseAdoptRetry)
+		defer ticker.Stop()
+		for len(g.registry.StartupClaims()) > 0 {
+			select {
+			case <-inventoryCtx.Done():
+				return
+			case <-ticker.C:
+				refreshStartupClaims(inventoryCtx, g.reader, g.registry, g.log)
+			}
+		}
+	}()
+	defer func() { cancelInventory(); <-inventoryDone }()
 
 	select {
 	case <-ctx.Done():

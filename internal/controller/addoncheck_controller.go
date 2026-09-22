@@ -646,10 +646,10 @@ func (r *AddonCheckReconciler) forgetRuntimeWork(key types.NamespacedName) {
 // admission at a time per check. The order is fixed and each step is load
 // bearing:
 //
-//  1. read the check and the evidence the run will be measured against;
+//  1. read the check to verify the queued work still applies;
 //  2. run — the runner owns resolution, admission, both fences and publication;
-//  3. re-read the PUBLISHED check, because the runner publishes a copy and the
-//     transition is decided from what landed, not from what was sent;
+//  3. use the exact PUBLISHED check and its previous evidence returned by the
+//     runner; the manager cache may still hold an older status;
 //  4. record the transition and persist the report name it chose.
 //
 // The disposition it returns is what paces the next attempt: Completed clears
@@ -679,7 +679,6 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 		return execution.Completed
 	}
 
-	previous := check.Status.LastSuccessfulEvaluation.DeepCopy()
 	attempt, err := r.Runtime.Run(ctx, &check)
 	if err != nil {
 		if errors.Is(err, errNotRuntimeAddonType) {
@@ -692,12 +691,12 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 	}
 
 	if attempt.Completed && attempt.Published {
-		var published fathomv1alpha1.AddonCheck
-		if err := r.Get(ctx, work.Check, &published); err != nil {
-			log.Error(err, "re-read the published AddonCheck for its transition")
+		if attempt.publication == nil {
+			log.Error(errors.New("published runtime attempt has no status snapshot"), "record the runtime AddonCheck transition")
 			return execution.Retry
 		}
-		name, err := r.recordRuntimeTransition(ctx, log, &published, previous, attempt)
+		published := attempt.publication
+		name, err := r.recordRuntimeTransition(ctx, log, published, attempt.previousEvidence, attempt)
 		if err != nil {
 			log.Error(err, "record the runtime AddonCheck transition")
 			return execution.Retry
@@ -706,7 +705,7 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 			// Second status write, by design: the report cannot be named
 			// before it exists. See recordRuntimeTransition's "two status
 			// writes" note — a lost write here is repaired by the backfill.
-			if err := r.Status().Update(ctx, &published); err != nil {
+			if err := r.Status().Update(ctx, published); err != nil {
 				log.Error(err, "persist the runtime AddonCheck report name")
 				return execution.Retry
 			}
@@ -783,6 +782,10 @@ func runtimeDisposition(attempt RuntimeAttempt) execution.Disposition {
 // writes status once at publication and once more to persist LastReportName.
 // Between the two, status shows the new verdict beside a stale or empty
 // lastReportName, and the process can simply stop there.
+// A repeated same-verdict completion under that stale pointer reuses the
+// existing report. If every pointer write fails across opposite verdict
+// flaps, intermediate transitions can coalesce; history cannot claim a
+// durable ordering that status never recorded.
 //
 // Creating the report BEFORE publication would collapse that to one write, and
 // was rejected deliberately: the publication fence is what decides whether this
@@ -821,17 +824,17 @@ func (r *AddonCheckReconciler) recordRuntimeTransition(
 	}
 
 	report := runtimeHealthReportForAddonCheck(check, evidence, attempt)
-	// The key is the transition itself plus the observation that produced it,
-	// so a retried create of the same publication reuses the same object
-	// instead of duplicating history, while two distinct transitions never
-	// collide.
+	// The durable history predecessor identifies the transition. If creating
+	// the report succeeds but persisting LastReportName conflicts, a later
+	// same-verdict run must reuse that report rather than create a duplicate
+	// with its newer observation time. Once the pointer advances, a later
+	// verdict flap receives a different predecessor and a distinct name.
 	useDeterministicHealthReportName(report, check.Name,
 		"AddonCheck",
 		string(check.UID),
-		strconv.FormatInt(attempt.Fence.CheckGeneration, 10),
+		check.Status.LastReportName,
 		previousVerdict,
 		string(evidence.Verdict),
-		evidence.ObservedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if r.Scheme != nil {
 		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {

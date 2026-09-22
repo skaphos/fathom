@@ -1589,6 +1589,88 @@ func TestRunRuntimeWorkPublishesEvidenceAndRecordsTheTransition(t *testing.T) {
 	}
 }
 
+func TestRunRuntimeWorkDoesNotAttributeReportsToStaleCachedStatus(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	stale := f.check().DeepCopy()
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if check, ok := obj.(*fathomv1alpha1.AddonCheck); ok && key == runtimeCheckKey() {
+				stale.DeepCopyInto(check)
+				return nil
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("first disposition = %v, want Completed", got)
+	}
+	reports := f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("first run stored %d reports, want 1", len(reports))
+	}
+	first := f.check().Status.LastSuccessfulEvaluation
+	if first == nil || !reports[0].Spec.ObservedAt.Equal(&first.ObservedAt) {
+		t.Fatal("first report was attributed to stale evidence instead of the published observation")
+	}
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("second disposition = %v, want Completed", got)
+	}
+	if reports := f.reports(); len(reports) != 1 {
+		t.Fatalf("unchanged verdict under a stale cache stored %d reports, want 1", len(reports))
+	}
+}
+
+func TestRunRuntimeWorkReusesReportAfterReportPointerConflict(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	var conflict atomic.Bool
+	conflict.Store(true)
+	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			check, ok := obj.(*fathomv1alpha1.AddonCheck)
+			if sub == "status" && ok && check.Status.LastReportName != "" && conflict.Swap(false) {
+				return apierrors.NewConflict(fathomv1alpha1.GroupVersion.WithResource("addonchecks").GroupResource(), check.Name, errors.New("synthetic concurrent status update"))
+			}
+			return c.SubResource(sub).Update(ctx, obj, opts...)
+		},
+	})
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Retry {
+		t.Fatalf("first disposition = %v, want Retry after report pointer conflict", got)
+	}
+	reports := f.reports()
+	if len(reports) != 1 || f.check().Status.LastReportName != "" {
+		t.Fatalf("after pointer conflict reports=%d lastReportName=%q, want 1 and empty pointer", len(reports), f.check().Status.LastReportName)
+	}
+	first := reports[0].DeepCopy()
+	// A check spec edit can advance generation before the pointer recovers;
+	// the historical transition is still the one already created.
+	edited := f.check()
+	edited.Generation++
+	if err := f.store.Update(context.Background(), edited); err != nil {
+		t.Fatalf("advance check generation: %v", err)
+	}
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("retry disposition = %v, want Completed", got)
+	}
+	reports = f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("same-verdict retry stored %d reports, want one", len(reports))
+	}
+	if reports[0].Name != first.Name || !reports[0].Spec.ObservedAt.Equal(&first.Spec.ObservedAt) {
+		t.Fatal("retry replaced the original report's identity or attribution")
+	}
+	if got := f.check().Status.LastReportName; got != first.Name {
+		t.Fatalf("lastReportName=%q, want recovered pointer %q", got, first.Name)
+	}
+}
+
 // The lost-transition repair, driven through its production caller. A report
 // create that fails leaves status showing a verdict history does not hold; the
 // next run must backfill it rather than compare the verdict against itself

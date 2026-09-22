@@ -48,6 +48,9 @@ spec:
             {{- end }}
             - --health-probe-bind-address={{ .Values.healthProbe.bindAddress }}
             - --leader-elect={{ .Values.leaderElect }}
+            {{- if .Values.runtimeLoading.enabled }}
+            - --runtime-loading-enabled
+            {{- end }}
             {{- if .Values.leaderElect }}
             - --leader-election-id={{ .Values.leaderElectionID }}
             {{- end }}

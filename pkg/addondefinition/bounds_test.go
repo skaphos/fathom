@@ -243,3 +243,74 @@ func TestDefinitionStringBytesAndUTF8(t *testing.T) {
 		})
 	}
 }
+
+func TestDefinitionResourceSegmentAndIdentifierBoundaries(t *testing.T) {
+	// Four DNS labels keep the 253-byte resource name legal while testing the
+	// full subdomain budget, not just the 63-byte per-label budget.
+	resource253 := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." +
+		strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
+	resource254 := resource253 + "d"
+	for _, tc := range []struct {
+		name, wantErr string
+		edit          func(*api.AddonDefinition, string)
+		at, over      string
+	}{
+		{"workload name", "invalid resource name", func(d *api.AddonDefinition, value string) {
+			d.Spec.Families[0].Checks[0].Workload.DefaultName = api.DefinitionResourceName(value)
+		}, resource253, resource254},
+		{"read API group", "invalid apiGroup", func(d *api.AddonDefinition, value string) {
+			d.Spec.RequestedReads = []api.DefinitionReadRule{{APIGroup: &value, Resources: []string{"widgets"}, Verbs: []string{"get"}}}
+		}, resource253, resource254},
+		{"read resource plural", "exact resource plural required", func(d *api.AddonDefinition, value string) {
+			core := ""
+			d.Spec.RequestedReads = []api.DefinitionReadRule{{APIGroup: &core, Resources: []string{value}, Verbs: []string{"get"}}}
+		}, strings.Repeat("r", 253), strings.Repeat("r", 254)},
+		{"discovery group segment", "exact discovery URL required", func(d *api.AddonDefinition, value string) {
+			d.Spec.RequestedReads = []api.DefinitionReadRule{{NonResourceURLs: []string{"/apis/" + value}, Verbs: []string{"get"}}}
+		}, resource253, resource254},
+		{"discovery version segment", "exact discovery URL required", func(d *api.AddonDefinition, value string) {
+			d.Spec.RequestedReads = []api.DefinitionReadRule{{NonResourceURLs: []string{"/api/" + value}, Verbs: []string{"get"}}}
+		}, "v" + strings.Repeat("1", 252), "v" + strings.Repeat("1", 253)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, candidate := range []struct {
+				value string
+				valid bool
+			}{{tc.at, true}, {tc.over, false}} {
+				d := validDefinition()
+				tc.edit(d, candidate.value)
+				if err := definitions.Validate(d); (err == nil) != candidate.valid {
+					t.Fatalf("length=%d accepted=%v want %v: %v", len(candidate.value), err == nil, candidate.valid, err)
+				} else if !candidate.valid && !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("length=%d rejected for wrong field: %v", len(candidate.value), err)
+				}
+			}
+		})
+	}
+	for _, name := range []string{"héalth", "healthé"} {
+		d := validDefinition()
+		d.Spec.Families[0].Name = api.DefinitionIdentifier(name)
+		if err := definitions.Validate(d); err == nil || !strings.Contains(err.Error(), "invalid or duplicate family") {
+			t.Errorf("non-ASCII identifier %q rejected for wrong reason: %v", name, err)
+		}
+	}
+}
+
+func TestPodProjectionSelectorUsesKubernetesLabelValueLimit(t *testing.T) {
+	for _, tc := range []struct {
+		length int
+		valid  bool
+	}{{63, true}, {64, false}} {
+		d := validDefinition()
+		d.Spec.Families[0].Checks = []api.DefinitionCheck{{Name: "projection", Kind: "PodProjection", PodProjection: &api.DefinitionPodProjection{
+			Target:     api.DefinitionTarget{Scope: "Namespaced", Namespaces: []api.DefinitionDNSLabel{"default"}},
+			Selector:   map[string]api.DefinitionSelectorValue{"app": api.DefinitionSelectorValue(strings.Repeat("v", tc.length))},
+			VolumeName: "token",
+		}}}
+		if err := definitions.Validate(d); (err == nil) != tc.valid {
+			t.Errorf("selector value bytes=%d accepted=%v want %v: %v", tc.length, err == nil, tc.valid, err)
+		} else if !tc.valid && !strings.Contains(err.Error(), "invalid selector label") {
+			t.Errorf("selector value bytes=%d rejected for wrong field: %v", tc.length, err)
+		}
+	}
+}

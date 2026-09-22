@@ -51,6 +51,7 @@ type Registry struct {
 	runtimeMu sync.Mutex
 	runtime   atomic.Pointer[runtimeSnapshot]
 	admission atomic.Pointer[admissionState]
+	startup   atomic.Pointer[map[string]startupClaim]
 }
 
 // New returns a Registry ready for [Registry.Register] calls. The logger is
@@ -65,6 +66,8 @@ func New(logger logr.Logger) *Registry {
 	r := &Registry{logger: logger, byAddon: map[string]adapter.Adapter{}}
 	r.runtime.Store(buildRuntimeSnapshot(map[types.UID]*runtimeOwner{}))
 	r.admission.Store(&admissionState{reason: "runtime dispatch has not been admitted"})
+	claims := map[string]startupClaim{}
+	r.startup.Store(&claims)
 	return r
 }
 
@@ -467,6 +470,97 @@ func (r *Registry) RuntimeEntries() []RuntimeEntry {
 	return out
 }
 
+// startupClaim holds one bounded, provisional built-in reservation.
+type startupClaim struct {
+	uid                 types.UID
+	generation          int64
+	completedUID        types.UID
+	completedGeneration int64
+}
+
+// ReserveStartupClaims closes built-in dispatch while the enabled runtime
+// loader discovers whether stored definitions claim those identities. An empty
+// UID means the direct API read has not succeeded yet.
+func (r *Registry) ReserveStartupClaims(addonTypes []string) {
+	r.runtimeMu.Lock()
+	defer r.runtimeMu.Unlock()
+	claims := make(map[string]startupClaim, len(addonTypes))
+	for _, name := range addonTypes {
+		claims[name] = startupClaim{}
+	}
+	r.startup.Store(&claims)
+}
+
+// StartupClaims returns the unresolved startup reservations. Callers may use
+// the copy for direct API reads without holding a registry lock.
+func (r *Registry) StartupClaims() map[string]types.UID {
+	out := map[string]types.UID{}
+	for name, claim := range *r.startup.Load() {
+		out[name] = claim.uid
+	}
+	return out
+}
+
+// ObserveStartupClaim records a direct API read for an existing reservation.
+// A not-found read removes it; a successful read records the observed UID.
+// Once normal reconciliation releases a claim, an older API read cannot
+// recreate it.
+func (r *Registry) ObserveStartupClaim(name string, uid types.UID, generation int64) {
+	r.runtimeMu.Lock()
+	defer r.runtimeMu.Unlock()
+	old := *r.startup.Load()
+	if _, exists := old[name]; !exists {
+		return
+	}
+	next := make(map[string]startupClaim, len(old))
+	for key, value := range old {
+		if key != name {
+			next[key] = value
+		}
+	}
+	if uid != "" {
+		claim := old[name]
+		if claim.completedUID != uid || claim.completedGeneration != generation {
+			// An earlier direct read may finish after the cache already
+			// reconciled a newer revision. Keep that completion until a
+			// direct read confirms it or a later reconciliation replaces it.
+			claim.uid = uid
+			claim.generation = generation
+			next[name] = claim
+		}
+	}
+	r.startup.Store(&next)
+}
+
+// ReleaseStartupClaim is called only after normal reconciliation established
+// eligibility for the observed object. An event for an older UID cannot clear
+// the reservation of a recreated definition.
+func (r *Registry) ReleaseStartupClaim(name string, uid types.UID, generation int64) {
+	r.runtimeMu.Lock()
+	defer r.runtimeMu.Unlock()
+	old := *r.startup.Load()
+	claim, exists := old[name]
+	if !exists {
+		return
+	}
+	next := make(map[string]startupClaim, len(old))
+	for key, value := range old {
+		if key != name {
+			next[key] = value
+		}
+	}
+	if claim.uid == "" || claim.uid != uid || claim.generation != generation {
+		// A cached reconciliation cannot certify an API read that failed.
+		// It may also precede a direct read of a newly recreated or edited
+		// revision. Remember the completed revision in either case and
+		// release only when a later direct read confirms that exact pair.
+		claim.completedUID = uid
+		claim.completedGeneration = generation
+		next[name] = claim
+	}
+	r.startup.Store(&next)
+}
+
 // ErrAdmissionDriverRequired is returned by [Registry.OpenRuntimeDispatch]
 // when no driver identity is supplied. The gate stays closed, so a seam wired
 // without a leadership session fails loudly instead of admitting dispatch that
@@ -519,6 +613,16 @@ func (r *Registry) CloseRuntimeDispatch(reason string) {
 // It returns a *[DispatchBarrier] when the identity is contested or runtime
 // dispatch is not admitted, and [ErrNotFound] when nobody claims it.
 func (r *Registry) Resolve(addonType string) (Resolution, error) {
+	if claim, reserved := (*r.startup.Load())[addonType]; reserved {
+		if builtin, ok := r.builtin(addonType); ok {
+			if claim.uid == "" {
+				return Resolution{}, &DispatchBarrier{AddonType: addonType, Reason: ReasonAdmissionClosed,
+					Claimants: []string{fmt.Sprintf("built-in adapter %q", builtin.Name())}, Detail: "startup definition inventory has not been read"}
+			}
+			return Resolution{}, &DispatchBarrier{AddonType: addonType, Reason: ReasonBuiltinCollision,
+				Claimants: []string{fmt.Sprintf("built-in adapter %q", builtin.Name()), fmt.Sprintf("stored runtime definition %q", claim.uid)}}
+		}
+	}
 	snap := r.runtime.Load()
 	if barrier := r.barrierFor(snap, addonType); barrier != nil {
 		return Resolution{}, barrier

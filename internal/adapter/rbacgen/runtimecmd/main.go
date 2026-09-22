@@ -15,12 +15,18 @@ import (
 )
 
 func main() {
-	if err := rbacgen.WriteRuntimeInventory(".", app.BuiltInAdapters()); err != nil {
+	if err := run("."); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := rbacgen.WriteRuntimeSamples("."); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+}
+
+func run(root string) error {
+	if err := rbacgen.WriteRuntimeInventory(root, app.BuiltInAdapters()); err != nil {
+		return fmt.Errorf("write runtime inventory: %w", err)
 	}
+	if err := rbacgen.WriteRuntimeSamples(root); err != nil {
+		return fmt.Errorf("write runtime samples: %w", err)
+	}
+	return nil
 }

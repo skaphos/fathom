@@ -377,22 +377,20 @@ verification steps are in the [fathomctl guide](docs/guides/fathomctl.md);
 the flag-level contract is in the
 [fathomctl reference](docs/reference/fathomctl.md).
 
-### Runtime definition authoring (preview)
+### Runtime add-on definitions (qualification preview)
 
-`fathomctl definition render --file definition.yaml --service-account custom-reader
---operator-namespace fathom-system --operator-service-account fathom-controller-manager`
-prints staged manifests offline. Review manual-completion diagnostics for custom
-resource grants; the final binding template deliberately has no UIDs.
-`definition bind` reads a matching live definition and service account and prints
-a disabled binding. Review the live spec, including admission defaults, before
-binding. Neither command applies resources.
-
-Run the target release’s `fathomctl definition collisions` before upgrading; it
-prints binary version/build and checks its bundled inventory. `definition drain
---name <addon> --operator-namespace <ns>` independently checks Lease renewal and
-the disabled binding’s current acknowledgement. Preflight exits 1 for collisions
-or not-drained, and 2 when verification fails. Runtime activation is not yet
-implemented; these authoring commands do not enable runtime checks.
+`AddonDefinition` supplies ordered, typed checks under a dedicated reader
+ServiceAccount. `fathomctl definition render` prepares offline manifests with
+reviewable grants and an incomplete binding template; after installing the
+definition and ServiceAccount, `definition bind` captures their live UIDs and
+prints a disabled binding. Neither command applies resources. Runtime loading is
+off by default; opt-in uses `--runtime-loading-enabled` and requires leader
+election and the operator namespace. Helm exposes `runtimeLoading.enabled`,
+which defaults to false. Use the [runtime definition operations guide](docs/guides/addon-definitions.md)
+for the staged install, target-release collision preflight, independent Lease
+drain verification and rollback. Full real-cluster qualification and the
+separate [#256 ratio-contract decision](https://github.com/skaphos/fathom/issues/256)
+remain release blockers.
 
 ## Contributing & development
 

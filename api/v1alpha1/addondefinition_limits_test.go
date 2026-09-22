@@ -7,15 +7,20 @@ package v1alpha1_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	api "github.com/skaphos/fathom/api/v1alpha1"
 	limits "github.com/skaphos/fathom/pkg/addondefinition"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
@@ -105,5 +110,92 @@ func TestDefinitionMaximumCheckAdmissionCost(t *testing.T) {
 		t.Fatal("17 families admitted")
 	} else if !strings.Contains(err.Error(), "spec.families") {
 		t.Fatalf("rejected for an unrelated reason: %v", err)
+	}
+}
+
+func TestDefinitionCanonicalByteCapAfterAdmissionDefaults(t *testing.T) {
+	requireAPIServer(t)
+	const name = "runtime-canonical-byte-cap"
+	spec := api.AddonDefinitionSpec{AddonType: name, AdapterVersion: "1.0.0", SemanticsVersion: 1}
+	for f := 0; f < 8; f++ {
+		family := api.DefinitionFamily{Name: api.DefinitionIdentifier(fmt.Sprintf("family-%d", f))}
+		for c := 0; c < 32; c++ {
+			family.Checks = append(family.Checks, api.DefinitionCheck{
+				Name: api.DefinitionIdentifier(fmt.Sprintf("check-%d", c)), Kind: "Field",
+				Field: &api.DefinitionField{
+					Target:     api.DefinitionTarget{Scope: "Namespaced", Namespaces: []api.DefinitionDNSLabel{"default"}},
+					APIVersion: "example.org/v1", Kind: "Widget", ListKind: "WidgetList",
+					FieldPath: []string{"status"}, ExpectedValue: "a", AbsentOutcome: "Warn", OtherOutcome: "Warn",
+				},
+			})
+		}
+		spec.Families = append(spec.Families, family)
+	}
+	defaultedWire := func() (map[string]any, error) {
+		wire, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&spec)
+		if err != nil {
+			return nil, err
+		}
+		// The CRD adds these defaults. Include their serialized cost before
+		// filling strings, so admission cannot move the stored wire spec past
+		// the 256 KiB boundary even when typed omitempty later drops false.
+		wire["optional"] = false
+		for _, family := range wire["families"].([]any) {
+			family.(map[string]any)["defaultEnabled"] = false
+		}
+		return wire, nil
+	}
+	wireSpec, err := defaultedWire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(wireSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := limits.MaxSpecBytes - len(raw)
+	for fi := range spec.Families {
+		for ci := range spec.Families[fi].Checks {
+			field := spec.Families[fi].Checks[ci].Field
+			extra := min(remaining, limits.MaxStringBytes-1)
+			field.ExpectedValue = api.DefinitionText(strings.Repeat("a", extra+1))
+			remaining -= extra
+		}
+	}
+	if remaining != 0 {
+		t.Fatalf("typed fixture cannot reach the %d-byte cap: %d bytes remain", limits.MaxSpecBytes, remaining)
+	}
+	wireSpec, err = defaultedWire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err = json.Marshal(wireSpec)
+	if err != nil || len(raw) != limits.MaxSpecBytes {
+		t.Fatalf("pre-admission defaulted wire spec bytes=%d want %d: %v", len(raw), limits.MaxSpecBytes, err)
+	}
+	obj := runtimeDefinition(name)
+	obj.Object["spec"] = wireSpec
+	if err := k8sClient.Create(context.Background(), obj); err != nil {
+		t.Fatalf("CREATE exact-byte definition: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), obj) })
+	stored := runtimeDefinition(name)
+	if err := k8sClient.Get(context.Background(), client.ObjectKey{Name: name}, stored); err != nil {
+		t.Fatal(err)
+	}
+	storedJSON, err := json.Marshal(stored.Object["spec"])
+	if err != nil || len(storedJSON) != limits.MaxSpecBytes {
+		t.Fatalf("stored defaulted wire spec bytes=%d want %d: %v", len(storedJSON), limits.MaxSpecBytes, err)
+	}
+	var admitted api.AddonDefinitionSpec
+	if err := json.Unmarshal(storedJSON, &admitted); err != nil {
+		t.Fatal(err)
+	}
+	defaultedJSON, err := json.Marshal(admitted)
+	if err != nil || len(defaultedJSON) > limits.MaxSpecBytes {
+		t.Fatalf("post-default typed canonical spec bytes=%d exceeds %d: %v", len(defaultedJSON), limits.MaxSpecBytes, err)
+	}
+	if err := limits.Validate(&api.AddonDefinition{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: admitted}); err != nil {
+		t.Fatalf("CREATE returned a definition the compiler rejects at the exact byte cap: %v", err)
 	}
 }

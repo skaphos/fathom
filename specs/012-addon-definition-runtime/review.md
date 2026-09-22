@@ -4,6 +4,10 @@ SPDX-License-Identifier: MIT
 -->
 # Adversarial review — implementation checkpoint
 
+This is the historical schema/authoring checkpoint, retained with its original
+findings and limitations. Current runtime implementation and Docker qualification
+evidence are in [qualification.md](qualification.md) and [execution.md](execution.md).
+
 Scope: current uncommitted schema, semantic validator, compiler, configuration,
 and Podman test-harness changes. This is not the final runtime security review:
 the authority/transport, lifecycle, evidence, CLI and qualification work remains

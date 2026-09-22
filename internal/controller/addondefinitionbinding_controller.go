@@ -20,8 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
@@ -678,7 +681,7 @@ func (r *AddonDefinitionBindingReconciler) evaluate(ctx context.Context, binding
 	return accepted, conditionSpec{
 		Type: definitionConditionReady, Status: metav1.ConditionTrue, Reason: reasonBindingAuthorized,
 		Message: fmt.Sprintf("definition %q is authorized to run as %s/%s", name, r.OperatorNamespace, binding.Spec.ServiceAccountRef.Name),
-	}, ctrl.Result{}, nil
+	}, ctrl.Result{RequeueAfter: definitions.MissingInputPoll}, nil
 }
 
 // acknowledgeDrain implements the drain acknowledgement of
@@ -957,8 +960,85 @@ func (r *AddonDefinitionBindingReconciler) bindingsForDefinition(ctx context.Con
 	return requests
 }
 
-// SetupWithManager registers the binding controller and the shared indexes.
-// Wiring it into the manager is T047's; nothing calls this yet.
+// bindingsForServiceAccount observes deletion, recreation and label changes of
+// the dedicated reader. Name matching is essential: a recreated account has a
+// new UID, while the stored binding still references the old one.
+func (r *AddonDefinitionBindingReconciler) bindingsForServiceAccount(ctx context.Context, obj client.Object) []reconcile.Request {
+	sa, ok := obj.(*corev1.ServiceAccount)
+	if !ok || sa.Namespace != r.OperatorNamespace {
+		return nil
+	}
+	bindings, err := bindingsForServiceAccountReference(ctx, r.Client, r.OperatorNamespace, sa.Name, string(sa.UID))
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "cannot enqueue bindings for ServiceAccount change", "serviceAccount", client.ObjectKeyFromObject(sa))
+		// Authorized bindings recheck at MissingInputPoll even if this event's
+		// indexed lookup failed, so one transient cache error cannot strand Ready.
+		return nil
+	}
+	return bindingRequests(bindings)
+}
+
+// bindingsSharingServiceAccount rechecks peers when a binding is created,
+// deleted, or changes its authority spec. The event handler maps both old and
+// new update objects, so peers of a previous identity are rechecked too.
+func (r *AddonDefinitionBindingReconciler) bindingsSharingServiceAccount(ctx context.Context, obj client.Object) []reconcile.Request {
+	binding, ok := obj.(*fathomv1alpha1.AddonDefinitionBinding)
+	if !ok || binding.Namespace != r.OperatorNamespace {
+		return nil
+	}
+	bindings, err := bindingsForServiceAccountReference(ctx, r.Client, r.OperatorNamespace,
+		string(binding.Spec.ServiceAccountRef.Name), binding.Spec.ServiceAccountRef.UID)
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "cannot enqueue bindings sharing ServiceAccount", "binding", client.ObjectKeyFromObject(binding))
+		return nil
+	}
+	return bindingRequests(bindings)
+}
+
+func bindingRequests(bindings []fathomv1alpha1.AddonDefinitionBinding) []reconcile.Request {
+	requests := make([]reconcile.Request, 0, len(bindings))
+	for i := range bindings {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&bindings[i])})
+	}
+	return requests
+}
+
+// The two exact-match indexes cover both a reused name and a reused UID.
+// Refuse truncated index results; healthy bindings have a periodic recheck to
+// recover if a cache List fails or this bounded mapper cannot inspect all peers.
+func bindingsForServiceAccountReference(ctx context.Context, reader client.Reader, namespace, name, uid string) ([]fathomv1alpha1.AddonDefinitionBinding, error) {
+	seen := map[types.NamespacedName]fathomv1alpha1.AddonDefinitionBinding{}
+	for _, lookup := range []struct{ field, value string }{
+		{IndexBindingServiceAccountName, name},
+		{IndexBindingServiceAccountUID, uid},
+	} {
+		if lookup.value == "" {
+			continue
+		}
+		var list fathomv1alpha1.AddonDefinitionBindingList
+		if err := reader.List(ctx, &list, client.InNamespace(namespace),
+			client.MatchingFields{lookup.field: lookup.value}, client.Limit(definitions.MaxRunObjects)); err != nil {
+			return nil, fmt.Errorf("list bindings by %s: %w", lookup.field, err)
+		}
+		// controller-runtime's cache always reports this sentinel even when the
+		// indexed result fits; a real API continuation means we did truncate.
+		if (list.Continue != "" && list.Continue != "continue-not-supported") || len(list.Items) >= definitions.MaxRunObjects {
+			return nil, fmt.Errorf("binding dependency index %s exceeds %d objects", lookup.field, definitions.MaxRunObjects)
+		}
+		for i := range list.Items {
+			item := list.Items[i]
+			seen[client.ObjectKeyFromObject(&item)] = item
+		}
+	}
+	out := make([]fathomv1alpha1.AddonDefinitionBinding, 0, len(seen))
+	for _, binding := range seen {
+		out = append(out, binding)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// SetupWithManager registers the binding controller and its dependency watches.
 func (r *AddonDefinitionBindingReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	if err := RegisterAddonDefinitionIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
 		return err
@@ -966,6 +1046,9 @@ func (r *AddonDefinitionBindingReconciler) SetupWithManager(ctx context.Context,
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.AddonDefinitionBinding{}).
 		Watches(&fathomv1alpha1.AddonDefinition{}, handler.EnqueueRequestsFromMapFunc(r.bindingsForDefinition)).
+		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.bindingsForServiceAccount)).
+		Watches(&fathomv1alpha1.AddonDefinitionBinding{}, handler.EnqueueRequestsFromMapFunc(r.bindingsSharingServiceAccount),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("addondefinitionbinding").
 		Complete(r)
 }

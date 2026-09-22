@@ -4,6 +4,13 @@ SPDX-License-Identifier: MIT
 -->
 # Implementation execution evidence
 
+The entries below preserve the chronological implementation record, including
+failed trials and initially pending planning tables. The current one-to-one
+requirement, numeric and lifecycle evidence map is
+[qualification.md](qualification.md); initial pending rows are not the current
+qualification status. Release dependencies and proposed review boundaries are
+recorded in [delivery.md](delivery.md).
+
 ## Setup — 2026-09-20
 
 - Baseline: main `3e7eafdea7a704b1cd8dd2b4935257b5f284220e`.
@@ -1121,3 +1128,487 @@ onward and is the first thing to run on that machine.
 
 With T047 landed the feature is reachable in a cluster for the first time. Runtime
 remains default-off. Total checked: 47/59.
+
+### Linux/Docker handoff and US3 completion (T048–T049) — 2026-09-22
+
+The requirements checklist remains 16/16 checked. The prerequisite helper selected
+the old RFC feature until invoked with `SPECIFY_FEATURE_DIRECTORY` pointing to
+`specs/012-addon-definition-runtime`; subsequent feature context now selects 012.
+Docker Engine 29.8.0 is available on this Linux/amd64 host, alongside Go 1.27.1,
+kind, Helm, helmfile and kubectl. A fresh Docker-backed kind cluster uses the
+pinned Kubernetes 1.37.0 node image. The full default-off e2e baseline is in
+progress; its outcome is not claimed here and it cannot qualify runtime loading.
+
+T048: the definition/binding read/watch/status markers and generated grants were
+already present. Strengthened `internal/controller/runtime_rbac_guard_test.go`
+to reject wildcard escalation and access-review variants, verify the existing
+namespaced election Role and its RoleBinding, and compare Helm manager rules to
+the generated ClusterRole. No production permission was added. The focused
+`go test ./internal/controller -run 'Test(RuntimeDefinitions|RuntimeLeaseAccess|HelmManagerRules)' -count=1`
+passed. Helm rendering also confirmed namespaced Lease get and a matching binding
+to the operator ServiceAccount.
+
+T049: with
+`KUBEBUILDER_ASSETS=/home/sstratton/.local/share/kubebuilder-envtest/k8s/1.37.0-linux-amd64`,
+`go test -race ./internal/controller -count=1` passed (47.683s) and
+`go test -race ./internal/app -count=1` passed (13.685s), outside the sandbox that
+prevents envtest opening local sockets. The earlier 4.772s sandbox app result is
+not full integration evidence: app TestMain can silently skip envtest-backed
+tests. A verbose asset-backed rerun explicitly confirmed RUN/PASS, with no skips,
+for `TestRuntimeWiringAttachesEverySeam` and
+`TestAttachedGateAndPoolDriveDispatchAndExecution`.
+
+The controller race run covers the named lifecycle tests in
+`addondefinition_lifecycle_test.go`: missing, added, edited, legacy-invalid,
+deleted/deleting and recreated definitions; binding revocation and recovery;
+denied control-plane reads; observed active-run revocation; unsynchronized cache;
+edit-before-publication; duplicate ownership and builtin collisions; compilation
+budget failure and dedicated identity exclusions. Publication/evidence tests in
+`addoncheck_runtime_test.go` additionally cover final fences, authority/supersession
+precedence, retained observation times, freshness and Skipped report transitions.
+These are component/envtest results, not real-cluster qualification. Revocation
+remains observation-based: a read already authorized cannot be undone, and a
+suspended old process is not excluded by the takeover grace alone.
+
+Pinned `task helm:sync` (including manifests) and `task docs:api-ref` passed with
+no generated distribution/API reference drift. `git diff --check` passed.
+`graphify update .` ran; its generated artifacts are not reviewed as source.
+US3 is complete at 49/59 tasks. US4 and release qualification remain open.
+
+Live GitHub verification on 2026-09-22 confirms
+[#256](https://github.com/skaphos/fathom/issues/256) is open with no comments;
+`pkg/adapter/version.go` still declares ContractVersion 1.0.0. T054 remains open:
+the separate decision, older-adapter regression and migration/rejection evidence
+have not been supplied, so runtime release remains blocked.
+
+### US4 packaging, operations and Docker baseline — 2026-09-22
+
+The user approved the test-layer clarification now recorded in `spec.md` and
+`contracts/decision-supplement.md`: deterministic component tests prove exact
+numeric boundaries, recoverable injected panics and collision states normal
+admission prevents; Docker/kind proves real permissions, delegated execution,
+lifecycle, drain, rollback and hostile-input isolation. No runtime limit or
+authority guarantee is relaxed and no production fault-injection hook is added.
+
+T051: Helm `runtimeLoading.enabled` defaults to false and is schema-validated as
+a boolean. True emits `--runtime-loading-enabled`; false emits no runtime flag,
+preserving existing environment/config-file opt-in. `leaderElect=false` remains
+renderable so built-ins start while runtime activation is refused. The new
+`scripts/helm_runtime_loading_test.go` checks default/off, explicit opt-in,
+custom namespace and Lease, metrics-off, disabled election, config/env
+precedence, downward-API namespace wiring and rejection of nonboolean input.
+`go test ./scripts -run TestHelmRuntimeLoading -count=1` passed. Helm lint passed
+with defaults and runtime enabled; custom namespace/Lease/metrics-off rendering
+also passed.
+
+T052–T053: `docs/guides/addon-definitions.md`, README, RELEASE and the handwritten
+`docs/reference/operator-rbac.md` document reviewed two-stage UID installation,
+an actual AddonCheck, exact reader/impersonation grants, declared order/caps,
+target-release collision preflight, Skipped evidence and independently observed
+Lease drain. Rollback explicitly disables bindings and verifies drain before
+revoking grants and disabling the loader; older binaries may leave freshness
+fields frozen. #256 and #149 remain separate. CLI flags were checked against
+the implementation; local links, SPDX and `git diff --check` passed. The guide
+does not claim the pending runtime installation/rollback qualification passed.
+
+The Linux handoff's full default-off `go -C tools tool task test-e2e` passed:
+95/95 Ginkgo specs, zero failures/pending/skipped, 470.031s for Ginkgo and
+472.139s for the test package. It built the operator/probe/node-agent images,
+installed the entire addon stack on Docker/kind Kubernetes 1.37.0, and removed
+the cluster. Log: `/tmp/fathom-feature012-e2e-baseline.log` (local, not durable).
+This closes the owed existing-behavior baseline, not T050/T055 runtime acceptance.
+The enlarged suite now has a bounded 30-minute Go package timeout because its
+serial election/restart scenarios add to an existing eight-minute baseline;
+individual behavioral assertion deadlines remain unchanged.
+
+Initial pinned CI passed compatibility, lint and unit/envtest suites but failed
+staticcheck ST1000 on the generated inventory's package comment. The separate
+coverage gate also found `internal/adapter/rbacgen/runtimecmd` at 0%. Fixed the
+generator source and regenerated through `task gen:runtime-definitions`; added
+a command `run(root)` seam tested for all-nine-kind generation and both output
+write failures. Fresh package tests passed with runtimecmd coverage 62.5%,
+rbacgen 92.3% and addondefinition 85.7%; pinned staticcheck then passed. No
+coverage threshold or exemption changed. Full CI is being rerun.
+
+Additional completed checks: pinned `task vuln build` passed (zero reachable
+vulnerabilities; one imported but uncalled advisory reported); `go test -race
+./internal/adapter/registry/... ./internal/adapter/runtime/...` passed; REUSE lint
+passed on 754 files. Final results after all edits are recorded separately below.
+Current task count: 52/59. Runtime cluster qualification and release remain open.
+
+### First opt-in Docker trial — integration finding
+
+The focused core-stack runtime suite produced attributed Pass evidence and a
+transition report, then passed same-UID granted retargeting and out-of-scope
+rejection. It failed the ServiceAccount recreation scenario: the execution
+runner correctly reported `BindingMismatch`, but the binding's `Ready=True /
+BindingAuthorized` condition remained unchanged after the reader UID changed.
+The definition and binding controllers watch each other but neither watches
+ServiceAccounts. Their existing identity indexes were used during reconciliation,
+not to trigger it. T060 records the missing dependency watch and regression.
+This is a real-cluster failure, not a passed qualification gate. The test's
+cleanup restores the original manager arguments and removes test authority.
+Log: `/tmp/fathom-feature012-runtime-e2e.log` (local).
+
+Before this finding, the corrected full pinned `task ci` completed successfully,
+including CRD compatibility, lint, unit/envtest, staticcheck, vulnerability scan
+and builds. The separate per-package coverage gate passed. Those results precede
+the T060 fix; its source changes require renewed verification.
+
+### Dependency-watch fix and renewed verification
+
+T060 adds indexed ServiceAccount watches to both definition controllers and a
+peer-binding watch for identity sharing. Peer status-only updates are filtered;
+old/new authority references are both mapped. Authorized bindings also recheck
+every 60 seconds so a transient mapper failure cannot strand readiness. Existing
+ServiceAccount read/watch permissions suffice; no RBAC grant was added.
+
+The new started-manager envtest failed before the fix with `Ready=True` after
+ServiceAccount deletion/recreation. After the fix it proves binding and definition
+invalidation, replacement binding recovery, shared-reader conflict and recovery
+after deleting the peer binding. Immutable references are reauthorized by
+deleting/recreating the binding, not by changing its UID reference in place.
+The asset-backed controller race suite passed in 44.174s. The new pinned `task ci`
+run and separate package coverage gate passed after the production fix. Log:
+`/tmp/fathom-feature012-ci-watchfix.log` (local). Docker rerun remains pending.
+
+The durable [qualification map](qualification.md) records the requirement,
+numeric and lifecycle audit plus focused security review. Open evidence gaps
+remain explicit; test names alone do not complete T050/T055/T056. The separate
+#256 compatibility decision remains a release dependency.
+
+### Second opt-in Docker trial — history finding
+
+The rebuilt watch-fix operator passed initial delegated execution but the next
+same-UID retarget produced two Pass reports instead of one. The captured reports
+combined newer check observations with older completion timestamps/definition
+attribution. T061 tracks the transition/publication regression; the live suite
+remains failed, and later ordered scenarios did not run. Log:
+`/tmp/fathom-feature012-runtime-e2e-watchfix.log` (local). No history assertion was
+weakened to accept the duplicate.
+
+Pinned `verify-generated` reran all generators and changed none of 145 hashed
+generated artifacts. Its final Git-diff gate returned nonzero solely because the
+intentional generated inventory package-comment fix is still uncommitted. This
+is not recorded as a passing gate. REUSE lint passed all 756 files at this point.
+
+T061's regression forces the manager cache to lag behind publication. The fix
+returns the exact API-accepted status and preceding evidence from the runner to
+history creation, avoiding a cached reread. Report keys use the durable history
+predecessor and verdict transition, so a failed report-pointer status write can
+reuse the original immutable report even after a same-verdict generation change.
+The second status write retains resource-version conflict protection. Repeated
+pointer failures across opposite verdict flaps can coalesce intermediate history;
+the implementation does not claim a durable ordering that was never recorded.
+Stale-cache, report-pointer conflict and repeated-flap regressions pass, and the
+full controller envtest/race run passed in 43.979s (261 Ginkgo specs).
+
+Additional component qualification passed: exact 262,144-byte stored/defaulted
+definition admission followed by compiler validation; representative 253/254-byte
+resource and discovery grammars; non-ASCII identifiers; selector values at the
+effective Kubernetes 63/64-character boundary. The maximum-length typed binding
+fixture measures 4,115 bytes even with maximally escaped UIDs; false booleans are
+omitted, so true values maximize its serialization. The 16-KiB bound cannot be
+reached by the closed typed schema. Both affected package suites passed, including
+asset-backed API envtest. See [qualification.md](qualification.md) for exact names
+and unreachable-boundary explanations.
+
+The first CI attempt after T061 stopped on lint while the new API fixture was
+still being authored (unused test helpers and formatting). It is not a passing
+final CI result. A compiled trial of the existing runtime scenarios is running
+with only that unfinished fixture excluded through a Go overlay; the full final
+suite must include it. No release coverage is credited to an excluded fixture.
+
+The third opt-in trial has now passed the named ServiceAccount recreation,
+shared-reader conflict/recovery and definition recreation scenarios, closing
+T060's live regression. It also passed unchanged-verdict revision history,
+Pass-to-Skipped and repeated-Skipped history checks, closing T061's live regression.
+T050/T055 remain open until the complete final suite (including the new API
+fixture) and required lifecycle checks finish; these individual results do not
+declare that gate passed. Trial log:
+`/tmp/fathom-feature012-runtime-e2e-historyfix.log` (local).
+
+That third trial completed: 9/9 selected scenarios passed in 646.053s; 95
+unselected specs were skipped by the focus filter. It includes real revocation,
+identity recreation/borrowing, invalid stored revisions, history, drain, grant
+revocation, rollback, election-disabled refusal and re-enable. It predates the
+new API fixture and the strengthened startup-collision/metrics-off read cases.
+
+The new API fixture reaches a test-host HTTPS server through an APIService,
+Service and EndpointSlice with a trusted service-DNS certificate. Its first
+focused trial proved delegated discovery 403 with no manager fallback, actual
+read timeouts, compiled-peer progress, and stale original observation time through
+HealthCheck and ClusterHealth. It failed a too-strict lasting attempt-reason
+assertion after an observed in-flight revocation: the binding correctly reported
+AuthorizationRevoked and Drained, evidence/report history stayed unchanged, and a
+later no-snapshot attempt reported UnknownAddonType. A failed-attempt status CAS
+can also legitimately lose to a concurrent status write. The live assertions are
+being corrected to check durable binding revocation/drain and unchanged evidence,
+while component tests retain exact single-run failure-precedence assertions. No
+production change is justified by this trial. Log:
+`/tmp/fathom-feature012-runtime-api-fixture.log` (local).
+
+Pinned CI then passed against the frozen controller and boundary-test sources:
+`/tmp/fathom-feature012-ci-frozen.log`. Two intervening CI attempts stopped on
+test-fixture lint or an intermediate unused variable while that fixture was
+being edited; those are superseded by this passing run. Final test-only assertion
+edits still require focused lint/compile and the full real-cluster suite.
+
+### Prior-binary downgrade qualification remains open
+
+Read-only inspection of tag `v0.5.1` found that its `AddonCheckStatus` lacks the
+new completed-evidence, freshness and latest-attempt fields, while its controller
+uses a full status update. An older binary can therefore remove those fields;
+it does not merely leave them frozen. Transition-only HealthReports cannot
+reconstruct a newer same-verdict current observation. The operations guide and
+RELEASE instructions now require exporting full AddonCheck objects/status outside
+the cluster along with reports and definition/binding data before downgrade.
+
+The current kind scenario verifies this build's default-off rollback and
+re-enable. It does not run v0.5.1 or prove a prior-binary downgrade/restore.
+T055 remains open for that release qualification, alongside the separate T054/#256
+compatibility decision. No claim that all earlier gates or runtime release are
+complete is supported by the flag-toggle scenario.
+
+### Final component and generated-artifact checks
+
+The final API-fixture trial passed all three selected scenarios in 442.597s
+(444.649s package time), with 102 other specs excluded by the focus filter. Command:
+`E2E_ADDONS=core go test ./test/e2e/ -timeout=20m -v -ginkgo.v
+-ginkgo.focus='runtime AddonDefinition on a real cluster (keeps definitions|uses only|fences delegated)'`.
+Log: `/tmp/fathom-feature012-runtime-api-fixture-final.log`. Final pinned lint
+passed with zero issues after the test assertions settled; coverage passed without
+changing thresholds. The complete all-addon `go -C tools tool task test-e2e` is
+running separately and is not inferred from those focused results.
+
+The working-tree `verify-generated` failure described above was resolved as a
+verification limitation without staging or committing the working branch. A
+separate temporary repository snapshot included every tracked and nonignored new
+file, normalized only `config/manager/kustomization.yaml` back to the branch's
+committed image configuration (the live e2e deploy task changes it), and committed
+that snapshot with the configured author and a DCO trailer. Running the unmodified
+`go -C tools tool task verify-generated` there passed, and `git status --short`
+was empty afterward. This proves the proposed artifacts reproduce from the
+proposed generator inputs; it is not a claim that the uncommitted working-tree
+drift gate itself passed. No commit was created on the working branch. Log:
+`/tmp/fathom-feature012-verify-generated-snapshot.log`.
+
+Together with the passing frozen-source CI (including CRD compatibility),
+controller/app/runtime/registry race suites, final lint and coverage results above,
+this completes T057's checks. `reuse lint` passed all 753 files in the final
+repository snapshot. `graphify update .` refreshed the code graph after source
+changes: 7,173 nodes, 19,481 edges and 441 communities. It used AST extraction and
+does not claim semantic re-extraction of documentation. AGENTS.md and
+docs/architecture.md describe the final package boundaries; the pinned generators
+reproduced samples, distributions and API reference documentation, completing
+T058. Logs: `/tmp/fathom-feature012-reuse-final.log` and
+`/tmp/fathom-feature012-graphify-final.log`.
+
+### Full Docker trial: stored collision during startup
+
+The full 105-spec suite passed the first nine runtime scenarios but failed the
+strengthened same-binary startup-collision assertion in
+`test/e2e/addondefinition_test.go:939`. A stored `coredns` definition and its
+binding had already blocked the compiled adapter. After the manager restart at
+16:16:04 UTC, the compiled check advanced `lastRunTime` to 16:16:33 UTC before
+returning to Ready=False/BuiltinCollision. Eventual rejection does not satisfy
+the startup contract: both colliding candidates must remain blocked. The
+assertion is retained and T062 tracks the production fix and regression. The
+previous passing component checks qualify the pre-T062 source only; affected
+checks and the complete Docker suite must run again after that fix. Log:
+`/tmp/fathom-feature012-e2e-full-final.log`.
+
+That complete trial finished with **104 passed, 1 failed, 0 skipped** in
+1,228.631s (1,230.706s package time). The startup collision was its only failing
+spec. The final ordered runtime spec stopped at that failure, so its later
+strengthened metrics-off assertions were not reached in this trial. The task
+removed its temporary cluster afterward. This is a failed qualification run,
+not a passing full-suite result.
+
+### Startup correction and local-mode qualification
+
+T062 now reserves registered built-in identities before manager startup and reads
+only those exact AddonDefinition names through bounded uncached GETs. A found
+identity remains provisional until normal reconciliation and direct observation
+agree on UID and generation; an unknown read holds only that identity. NotFound
+releases nonconflicting identities immediately. A bounded retry loop recovers
+failed reads and deletions. The registry remembers a completed newer revision
+until the next direct observation confirms it, avoiding a permanent hold when
+reconciliation precedes that observation. Default-off wiring adds no inventory
+work. Ordinary post-read mutations retain the documented non-atomic limitation.
+
+The manager/envtest regression for a stored collision before first reconciliation
+passed. Registry tests cover unknown reads, stale UIDs/generations, a newer
+completed revision preceding its direct read, and no resurrection of released
+claims; controller tests cover terminal invalid/missing-binding recovery. The
+new-revision recovery test was observed failing before its correction and passing
+afterward. The earlier startup regression's failure under pre-T062 wiring was
+inferred from the source, not executed as an old-code overlay. Independent review
+found the recovery race, which was corrected and re-reviewed. Final affected
+race/envtest suites passed: registry 1.066s, app 13.102s, controller 46.055s. Log:
+`/tmp/fathom-feature012-startup-collision-race-postreview.log`.
+
+An initial CI/e2e restart was intentionally interrupted for that review correction
+and provides no completed result. Pinned CI subsequently passed against T062
+(`/tmp/fathom-feature012-ci-startupfix-final.log`). Its companion full Docker run
+built the fixed image but was stopped before spec execution when the separate
+host-local trial identified T063: despite `--namespace=fathom-system`, ordinary
+manager construction lacked `LeaderElectionNamespace` and could not elect outside
+a pod. Runtime correctly logged AuthorizationUnavailable for the missing
+projected identity, but built-ins could not start. The explicit namespace must
+reach the ordinary election options while empty namespace retains existing
+autodetection. The final full suite must include this correction too.
+
+T063's explicit-namespace manager-options regression failed before the mapping
+was added and passed afterward; the empty-namespace case retained its previous
+fallback. Full app race/envtest passed in 13.021s. Independent review confirmed
+alignment with the runtime's existing explicitly namespaced Lease lock. Both
+T062 and T063 are frozen pending their live acceptance, with no new RBAC.
+
+Final pinned CI passed against all four integration corrections:
+`/tmp/fathom-feature012-ci-qualified-final.log`. This includes lint, unit/envtest,
+vet, staticcheck, vulnerability analysis, CRD compatibility and builds. The
+coverage gate passed unchanged
+(`/tmp/fathom-feature012-coverage-qualified-final.log`). The unmodified pinned
+`verify-generated` gate passed again in the isolated committed snapshot with
+the final source inputs; its Git status remained empty
+(`/tmp/fathom-feature012-verify-generated-qualified-final.log`). REUSE lint
+passed, and the final AST graph update produced 7,193 nodes, 19,554 edges and
+441 communities. Logs: `/tmp/fathom-feature012-reuse-qualified-final.log` and
+`/tmp/fathom-feature012-graphify-qualified-final.log`. These complete T057/T058
+again after the additional fixes. Full Docker acceptance is tracked separately
+in `/tmp/fathom-feature012-e2e-qualified-final.log` and remains running.
+
+### Actual prior-binary operations qualification
+
+The isolated `fathom-downgrade-012` Docker/kind trial completed using the exact
+`v0.5.1` source and its unmodified Dockerfile (pinned Go 1.26.5 and distroless
+base), current CRDs, and the core addon tier. The full environment, image IDs,
+commands, observation times and scope limits are retained in
+[operations-qualification.md](operations-qualification.md). Raw local scripts,
+logs and JSON backups remain under `/tmp/fathom-downgrade-012/`; they are not
+committed artifacts.
+
+The trial verified reviewed UID installation, delegated Pass, a same-verdict
+revision with unchanged report history, matching-generation drain and independent
+CLI verification, grant revocation and full status export. The older binary
+actually removed new evidence fields while its compiled CoreDNS checks continued.
+After all old pods stopped, the current default-off binary accepted a guarded
+status-subresource restore (UID, generation and resourceVersion tests). Readback
+preserved exact original evidence, time, revision and authority. Reviewed
+re-enable produced a fresh Pass without an artificial same-verdict report.
+
+A separate cross-version step stored a valid CoreDNS definition under v0.5.1,
+observed target CLI collision exit 1, then stopped the old pod and started the
+T062-fixed image. The target blocked the compiled candidate before execution:
+Ready=False/BuiltinCollision and unchanged lastRunTime through admission and the
+observation window. Explicit collision deletion restored Pass. Both binaries
+already include compiled CoreDNS; this proves cross-version stored-name
+collision handling, while new-builtin registration itself remains component
+evidence. It is not a released-chart upgrade or the separate #256 ratio decision.
+
+Finally, the T063-fixed host binary ran with the isolated kubeconfig, explicit
+operator namespace, leader election and runtime opt-in, without a projected
+ServiceAccount token. It logged AuthorizationUnavailable, acquired the configured
+namespaced Lease, advanced the compiled CoreDNS peer, and left runtime evidence
+unchanged. This closes T063's live regression. The host process stopped and the
+isolated deployment recovered before the temporary cluster was deleted. Only the
+main full-suite cluster remains. T055's prior-binary gap is now closed; its
+combined full-suite gate still awaits the ongoing final run. #256 is unaffected.
+
+### Final e2e attempt and isolated rerun
+
+The final attempt recorded in `/tmp/fathom-feature012-e2e-qualified-final.log`
+passed the startup-collision, drain, grant-revocation, old-leader
+drain-acknowledgement rejection,
+no-election and new metrics-off epoch/drain scenarios before unrelated concurrent
+work changed the shared kubeconfig current context from `kind-fathom-e2e` to
+`kind-kind`. Subsequent `kubectl` calls therefore reached an unrelated cluster
+without the AddonCheck CRDs, producing a cascading 29 failures, 11 passes and 65
+skips in the 40/105-spec run (894.737s, 896.790s package time). This is kubeconfig
+contamination, not a production failure; the original `fathom-e2e` task later
+removed its temporary cluster. Read-only inspection of the other context found no
+Fathom test namespaces or grants and made no changes; the failed test calls were
+limited to the contaminated context.
+
+The test-only portability correction makes the host-gateway helper read
+`E2E_KIND_CLUSTER` (default `fathom-e2e`), and `Taskfile.yml` passes the resolved
+cluster name to the e2e process. `go test ./test/e2e -run '^$'` compiled cleanly;
+pinned lint passed with zero issues (`/tmp/fathom-feature012-lint-isolated-final.log`).
+The same production tree as CI is being rerun with the isolated cluster and a
+name-only copy of the pinned Kind fixture:
+
+```sh
+KUBECONFIG=/tmp/fathom-feature012-final.kubeconfig \
+E2E_KIND_CLUSTER=fathom-feature012-final \
+go -C tools tool task test-e2e \
+  E2E_KIND_CLUSTER=fathom-feature012-final \
+  E2E_KIND_CONFIG=/tmp/fathom-feature012-final-kind.yaml \
+  > /tmp/fathom-feature012-e2e-isolated-final.log 2>&1
+```
+
+This isolated rerun was then completed successfully. The final AST graph audit recorded
+7,196 nodes, 19,560 edges and 422 communities
+(`/tmp/fathom-feature012-graphify-isolated-final.log`). Final SpecKit consistency
+analysis maps all 21 requirements and 63 tasks with no remaining live gaps; the
+baseline wording correction is included. Preserve the
+failed contaminated attempt above as historical evidence.
+
+### Isolated final qualification result
+
+The isolated pinned command completed successfully from the same production tree
+as CI. It ran 105/105 specs in 1422.543s (Go package time 1424.597s): **105
+passed, 0 failed, 0 pending, 0 skipped**. All addons were included and all ten
+runtime scenarios passed, including startup collision/restart and metrics-off
+actual Pass/403, Pass preservation, recovery and no duplicate report. The
+`fathom-feature012-final` cluster was deleted by the task. This supersedes the
+earlier 104-pass startup-collision failure and the kubeconfig-contaminated
+40/105 attempt; those remain historical records above.
+
+The final one-to-one audit maps 16/16 functional requirements, 16/16 numeric
+rows, 17/17 lifecycle rows and 5/5 success criteria across component and live
+evidence. The runtime portions pass; FR-014 and SC-005 remain conditional on the
+separate #256 disposition, which remains open and still blocks release. T050,
+T055, T056 and T062 are complete;
+T061 and T063 are complete from the earlier corrected regressions. Only T054
+(#256) and T059 (PR/release preparation) remain open. The final cleanup REUSE
+lint passed with 754/754 files and zero issues
+(`/tmp/fathom-feature012-reuse-isolated-final.log`); intended working-tree
+changes remain uncommitted.
+
+| Success criterion | Evidence mapping | Result |
+| --- | --- | --- |
+| SC-001 render/install | T020–T023, T050, T055; qualification map | Passed |
+| SC-002 delegated authority | T024–T029, T050; qualification map | Passed |
+| SC-003 lifecycle/history | T036–T049, T050, T060–T062; qualification map | Passed |
+| SC-004 bounds/panics/hostile input | T026–T035, T050, T056; qualification and operations maps | Passed |
+| SC-005 live acceptance/rollback | T050, T055; qualification and operations maps | Runtime evidence passed; #256/T054 remains open |
+
+### Delivery decision and separate #256 compatibility proof
+
+On 2026-09-22 the approved publication shape became one feature PR organized
+around four review sections/milestones, plus a separate #256 compatibility PR.
+The feature result above remains the pre-compatibility 1.0-source 105/105
+qualification; the combined feature-plus-compatibility 1.1 tree has not been
+live-qualified. The separate compatibility work is [draft PR #351](https://github.com/skaphos/fathom/pull/351),
+based on `main` at signed commit `a7e3a3e927f01de614e97677cb3e1d62aa86e932`.
+T054 remains open until that PR is merged and integration is verified; T059
+remains open because the feature PR has not yet been published.
+
+The isolated #256 proof in `/tmp/fathom-ratio-contract-256` used repository
+`isolated-fix/256-ratio-contract` at `3e7eafd`, ContractVersion 1.1. It rejects
+older 1.0 policy on key presence before Run even when 1.0 is advertised or the
+policy is disabled, while ordinary 1.0 private policies continue to work. The
+audit rename/rebuild migration was exercised. A scoped independent review found
+no actionable issue. The final older-controller overlay against 1.1 failed the
+expected 1/2 compatibility checks in 6.650s; the fixed compatibility path passed
+in 6.821s. Pinned CI, coverage, generated-output checks and REUSE passed, and the
+separate all-addon 95/95 Kind run passed in 477.256s (479.346s package time,
+zero failures/skips); its cluster was removed.
+
+The source patch applies cleanly to the feature branch in a dry run but has not
+been applied here. The compatibility proof is separate evidence, not a merged or
+resolved #256 decision; see [draft PR #351](https://github.com/skaphos/fathom/pull/351).
+The feature's 105/105 result,
+operations record and component/live test split remain the current feature
+evidence.

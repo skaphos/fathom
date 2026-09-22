@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,6 +144,12 @@ func (r *AddonDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	accepted, ready, result, retry := r.evaluate(ctx, log, &def)
 	if err := r.writeStatus(ctx, &def, accepted, ready); err != nil {
 		return ctrl.Result{}, err
+	}
+	if retry == nil {
+		// Startup's direct-read reservation outlives informer sync. Release it
+		// only after this UID's current eligibility was established and status
+		// was published; transient control-plane reads retain the barrier.
+		r.Registry.ReleaseStartupClaim(def.Name, def.UID, def.Generation)
 	}
 	return result, retry
 }
@@ -407,8 +414,34 @@ func (r *AddonDefinitionReconciler) definitionsForBinding(_ context.Context, obj
 	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: string(binding.Spec.DefinitionRef.Name)}}}
 }
 
-// SetupWithManager registers the definition controller and the shared indexes.
-// Wiring it into the manager is T047's; nothing calls this yet.
+// definitionsForServiceAccount invalidates published eligibility as soon as a
+// dedicated reader is deleted, replaced or reserved for a built-in. The
+// binding's own status change also requeues the definition, but this direct
+// watch does not depend on that write succeeding first.
+func (r *AddonDefinitionReconciler) definitionsForServiceAccount(ctx context.Context, obj client.Object) []reconcile.Request {
+	sa, ok := obj.(*corev1.ServiceAccount)
+	if !ok || sa.Namespace != r.OperatorNamespace {
+		return nil
+	}
+	bindings, err := bindingsForServiceAccountReference(ctx, r.Client, r.OperatorNamespace, sa.Name, string(sa.UID))
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "cannot enqueue definitions for ServiceAccount change", "serviceAccount", client.ObjectKeyFromObject(sa))
+		return nil
+	}
+	seen := map[string]bool{}
+	requests := make([]reconcile.Request, 0, len(bindings))
+	for i := range bindings {
+		name := string(bindings[i].Spec.DefinitionRef.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: name}})
+	}
+	return requests
+}
+
+// SetupWithManager registers the definition controller and dependency watches.
 func (r *AddonDefinitionReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	if err := RegisterAddonDefinitionIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
 		return err
@@ -416,6 +449,7 @@ func (r *AddonDefinitionReconciler) SetupWithManager(ctx context.Context, mgr ct
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fathomv1alpha1.AddonDefinition{}).
 		Watches(&fathomv1alpha1.AddonDefinitionBinding{}, handler.EnqueueRequestsFromMapFunc(r.definitionsForBinding)).
+		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.definitionsForServiceAccount)).
 		Named("addondefinition").
 		Complete(r)
 }

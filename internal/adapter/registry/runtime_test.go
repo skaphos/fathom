@@ -93,6 +93,116 @@ func admittedRegistry(t *testing.T) *registry.Registry {
 	return r
 }
 
+func TestStartupClaimsFenceBuiltinsUntilCurrentDefinitionIsReconciled(t *testing.T) {
+	r := registry.New(logr.Discard())
+	for _, name := range []string{"coredns", "cert-manager"} {
+		if err := r.Register(newFake(name, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.ReserveStartupClaims([]string{"coredns", "cert-manager"})
+	barrier := func(name, reason string) {
+		t.Helper()
+		_, err := r.Resolve(name)
+		var b *registry.DispatchBarrier
+		if !errors.As(err, &b) || b.Reason != reason {
+			t.Fatalf("resolve %q: barrier %v, want %s", name, err, reason)
+		}
+	}
+	barrier("coredns", registry.ReasonAdmissionClosed)
+	barrier("cert-manager", registry.ReasonAdmissionClosed)
+	r.ReleaseStartupClaim("cert-manager", "cached-uid", 1)
+	barrier("cert-manager", registry.ReasonAdmissionClosed)
+	r.ObserveStartupClaim("cert-manager", "recreated-uid", 1)
+	barrier("cert-manager", registry.ReasonBuiltinCollision)
+	r.ReleaseStartupClaim("cert-manager", "cached-uid", 1)
+	barrier("cert-manager", registry.ReasonBuiltinCollision)
+	r.ObserveStartupClaim("coredns", "stored-uid", 1)
+	r.ObserveStartupClaim("cert-manager", "", 0) // Direct GET found no definition.
+	barrier("coredns", registry.ReasonBuiltinCollision)
+	if _, err := r.Resolve("cert-manager"); err != nil {
+		t.Fatalf("unrelated builtin remains blocked after a successful not-found read: %v", err)
+	}
+	r.ReleaseStartupClaim("coredns", "stale-uid", 1)
+	barrier("coredns", registry.ReasonBuiltinCollision)
+	r.ObserveStartupClaim("coredns", "recreated-uid", 1)
+	r.ReleaseStartupClaim("coredns", "stored-uid", 1)
+	barrier("coredns", registry.ReasonBuiltinCollision)
+	r.ReleaseStartupClaim("coredns", "recreated-uid", 1)
+	if _, err := r.Resolve("coredns"); err != nil {
+		t.Fatalf("current reconciliation did not release temporary startup reservation: %v", err)
+	}
+	r.ObserveStartupClaim("coredns", "stale-read-uid", 1)
+	if _, err := r.Resolve("coredns"); err != nil {
+		t.Fatalf("late direct GET resurrected a cleared reservation: %v", err)
+	}
+}
+
+func TestStartupUnknownClaimNeedsDirectConfirmationAfterCachedReconcile(t *testing.T) {
+	r := registry.New(logr.Discard())
+	if err := r.Register(newFake("builtin", "coredns")); err != nil {
+		t.Fatal(err)
+	}
+	r.ReserveStartupClaims([]string{"coredns"})
+	r.ReleaseStartupClaim("coredns", "cached-uid", 1)
+	if _, err := r.Resolve("coredns"); !errors.Is(err, registry.ErrDispatchBarred) {
+		t.Fatalf("cached reconciliation released an unverified startup claim: %v", err)
+	}
+	r.ObserveStartupClaim("coredns", "cached-uid", 1)
+	if _, err := r.Resolve("coredns"); err != nil {
+		t.Fatalf("direct confirmation of reconciled UID did not release claim: %v", err)
+	}
+}
+
+func TestStartupClaimRejectsStaleGenerationReconciliation(t *testing.T) {
+	r := registry.New(logr.Discard())
+	if err := r.Register(newFake("builtin", "coredns")); err != nil {
+		t.Fatal(err)
+	}
+	r.ReserveStartupClaims([]string{"coredns"})
+	r.ReleaseStartupClaim("coredns", "same-uid", 1)
+	r.ObserveStartupClaim("coredns", "same-uid", 2)
+	r.ReleaseStartupClaim("coredns", "same-uid", 1)
+	if _, err := r.Resolve("coredns"); !errors.Is(err, registry.ErrDispatchBarred) {
+		t.Fatalf("old generation cleared a new-generation startup reservation: %v", err)
+	}
+	r.ReleaseStartupClaim("coredns", "same-uid", 2)
+	if _, err := r.Resolve("coredns"); err != nil {
+		t.Fatalf("current generation failed to release reservation: %v", err)
+	}
+}
+
+func TestStartupClaimRecoversWhenNewRevisionFinishesBeforeDirectRead(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		oldUID, newUID types.UID
+		oldGen, newGen int64
+	}{
+		{name: "recreated UID", oldUID: "old", newUID: "new", oldGen: 1, newGen: 1},
+		{name: "edited generation", oldUID: "same", newUID: "same", oldGen: 1, newGen: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := registry.New(logr.Discard())
+			if err := r.Register(newFake("builtin", "coredns")); err != nil {
+				t.Fatal(err)
+			}
+			r.ReserveStartupClaims([]string{"coredns"})
+			r.ObserveStartupClaim("coredns", tc.oldUID, tc.oldGen)
+			// The cache sees the new revision before the next direct GET.
+			r.ReleaseStartupClaim("coredns", tc.newUID, tc.newGen)
+			// An in-flight old read must not erase the completed revision.
+			r.ObserveStartupClaim("coredns", tc.oldUID, tc.oldGen)
+			if _, err := r.Resolve("coredns"); !errors.Is(err, registry.ErrDispatchBarred) {
+				t.Fatalf("old observation cleared reservation early: %v", err)
+			}
+			r.ObserveStartupClaim("coredns", tc.newUID, tc.newGen)
+			if _, err := r.Resolve("coredns"); err != nil {
+				t.Fatalf("confirmed completed revision stayed barred forever: %v", err)
+			}
+		})
+	}
+}
+
 // A runtime entry may only be published with a complete identity: the full
 // (definition UID, generation, schema, semantics) revision plus the
 // operator-build/adapterVersion provenance recorded at publication. Anything

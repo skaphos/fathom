@@ -158,13 +158,14 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 	}
 
 	return ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsOpts,
-		WebhookServer:          webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
-		HealthProbeBindAddress: opts.HealthProbeBindAddress,
-		LeaderElection:         opts.LeaderElect,
-		LeaderElectionID:       opts.LeaderElectionID,
-		Cache:                  scopedCacheOptions(),
+		Scheme:                  scheme,
+		Metrics:                 metricsOpts,
+		WebhookServer:           webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
+		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
+		LeaderElection:          opts.LeaderElect,
+		LeaderElectionID:        opts.LeaderElectionID,
+		LeaderElectionNamespace: opts.Namespace,
+		Cache:                   scopedCacheOptions(),
 	}, watchers, nil
 }
 
