@@ -146,8 +146,9 @@ jobs:
         # Ginkgo suite directly rather than `task test-e2e` (which would create
         # and tear down its own cluster). BeforeSuite re-syncs this shard's
         # slice of the addon stack idempotently; E2E_ADDONS also scopes the
-        # specs via the Ginkgo label filter.
-        run: go test ./test/e2e/ -v -ginkgo.v
+        # specs via the Ginkgo label filter. Match the Taskfile's timeout for
+        # serial runtime scenarios that can exceed Go's 10-minute default.
+        run: go test ./test/e2e/ -timeout=30m -v -ginkgo.v
 
       - name: Collect diagnostics
         if: failure()
