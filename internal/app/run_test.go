@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,8 +28,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -371,5 +376,232 @@ func TestRun_ManagerCreationFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "synthetic manager failure") {
 		t.Errorf("underlying error not wrapped: %v", err)
+	}
+}
+
+// Runtime loading is mandatory-election, and an operator that enables it
+// without leader election must still start every built-in controller:
+// contracts/leadership.md, "do not fail manager startup or disable built-ins".
+func TestRun_RuntimeEnabledWithoutElectionStillStartsBuiltIns(t *testing.T) {
+	if envtestCfg == nil {
+		t.Skip("envtest unavailable; run via `task test` for full coverage")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+	}()
+
+	opts := DefaultOptions()
+	opts.Metrics.BindAddress = "0"
+	opts.HealthProbeBindAddress = "0"
+	opts.RuntimeLoading.Enabled = true
+	opts.LeaderElect = false
+	opts.Namespace = "fathom-system"
+
+	if reason := opts.RuntimeLoadingDisabledReason(); reason != "LeaderElectionRequired" {
+		t.Fatalf("reason = %q, want LeaderElectionRequired", reason)
+	}
+	// The controller set is supplied explicitly because controller-runtime
+	// validates controller names process-wide and the built-in set is already
+	// registered by TestRun_HappyPath_DefaultControllers. What this test drives
+	// is Run's own runtime branch: an unavailable runtime must build no wiring,
+	// install no leader-election lock of its own, and still start the manager.
+	// That the built-in controller set stays untouched is proven directly by
+	// TestRuntimeLoadingUnavailableRegistersNothingRuntime.
+	noControllers := func(ctrl.Manager) ([]Setupper, error) { return nil, nil }
+	if err := Run(ctx, envtestCfg, opts, noControllers); err != nil {
+		t.Fatalf("Run: %v; an unavailable runtime must not fail startup", err)
+	}
+}
+
+// lockedBuffer collects log output written by a logger that outlives the test
+// goroutine, so reading it is not a data race.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// An administrator who turns runtime loading on and does not get it must be
+// told why, AT STARTUP. The diagnostic cannot come from a runtime controller:
+// contracts/leadership.md requires it "without relying on a leader-gated
+// controller that will never start", and every prerequisite this reports is one
+// that stops such a controller from ever running.
+func TestRunReportsWhyRuntimeLoadingIsUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		options    func(*Options)
+		wantReason string
+	}{
+		{
+			name: "enabled without leader election",
+			options: func(o *Options) {
+				o.RuntimeLoading.Enabled, o.LeaderElect, o.Namespace = true, false, "fathom-system"
+			},
+			wantReason: "LeaderElectionRequired",
+		},
+		{
+			name: "enabled without an explicit operator namespace",
+			options: func(o *Options) {
+				o.RuntimeLoading.Enabled, o.LeaderElect, o.Namespace = true, true, ""
+			},
+			wantReason: "OperatorNamespaceRequired",
+		},
+		{
+			// The other direction: default-off is not a problem to report, and
+			// an operator that never asked for runtime loading must not be told
+			// at every startup that it does not have it.
+			name:    "runtime loading was never asked for",
+			options: func(*Options) {},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeManagerToken(t, "system:serviceaccount:fathom-system:"+testManagerServiceAccount)
+			original := managerFactory
+			t.Cleanup(func() { managerFactory = original })
+			managerFactory = func(*rest.Config, ctrl.Options) (ctrl.Manager, error) {
+				return nil, errors.New("synthetic manager failure")
+			}
+
+			logs := &lockedBuffer{}
+			opts := DefaultOptions()
+			opts.Zap.DestWriter = logs
+			tc.options(&opts)
+
+			if err := Run(context.Background(), &rest.Config{}, opts, nil); err == nil ||
+				!strings.Contains(err.Error(), "synthetic manager failure") {
+				t.Fatalf("Run: %v, want the synthetic manager failure", err)
+			}
+
+			written := logs.String()
+			const diagnostic = "runtime addon loading unavailable"
+			switch {
+			case tc.wantReason == "" && strings.Contains(written, diagnostic):
+				t.Errorf("startup reported runtime loading as unavailable although it was never enabled: %s", written)
+			case tc.wantReason == "":
+			case !strings.Contains(written, diagnostic):
+				t.Errorf("startup never reported why runtime loading is inactive; an administrator has nothing to read. logs: %s", written)
+			case !strings.Contains(written, tc.wantReason):
+				t.Errorf("startup reported no %q reason; logs: %s", tc.wantReason, written)
+			}
+		})
+	}
+}
+
+// Run must hand the manager the wiring it built ITSELF: the same session must
+// both hold the manager's Lease and gate runtime dispatch, and the gate, the
+// pool and the session must all reach the manager.
+//
+// Two mutations this closes, both of which every other test in the package
+// survives: Run calling defaultControllers with a nil wiring (runtime loading
+// becomes dead code in the shipped binary, however correct the wiring is), and
+// Run locking the manager's Lease under a SECOND wiring's identity (AdoptLease
+// refuses any Lease not held by exactly its own identity, so runtime stays
+// permanently inert behind one Error log).
+func TestRunWiresTheRuntimePathItBuilt(t *testing.T) {
+	if envtestCfg == nil {
+		t.Skip("envtest unavailable; run via `task test` for full coverage")
+	}
+	writeManagerToken(t, "system:serviceaccount:fathom-system:"+testManagerServiceAccount)
+
+	opts := DefaultOptions()
+	opts.Metrics.BindAddress = "0"
+	opts.HealthProbeBindAddress = "0"
+	opts.RuntimeLoading.Enabled = true
+	opts.LeaderElect = true
+	opts.Namespace = "fathom-run-wiring"
+
+	// The elected Lease lives in the configured operator namespace.
+	live, err := client.New(envtestCfg, client.Options{})
+	if err != nil {
+		t.Fatalf("build a direct client: %v", err)
+	}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: opts.Namespace}}
+	if err := live.Create(t.Context(), namespace); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("create the operator namespace: %v", err)
+	}
+
+	original := managerFactory
+	t.Cleanup(func() { managerFactory = original })
+	var (
+		captured ctrl.Options
+		recorder *recordingManager
+	)
+	managerFactory = func(cfg *rest.Config, mgrOpts ctrl.Options) (ctrl.Manager, error) {
+		captured = mgrOpts
+		// Controller names are validated process-wide and the built-in set is
+		// already registered by TestRun_HappyPath_DefaultControllers. Skipping
+		// that validation is what lets Run's own controllersFor==nil branch —
+		// the production path — be exercised here.
+		mgrOpts.Controller.SkipNameValidation = ptr.To(true)
+		mgr, err := ctrl.NewManager(cfg, mgrOpts)
+		if err != nil {
+			return nil, err
+		}
+		recorder = &recordingManager{
+			Manager:   mgr,
+			syncCache: &recordingCache{Cache: mgr.GetCache()},
+			recClient: &recordingClient{Client: mgr.GetClient()},
+		}
+		return recorder, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(time.Second)
+		cancel()
+	}()
+	if err := Run(ctx, envtestCfg, opts, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if recorder == nil {
+		t.Fatal("Run never built a manager")
+	}
+
+	// The wiring reached the manager at all: attach registers exactly these
+	// three runnables, and it runs only if Run passed the wiring it built.
+	var anyRuntimeRunnable bool
+	for _, runnable := range recorder.runnables() {
+		switch runnable.(type) {
+		case *RuntimeLeadership, *runtimeDispatchGate, *runtimeWorkerPool:
+			anyRuntimeRunnable = true
+		}
+	}
+	if !anyRuntimeRunnable {
+		t.Fatal("Run built a runtime wiring and gave the manager none of it: runtime loading is dead code in this binary")
+	}
+	session, gate, pool := runtimeRunnables(t, recorder)
+	if gate.session != session || pool.session != session {
+		t.Fatal("the gate and the pool are not driven by the session Run registered")
+	}
+
+	// ... and the manager holds its Lease under that same session's identity.
+	lock := captured.LeaderElectionResourceLockInterface
+	if lock == nil {
+		t.Fatal("Run installed no leader-election lock although runtime loading is available")
+	}
+	if got, want := lock.Identity(), session.Identity(); got != want {
+		t.Errorf("the manager holds its Lease as %q while runtime dispatch is gated by session %q; AdoptLease refuses every Lease not held by exactly its own identity, so runtime would never open", got, want)
+	}
+
+	// The gate admits on the registry the built-in path resolves through.
+	for _, builtin := range BuiltInAdapters() {
+		for _, addonType := range builtin.Capabilities().AddonTypes {
+			if _, err := gate.registry.Resolve(addonType); err != nil {
+				t.Fatalf("the registered gate admits on a registry that does not know built-in %q: %v", addonType, err)
+			}
+		}
 	}
 }

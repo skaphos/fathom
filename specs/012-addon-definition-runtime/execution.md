@@ -1003,3 +1003,121 @@ recorded here as owed, not skipped.
 
 Runtime remains default-off. Remaining US3: T047 wiring, T048 completion, T049
 gates. Total checked: 46/59.
+
+### US3 — manager wiring (T047) — 2026-09-21
+
+The keystone. Everything built in US2 and US3 phases A and B was unreachable in a
+cluster because nothing was wired; T047 connects it, default-off.
+
+`internal/app/runtime_wiring.go` (new) owns the process-wide runtime singletons —
+ONE leadership session, ONE execution.Scheduler pool — and three leader-elected
+runnables: the session, a dispatch gate, and a worker pool. The gate waits on
+Ready() (elected AND caches synced AND the >=30s monotonic takeover grace),
+adopts the live Lease through the manager's uncached APIReader, and is the ONLY
+caller of `registry.OpenRuntimeDispatch(holderIdentity)`, closing it on every exit
+path via a deferred CloseRuntimeDispatch. `Run` builds the manager's
+leader-election resource lock with the session's own holder identity in the
+configured namespace and election ID — without that the elected holder and the
+runtime decider would be two identities, no epoch would ever be adopted, and
+runtime would stay permanently closed. The AddonCheck reconciler gained
+Runtime + RuntimeQueue: a runtime-backed identity is enqueued onto the shared
+pool instead of running inline, and the pool handler is the production caller of
+AddonCheckRuntimeRunner.Run plus the T044/T045 transition and backfill path.
+
+This closes the gap phase A deliberately left open and recorded as T047's job.
+The phase A verifier's words were: "one enforcement point, one decider, zero code
+connecting them." There is now code connecting them, and it is proven by identity
+rather than by type (see below).
+
+Two real defects were found and fixed along the way.
+
+First, an identity-confusion bug found by the implementing engineer's own test:
+`registry.Lookup` delegates to `Resolve`, so once dispatch is admitted the
+BUILT-IN path would have picked up runtime adapters and run a compiled definition
+under the per-addon ServiceAccount convention instead of its binding's dedicated
+identity. The built-in path now resolves built-ins only, fail-closed.
+
+Second, a production defect found while making the startup diagnostic observable:
+`Run` derived its logger from the global `ctrl.Log`, and controller-runtime's
+global delegating logger can only ever be FULFILLED ONCE per process. If anything
+installed a logger before Run — another Run call, a library, an embedding binary —
+every startup diagnostic Run emits would be silently swallowed, including
+"runtime addon loading unavailable", which is the only place an administrator
+learns why runtime loading is inactive. contracts/leadership.md requires that
+diagnostic at startup, explicitly "without relying on a leader-gated controller
+that will never start". Run now derives setupLog from the zap logger it just
+built. Behaviour in the shipped binary is unchanged; the guarantee is now real.
+
+Adversarial review ran three lenses. Default-off reviewed SOUND and was
+re-proven independently: with runtimeLoading.enabled=false the built-in Setupper
+list is element-wise identical to DefaultControllers, Runtime and RuntimeQueue are
+nil, zero runnables are registered, no AddonDefinition index exists, and the
+leader-election lock is not installed. Two further default-off mutations were
+applied by the verifier and both were killed.
+
+Integration and gate-ordering both returned needs-rework with the same finding,
+and it is the most important review result of this feature: THE WIRING WAS
+ASSERTED BY GO TYPE, NEVER BY IDENTITY. Eleven mutations survived in which every
+wire could be crossed while the whole suite stayed green — the gate opening a
+private registry (so the operator logs "runtime dispatch admitted" while Resolve
+still returns a closed-admission barrier, exactly the silent disagreement T047
+exists to close); the gate driven by a second session nobody starts; the pool
+draining a foreign scheduler, so work is enqueued where no worker looks; the pool
+handler a no-op, so no evaluation is ever reached; the Lease read through the
+manager's CACHED client, which starts a cluster-wide Lease informer that
+contracts/leadership.md forbids verbatim and that the operator holds no RBAC for;
+the lock built with a divergent identity, making runtime permanently inert; `Run`
+passing nil, making runtime loading dead code in the shipped binary; the
+cache-sync gate replaced by a constant-true closure, the exact no-op the code's
+own comment says must be impossible; and the startup diagnostic deleted.
+
+For a wiring task, "the right things are connected to each other" IS the
+deliverable, and that was the one thing with no coverage. It is now proven in the
+strong form, against the objects `attach` actually registered rather than
+hand-built copies: field-by-field identity pinning (gate.session == pool.session
+== wiring.session, gate.registry == the shared registry that is also the
+reconciler's Adapters and the runner's Registry, gate.reader == mgr.GetAPIReader()
+with an explicit != mgr.GetClient() check, pool.scheduler == wiring.scheduler ==
+addonCheck.RuntimeQueue, and pool.handle's function pointer == RunRuntimeWork),
+plus an end-to-end test on a real started envtest manager with a real Lease that
+observes admission through the shared registry's Resolve and execution through the
+reconciler's own RuntimeQueue, then re-barring after shutdown.
+
+Mutation verification: all eleven reviewed mutations are caught, confirmed by an
+independent harness that re-applied every one rather than trusting the report. The
+verifier then invented twelve of its own, of which five survived — all on seams
+ADJACENT to the ones the reviewers named, which is a fair characterisation of a
+rework that pinned what it was asked to pin and stopped. Four were then closed
+here and mutation-proven: a second never-started session planted in the runner's
+Session and in the binding reconciler's Leadership (the same defect shape as the
+gate's), the runner's ProbeImage silently dropped, and the leader-election lock
+naming `<election-id>-election` — which slipped past a `strings.Contains` check on
+the lock description and is now an exact comparison against the session's LeaseRef.
+
+One residual is accepted rather than closed: swapping the two adjacent string
+arguments `w.opts.Namespace` and `w.managerServiceAccount` in the single
+`impersonation.NewRuntimeFactory` call compiles and passes the factory's non-empty
+check. It is recorded rather than fixed because the two values come from
+structurally different sources (configuration versus the manager's own token), it
+is one call site, and a swap fails closed loudly at runtime — authority resolution
+cannot find a binding in a namespace named after a ServiceAccount. Closing it
+properly means giving NewRuntimeFactory a struct argument in another package,
+which is disproportionate to the risk; it is noted here so a future change to that
+signature can take it.
+
+Gate outcomes: `go build ./...`, `go vet ./...`, `gofmt -l` clean; pinned
+`task lint` 0 issues; full suite green across `./api/...`, `./internal/...`,
+`./pkg/...` and `./cmd/...`; `-race` green on internal/app and internal/controller;
+`check-crd-compat: OK`; the runtime RBAC guard still holds (no new markers).
+
+Two things carried forward, both pre-existing or environmental, neither introduced
+here. `go test ./internal/app/ -count=3` fails on the untouched
+TestRun_HappyPath_DefaultControllers because of controller-runtime's process-global
+controller-name registry. And `task test-e2e` was NOT run: docker on this machine
+is aliased to an unavailable podman, and the user has said they will run e2e on a
+different machine. AGENTS.md requires it for internal/app/run.go and
+internal/controller changes, so the obligation now covers everything from US2
+onward and is the first thing to run on that machine.
+
+With T047 landed the feature is reachable in a cluster for the first time. Runtime
+remains default-off. Total checked: 47/59.

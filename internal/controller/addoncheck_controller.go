@@ -32,11 +32,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -101,6 +104,37 @@ type AddonCheckReconciler struct {
 	// operational failures) on AddonCheck resources. Optional: nil disables
 	// event recording; the check gauges are unaffected.
 	Recorder events.EventRecorder
+
+	// Runtime executes AddonChecks whose addon type is served by a published
+	// runtime snapshot rather than by a built-in adapter (T047 of
+	// specs/012-addon-definition-runtime).
+	//
+	// Nil is the DEFAULT-OFF case and it is load-bearing: with either Runtime
+	// or RuntimeQueue nil this reconciler behaves exactly as it did before
+	// runtime loading existed — no extra read, no extra branch taken, no
+	// resolution beyond the built-in Lookup it has always performed.
+	Runtime *AddonCheckRuntimeRunner
+
+	// RuntimeQueue is the manager's single runtime worker pool queue.
+	// *runtime.Scheduler implements it. It is separate from the built-in
+	// reconcile workers on purpose: contracts/runtime.md's scheduling row
+	// requires a "separate runtime worker pool/limiter ... built-ins retain
+	// their workers", so a runtime-backed check is ENQUEUED here and executed
+	// by RunRuntimeWork under that pool's ≤4-run, ≤1-per-definition,
+	// ≤1-per-check admission rather than inline on a reconcile worker.
+	RuntimeQueue RuntimeWorkQueue
+}
+
+// RuntimeWorkQueue is the runtime worker pool's queue surface, as much of
+// *runtime.Scheduler as this reconciler may touch: it may ask for a check to be
+// run and it may withdraw a queued wake, and it may do nothing else. Notably it
+// cannot start workers — only the elected leadership session does that.
+type RuntimeWorkQueue interface {
+	// Enqueue asks for one run of work, deduplicated per check.
+	Enqueue(work execution.Work, now time.Time) error
+	// Forget withdraws a queued wake. It never cancels an active run: an
+	// observed revocation cancels active work through the leadership session.
+	Forget(check types.NamespacedName, now time.Time)
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
@@ -145,6 +179,10 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries("AddonCheck", req.Namespace, req.Name)
+			// A deleted check must not keep a queued runtime wake alive. Forget
+			// withdraws the wake only; an active run keeps its slot and is
+			// cancelled by the leadership session, never by this reconciler.
+			r.forgetRuntimeWork(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -175,7 +213,28 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Reason:             pausedReason,
 		Message:            pausedMessage,
 	})
-	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
+	// Pausing a check withdraws any queued runtime wake: the pool would
+	// otherwise still admit a run for a check that has been switched off.
+	// Forget for a check the pool never heard of is a no-op, and the whole call
+	// is a no-op while runtime loading is off.
+	if check.Spec.Paused {
+		r.forgetRuntimeWork(req.NamespacedName)
+	}
+	// A runtime-backed identity never goes through resolveAddonAdapter: that
+	// path reports MissingAdapter for an identity no BUILT-IN claims, and it
+	// would run a compiled runtime adapter through the built-in impersonation
+	// path, under the per-addon ServiceAccount convention instead of the
+	// binding's dedicated identity. runtimeBacked is false for every built-in
+	// and for the whole default-off configuration, so the branch below is
+	// exactly what this reconcile did before runtime loading existed.
+	runtimeBacked := r.runtimeBacked(&check)
+	var (
+		selectedAdapter adapter.Adapter
+		adapterReady    bool
+	)
+	if !runtimeBacked {
+		selectedAdapter, adapterReady = resolveAddonAdapter(&check, r.Adapters)
+	}
 
 	// Validate spec.policy against the adapter that will run it, so a misconfig
 	// is loud (Accepted=False) and gates the run, instead of being silently
@@ -214,7 +273,20 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	interval := addonCheckInterval(&check)
 	runNow, runNowDue := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
-	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval) {
+	switch {
+	case runtimeBacked:
+		// The same due-ness rule as a built-in — first sight, spec change,
+		// run-now trigger, elapsed interval — but the run itself belongs to the
+		// runtime pool, so this reconcile only asks for one. The pool admits it
+		// only while the elected session is admissible, which is what keeps
+		// runtime execution behind election, cache sync and the takeover grace.
+		if addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval) {
+			r.enqueueRuntimeWork(log, &check)
+			if runNow != "" {
+				check.Status.LastRunTrigger = runNow
+			}
+		}
+	case adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval):
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -234,7 +306,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// stalls after the first run. Paused / adapterless checks are left to a
 	// spec change (generation bump) to wake them.
 	result = ctrl.Result{}
-	if adapterReady && policyValid {
+	if runtimeBacked || (adapterReady && policyValid) {
 		result.RequeueAfter = interval
 	}
 
@@ -265,6 +337,34 @@ func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGener
 	}
 }
 
+// builtinAdapterFor resolves addonType to a BUILT-IN adapter, and to nothing
+// else. [registry.Registry.Lookup] resolves runtime snapshots too once dispatch
+// is admitted, and this path — the built-in path — must never execute one: a
+// compiled definition runs under its binding's dedicated identity and its own
+// fences, not under the per-addon ServiceAccount convention built-ins use.
+//
+// The wired reconciler never reaches here for a runtime identity (runtimeBacked
+// routes it to the pool first), so this is the belt to that suspenders: the two
+// paths cannot silently disagree about who owns an identity. A registry that
+// does not expose Resolve keeps the plain lookup it always had.
+func builtinAdapterFor(adapters addonAdapterLookup, addonType string) (adapter.Adapter, error) {
+	resolver, ok := adapters.(interface {
+		Resolve(string) (registry.Resolution, error)
+	})
+	if !ok {
+		return adapters.Lookup(addonType)
+	}
+	resolution, err := resolver.Resolve(addonType)
+	switch {
+	case err != nil:
+		return nil, err
+	case resolution.Runtime:
+		return nil, fmt.Errorf("%w: %q is served by a runtime definition, not by a built-in adapter",
+			registry.ErrNotFound, addonType)
+	}
+	return resolution.Adapter, nil
+}
+
 func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
 	if check.Spec.Paused {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -286,7 +386,7 @@ func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapter
 		})
 		return nil, false
 	}
-	selectedAdapter, err := adapters.Lookup(check.Spec.AddonType)
+	selectedAdapter, err := builtinAdapterFor(adapters, check.Spec.AddonType)
 	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -474,6 +574,172 @@ func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) 
 		)
 	}
 	return r.AddonClients.ClientFor(impersonation.SAUsername(r.Namespace, sas.Items[0].Name))
+}
+
+// runtimeBacked reports whether this check's addon type is served by a runtime
+// definition rather than by a built-in adapter, and is therefore executed by
+// the runtime pool instead of inline by this reconciler.
+//
+// The three ways it answers false are the three halves of the feature's safety
+// argument:
+//
+//   - Runtime or RuntimeQueue nil — runtime loading is off (the default, and
+//     every unit test that predates it). Nothing below this line is reached,
+//     so a disabled runtime cannot change one built-in outcome.
+//   - The registry resolves the identity to a BUILT-IN adapter. "Preserve
+//     unrelated built-ins": a built-in is never routed through the runtime
+//     pool, never gated by the runtime dispatch barrier, and keeps its own
+//     reconcile workers.
+//   - The addon type cannot name a definition at all. The scheduler keys work
+//     by definition name, so an identity that is not a DNS-1123 label could
+//     never be enqueued; it keeps the existing MissingAdapter answer rather
+//     than disappearing into a queue that would refuse it.
+//
+// A paused check is likewise left to the built-in path, which is where the
+// Paused condition is written — and its queued wake is withdrawn, because a
+// paused check must not run.
+//
+// A barrier (BuiltinCollision, RuntimeCollision, RuntimeAdmissionClosed) and an
+// entirely unknown identity both answer TRUE: those outcomes belong to the
+// runtime path, which reports them with the lifecycle matrix's own reasons
+// (contracts/runtime.md), and the reconciler has nothing truer to say.
+func (r *AddonCheckReconciler) runtimeBacked(check *fathomv1alpha1.AddonCheck) bool {
+	if r.Runtime == nil || r.RuntimeQueue == nil || r.Runtime.Registry == nil {
+		return false
+	}
+	if check.Spec.Paused {
+		return false
+	}
+	if len(validation.IsDNS1123Label(check.Spec.AddonType)) != 0 {
+		return false
+	}
+	resolution, err := r.Runtime.Registry.Resolve(check.Spec.AddonType)
+	return err != nil || resolution.Runtime
+}
+
+// enqueueRuntimeWork asks the shared runtime pool for one run of check. The
+// queue deduplicates per check, so an event storm cannot multiply runs.
+func (r *AddonCheckReconciler) enqueueRuntimeWork(log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+	work := execution.Work{Definition: check.Spec.AddonType, Check: client.ObjectKeyFromObject(check)}
+	if err := r.RuntimeQueue.Enqueue(work, time.Now()); err != nil {
+		// The queue validates the names it will key work by. A rejected enqueue
+		// is a stored-input problem, not a controller malfunction, so it is
+		// logged and retried on the next interval rather than raised as a
+		// reconcile error that would back off this check's whole reconcile.
+		log.V(1).Info("runtime AddonCheck was not enqueued", "addonType", check.Spec.AddonType, "reason", err.Error())
+	}
+}
+
+// forgetRuntimeWork withdraws a queued runtime wake for key. It is a no-op
+// unless the runtime pool is wired.
+func (r *AddonCheckReconciler) forgetRuntimeWork(key types.NamespacedName) {
+	if r.RuntimeQueue == nil {
+		return
+	}
+	r.RuntimeQueue.Forget(key, time.Now())
+}
+
+// RunRuntimeWork is the runtime worker pool's handler: the production caller of
+// AddonCheckRuntimeRunner.Run and of the transition/backfill path next door.
+//
+// It runs on a runtime pool worker, never on a reconcile worker, and one
+// admission at a time per check. The order is fixed and each step is load
+// bearing:
+//
+//  1. read the check and the evidence the run will be measured against;
+//  2. run — the runner owns resolution, admission, both fences and publication;
+//  3. re-read the PUBLISHED check, because the runner publishes a copy and the
+//     transition is decided from what landed, not from what was sent;
+//  4. record the transition and persist the report name it chose.
+//
+// The disposition it returns is what paces the next attempt: Completed clears
+// backoff, MissingInput polls at the contract's 60s, and everything else is the
+// bounded exponential retry. Nothing here loops or waits on its own.
+func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work execution.Work) execution.Disposition {
+	log := logf.FromContext(ctx).WithValues("namespacedName", work.Check, "addonType", work.Definition)
+	if r.Runtime == nil {
+		// Unreachable in production: the pool is started only by the wiring
+		// that also sets this field. Refusing beats running an unwired path.
+		log.Error(errRuntimeRunnerUnwired, "runtime work dispatched without a runner")
+		return execution.MissingInput
+	}
+
+	var check fathomv1alpha1.AddonCheck
+	if err := r.Get(ctx, work.Check, &check); err != nil {
+		if apierrors.IsNotFound(err) {
+			return execution.Completed
+		}
+		log.Error(err, "read AddonCheck for a runtime run")
+		return execution.Retry
+	}
+	// The queue entry is keyed by the check, not by its spec, so an edit
+	// between the enqueue and the admission can retarget or pause it. Neither
+	// is this run's to execute.
+	if check.Spec.Paused || check.Spec.AddonType != work.Definition {
+		return execution.Completed
+	}
+
+	previous := check.Status.LastSuccessfulEvaluation.DeepCopy()
+	attempt, err := r.Runtime.Run(ctx, &check)
+	if err != nil {
+		if errors.Is(err, errNotRuntimeAddonType) {
+			// The identity became a built-in (an upgrade registered it). The
+			// built-in path owns it from the next reconcile on.
+			return execution.Completed
+		}
+		log.Error(err, "runtime AddonCheck execution failed")
+		return execution.Retry
+	}
+
+	if attempt.Completed && attempt.Published {
+		var published fathomv1alpha1.AddonCheck
+		if err := r.Get(ctx, work.Check, &published); err != nil {
+			log.Error(err, "re-read the published AddonCheck for its transition")
+			return execution.Retry
+		}
+		name, err := r.recordRuntimeTransition(ctx, log, &published, previous, attempt)
+		if err != nil {
+			log.Error(err, "record the runtime AddonCheck transition")
+			return execution.Retry
+		}
+		if name != "" {
+			// Second status write, by design: the report cannot be named
+			// before it exists. See recordRuntimeTransition's "two status
+			// writes" note — a lost write here is repaired by the backfill.
+			if err := r.Status().Update(ctx, &published); err != nil {
+				log.Error(err, "persist the runtime AddonCheck report name")
+				return execution.Retry
+			}
+		}
+		return execution.Completed
+	}
+
+	return runtimeDisposition(attempt)
+}
+
+// runtimeDisposition maps a run that published no completed evidence onto the
+// pool's pacing. The MissingInput reasons are the lifecycle rows whose recovery
+// is an administrator action or another controller's publication — a definition
+// that does not exist, authority that has not been granted, a contested
+// identity, a gate no leader has opened. Polling those at the contract's
+// missing-input interval is right; retrying them on an exponential ramp would
+// hammer the API server over state that cannot change on its own.
+func runtimeDisposition(attempt RuntimeAttempt) execution.Disposition {
+	switch attempt.Reason {
+	case reasonUnknownAddonType,
+		reasonAuthorizationUnavailable,
+		reasonAuthorizationRevoked,
+		reasonDefinitionUnavailable,
+		reasonBindingMismatch,
+		reasonInvalidDefinition,
+		reasonInvalidBinding,
+		registry.ReasonBuiltinCollision,
+		registry.ReasonRuntimeCollision,
+		registry.ReasonAdmissionClosed:
+		return execution.MissingInput
+	default:
+		return execution.Retry
+	}
 }
 
 // recordRuntimeTransition adds the HealthReport for a COMPLETED runtime
