@@ -22,6 +22,12 @@ func controlTargets() execution.ControlTargets {
 	return execution.ControlTargets{OperatorNamespace: "operator", DefinitionName: "custom", Check: types.NamespacedName{Namespace: "checks", Name: "check"}, LeaseName: "leader"}
 }
 
+func serviceAccountControlTargets() execution.ControlTargets {
+	targets := controlTargets()
+	targets.ServiceAccountName = "reader"
+	return targets
+}
+
 func TestControlGuardRestrictsManagerReads(t *testing.T) {
 	for _, tc := range []struct {
 		path    string
@@ -30,7 +36,7 @@ func TestControlGuardRestrictsManagerReads(t *testing.T) {
 		{"/apis/fathom.skaphos.io/v1alpha1/addondefinitions/custom", true},
 		{"/apis/fathom.skaphos.io/v1alpha1/namespaces/operator/addondefinitionbindings/custom", true},
 		{"/apis/fathom.skaphos.io/v1alpha1/namespaces/operator/addondefinitionbindings", true},
-		{"/api/v1/namespaces/operator/serviceaccounts/reader", true},
+		{"/api/v1/namespaces/operator/serviceaccounts/reader", false},
 		{"/apis/fathom.skaphos.io/v1alpha1/namespaces/checks/addonchecks/check", true},
 		{"/apis/coordination.k8s.io/v1/namespaces/operator/leases/leader", true},
 		{"/api/v1/namespaces/operator/configmaps/target", false},
@@ -71,10 +77,48 @@ func TestControlGuardRestrictsManagerReads(t *testing.T) {
 	}
 }
 
+func TestControlGuardAllowsOnlyTheResolvedServiceAccount(t *testing.T) {
+	targets := serviceAccountControlTargets()
+	b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
+	defer closeBudget()
+	guard, err := execution.NewControlGuard(b, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		path    string
+		allowed bool
+	}{
+		{"resolved service account", "/api/v1/namespaces/operator/serviceaccounts/reader", true},
+		{"unrelated service account", "/api/v1/namespaces/operator/serviceaccounts/other", false},
+		{"resolved name in another namespace", "/api/v1/namespaces/other/serviceaccounts/reader", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				called = true
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+			}))
+			req, err := http.NewRequest(http.MethodGet, "https://cluster"+tc.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := transport.RoundTrip(req)
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			if called != tc.allowed || (err == nil) != tc.allowed {
+				t.Fatalf("allowed=%v called=%v err=%v", tc.allowed, called, err)
+			}
+		})
+	}
+}
+
 func TestControlAndDelegatedRequestsShareBudget(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
 	defer closeBudget()
-	control, err := execution.NewControlGuard(b, controlTargets())
+	control, err := execution.NewControlGuard(b, serviceAccountControlTargets())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +150,7 @@ func TestControlAndDelegatedRequestsShareBudget(t *testing.T) {
 func TestControlAndDelegatedRequestsShareResponseBytes(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
 	defer closeBudget()
-	control, err := execution.NewControlGuard(b, controlTargets())
+	control, err := execution.NewControlGuard(b, serviceAccountControlTargets())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +185,7 @@ func TestControlAndDelegatedRequestsShareResponseBytes(t *testing.T) {
 func TestControlGuardClampsRequestToMaxRequestDuration(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), limits.MaxRunDuration)
 	defer closeBudget()
-	control, err := execution.NewControlGuard(b, controlTargets())
+	control, err := execution.NewControlGuard(b, serviceAccountControlTargets())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +214,7 @@ func TestControlGuardClampsRequestToMaxRequestDuration(t *testing.T) {
 func TestControlGuardSharesRemainingDeadline(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 50*time.Millisecond)
 	defer closeBudget()
-	control, err := execution.NewControlGuard(b, controlTargets())
+	control, err := execution.NewControlGuard(b, serviceAccountControlTargets())
 	if err != nil {
 		t.Fatal(err)
 	}

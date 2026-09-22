@@ -233,7 +233,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 		if len(parts) == 1 {
 			return apiRoute{discovery: true}, nil
 		}
-		if !apiToken(parts[1]) {
+		if !apiVersionToken(parts[1]) {
 			return apiRoute{}, fmt.Errorf("invalid core API version")
 		}
 		groupVersion = parts[1]
@@ -251,7 +251,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 		if len(parts) == 2 {
 			return apiRoute{discovery: true}, nil
 		}
-		if !apiToken(parts[2]) {
+		if !apiVersionToken(parts[2]) {
 			return apiRoute{}, fmt.Errorf("invalid API version")
 		}
 		groupVersion = parts[1] + "/" + parts[2]
@@ -267,7 +267,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 		namespace = tail[1]
 		tail = tail[2:]
 	}
-	if len(tail) < 1 || len(tail) > 2 || !apiToken(tail[0]) {
+	if len(tail) < 1 || len(tail) > 2 || !limits.ValidResourceSegment(tail[0]) {
 		return apiRoute{}, fmt.Errorf("subresources and malformed resource paths are forbidden")
 	}
 	if len(tail) == 2 && len(validation.IsDNS1123Subdomain(tail[1])) != 0 {
@@ -286,7 +286,10 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 	}
 	return route, nil
 }
-func apiToken(s string) bool {
+
+// API versions deliberately retain a narrower token grammar than resource
+// plurals, whose Kubernetes path grammar also permits interior hyphens.
+func apiVersionToken(s string) bool {
 	if len(s) == 0 || len(s) > limits.MaxResourceSegmentBytes || s[0] < 'a' || s[0] > 'z' {
 		return false
 	}

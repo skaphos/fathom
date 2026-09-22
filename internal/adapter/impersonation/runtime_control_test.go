@@ -98,11 +98,41 @@ func TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	control, ok := reader.(impersonation.RuntimeControlReader)
+	if !ok {
+		t.Fatalf("control reader type = %T, want RuntimeControlReader", reader)
+	}
 	if _, ok := reader.(client.Writer); ok {
 		t.Fatal("control reader exposes mutations")
 	}
 	if err := reader.Get(b.Context(), types.NamespacedName{Namespace: "operator", Name: "config"}, &corev1.ConfigMap{}); err == nil || calls.Load() != 0 {
 		t.Fatalf("manager target fallback: calls=%d err=%v", calls.Load(), err)
+	}
+	if err := control.Get(b.Context(), types.NamespacedName{Namespace: "operator", Name: "reader"}, &corev1.ServiceAccount{}); err == nil || calls.Load() != 0 {
+		t.Fatalf("unresolved service account reached transport: calls=%d err=%v", calls.Load(), err)
+	}
+	scoped, err := control.WithServiceAccount("operator", "reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []types.NamespacedName{
+		{Namespace: "", Name: "reader"},
+		{Namespace: "operator", Name: ""},
+		{Namespace: "other", Name: "reader"},
+		{Namespace: "operator", Name: "INVALID"},
+	} {
+		if _, err := control.WithServiceAccount(target.Namespace, target.Name); err == nil {
+			t.Errorf("invalid service account target %s was accepted", target)
+		}
+	}
+	if err := scoped.Get(b.Context(), types.NamespacedName{Namespace: "operator", Name: "other"}, &corev1.ServiceAccount{}); err == nil || calls.Load() != 0 {
+		t.Fatalf("unrelated service account reached transport: calls=%d err=%v", calls.Load(), err)
+	}
+	if err := scoped.List(b.Context(), &corev1.ServiceAccountList{}, client.InNamespace("operator")); err == nil || calls.Load() != 0 {
+		t.Fatalf("service account list reached transport: calls=%d err=%v", calls.Load(), err)
+	}
+	if err := control.Get(b.Context(), types.NamespacedName{Namespace: "operator", Name: "reader"}, &corev1.ServiceAccount{}); err == nil || calls.Load() != 0 {
+		t.Fatalf("derivation widened the original reader: calls=%d err=%v", calls.Load(), err)
 	}
 	factory, err := impersonation.NewRuntimeFactory(base, scheme, reader, "operator", "manager")
 	if err != nil {
@@ -160,7 +190,7 @@ func TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity(t *testing.T) {
 }
 
 func TestRuntimeControlReaderRequiresExplicitBoundary(t *testing.T) {
-	for _, testCase := range []string{"nil config", "opaque transport", "nil budget", "missing namespace", "missing definition", "missing check", "missing lease"} {
+	for _, testCase := range []string{"nil config", "opaque transport", "nil budget", "missing namespace", "missing definition", "missing check", "missing lease", "invalid service account"} {
 		t.Run(testCase, func(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
 			defer closeBudget()
@@ -181,6 +211,8 @@ func TestRuntimeControlReaderRequiresExplicitBoundary(t *testing.T) {
 				targets.Check = types.NamespacedName{}
 			case "missing lease":
 				targets.LeaseName = ""
+			case "invalid service account":
+				targets.ServiceAccountName = "INVALID"
 			}
 			if _, err := impersonation.NewRuntimeControlReader(base, b, targets); err == nil {
 				t.Fatal("unbounded reader accepted")

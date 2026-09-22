@@ -364,7 +364,7 @@ func (f *runtimeCheckFixture) newRunClients(b *execution.Budget, targets executi
 // a delegated client without the caller's per-run scope/budget guard.
 type fakeEvaluatorFactory struct {
 	f       *runtimeCheckFixture
-	control client.Reader
+	control impersonation.RuntimeControlReader
 }
 
 func (e *fakeEvaluatorFactory) ClientFor(ctx context.Context, name string,

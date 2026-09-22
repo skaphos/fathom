@@ -34,19 +34,19 @@ type RuntimeAuthority struct {
 // ResolveRuntimeAuthority requires an uncached control-plane reader. The caller
 // wraps that reader with the run's control-plane request budget. Effective policy
 // scope is checked after policy resolution and independently by the transport.
-func ResolveRuntimeAuthority(ctx context.Context, reader client.Reader, namespace, managerSA, name string) (*RuntimeAuthority, error) {
-	if reader == nil || namespace == "" || managerSA == "" || len(validation.IsDNS1123Label(namespace)) != 0 || len(validation.IsDNS1123Subdomain(managerSA)) != 0 || len(validation.IsDNS1123Label(name)) != 0 {
+func ResolveRuntimeAuthority(ctx context.Context, reader RuntimeControlReader, namespace, managerSA, name string) (*RuntimeAuthority, error) {
+	if reader.Reader == nil || namespace == "" || managerSA == "" || len(validation.IsDNS1123Label(namespace)) != 0 || len(validation.IsDNS1123Subdomain(managerSA)) != 0 || len(validation.IsDNS1123Label(name)) != 0 {
 		return nil, fmt.Errorf("AuthorizationUnavailable: explicit control reader, namespace, manager identity and definition name required")
 	}
 	ctx, cancel := context.WithTimeout(ctx, definitions.MaxRunDuration)
 	defer cancel()
-	get := func(key types.NamespacedName, obj client.Object) error {
+	get := func(from client.Reader, key types.NamespacedName, obj client.Object) error {
 		req, cancel := context.WithTimeout(ctx, definitions.MaxRequestDuration)
 		defer cancel()
-		return reader.Get(req, key, obj)
+		return from.Get(req, key, obj)
 	}
 	authority := &RuntimeAuthority{Definition: &api.AddonDefinition{}, Binding: &api.AddonDefinitionBinding{}, ServiceAccount: &corev1.ServiceAccount{}}
-	if err := get(types.NamespacedName{Name: name}, authority.Definition); err != nil {
+	if err := get(reader, types.NamespacedName{Name: name}, authority.Definition); err != nil {
 		return nil, fmt.Errorf("DefinitionUnavailable: %w", err)
 	}
 	d := authority.Definition
@@ -58,7 +58,7 @@ func ResolveRuntimeAuthority(ctx context.Context, reader client.Reader, namespac
 			return nil, fmt.Errorf("BuiltinCollision: %s", name)
 		}
 	}
-	if err := get(types.NamespacedName{Namespace: namespace, Name: name}, authority.Binding); err != nil {
+	if err := get(reader, types.NamespacedName{Namespace: namespace, Name: name}, authority.Binding); err != nil {
 		return nil, fmt.Errorf("BindingUnavailable: %w", err)
 	}
 	b := authority.Binding
@@ -75,7 +75,11 @@ func ResolveRuntimeAuthority(ctx context.Context, reader client.Reader, namespac
 	if saName == managerSA {
 		return nil, fmt.Errorf("BindingMismatch: manager service account is not dedicated")
 	}
-	if err := get(types.NamespacedName{Namespace: namespace, Name: saName}, authority.ServiceAccount); err != nil {
+	accountReader, err := reader.WithServiceAccount(namespace, saName)
+	if err != nil {
+		return nil, err
+	}
+	if err := get(accountReader, types.NamespacedName{Namespace: namespace, Name: saName}, authority.ServiceAccount); err != nil {
 		return nil, fmt.Errorf("BindingMismatch: %w", err)
 	}
 	sa := authority.ServiceAccount
@@ -100,7 +104,7 @@ func ResolveRuntimeAuthority(ctx context.Context, reader client.Reader, namespac
 		}
 		var bindings api.AddonDefinitionBindingList
 		req, cancel := context.WithTimeout(ctx, definitions.MaxRequestDuration)
-		err := reader.List(req, &bindings, client.InNamespace(namespace), client.Limit(definitions.MaxPageObjects), client.Continue(continuation))
+		err := accountReader.List(req, &bindings, client.InNamespace(namespace), client.Limit(definitions.MaxPageObjects), client.Continue(continuation))
 		cancel()
 		if err != nil {
 			return nil, fmt.Errorf("AuthorizationUnavailable: cannot establish dedicated identity: %w", err)
@@ -134,7 +138,7 @@ func ResolveRuntimeAuthority(ctx context.Context, reader client.Reader, namespac
 type RuntimeFactory struct {
 	base                 *rest.Config
 	scheme               *runtime.Scheme
-	reader               client.Reader
+	reader               RuntimeControlReader
 	namespace, managerSA string
 }
 
@@ -151,10 +155,11 @@ func NewRuntimeFactory(base *rest.Config, scheme *runtime.Scheme, reader client.
 	}
 	// Authority resolution must read live objects, so a cached manager client is
 	// refused: only a reader declared as the uncached control reader is accepted.
-	if _, ok := reader.(RuntimeControlReader); !ok {
+	control, ok := reader.(RuntimeControlReader)
+	if !ok {
 		return nil, fmt.Errorf("AuthorizationUnavailable: runtime authority requires the uncached control-plane reader")
 	}
-	return &RuntimeFactory{base: rest.CopyConfig(base), scheme: scheme, reader: reader, namespace: namespace, managerSA: managerSA}, nil
+	return &RuntimeFactory{base: rest.CopyConfig(base), scheme: scheme, reader: control, namespace: namespace, managerSA: managerSA}, nil
 }
 
 // ClientFor resolves live identity, intersects the declared targets with the

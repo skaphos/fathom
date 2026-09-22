@@ -161,7 +161,7 @@ func TestRuntimeAuthorityRejectsIdentityConfusion(t *testing.T) {
 				objects = append(objects, other)
 			}
 			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
-			authority, err := impersonation.ResolveRuntimeAuthority(context.Background(), reader, "operator", "manager", d.Name)
+			authority, err := impersonation.ResolveRuntimeAuthority(context.Background(), impersonation.RuntimeControlReader{Reader: reader}, "operator", "manager", d.Name)
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v err=%v", tc.valid, err)
 			}
@@ -427,7 +427,7 @@ func TestRuntimeFactoryFailsClosedWithoutPrerequisites(t *testing.T) {
 			if !tc.nilReader {
 				reader = fake.NewClientBuilder().WithScheme(scheme).WithObjects(build(d, b, sa)...).Build()
 			}
-			_, err := impersonation.ResolveRuntimeAuthority(context.Background(), reader, tc.namespace, tc.manager, tc.resolve)
+			_, err := impersonation.ResolveRuntimeAuthority(context.Background(), impersonation.RuntimeControlReader{Reader: reader}, tc.namespace, tc.manager, tc.resolve)
 			if err == nil {
 				t.Fatal("authority resolved without its prerequisites")
 			}
@@ -579,7 +579,7 @@ func TestRuntimeAuthorityInventoryStaysInsideRunBudget(t *testing.T) {
 			scheme, d, b, sa := authorityFixture(t)
 			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(d, b, sa).Build()
 			reader := &helperBPagedReader{Reader: objects, t: t, page: tc.page}
-			_, err := impersonation.ResolveRuntimeAuthority(context.Background(), reader, "operator", "manager", "custom")
+			_, err := impersonation.ResolveRuntimeAuthority(context.Background(), impersonation.RuntimeControlReader{Reader: reader}, "operator", "manager", "custom")
 			if err == nil {
 				t.Fatal("unbounded or shared binding inventory accepted")
 			}

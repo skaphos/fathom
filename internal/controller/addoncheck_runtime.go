@@ -512,6 +512,15 @@ func (r *AddonCheckRuntimeRunner) preRunFence(
 	if err != nil {
 		return RuntimeFence{}, nil, nil, err
 	}
+	if !runtimeResolutionMatchesDefinition(resolution, authority.Definition) {
+		return RuntimeFence{}, nil, nil, &authorityFailure{
+			Reason: reasonSuperseded,
+			Message: fmt.Sprintf(
+				"live AddonDefinition %q revision does not match the selected runtime snapshot",
+				addonType,
+			),
+		}
+	}
 
 	var fenced fathomv1alpha1.AddonCheck
 	key := client.ObjectKeyFromObject(check)
@@ -538,6 +547,24 @@ func (r *AddonCheckRuntimeRunner) preRunFence(
 		CheckPolicy:           addonCheckPolicyFingerprint(&fenced),
 		Epoch:                 epoch,
 	}, &fenced, evaluator, nil
+}
+
+// runtimeResolutionMatchesDefinition prevents a live authority read from
+// laundering a stale compiled adapter into a newer definition revision. The
+// schema version is the controller's storage contract, not TypeMeta from the
+// decoded object, which may be empty in typed clients.
+func runtimeResolutionMatchesDefinition(
+	resolution registry.Resolution, definition *fathomv1alpha1.AddonDefinition,
+) bool {
+	if definition == nil {
+		return false
+	}
+	return resolution.Revision == (registry.RuntimeRevision{
+		DefinitionUID:    definition.UID,
+		Generation:       definition.Generation,
+		SchemaVersion:    fathomv1alpha1.GroupVersion.Version,
+		SemanticsVersion: definition.Spec.SemanticsVersion,
+	}) && resolution.Provenance.AdapterVersion == definition.Spec.AdapterVersion
 }
 
 // buildGuard supplies the delegated transport's scope and work guard. It closes
@@ -740,6 +767,7 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 
 	bindingKey := types.NamespacedName{Namespace: r.OperatorNamespace, Name: addonType}
 	var binding fathomv1alpha1.AddonDefinitionBinding
+	bindingCurrent := false
 	switch err := clients.Control.Get(budget.Context(), bindingKey, &binding); {
 	case apierrors.IsNotFound(err):
 		deny(reasonAuthorizationRevoked, "AddonDefinitionBinding %s was deleted while the run was executing", bindingKey)
@@ -760,21 +788,31 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 			// here, which is exactly what "status writes do not change
 			// authority" requires.
 			deny(reasonSuperseded, "AddonDefinitionBinding %s advanced to spec generation %d", bindingKey, binding.Generation)
+		} else {
+			bindingCurrent = true
 		}
-		// The dedicated reader is only worth re-reading once the binding that
-		// names it still holds: a revoked or mismatched binding has already
-		// produced the earlier candidate, and reading an account it no longer
-		// delegates to would spend a request to learn nothing.
+	}
+	// The dedicated reader is only worth re-reading once the binding that
+	// names it still holds. Derive the exact ServiceAccount target from that
+	// validated binding; the initial control reader deliberately denies every
+	// ServiceAccount so authority cannot be widened before this point.
+	if bindingCurrent {
 		saKey := types.NamespacedName{Namespace: r.OperatorNamespace, Name: string(binding.Spec.ServiceAccountRef.Name)}
-		var account corev1.ServiceAccount
-		switch err := clients.Control.Get(budget.Context(), saKey, &account); {
-		case apierrors.IsNotFound(err):
-			deny(reasonBindingMismatch, "the dedicated service account %s was deleted while the run was executing", saKey)
-		case err != nil:
-			failure := readFailure(err, fmt.Sprintf("ServiceAccount %s", saKey))
-			deny(failure.Reason, "%s", failure.Error())
-		case account.UID != fence.ServiceAccountUID:
-			deny(reasonBindingMismatch, "the dedicated service account %s was recreated with UID %q", saKey, account.UID)
+		accountReader, err := clients.Control.WithServiceAccount(saKey.Namespace, saKey.Name)
+		if err != nil {
+			failure := candidateFor(err)
+			deny(failure.reason, "%s", failure.message)
+		} else {
+			var account corev1.ServiceAccount
+			switch err := accountReader.Get(budget.Context(), saKey, &account); {
+			case apierrors.IsNotFound(err):
+				deny(reasonBindingMismatch, "the dedicated service account %s was deleted while the run was executing", saKey)
+			case err != nil:
+				failure := readFailure(err, fmt.Sprintf("ServiceAccount %s", saKey))
+				deny(failure.Reason, "%s", failure.Error())
+			case account.UID != fence.ServiceAccountUID:
+				deny(reasonBindingMismatch, "the dedicated service account %s was recreated with UID %q", saKey, account.UID)
+			}
 		}
 	}
 

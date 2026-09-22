@@ -26,7 +26,7 @@ var (
 	thresholdKey  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]*$`)
 	kindToken     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 	versionToken  = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
-	resourceToken = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+	resourceToken = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
 	envToken      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
@@ -221,6 +221,16 @@ func resourceName(s string) bool {
 	return len(s) <= MaxResourceSegmentBytes && len(validation.IsDNS1123Subdomain(s)) == 0
 }
 func token(s string) bool { return len(s) <= MaxResourceSegmentBytes && kindToken.MatchString(s) }
+
+// ValidResourceSegment applies Kubernetes' DNS-1035 character grammar for a
+// resource plural while retaining the runtime contract's larger segment cap.
+// IsDNS1035Label cannot be used directly because it also imposes a 63-byte cap,
+// while aggregated APIs may expose resource path segments up to this package's
+// explicit MaxResourceSegmentBytes bound.
+func ValidResourceSegment(s string) bool {
+	return len(s) <= MaxResourceSegmentBytes && resourceToken.MatchString(s)
+}
+
 func apiVersion(s string) bool {
 	p := strings.Split(s, "/")
 	if len(p) > 2 || len(p) == 0 {
@@ -418,7 +428,7 @@ func validateRead(r api.DefinitionReadRule) error {
 		}
 		seen = map[string]bool{}
 		for _, v := range r.Resources {
-			if len(v) > MaxResourceSegmentBytes || !resourceToken.MatchString(v) || seen[v] {
+			if !ValidResourceSegment(v) || seen[v] {
 				return fmt.Errorf("exact resource plural required")
 			}
 			seen[v] = true

@@ -197,9 +197,12 @@ func TestRuntimeReadDeclarationGrammar(t *testing.T) {
 	}{
 		{"core get", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"configmaps"}, ResourceNames: []api.DefinitionResourceName{"reviewed"}, Verbs: []string{"get"}}, true},
 		{"group list", api.DefinitionReadRule{APIGroup: &group, Resources: []string{"widgets"}, Verbs: []string{"list"}}, true},
+		{"hyphenated resource", api.DefinitionReadRule{APIGroup: &group, Resources: []string{"policy-rules"}, Verbs: []string{"get"}}, true},
 		{"exact discovery", api.DefinitionReadRule{NonResourceURLs: []string{"/api", "/api/v1", "/apis", "/apis/example.org", "/apis/example.org/v1"}, Verbs: []string{"get"}}, true},
 		{"missing core group", api.DefinitionReadRule{Resources: []string{"pods"}, Verbs: []string{"get"}}, false},
 		{"subresource", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods/log"}, Verbs: []string{"get"}}, false},
+		{"leading digit resource", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"1pods"}, Verbs: []string{"get"}}, false},
+		{"trailing hyphen resource", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods-"}, Verbs: []string{"get"}}, false},
 		{"watch", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods"}, Verbs: []string{"watch"}}, false},
 		{"duplicate resource", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods", "pods"}, Verbs: []string{"get"}}, false},
 		{"duplicate name", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods"}, ResourceNames: []api.DefinitionResourceName{"pod", "pod"}, Verbs: []string{"get"}}, false},

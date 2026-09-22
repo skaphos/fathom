@@ -67,8 +67,13 @@ func TestRequestedReadsRejectsAuthorityExpansion(t *testing.T) {
 		valid bool
 	}{
 		{"exact core list", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods"}, Verbs: []string{"get", "list"}}, true},
+		{"hyphenated resource plural", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"policy-rules"}, Verbs: []string{"get", "list"}}, true},
 		{"exact discovery", api.DefinitionReadRule{NonResourceURLs: []string{"/api", "/apis/apps/v1"}, Verbs: []string{"get"}}, true},
+		{"hyphenated version", api.DefinitionReadRule{NonResourceURLs: []string{"/api/v1-beta"}, Verbs: []string{"get"}}, false},
 		{"wildcard", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"*"}, Verbs: []string{"get"}}, false},
+		{"leading hyphen", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"-pods"}, Verbs: []string{"get"}}, false},
+		{"trailing hyphen", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods-"}, Verbs: []string{"get"}}, false},
+		{"underscore", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"policy_rules"}, Verbs: []string{"get"}}, false},
 		{"write", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods"}, Verbs: []string{"create"}}, false},
 		{"subresource", api.DefinitionReadRule{APIGroup: &core, Resources: []string{"pods/exec"}, Verbs: []string{"get"}}, false},
 		{"arbitrary url", api.DefinitionReadRule{NonResourceURLs: []string{"https://example.com"}, Verbs: []string{"get"}}, false},

@@ -50,7 +50,7 @@ func TestTransportRejectsUnauthorizedRoutesBeforeIO(t *testing.T) {
 		// Every path segment and query is validated before a request exists, so
 		// a malformed group, version, resource, name or query is a scope denial
 		// rather than something the API server gets to interpret.
-		"/api/V1/namespaces/allowed/configmaps", "/apis/Bad_Group/v1/widgets", "/apis/apps/V1/deployments", "/api/v1/namespaces/allowed/config-maps", "/api/v1/namespaces/allowed/configmaps/Bad_Name", "/api/v1/namespaces/allowed/configmaps?%zz", "/api/v1/namespaces/allowed/configmaps?limit=1&limit=2"} {
+		"/api/V1/namespaces/allowed/configmaps", "/api/v1-beta/namespaces/allowed/configmaps", "/apis/Bad_Group/v1/widgets", "/apis/apps/V1/deployments", "/api/v1/namespaces/allowed/-configmaps", "/api/v1/namespaces/allowed/configmaps-", "/api/v1/namespaces/allowed/config_maps", "/api/v1/namespaces/allowed/config.maps", "/api/v1/namespaces/allowed/configmaps/Bad_Name", "/api/v1/namespaces/allowed/configmaps?%zz", "/api/v1/namespaces/allowed/configmaps?limit=1&limit=2"} {
 		cases = append(cases, routeCase{http.MethodGet, path})
 	}
 	// An otherwise fully authorized target: only the verb makes these illegal.
@@ -77,6 +77,28 @@ func TestTransportRejectsUnauthorizedRoutesBeforeIO(t *testing.T) {
 				t.Fatalf("want ScopeDenied, got %v", err)
 			}
 		})
+	}
+}
+
+func TestTransportAllowsHyphenatedResourcePlural(t *testing.T) {
+	b, close := execution.NewBudget(context.Background(), time.Minute)
+	defer close()
+	called := false
+	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		called = true
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"items":[]}`))}, nil
+	}))
+	req, err := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/policy-rules", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if !called {
+		t.Fatal("hyphenated resource read did not reach the delegated API transport")
 	}
 }
 

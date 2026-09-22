@@ -18,6 +18,7 @@ import (
 // publication fences. This is separate from the evaluator's binding scope.
 type ControlTargets struct {
 	OperatorNamespace, DefinitionName, LeaseName string
+	ServiceAccountName                           string
 	Check                                        types.NamespacedName
 }
 
@@ -31,6 +32,7 @@ type ControlGuard struct {
 func NewControlGuard(b *Budget, targets ControlTargets) (*ControlGuard, error) {
 	if b == nil || len(validation.IsDNS1123Label(targets.OperatorNamespace)) != 0 ||
 		len(validation.IsDNS1123Label(targets.DefinitionName)) != 0 ||
+		(targets.ServiceAccountName != "" && len(validation.IsDNS1123Subdomain(targets.ServiceAccountName)) != 0) ||
 		len(validation.IsDNS1123Label(targets.Check.Namespace)) != 0 ||
 		len(validation.IsDNS1123Subdomain(targets.Check.Name)) != 0 ||
 		len(validation.IsDNS1123Subdomain(targets.LeaseName)) != 0 {
@@ -56,8 +58,10 @@ func (t ControlTargets) permits(route apiRoute) bool {
 	case api.GroupVersion.String() + "/addonchecks":
 		return route.namespace == t.Check.Namespace && route.name == t.Check.Name
 	case "v1/serviceaccounts":
-		// The binding supplies the SA name only after the first metadata reads.
-		return route.namespace == t.OperatorNamespace && !route.list
+		// The initial reader has no service account target. Authority resolution
+		// derives a fresh guard from the validated binding before this read.
+		return t.ServiceAccountName != "" && route.namespace == t.OperatorNamespace &&
+			route.name == t.ServiceAccountName && !route.list
 	case "coordination.k8s.io/v1/leases":
 		return route.namespace == t.OperatorNamespace && route.name == t.LeaseName
 	default:
