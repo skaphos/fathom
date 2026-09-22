@@ -1258,7 +1258,32 @@ func refused(reason, message string) RuntimeAttempt {
 // precedence order.
 func candidateFor(err error) publicationCandidate {
 	reason := runtimeFailureReason(err)
-	return publicationCandidate{rank: publicationRankOf(reason), reason: reason, message: err.Error()}
+	return publicationCandidate{
+		rank: publicationRankOf(reason), reason: reason,
+		message: runtimeFailureMessage(err, reason),
+	}
+}
+
+// runtimeFailureMessage keeps the useful controller-authored part of a
+// failure without persisting an API response, transport error or credential
+// detail carried by its cause. Runtime Failure details and authorityFailure
+// messages are constructed inside the process; their wrapped errors are not.
+func runtimeFailureMessage(err error, reason string) string {
+	var authority *authorityFailure
+	if errors.As(err, &authority) && authority.Reason == reason {
+		return authority.Message
+	}
+	var failure *execution.Failure
+	if errors.As(err, &failure) && failure.Reason == reason {
+		return failure.Detail
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return execution.FailureSummary(err)
+	}
+	// A recognized prefix retains its contract classification, but its tail is
+	// still arbitrary error text. Summarize the class through the same static
+	// diagnostic table used by the execution supervisor.
+	return execution.FailureSummary(&execution.Failure{Reason: reason})
 }
 
 // runtimeFailureReason extracts the contract reason an error carries. Every
@@ -1274,19 +1299,44 @@ func runtimeFailureReason(err error) string {
 	}
 	var failure *execution.Failure
 	if errors.As(err, &failure) {
-		return failure.Reason
+		if knownRuntimeFailureReason(failure.Reason) {
+			return failure.Reason
+		}
+		return "ExecutionFailed"
 	}
 	var authority *authorityFailure
 	if errors.As(err, &authority) {
-		return authority.Reason
+		if knownRuntimeFailureReason(authority.Reason) {
+			return authority.Reason
+		}
+		return "ExecutionFailed"
 	}
 	if errors.Is(err, context.Canceled) {
 		return reasonRunCanceled
 	}
-	if reason, ok := reasonPrefix(err.Error()); ok {
+	if reason, ok := reasonPrefix(err.Error()); ok && knownRuntimeFailureReason(reason) {
 		return reason
 	}
 	return "ExecutionFailed"
+}
+
+// knownRuntimeFailureReason is the vocabulary raised by the runtime,
+// addon-definition validation and impersonation packages. A raw delegated
+// error may contain a colon-prefixed API response; it cannot mint a condition
+// reason merely by matching that syntax.
+func knownRuntimeFailureReason(reason string) bool {
+	switch reason {
+	case reasonAuthorizationRevoked, reasonAuthorizationUnavailable, reasonSuperseded,
+		reasonDefinitionUnavailable, reasonBindingMismatch, reasonAccessDenied,
+		reasonInvalidDefinition, reasonInvalidBinding, reasonBuiltinCollision,
+		"BindingUnavailable", "DefinitionTooLarge", "InvalidVersionRange",
+		"ScopeDenied", "WorkLimitExceeded", "InputLimitExceeded",
+		"ResponseLimitExceeded", "ResultLimitExceeded", "ExecutionPanic",
+		"ExecutionFailed":
+		return true
+	default:
+		return false
+	}
 }
 
 // reasonPrefix reads a "Reason: detail" prefix. pkg/addondefinition and
