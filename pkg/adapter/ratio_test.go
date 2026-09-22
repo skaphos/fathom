@@ -12,6 +12,31 @@ import (
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
+func TestSupportsRatioThresholds(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "1.0.0", want: false},
+		{version: "1.0.99", want: false},
+		{version: "1.1.0", want: true},
+		{version: "1.1.0-rc.1", want: true},
+		{version: "1.9.0", want: true},
+		{version: "0.99.0", want: false},
+		{version: "2.0.0", want: false},
+		{version: "not-semver", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.version, func(t *testing.T) {
+			t.Parallel()
+			if got := adapter.SupportsRatioThresholds(tc.version); got != tc.want {
+				t.Fatalf("SupportsRatioThresholds(%q) = %t, want %t", tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseRatioThresholds_Valid(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -122,6 +122,9 @@ type Request struct {
 // FamilyPolicy is the configuration block for a single check family.
 // Thresholds are intentionally untyped (string-keyed strings) so the
 // contract does not need to evolve when an adapter introduces a new knob.
+// Fathom reserves warnRatio and failRatio for engine-level aggregation in
+// contract 1.1.0 and later; adapters targeting that contract must not assign
+// those keys private semantics.
 type FamilyPolicy struct {
 	// Enabled gates execution of the family. A FamilyPolicy with
 	// Enabled=false is equivalent to the family being absent from

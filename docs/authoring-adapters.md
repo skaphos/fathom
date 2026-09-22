@@ -562,16 +562,24 @@ output drifts from your rules.
 | Version | What it is | When to bump |
 | --- | --- | --- |
 | `AdapterVersion` / `Version()` | Your adapter's SemVer. | When you change what the adapter checks. |
-| `ContractVersion` | The [`pkg/adapter`](../pkg/adapter/version.go) contract you target — currently **`1.0.0`**. Embed the constant; don't hard-code a string. | Never by you — it tracks the contract. |
+| `ContractVersion` | The [`pkg/adapter`](../pkg/adapter/version.go) contract you target — currently **`1.1.0`**. Embed the constant; don't hard-code a string. | Never by you — it tracks the contract. |
 
 Contract compatibility is enforced at registration by `EnsureCompatible`. At
 `1.0.0` the contract is stable: an adapter is compatible when it shares the
-host's major version and targets an **equal-or-older minor**. Minor/patch
-releases only add surface (new `Request` fields, new optional interfaces) that
-older adapters may ignore — but an adapter built against a *newer* minor than
-the host is rejected, since it may rely on surface the host lacks. A major
-bump is a breaking rebuild. Because you embed `adapter.ContractVersion`, a
-contract bump surfaces at build time.
+host's major version and targets an **equal-or-older minor**. Adapters remain
+load-compatible across minor/patch releases, and new Go surface (such as
+`Request` fields and optional interfaces) can be ignored. Feature-specific
+policy validation can still reject ambiguous keys introduced in a newer minor.
+An adapter built against a *newer* minor than the host is rejected, since it may
+rely on surface the host lacks. A major bump is a breaking rebuild. Because you
+embed `adapter.ContractVersion`, a contract bump surfaces at build time.
+
+Compatibility at registration does not authorize semantics introduced after
+the adapter's minor. A 1.0 adapter still loads and runs ordinary policies on a
+1.1 host, but any policy containing `warnRatio` or `failRatio` is rejected as
+`Accepted=False / InvalidPolicy` before `Run`, even when the family is disabled
+or the adapter advertises the name. `ThresholdAdvertiser` is optional and
+cannot prove that old adapter code does not read a key.
 
 Optional contract surfaces are plain Go interface upgrades: implement
 `adapter.ThresholdAdvertiser` to declare the threshold keys each family
@@ -585,6 +593,14 @@ or advertise: `warnRatio` and `failRatio` (the per-family ratio rollup,
 `ThresholdAdvertiser` key checks on every family, and applies them during
 report aggregation — your adapter just emits per-resource `CheckResult`s and
 stays entirely unaware of them.
+
+When migrating a 1.0 adapter, audit every threshold read before changing its
+reported contract version. If either reserved name has private meaning, rename
+the adapter knob and update existing `AddonCheck` policies first. Rebuild the
+adapter against contract 1.1.0 only after it no longer consumes or advertises
+the reserved names; then add `warnRatio` or `failRatio` where engine-level
+rollups are desired. Removing the reserved key is the immediate rollback: the
+1.0 adapter remains loadable and its other private thresholds keep working.
 
 Repo expectations for the PR:
 

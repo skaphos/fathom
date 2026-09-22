@@ -71,6 +71,54 @@ type programmableAdapter struct {
 	outcome adapter.Outcome
 }
 
+// legacyRatioAdapter models a 1.0 adapter that used failRatio while threshold
+// names were still adapter-owned. It deliberately advertises and reads the key
+// so the compatibility regression cannot mistake ThresholdAdvertiser support
+// for evidence that engine reinterpretation is safe.
+type legacyRatioAdapter struct {
+	mu                    sync.Mutex
+	runs                  int
+	consumedLegacyPrivate bool
+}
+
+func (a *legacyRatioAdapter) Name() string            { return "legacy-ratio-adapter" }
+func (a *legacyRatioAdapter) Version() string         { return "0.9.0" }
+func (a *legacyRatioAdapter) ContractVersion() string { return "1.0.0" }
+func (a *legacyRatioAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{AddonTypes: []string{"legacy-addon"}, Families: []adapter.Family{"system_health"}}
+}
+func (a *legacyRatioAdapter) ThresholdKeys() map[adapter.Family][]string {
+	return map[adapter.Family][]string{"system_health": {adapter.ThresholdKeyFailRatio, "legacyLimit"}}
+}
+func (a *legacyRatioAdapter) Run(_ context.Context, req adapter.Request) (adapter.Result, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.runs++
+	thresholds := req.Policy["system_health"].Thresholds
+	if _, ok := thresholds["legacyLimit"]; ok {
+		a.consumedLegacyPrivate = true
+	}
+	// This adapter's private 1.0 meaning is deliberately incompatible with the
+	// engine meaning: "100" fails immediately, while an engine failRatio of
+	// 100 permits every evaluated check. Before the gate, both interpretations
+	// were applied to one policy.
+	outcome := adapter.OutcomePass
+	if thresholds[adapter.ThresholdKeyFailRatio] == "100" {
+		outcome = adapter.OutcomeFail
+	}
+	return adapter.Result{Checks: []adapter.CheckResult{{
+		Family:    "system_health",
+		Outcome:   outcome,
+		TargetRef: adapter.TargetRef{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "default", Name: "legacy"},
+		Summary:   "legacy adapter ran",
+	}}}, nil
+}
+func (a *legacyRatioAdapter) state() (runs int, consumedLegacyPrivate bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.runs, a.consumedLegacyPrivate
+}
+
 func (a *programmableAdapter) Name() string            { return "prog-cert-manager" }
 func (a *programmableAdapter) Version() string         { return "0.0.1" }
 func (a *programmableAdapter) ContractVersion() string { return adapter.ContractVersion }
@@ -654,6 +702,72 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(statusUpdates).To(Equal(0), "second reconcile rewrote status (churn) instead of converging")
+	})
+
+	It("rejects engine ratio keys for a legacy 1.0 adapter before Run", func() {
+		name := types.NamespacedName{Name: "addoncheck-legacy-ratio", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "legacy-addon",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					"system_health": {
+						Enabled:    ptr.To(false),
+						Thresholds: map[string]fathomv1alpha1.ThresholdValue{adapter.ThresholdKeyFailRatio: "100"},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
+
+		legacy := &legacyRatioAdapter{}
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(legacy)).To(Succeed(), "ordinary 1.0 adapters remain loadable by a 1.1 host")
+		result, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeZero())
+
+		runs, _ := legacy.state()
+		Expect(runs).To(BeZero(), "a rejected policy must never reach the legacy adapter")
+		updated := &fathomv1alpha1.AddonCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		accepted := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionAccepted)
+		Expect(accepted).NotTo(BeNil())
+		Expect(accepted.Status).To(Equal(metav1.ConditionFalse))
+		Expect(accepted.Reason).To(Equal("InvalidPolicy"))
+		Expect(accepted.Message).To(ContainSubstring("adapter \"legacy-ratio-adapter\" uses contract version 1.0.0"))
+		Expect(accepted.Message).To(ContainSubstring("require contract version 1.1.0 or newer"))
+		Expect(updated.Status.LastRunTime).To(BeNil())
+		Expect(updated.Status.LastReportName).To(BeEmpty())
+	})
+
+	It("continues to run a legacy 1.0 adapter with an ordinary private threshold", func() {
+		name := types.NamespacedName{Name: "addoncheck-legacy-private-threshold", Namespace: "default"}
+		resource := &fathomv1alpha1.AddonCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec: fathomv1alpha1.AddonCheckSpec{
+				AddonType: "legacy-addon",
+				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+					"system_health": {
+						Thresholds: map[string]fathomv1alpha1.ThresholdValue{"legacyLimit": "7"},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
+
+		legacy := &legacyRatioAdapter{}
+		adapters := registry.New(logr.Discard())
+		Expect(adapters.Register(legacy)).To(Succeed())
+		_, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		runs, consumedLegacyPrivate := legacy.state()
+		Expect(runs).To(Equal(1))
+		Expect(consumedLegacyPrivate).To(BeTrue())
 	})
 
 	It("requeues a ready AddonCheck after Spec.Interval so it re-runs", func() {

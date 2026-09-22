@@ -15,13 +15,15 @@ import (
 // understands. Adapters should embed this constant in their ContractVersion()
 // method so a contract bump is visible at adapter-build time.
 //
-// At 1.0.0 the contract is stable: [EnsureCompatible] accepts any adapter
+// At 1.0.0 the contract became stable: [EnsureCompatible] accepts any adapter
 // built against the same major and an equal-or-older minor, so additive
-// contract growth (new Request fields, new optional interfaces) no longer
-// rejects adapters built against an older 1.x. The reverse is still rejected:
+// contract growth (new Request fields, new optional interfaces) does not reject
+// adapters at registration. A feature may still require a minimum minor before
+// use; warnRatio and failRatio, for example, are engine-reserved from 1.1.0 and
+// are rejected in policies targeting older adapters. The reverse is rejected:
 // an adapter targeting a newer minor may rely on surface this host does not
 // provide. A major bump remains a breaking rebuild.
-const ContractVersion = "1.0.0"
+const ContractVersion = "1.1.0"
 
 // semverPattern matches MAJOR.MINOR.PATCH with an optional pre-release or
 // build suffix. We do not interpret the suffix — only major/minor/patch
@@ -72,6 +74,29 @@ func ensureCompatible(hostVersion, reported string) error {
 		)
 	}
 	return nil
+}
+
+// contractVersionAtLeast reports whether reported has the same major as
+// required and an equal-or-newer numeric minor/patch. Invalid versions return
+// false; adapter registration reports their detailed parse errors before
+// feature-specific validation runs. Pre-release/build suffixes are ignored,
+// matching EnsureCompatible.
+func contractVersionAtLeast(reported, required string) bool {
+	got, err := parseVersion(reported)
+	if err != nil {
+		return false
+	}
+	want, err := parseVersion(required)
+	if err != nil {
+		return false
+	}
+	if got.major != want.major {
+		return false
+	}
+	if got.minor != want.minor {
+		return got.minor > want.minor
+	}
+	return got.patch >= want.patch
 }
 
 type version struct {

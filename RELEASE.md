@@ -192,6 +192,22 @@ syft "${IMAGE}" -o spdx-json
 [cosign]: https://github.com/sigstore/cosign
 [syft]: https://github.com/anchore/syft
 
+## Adapter ratio-key migration
+
+The Go adapter contract is now 1.1.0. Contract 1.1 reserves `warnRatio` and
+`failRatio` for Fathom's engine-level family aggregation. Version 1.0 adapters
+remain loadable and continue to run policies that do not contain those keys.
+When either key appears in a policy selected for a 1.0 adapter, reconciliation
+sets `Accepted=False / InvalidPolicy` and skips `Run`; this also applies to a
+disabled family and to an adapter that advertises the key.
+
+Before rebuilding a 1.0 adapter against 1.1, audit its threshold reads. If it
+used either reserved name as a private knob, rename that knob and migrate the
+affected `AddonCheck` objects first. Confirm the rebuilt adapter neither reads
+nor advertises the reserved names, then report contract 1.1.0 and add engine
+ratio thresholds as desired. To roll back during migration, remove the reserved
+keys: the 1.0 adapter and all its other private thresholds remain compatible.
+
 ## Node-agent RBAC migration
 
 Upgrading from a release that used the shared `fathom-node-agent-role`
