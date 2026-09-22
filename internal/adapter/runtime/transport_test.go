@@ -39,6 +39,30 @@ func runtimeGuard(t *testing.T, b *execution.Budget, cluster bool) *execution.Gu
 	return g
 }
 
+func primeDiscovery(t *testing.T, guard *execution.Guard, path, body string) int {
+	t.Helper()
+	transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}))
+	req, err := http.NewRequest(http.MethodGet, "https://cluster"+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("prime guarded discovery: %v", err)
+	}
+	_ = response.Body.Close()
+	return len(body)
+}
+
+func mappedRuntimeGuard(t *testing.T, b *execution.Budget, cluster bool) *execution.Guard {
+	t.Helper()
+	guard := runtimeGuard(t, b, cluster)
+	primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`)
+	return guard
+}
+
 // Impersonation hands compiled checks a full client.Client, writers included, so
 // the guard's method check is the only thing keeping a runtime definition
 // read-only. Every write verb must be refused before any I/O, with the scope
@@ -84,7 +108,9 @@ func TestTransportAllowsHyphenatedResourcePlural(t *testing.T) {
 	b, close := execution.NewBudget(context.Background(), time.Minute)
 	defer close()
 	called := false
-	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	guard := runtimeGuard(t, b, false)
+	primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"policy-rules","kind":"ConfigMap","namespaced":true}]}`)
+	transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		called = true
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"items":[]}`))}, nil
 	}))
@@ -99,6 +125,91 @@ func TestTransportAllowsHyphenatedResourcePlural(t *testing.T) {
 	_ = response.Body.Close()
 	if !called {
 		t.Fatal("hyphenated resource read did not reach the delegated API transport")
+	}
+}
+
+func TestTransportAllowsOnlyResourcesMappedToDeclaredKinds(t *testing.T) {
+	t.Run("declared resource succeeds and undeclared peer is denied before I/O", func(t *testing.T) {
+		b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
+		defer closeBudget()
+		calls := 0
+		transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			calls++
+			body := `{"kind":"ConfigMap","metadata":{"name":"config"}}`
+			if r.URL.Path == "/api/v1" {
+				body = `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true},{"name":"secrets","kind":"Secret","namespaced":true}]}`
+			}
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}))
+		request := func(path string) error {
+			req, err := http.NewRequest(http.MethodGet, "https://cluster"+path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := transport.RoundTrip(req)
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			return err
+		}
+		if err := request("/api/v1"); err != nil {
+			t.Fatalf("discover declared resource: %v", err)
+		}
+		if err := request("/api/v1/namespaces/allowed/configmaps/config"); err != nil {
+			t.Fatalf("read declared resource: %v", err)
+		}
+		before := calls
+		if err := request("/api/v1/namespaces/allowed/secrets/secret"); err == nil || !strings.Contains(err.Error(), "ScopeDenied") {
+			t.Fatalf("undeclared same-GV resource was not denied: %v", err)
+		}
+		if calls != before {
+			t.Fatal("undeclared same-GV resource reached the API transport")
+		}
+	})
+
+	for _, tc := range []struct {
+		name, first, second string
+	}{
+		{
+			name:  "ambiguous aliases in one response",
+			first: `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true},{"name":"configs","kind":"ConfigMap","namespaced":true}]}`,
+		},
+		{
+			name:   "mapping changes during the run",
+			first:  `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`,
+			second: `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configs","kind":"ConfigMap","namespaced":true}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
+			defer closeBudget()
+			body := tc.first
+			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}))
+			discover := func() error {
+				req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1", nil)
+				response, err := transport.RoundTrip(req)
+				if response != nil {
+					_ = response.Body.Close()
+				}
+				return err
+			}
+			firstErr := discover()
+			if tc.second == "" {
+				if firstErr == nil || !strings.Contains(firstErr.Error(), "ScopeDenied") {
+					t.Fatalf("ambiguous discovery was not denied: %v", firstErr)
+				}
+				return
+			}
+			if firstErr != nil {
+				t.Fatalf("initial discovery: %v", firstErr)
+			}
+			body = tc.second
+			if err := discover(); err == nil || !strings.Contains(err.Error(), "ScopeDenied") {
+				t.Fatalf("changed discovery mapping was not denied: %v", err)
+			}
+		})
 	}
 }
 
@@ -120,7 +231,7 @@ func TestTransportBoundsDecodedErrorAndSuccessBodies(t *testing.T) {
 				payload = buf.Bytes()
 				headers.Set("Content-Encoding", "gzip")
 			}
-			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: status, Header: headers, Body: io.NopCloser(bytes.NewReader(payload))}, nil
 			}))
 			req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
@@ -162,8 +273,12 @@ func TestTransportListLimitAndDiscoveryScope(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, close := execution.NewBudget(context.Background(), time.Minute)
 			defer close()
+			guard := runtimeGuard(t, b, true)
+			if tc.path == "/api/v1/namespaces/allowed/configmaps" {
+				primeDiscovery(t, guard, "/api/v1", declared)
+			}
 			payload, headers := helperCPayload(t, tc.body, tc.compressed)
-			transport := runtimeGuard(t, b, true).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			transport := guard.Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if strings.HasSuffix(tc.path, "configmaps") && r.URL.Query().Get("limit") != "100" {
 					t.Error("page size not bounded")
 				}
@@ -211,12 +326,14 @@ func TestTransportTargetObjectAndPageBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, close := execution.NewBudget(context.Background(), time.Minute)
 			defer close()
+			guard := mappedRuntimeGuard(t, b, false)
 			if tc.objects > 0 {
-				if err := b.ChargeObjects(tc.objects); err != nil {
+				// Guarded discovery consumes one object from the same run cap.
+				if err := b.ChargeObjects(tc.objects - 1); err != nil {
 					t.Fatal(err)
 				}
 			}
-			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
 			}))
 			req, _ := http.NewRequest(http.MethodGet, "https://cluster"+tc.path, nil)
@@ -237,11 +354,12 @@ func TestTransportTargetObjectAndPageBounds(t *testing.T) {
 func TestTransportNeverTruncatesAtContinuationCap(t *testing.T) {
 	b, close := execution.NewBudget(context.Background(), time.Minute)
 	defer close()
-	if err := b.ChargeObjects(limits.MaxRunObjects - limits.MaxPageObjects); err != nil {
+	guard := mappedRuntimeGuard(t, b, false)
+	if err := b.ChargeObjects(limits.MaxRunObjects - limits.MaxPageObjects - 1); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"metadata":{"continue":"remaining"},"items":[` + strings.TrimSuffix(strings.Repeat(`{},`, limits.MaxPageObjects), ",") + `]}`
-	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}))
 	req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps", nil)
@@ -262,7 +380,7 @@ func TestTransportLimitsHiddenRetries(t *testing.T) {
 			b, close := execution.NewBudget(context.Background(), time.Minute)
 			defer close()
 			calls := 0
-			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				calls++
 				return &http.Response{StatusCode: status, Header: http.Header{"Retry-After": []string{"0"}}, Body: io.NopCloser(strings.NewReader(`{"kind":"Status"}`))}, nil
 			}))
@@ -306,7 +424,7 @@ func TestTransportCancellationClosesResponseBody(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer func() { _ = writer.Close() }()
 	entered := make(chan struct{})
-	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		close(entered)
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: reader}, nil
 	}))
@@ -339,7 +457,7 @@ func TestIndependentRuntimeTransportsShareRequestRate(t *testing.T) {
 	next := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"ConfigMap"}`))}, nil
 	})
-	transports := []http.RoundTripper{runtimeGuard(t, first, false).Wrap(next), runtimeGuard(t, second, false).Wrap(next)}
+	transports := []http.RoundTripper{mappedRuntimeGuard(t, first, false).Wrap(next), mappedRuntimeGuard(t, second, false).Wrap(next)}
 	started := time.Now()
 	for i := 0; i < 2*limits.RequestBurst; i++ {
 		request, err := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
@@ -395,6 +513,32 @@ func helperCGuard(t *testing.T, b *execution.Budget, cluster bool) *execution.Gu
 		t.Fatal(err)
 	}
 	return g
+}
+
+func primeHelperDiscovery(t *testing.T, guard *execution.Guard, path string) int {
+	t.Helper()
+	switch {
+	case strings.HasPrefix(path, "/api/v1/"):
+		return primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true},{"name":"pods","kind":"Pod","namespaced":true}]}`)
+	case strings.HasPrefix(path, "/apis/discovery.k8s.io/v1/"):
+		return primeDiscovery(t, guard, "/apis/discovery.k8s.io/v1", `{"kind":"APIResourceList","groupVersion":"discovery.k8s.io/v1","resources":[{"name":"endpointslices","kind":"EndpointSlice","namespaced":true}]}`)
+	case strings.HasPrefix(path, "/apis/apiextensions.k8s.io/v1/"):
+		return primeDiscovery(t, guard, "/apis/apiextensions.k8s.io/v1", `{"kind":"APIResourceList","groupVersion":"apiextensions.k8s.io/v1","resources":[{"name":"customresourcedefinitions","kind":"CustomResourceDefinition","namespaced":false}]}`)
+	default:
+		t.Fatalf("no discovery fixture for %q", path)
+		return 0
+	}
+}
+
+func chargeResponseBytes(t *testing.T, b *execution.Budget, bytes int) {
+	t.Helper()
+	for bytes > 0 {
+		chunk := min(bytes, limits.MaxResponseBytes)
+		if err := b.ChargeResponse(chunk); err != nil {
+			t.Fatal(err)
+		}
+		bytes -= chunk
+	}
 }
 
 // helperCTornBody delivers part of a body and then fails, the way a connection
@@ -499,7 +643,7 @@ func TestTransportBoundsCallerSuppliedListOptions(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 			defer closeBudget()
 			called := false
-			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				called = true
 				if got := r.URL.Query().Get("limit"); got != tc.wantLimit {
 					t.Errorf("outbound limit=%q want %q", got, tc.wantLimit)
@@ -554,7 +698,7 @@ func TestTransportHelperReadsShareIdentityAndScope(t *testing.T) {
 		{name: "cluster-scoped CRD helper", path: "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com", cluster: true, body: `{"kind":"CustomResourceDefinition"}`, reachesAPI: true},
 		{name: "cluster-scoped CRD helper without cluster authority", path: "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com", body: `{"kind":"CustomResourceDefinition"}`, denied: true, reason: "cluster-scoped read is not authorized"},
 		{name: "pod helper in a second binding namespace", path: "/api/v1/namespaces/second/pods", body: `{"kind":"PodList","items":[]}`, reachesAPI: true},
-		{name: "pod helper outside the binding namespaces", path: "/api/v1/namespaces/unlisted/pods", body: `{"kind":"PodList","items":[]}`, denied: true, reason: `namespace "unlisted" is not authorized`},
+		{name: "pod helper outside the binding namespaces", path: "/api/v1/namespaces/unlisted/pods", body: `{"kind":"PodList","items":[]}`, denied: true, reason: "request namespace is not authorized"},
 		{name: "endpointslice helper discovery matches declaration", path: "/apis/discovery.k8s.io/v1", body: `{"kind":"APIResourceList","groupVersion":"discovery.k8s.io/v1","resources":[{"name":"endpointslices","kind":"EndpointSlice","namespaced":true}]}`, reachesAPI: true},
 		{name: "endpointslice helper discovery contradicts declaration", path: "/apis/discovery.k8s.io/v1", body: `{"kind":"APIResourceList","groupVersion":"discovery.k8s.io/v1","resources":[{"name":"endpointslices","kind":"EndpointSlice","namespaced":false}]}`, denied: true, reachesAPI: true, reason: "ScopeDenied"},
 	} {
@@ -562,7 +706,11 @@ func TestTransportHelperReadsShareIdentityAndScope(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 			defer closeBudget()
 			called := false
-			transport := helperCGuard(t, b, tc.cluster).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			guard := helperCGuard(t, b, tc.cluster)
+			if !strings.HasSuffix(tc.path, "/v1") && tc.reachesAPI {
+				primeHelperDiscovery(t, guard, tc.path)
+			}
+			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				called = true
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
 			}))
@@ -585,12 +733,15 @@ func TestTransportHelperReadsShareIdentityAndScope(t *testing.T) {
 	t.Run("helper traffic is charged to the run request budget", func(t *testing.T) {
 		b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 		defer closeBudget()
-		for i := 0; i < limits.MaxRunRequests-1; i++ {
+		guard := helperCGuard(t, b, true)
+		primeHelperDiscovery(t, guard, "/api/v1/namespaces/second/pods")
+		primeHelperDiscovery(t, guard, "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com")
+		for i := 0; i < limits.MaxRunRequests-3; i++ {
 			if err := b.ChargeRequest(); err != nil {
 				t.Fatal(err)
 			}
 		}
-		transport := helperCGuard(t, b, true).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"PodList","items":[]}`))}, nil
 		}))
 		req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/second/pods", nil)
@@ -607,12 +758,10 @@ func TestTransportHelperReadsShareIdentityAndScope(t *testing.T) {
 	t.Run("helper traffic is charged to the run byte budget", func(t *testing.T) {
 		b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 		defer closeBudget()
-		for used := 0; used < limits.MaxRunResponseBytes; used += limits.MaxResponseBytes {
-			if err := b.ChargeResponse(limits.MaxResponseBytes); err != nil {
-				t.Fatal(err)
-			}
-		}
-		transport := helperCGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		guard := helperCGuard(t, b, false)
+		discoveryBytes := primeHelperDiscovery(t, guard, "/api/v1/namespaces/second/pods")
+		chargeResponseBytes(t, b, limits.MaxRunResponseBytes-discoveryBytes)
+		transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"PodList","items":[]}`))}, nil
 		}))
 		req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/second/pods", nil)
@@ -638,7 +787,7 @@ func TestTransportDeliversDecompressedBodies(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 			defer closeBudget()
 			payload, headers := helperCPayload(t, tc.body, tc.compressed)
-			transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Header: headers.Clone(), Body: io.NopCloser(bytes.NewReader(payload))}, nil
 			}))
 			req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
@@ -689,7 +838,7 @@ func TestTransportRejectsUndecodableResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 			defer closeBudget()
-			guard := runtimeGuard(t, b, false)
+			guard := mappedRuntimeGuard(t, b, false)
 			var transport http.RoundTripper
 			if tc.missingTransport {
 				transport = guard.Wrap(nil)
@@ -719,7 +868,7 @@ func TestTransportRejectsUndecodableResponses(t *testing.T) {
 	t.Run("null items is an empty page", func(t *testing.T) {
 		b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 		defer closeBudget()
-		transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"ConfigMapList","items":null}`))}, nil
 		}))
 		req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps", nil)
@@ -736,12 +885,14 @@ func TestTransportRejectsUndecodableResponses(t *testing.T) {
 func TestTransportForwardsContinuationBelowCap(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 	defer closeBudget()
-	if err := b.ChargeObjects(800); err != nil {
+	// Guarded discovery charges one object; precharge one fewer so the paging
+	// assertion retains its exact 950-object boundary.
+	if err := b.ChargeObjects(799); err != nil {
 		t.Fatal(err)
 	}
 	pages := []string{helperCItems(limits.MaxPageObjects, "next"), helperCItems(50, "")}
 	attempt := 0
-	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if got := r.URL.Query().Get("limit"); got != "100" {
 			t.Errorf("page %d limit=%q", attempt, got)
 		}
@@ -820,9 +971,14 @@ func TestTransportChargesRetriesAndDiscoveryToRunBudget(t *testing.T) {
 	t.Run("a retry consumes a run request", func(t *testing.T) {
 		b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 		defer closeBudget()
-		prechargeAllButOne(t, b)
+		guard := mappedRuntimeGuard(t, b, false)
+		for i := 0; i < limits.MaxRunRequests-2; i++ {
+			if err := b.ChargeRequest(); err != nil {
+				t.Fatal(err)
+			}
+		}
 		calls := 0
-		transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 			calls++
 			return &http.Response{StatusCode: 503, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"Status"}`))}, nil
 		}))
@@ -845,7 +1001,7 @@ func TestTransportChargesRetriesAndDiscoveryToRunBudget(t *testing.T) {
 		defer closeBudget()
 		statuses := []int{503, 503, 200, 503, 503, 503}
 		calls := 0
-		transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 			status := statuses[calls]
 			calls++
 			return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"ConfigMap"}`))}, nil
@@ -940,7 +1096,7 @@ func TestTransportPassesThroughBoundedErrorBodies(t *testing.T) {
 	body := `{"kind":"Status","code":500,"details":` + testutil.JSONNodes(limits.MaxObjectNodes+1) + `}`
 	b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 	defer closeBudget()
-	transport := runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	transport := mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 500, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}))
 	req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
@@ -956,13 +1112,13 @@ func TestTransportPassesThroughBoundedErrorBodies(t *testing.T) {
 	if len(delivered) != len(body) {
 		t.Fatalf("delivered %d bytes want %d", len(delivered), len(body))
 	}
-	if b.Objects() != 0 {
-		t.Fatalf("error body charged %d objects", b.Objects())
+	if b.Objects() != 1 {
+		t.Fatalf("error body changed the one-object discovery charge: %d", b.Objects())
 	}
 	// The byte cap still applies unconditionally, which is what keeps the
 	// uninspected body bounded.
 	oversized := strings.Repeat("x", limits.MaxResponseBytes+1)
-	transport = runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	transport = mappedRuntimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 500, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(oversized))}, nil
 	}))
 	req, _ = http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
@@ -971,36 +1127,42 @@ func TestTransportPassesThroughBoundedErrorBodies(t *testing.T) {
 	}
 }
 
-// A list with no /namespaces/<ns>/ segment is treated as cluster-scoped and is
-// permitted only under allowClusterScoped, which cluster-scoped helpers such as
-// CRD resolution need. contracts/payloads.md forbids all-namespaces reads for a
-// runtime check, and it is definition validation — not this guard — that keeps a
-// namespaced target from ever compiling into such a request: pkg/addondefinition
-// validation requires at least one explicit namespace for a Namespaced target.
-// Relaxing that validation would open this door, so assert both directions here.
-func TestTransportTreatsNamespacelessListAsClusterScoped(t *testing.T) {
-	for _, cluster := range []bool{true, false} {
-		t.Run(strconv.FormatBool(cluster), func(t *testing.T) {
+// The discovered resource scope is part of the allowlist. Cluster authority
+// permits cluster-scoped helpers, but never turns a namespaced resource into an
+// all-namespaces read or a cluster-scoped resource into a namespaced one.
+func TestTransportRequiresDiscoveredResourceScope(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		allowed    bool
+	}{
+		{name: "namespaced resource cannot be listed across all namespaces", path: "/api/v1/configmaps"},
+		{name: "cluster resource cannot use a namespace", path: "/apis/apiextensions.k8s.io/v1/namespaces/allowed/customresourcedefinitions/widgets.example.com"},
+		{name: "cluster resource with cluster authority", path: "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com", allowed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
 			defer closeBudget()
-			called := false
-			transport := runtimeGuard(t, b, cluster).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
-				called = true
-				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"ConfigMapList","items":[]}`))}, nil
+			guard := helperCGuard(t, b, true)
+			primeHelperDiscovery(t, guard, "/api/v1/namespaces/allowed/configmaps/config")
+			primeHelperDiscovery(t, guard, "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com")
+			calls := 0
+			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"kind":"CustomResourceDefinition"}`))}, nil
 			}))
-			req, _ := http.NewRequest(http.MethodGet, "https://cluster/api/v1/configmaps", nil)
+			req, _ := http.NewRequest(http.MethodGet, "https://cluster"+tc.path, nil)
 			response, err := transport.RoundTrip(req)
 			if response != nil {
 				_ = response.Body.Close()
 			}
-			if cluster {
-				if err != nil || !called {
-					t.Fatalf("cluster-scoped helper list refused: called=%v err=%v", called, err)
+			if tc.allowed {
+				if err != nil || calls != 1 {
+					t.Fatalf("allowed cluster resource: calls=%d err=%v", calls, err)
 				}
 				return
 			}
-			if err == nil || called || !strings.Contains(err.Error(), "cluster-scoped read is not authorized") {
-				t.Fatalf("namespaceless list escaped without cluster authority: called=%v err=%v", called, err)
+			if err == nil || !strings.Contains(err.Error(), "ScopeDenied") || calls != 0 {
+				t.Fatalf("resource scope mismatch accepted: calls=%d err=%v", calls, err)
 			}
 		})
 	}

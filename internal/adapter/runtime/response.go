@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 
 	limits "github.com/skaphos/fathom/pkg/addondefinition"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -139,13 +140,30 @@ func (g *Guard) inspectDiscovery(object map[string]any, version string) error {
 	if !ok && object["resources"] != nil {
 		return g.budget.Fail("InputLimitExceeded", "invalid discovery resources")
 	}
+	mapped := map[schema.GroupVersionResource]discoveredResource{}
+	seenNames := map[string]bool{}
+	seenKinds := map[schema.GroupVersionKind]bool{}
 	for _, raw := range resources {
 		resource, ok := raw.(map[string]any)
 		if !ok {
 			return g.budget.Fail("InputLimitExceeded", "invalid discovery resource")
 		}
+		name, _ := resource["name"].(string)
+		if strings.Contains(name, "/") {
+			// Subresources cannot be requested through the guard and do not
+			// participate in the primary GVK-to-resource mapping.
+			continue
+		}
+		if !limits.ValidResourceSegment(name) {
+			return g.budget.Fail("InputLimitExceeded", "invalid discovery resource name")
+		}
+		if seenNames[name] {
+			return g.budget.Fail("ScopeDenied", "resource discovery mapping is ambiguous")
+		}
+		seenNames[name] = true
 		kind, _ := resource["kind"].(string)
-		expected, declared := g.expected[schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: kind}]
+		gvk := schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: kind}
+		expected, declared := g.expected[gvk]
 		if !declared {
 			continue
 		}
@@ -153,6 +171,11 @@ func (g *Guard) inspectDiscovery(object map[string]any, version string) error {
 		if !ok || actual != expected {
 			return g.budget.Fail("ScopeDenied", "discovered resource scope differs from declaration")
 		}
+		if seenKinds[gvk] {
+			return g.budget.Fail("ScopeDenied", "declared kind has ambiguous resource mappings")
+		}
+		seenKinds[gvk] = true
+		mapped[gv.WithResource(name)] = discoveredResource{kind: gvk, namespaced: actual}
 	}
-	return nil
+	return g.recordDiscovery(version, mapped)
 }

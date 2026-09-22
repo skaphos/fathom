@@ -63,6 +63,7 @@ func TestPermissionsUseOnlyActualRequests(t *testing.T) {
 			if err != nil || before.Status != metav1.ConditionUnknown || before.Reason != "NotEvaluated" {
 				t.Fatalf("before request: %+v, %v", before, err)
 			}
+			primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`)
 			calls := 0
 			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				calls++
@@ -114,6 +115,7 @@ func TestPermissionDeclarationsAreAdvisory(t *testing.T) {
 			if err != nil || before.DeclarationReason != tc.want {
 				t.Fatalf("before=%+v err=%v", before, err)
 			}
+			primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`)
 			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
 			}))
@@ -134,7 +136,7 @@ func TestPermissionDeclarationsAreAdvisory(t *testing.T) {
 func TestPermissionFailuresSurviveLaterSuccess(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
 	defer closeBudget()
-	guard := runtimeGuard(t, b, false)
+	guard := mappedRuntimeGuard(t, b, false)
 	d := diagnosticDefinition()
 	status := 503
 	transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -161,7 +163,7 @@ func TestPermissionFailuresSurviveLaterSuccess(t *testing.T) {
 func TestPermissionsObserveOverridesAndConcurrentRequests(t *testing.T) {
 	b, closeBudget := execution.NewBudget(context.Background(), 30*time.Second)
 	defer closeBudget()
-	guard := runtimeGuard(t, b, false)
+	guard := mappedRuntimeGuard(t, b, false)
 	d := diagnosticDefinition()
 	entered := make(chan struct{})
 	release := make(chan struct{})

@@ -129,7 +129,7 @@ func helperDSend(t *testing.T, transport http.RoundTripper, path string) error {
 func helperDTarget(t *testing.T, body string) error {
 	t.Helper()
 	b := helperDBudget(t)
-	return helperDSend(t, helperDGuard(t, b).Wrap(helperDStatus(http.StatusOK, body)), helperDTargetPath)
+	return helperDSend(t, mappedRuntimeGuard(t, b, false).Wrap(helperDStatus(http.StatusOK, body)), helperDTargetPath)
 }
 
 // helperDScope reports whether a binding of n namespaces is authorized at all.
@@ -149,8 +149,15 @@ func helperDScope(n int) error {
 func helperDResource(t *testing.T, n int) error {
 	t.Helper()
 	b := helperDBudget(t)
-	transport := helperDGuard(t, b).Wrap(helperDStatus(http.StatusOK, `{"kind":"ConfigMapList","items":[]}`))
-	return helperDSend(t, transport, "/api/v1/namespaces/allowed/"+testutil.Bytes(n))
+	resource := testutil.Bytes(n)
+	guard := helperDGuard(t, b)
+	discovered := resource
+	if !limits.ValidResourceSegment(resource) {
+		discovered = "configmaps"
+	}
+	primeDiscovery(t, guard, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"`+discovered+`","kind":"ConfigMap","namespaced":true}]}`)
+	transport := guard.Wrap(helperDStatus(http.StatusOK, `{"kind":"ConfigMapList","items":[]}`))
+	return helperDSend(t, transport, "/api/v1/namespaces/allowed/"+resource)
 }
 
 // helperDRateSpan is measured once: the limiter is process-wide, so every row
@@ -167,7 +174,7 @@ func helperDRate(t *testing.T) time.Duration {
 	t.Helper()
 	helperDRateOnce.Do(func() {
 		b := helperDBudget(t)
-		transport := helperDGuard(t, b).Wrap(helperDStatus(http.StatusOK, `{"kind":"ConfigMap"}`))
+		transport := mappedRuntimeGuard(t, b, false).Wrap(helperDStatus(http.StatusOK, `{"kind":"ConfigMap"}`))
 		started := time.Now()
 		for i := 0; i < limits.RequestBurst+limits.RequestsPerSecond; i++ {
 			if err := helperDSend(t, transport, helperDTargetPath); err != nil {
@@ -582,7 +589,7 @@ func helperDContractRows() map[string]helperDContractRow {
 			// A 5xx feeds the per-URL counter: the initial attempt plus at
 			// retries are permitted, and the repetition after them is refused.
 			b := helperDBudget(t)
-			transport := helperDGuard(t, b).Wrap(helperDStatus(http.StatusServiceUnavailable, `{"kind":"Status"}`))
+			transport := mappedRuntimeGuard(t, b, false).Wrap(helperDStatus(http.StatusServiceUnavailable, `{"kind":"Status"}`))
 			for i := int64(0); i <= at; i++ {
 				if err := helperDSend(t, transport, helperDTargetPath); err != nil {
 					t.Fatalf("attempt %d rejected: %v", i, err)

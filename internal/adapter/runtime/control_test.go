@@ -123,7 +123,7 @@ func TestControlAndDelegatedRequestsShareBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	delegated := runtimeGuard(t, b, false)
-	for i := 0; i < limits.MaxRunRequests-1; i++ {
+	for i := 0; i < limits.MaxRunRequests-2; i++ {
 		if err := b.ChargeRequest(); err != nil {
 			t.Fatal(err)
 		}
@@ -141,6 +141,7 @@ func TestControlAndDelegatedRequestsShareBudget(t *testing.T) {
 	if err != nil || before.Reason != "NotEvaluated" {
 		t.Fatalf("manager read counted as delegated access: %+v %v", before, err)
 	}
+	primeDiscovery(t, delegated, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`)
 	req, _ = http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)
 	if _, err := delegated.Wrap(next).RoundTrip(req); err == nil || !strings.Contains(err.Error(), "WorkLimitExceeded") {
 		t.Fatalf("independent request budget: %v", err)
@@ -154,10 +155,15 @@ func TestControlAndDelegatedRequestsShareResponseBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for used := 0; used < limits.MaxRunResponseBytes-limits.MaxResponseBytes; used += limits.MaxResponseBytes {
-		if err := b.ChargeResponse(limits.MaxResponseBytes); err != nil {
+	delegated := runtimeGuard(t, b, false)
+	discoveryBytes := primeDiscovery(t, delegated, "/api/v1", `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`)
+	remaining := limits.MaxRunResponseBytes - limits.MaxResponseBytes - discoveryBytes
+	for remaining > 0 {
+		charge := min(remaining, limits.MaxResponseBytes)
+		if err := b.ChargeResponse(charge); err != nil {
 			t.Fatal(err)
 		}
+		remaining -= charge
 	}
 	payload := `{"padding":"` + strings.Repeat("x", limits.MaxResponseBytes-len(`{"padding":""}`)) + `"}`
 	transport := control.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -169,7 +175,7 @@ func TestControlAndDelegatedRequestsShareResponseBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	transport = runtimeGuard(t, b, false).Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	transport = delegated.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
 	}))
 	req, _ = http.NewRequest(http.MethodGet, "https://cluster/api/v1/namespaces/allowed/configmaps/config", nil)

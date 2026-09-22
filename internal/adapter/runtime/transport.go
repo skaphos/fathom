@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,6 +35,9 @@ type Guard struct {
 	namespaces  map[string]bool
 	cluster     bool
 	expected    map[schema.GroupVersionKind]bool
+	discoveryMu sync.RWMutex
+	resources   map[schema.GroupVersionResource]discoveredResource
+	discovered  map[string]map[schema.GroupVersionResource]discoveredResource
 	retryMu     sync.Mutex
 	retries     map[string]int
 	permissions permissionObservations
@@ -43,7 +47,11 @@ func NewGuard(b *Budget, scope api.DefinitionBindingScope, expected map[schema.G
 	if b == nil || len(expected) == 0 || len(scope.Namespaces) > limits.MaxNamespaces || (!scope.AllowClusterScoped && len(scope.Namespaces) == 0) {
 		return nil, fmt.Errorf("AuthorizationUnavailable: budget, explicit scope and discovery expectations required")
 	}
-	g := &Guard{budget: b, namespaces: map[string]bool{}, cluster: scope.AllowClusterScoped, expected: map[schema.GroupVersionKind]bool{}, retries: map[string]int{}}
+	g := &Guard{
+		budget: b, namespaces: map[string]bool{}, cluster: scope.AllowClusterScoped,
+		expected: map[schema.GroupVersionKind]bool{}, resources: map[schema.GroupVersionResource]discoveredResource{},
+		discovered: map[string]map[schema.GroupVersionResource]discoveredResource{}, retries: map[string]int{},
+	}
 	for _, ns := range scope.Namespaces {
 		if len(validation.IsDNS1123Label(string(ns))) != 0 || g.namespaces[string(ns)] {
 			return nil, fmt.Errorf("ScopeDenied: invalid namespace allowlist")
@@ -80,6 +88,9 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	}
 	if t.control != nil && !t.control.permits(route) {
 		return nil, b.Fail("ScopeDenied", "request is outside the run's control-plane metadata targets")
+	}
+	if t.control == nil && !route.discovery && !g.permitsResource(route) {
+		return nil, b.Fail("ScopeDenied", "request resource was not mapped from a declared kind by discovery")
 	}
 	ctx, done := b.RequestContext(request.Context())
 	defer done()
@@ -204,6 +215,43 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	return copy, nil
 }
 
+type discoveredResource struct {
+	kind       schema.GroupVersionKind
+	namespaced bool
+}
+
+func (g *Guard) permitsResource(route apiRoute) bool {
+	gv, err := schema.ParseGroupVersion(route.groupVersion)
+	if err != nil {
+		return false
+	}
+	g.discoveryMu.RLock()
+	resource, ok := g.resources[gv.WithResource(route.resource)]
+	g.discoveryMu.RUnlock()
+	return ok && resource.namespaced == (route.namespace != "")
+}
+
+func (g *Guard) recordDiscovery(
+	version string, resources map[schema.GroupVersionResource]discoveredResource,
+) error {
+	g.discoveryMu.Lock()
+	defer g.discoveryMu.Unlock()
+	if previous, ok := g.discovered[version]; ok && !maps.Equal(previous, resources) {
+		return g.budget.Fail("ScopeDenied", "resource discovery mapping changed during the run")
+	}
+	if _, ok := g.discovered[version]; ok {
+		return nil
+	}
+	g.discovered[version] = maps.Clone(resources)
+	for resource, declaration := range resources {
+		if previous, exists := g.resources[resource]; exists && previous != declaration {
+			return g.budget.Fail("ScopeDenied", "resource discovery mapping is ambiguous")
+		}
+		g.resources[resource] = declaration
+	}
+	return nil
+}
+
 type apiRoute struct {
 	list, discovery           bool
 	groupVersion              string
@@ -275,7 +323,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 	}
 	if namespace != "" {
 		if !g.namespaces[namespace] {
-			return apiRoute{}, fmt.Errorf("namespace %q is not authorized", namespace)
+			return apiRoute{}, fmt.Errorf("request namespace is not authorized")
 		}
 	} else if !g.cluster {
 		return apiRoute{}, fmt.Errorf("cluster-scoped read is not authorized")

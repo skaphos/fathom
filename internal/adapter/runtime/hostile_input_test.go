@@ -42,13 +42,36 @@ func helperEScope() api.DefinitionBindingScope {
 }
 
 // helperEClient builds the client the compiled definition actually reads through:
-// a real REST client whose transport is the run's guard. A static mapper keeps
-// discovery out of the picture so each case makes exactly the reads it declares.
+// a real REST client whose transport is the run's guard. Prime the guard through
+// an actual discovery response before using a static mapper; the latter keeps
+// client-go from adding incidental discovery calls to each bounded test case.
 func helperEClient(t *testing.T, g *execution.Guard, next http.RoundTripper) client.Client {
 	t.Helper()
+	transport := g.Wrap(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/api/v1" {
+			body := `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		}
+		return next.RoundTrip(request)
+	}))
+	discovery, err := http.NewRequest(http.MethodGet, "https://cluster/api/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := transport.RoundTrip(discovery)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("prime guarded discovery: %v", err)
+	}
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
 	mapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
-	c, err := client.New(&rest.Config{Host: "https://cluster", Transport: g.Wrap(next)},
+	c, err := client.New(&rest.Config{Host: "https://cluster", Transport: transport},
 		client.Options{Scheme: clientgoscheme.Scheme, Mapper: mapper})
 	if err != nil {
 		t.Fatal(err)
@@ -395,6 +418,9 @@ func TestRuntimeWalkStopsAtRunObjectCapThroughRealClient(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: header,
 			Body: io.NopCloser(strings.NewReader(helperCItems(limits.MaxPageObjects, fmt.Sprintf("page-%d", pages))))}, nil
 	}))
+	// The guarded APIResourceList used to establish the ConfigMap mapping is a
+	// real response and therefore consumes one object from this same run budget.
+	setupObjects := b.Objects()
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMapList"})
 	consumed := 0
@@ -409,14 +435,26 @@ func TestRuntimeWalkStopsAtRunObjectCapThroughRealClient(t *testing.T) {
 	if got := helperEFailureReason(t, err); got != "WorkLimitExceeded" {
 		t.Fatalf("reason=%q err=%v", got, err)
 	}
-	if b.Objects() != limits.MaxRunObjects {
-		t.Fatalf("objects=%d want %d", b.Objects(), limits.MaxRunObjects)
+	fullResourcePages := (limits.MaxRunObjects - setupObjects) / limits.MaxPageObjects
+	wantObjects := setupObjects + fullResourcePages*limits.MaxPageObjects
+	if b.Objects() != wantObjects {
+		t.Fatalf("objects=%d want %d (%d consumed by guarded discovery)", b.Objects(), wantObjects, setupObjects)
 	}
-	if want := limits.MaxRunObjects / limits.MaxPageObjects; pages != want {
-		t.Fatalf("pages=%d want %d", pages, want)
+	wantPages := fullResourcePages
+	wantConsumed := fullResourcePages * limits.MaxPageObjects
+	if (limits.MaxRunObjects-setupObjects)%limits.MaxPageObjects != 0 {
+		// The next full page reaches the transport but cannot be charged.
+		wantPages++
+	} else {
+		// A page that reaches the exact cap with a continuation is rejected
+		// before WalkPages can deliver it to the consumer.
+		wantConsumed -= limits.MaxPageObjects
 	}
-	if consumed >= limits.MaxRunObjects {
-		t.Fatalf("consumed=%d: the capped page must not be delivered as a complete collection", consumed)
+	if pages != wantPages {
+		t.Fatalf("pages=%d want %d", pages, wantPages)
+	}
+	if consumed != wantConsumed {
+		t.Fatalf("consumed=%d want %d: the capped page must not be delivered as a complete collection", consumed, wantConsumed)
 	}
 }
 
