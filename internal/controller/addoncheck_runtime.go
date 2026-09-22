@@ -755,6 +755,8 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 	case err != nil:
 		failure := readFailure(err, fmt.Sprintf("AddonDefinition %q", addonType))
 		deny(failure.Reason, "%s", failure.Error())
+	case !definition.DeletionTimestamp.IsZero():
+		deny(reasonDefinitionUnavailable, "AddonDefinition %q is being deleted while the run is executing", addonType)
 	case definition.UID != fence.DefinitionUID:
 		deny(reasonBindingMismatch, "AddonDefinition %q was recreated with UID %q; authority is not inherited", addonType, definition.UID)
 	default:
@@ -810,8 +812,9 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 			case err != nil:
 				failure := readFailure(err, fmt.Sprintf("ServiceAccount %s", saKey))
 				deny(failure.Reason, "%s", failure.Error())
-			case account.UID != fence.ServiceAccountUID:
-				deny(reasonBindingMismatch, "the dedicated service account %s was recreated with UID %q", saKey, account.UID)
+			case account.UID != fence.ServiceAccountUID, !account.DeletionTimestamp.IsZero(), account.Labels[adapter.AddonLabel] != "":
+				deny(reasonBindingMismatch,
+					"the dedicated service account %s was replaced, is deleting, or became reserved for a built-in", saKey)
 			}
 		}
 	}
