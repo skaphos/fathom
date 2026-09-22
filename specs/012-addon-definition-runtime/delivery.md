@@ -5,9 +5,10 @@ SPDX-License-Identifier: MIT
 # Delivery preparation
 
 Runtime release remains gated by the upstream #351 merge and the remaining
-release gates. The pre-compatibility and combined 1.1 feature suites passed. No feature pull request was opened or
-published by this qualification run. The descriptions below are review sections
-for the one feature PR and retain existing checkpoint commits as landmarks.
+release gates. The pre-compatibility and combined 1.1 feature suites passed.
+Feature PR [#352](https://github.com/skaphos/fathom/pull/352) is published for
+review. The descriptions below are review sections for that one feature PR and
+retain existing checkpoint commits as landmarks.
 
 ## Proposed PR shape
 
@@ -94,9 +95,10 @@ trials. Full status exports and the tested restoration procedure are recorded in
 the operations qualification record. Both 105/105 full Kind suites, CI, race
 checks, security review and bounded operations evidence support the feature PR;
 no released chart upgrade is claimed, and upstream #351 remains the separate
-release gate.
+release gate. Feature PR [#352](https://github.com/skaphos/fathom/pull/352) is
+published for review.
 
-T059 remains open until the feature PR is published. Qualification, compatibility
+Qualification, compatibility
 integration and the runtime-policy correction are committed with SSH signatures
 and DCO sign-offs as Shawn Stratton `shawn@skaphos.io`, matching the existing
 feature commits.

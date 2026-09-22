@@ -102,7 +102,7 @@ No epic completion or release without every prior gate.
 - [X] T056 Complete one-to-one requirement/lifecycle/numeric-row coverage audit in specs/012-addon-definition-runtime/execution.md across the deterministic component and real-cluster obligations; document security review, hostile-input isolation and absence of known definition-triggerable fatal faults before enabling/releasing runtime loading.
 - [X] T057 Run pinned verify-generated, crd-compat, ci, race checks and reuse lint; update specs/012-addon-definition-runtime/execution.md with exact outcomes; do not lower coverage thresholds or silently bypass compatibility findings.
 - [X] T058 Update AGENTS.md and docs/architecture.md for final package boundaries, update generated samples/docs through tasks and run graphify update . after source changes; record results in specs/012-addon-definition-runtime/execution.md.
-- [ ] T059 Prepare one feature PR with four review sections following plan.md milestones, exact validation evidence, repository-specific author/committer/DCO identity before commit, and dependency/release links in specs/012-addon-definition-runtime/execution.md. The separate #256 prerequisite PR link is added when published; this task remains open until the feature PR is published.
+- [X] T059 Prepare one feature PR with four review sections following plan.md milestones, exact validation evidence, repository-specific author/committer/DCO identity before commit, and dependency/release links in specs/012-addon-definition-runtime/execution.md. The separate #256 prerequisite PR link is recorded; the feature PR is published for review.
 
 ## Dependencies and parallel opportunities
 

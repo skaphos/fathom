@@ -1679,3 +1679,12 @@ unchanged-retry race rerun passed in 45.453s. T054 is verified from the separate
 #351 merge remains the release gate. T064 is complete. T059 remains open until
 the feature PR is published. No merged upstream release or chart qualification
 claim is made.
+
+### Feature PR publication — 2026-09-22
+
+Feature PR [#352](https://github.com/skaphos/fathom/pull/352) is published as a
+draft for review from `feature/280-runtime-addon-definitions` at signed/DCO
+commit `46f33f9`, based on `fix/256-ratio-contract`. After upstream [#351](https://github.com/skaphos/fathom/pull/351)
+merges, #352 should be retargeted to `main`. The verified signing identity is
+Shawn Stratton (`shawn@skaphos.io`). All 64 tasks are complete; the upstream
+#351 merge remains the release gate.
