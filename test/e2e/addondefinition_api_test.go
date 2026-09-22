@@ -317,19 +317,35 @@ func definitionE2EHostGateway() string {
 	parts := strings.Fields(nodes)
 	ExpectWithOffset(1, parts).NotTo(BeEmpty())
 	if out, err := utils.Run(exec.Command("docker", "exec", parts[0], "getent", "ahostsv4", "host.docker.internal")); err == nil {
-		for _, field := range strings.Fields(out) {
-			if ip := net.ParseIP(field); ip != nil && ip.To4() != nil {
-				return field
-			}
+		if address := definitionE2EFirstIPv4(out); address != "" {
+			return address
 		}
 	}
-	out, err := utils.Run(exec.Command("docker", "network", "inspect", "kind", "--format", "{{(index .IPAM.Config 0).Gateway}}"))
+	// Prefer the gateway of the Kind network endpoint actually used by this
+	// node. A Docker network can expose multiple IPAM entries, and their order
+	// does not identify which entry supplies the node's reachable IPv4 gateway.
+	if out, err := utils.Run(exec.Command("docker", "container", "inspect", "--format",
+		`{{with index .NetworkSettings.Networks "kind"}}{{println .Gateway}}{{end}}`, parts[0])); err == nil {
+		if address := definitionE2EFirstIPv4(out); address != "" {
+			return address
+		}
+	}
+	out, err := utils.Run(exec.Command("docker", "network", "inspect", "--format",
+		"{{range .IPAM.Config}}{{println .Gateway}}{{end}}", "kind"))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(),
 		"the test host has no Docker host gateway reachable from Kind")
-	address := strings.TrimSpace(out)
-	ExpectWithOffset(1, net.ParseIP(address)).NotTo(BeNil(), "invalid Docker Kind gateway %q", address)
-	ExpectWithOffset(1, net.ParseIP(address).To4()).NotTo(BeNil(), "fixture requires an IPv4 host gateway")
+	address := definitionE2EFirstIPv4(out)
+	ExpectWithOffset(1, address).NotTo(BeEmpty(), "Docker Kind network has no IPv4 gateway in %q", out)
 	return address
+}
+
+func definitionE2EFirstIPv4(out string) string {
+	for _, field := range strings.Fields(out) {
+		if ip := net.ParseIP(field); ip != nil && ip.To4() != nil {
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 func definitionE2EAPIReaderGrant(reader string) string {
