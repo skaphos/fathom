@@ -570,8 +570,13 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 // unregistered addonType), since the valid family set is not yet known; selector
 // validation is adapter-independent and always runs. Threshold keys are
 // validated only when the adapter implements [adapter.ThresholdAdvertiser]
-// and advertises keys for the family; threshold values remain adapter-private
-// and are never validated here.
+// and advertises keys for the family.
+//
+// The reserved engine keys warnRatio and failRatio are the one exception to
+// threshold values being adapter-private: they are parsed here, and rejected
+// outright when the selected adapter predates contract
+// [adapter.RatioThresholdsContractVersion]. Every other threshold value remains
+// adapter-private and is never validated here.
 func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) []string {
 	if len(check.Spec.Policy) == 0 {
 		return nil
