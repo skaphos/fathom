@@ -269,6 +269,27 @@ Rollback restores the old unauthenticated agent endpoint and label contract.
 Treat rollback as reopening the disclosure until every rolled-back agent is
 again removed or replaced.
 
+## DNSCheck latency semantics
+
+Before 0.6.0, `DNSCheck` `status.targetResults[].latencyMillis` and the
+matching HealthReport `details.latencyMillis` recorded the wall time of the
+whole probe Pod lifecycle, contrary to their documented meaning (#332). On
+clusters that inject init containers into every Pod, that meant seconds of
+Pod start-up around a millisecond lookup. From 0.6.0, `latencyMillis` is the
+probe-measured lookup time only, and the Pod lifecycle moves to a new
+`runMillis` field.
+
+After upgrading, expect `latencyMillis` to drop sharply. Revisit any alert or
+dashboard built on it: a threshold tuned to the old values was measuring Pod
+start-up, not DNS. HealthReport history is not rewritten. A record that
+carries `runMillis` uses the 0.6.0 meaning. Absence proves nothing, because
+0.6.0 also omits `runMillis` for a pair a truncated run never started and for a
+sub-millisecond duration. For records without it, compare the HealthReport's
+`metadata.creationTimestamp` with the time of the upgrade. If `spec.timeout`
+was raised only to fit wall-time figures, keep it.
+The run bound still has to absorb Pod start-up, which `runMillis` now shows
+directly.
+
 ## Rollback / Fix Forward
 
 - If the release workflow fails after the tag lands, fix the workflow and
