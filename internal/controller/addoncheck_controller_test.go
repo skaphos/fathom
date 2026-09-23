@@ -7,7 +7,10 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -19,11 +22,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -1125,14 +1130,9 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
 		})
 
-		// Seed three HealthReports above the eventual cap. metav1.Time
-		// serializes at second precision (RFC3339, not Nano), so the seeds
-		// may share a second among themselves. We don't care which seed
-		// survives — only that the just-reconciled report does. The 2s
-		// sleep between the seed batch and Reconcile guarantees the new
-		// report's CreationTimestamp is strictly later (in seconds) than
-		// every seed, making the oldest-first prune deterministic at the
-		// new-vs-seed boundary.
+		// Seed three HealthReports above the eventual cap. Creation timestamps
+		// may tie with each other or with the report created by Reconcile; the
+		// retention boundary must still preserve that just-created report.
 		var seeded []string
 		for i := 0; i < 3; i++ {
 			seed := &fathomv1alpha1.HealthReport{
@@ -1153,8 +1153,6 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(k8sClient.Create(ctx, seed)).To(Succeed())
 			seeded = append(seeded, seed.Name)
 		}
-		time.Sleep(2 * time.Second)
-
 		// Reconcile creates a fourth HealthReport, then prunes to limit=2.
 		adapters := registry.New(logr.Discard())
 		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
@@ -1177,9 +1175,8 @@ var _ = Describe("AddonCheck Controller", func() {
 			survivors[r.Name] = true
 		}
 		Expect(survivors[updated.Status.LastReportName]).To(BeTrue(), "newly created HealthReport must survive pruning")
-		// Two of the three seeds must be deleted — but since seeds may share
-		// a CreationTimestamp second, we cannot claim which two. The new-vs-
-		// seed boundary is the only reliably ordered cut.
+		// With the latest report retained, exactly one of the three seeds fills
+		// the remaining history slot.
 		seedSurvivors := 0
 		for _, s := range seeded {
 			if survivors[s] {
@@ -1223,7 +1220,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		}
 
 		(&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
-			pruneHealthReportHistory(ctx, logr.Discard(), check)
+			pruneHealthReportHistory(ctx, logr.Discard(), check, "")
 
 		var reports fathomv1alpha1.HealthReportList
 		Expect(k8sClient.List(ctx, &reports,
@@ -1233,3 +1230,617 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(reports.Items).To(HaveLen(int(limit)))
 	})
 })
+
+// ---------------------------------------------------------------------------
+// T047 — the runtime path's production caller
+// ---------------------------------------------------------------------------
+//
+// These are plain stdlib tests rather than specs because they reuse
+// runtimeCheckFixture, which drives a complete runtime run over a fake API with
+// an injected clock. What they pin is the WIRING: which path a check takes,
+// what reaches the shared worker pool, and what the pool's handler does with a
+// completed run. The run itself is covered next door.
+//
+// The default-off property is asserted in BOTH directions on every row that has
+// two: a reconciler with no runner and no queue must behave exactly as it did
+// before this feature existed, and it must keep doing so while a runtime
+// snapshot is published and admitted underneath it.
+
+// fakeRuntimeQueue records what the reconciler asks of the shared pool. It is
+// deliberately inert: nothing it receives is executed, so a test that expects
+// work to run must go through RunRuntimeWork explicitly.
+type fakeRuntimeQueue struct {
+	mu        sync.Mutex
+	enqueued  []execution.Work
+	forgotten []types.NamespacedName
+	err       error
+}
+
+func (q *fakeRuntimeQueue) Enqueue(work execution.Work, _ time.Time) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.err != nil {
+		return q.err
+	}
+	q.enqueued = append(q.enqueued, work)
+	return nil
+}
+
+func (q *fakeRuntimeQueue) Forget(check types.NamespacedName, _ time.Time) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.forgotten = append(q.forgotten, check)
+}
+
+func (q *fakeRuntimeQueue) works() []execution.Work {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]execution.Work(nil), q.enqueued...)
+}
+
+func (q *fakeRuntimeQueue) forgets() []types.NamespacedName {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]types.NamespacedName(nil), q.forgotten...)
+}
+
+// runtimeWiredReconciler returns an AddonCheck reconciler wired exactly as
+// internal/app wires it once runtime loading is enabled: the SAME registry the
+// built-in adapters are registered in, the runtime runner, and the shared pool
+// queue.
+func runtimeWiredReconciler(f *runtimeCheckFixture, queue RuntimeWorkQueue) *AddonCheckReconciler {
+	return &AddonCheckReconciler{
+		Client:       f.cached,
+		Scheme:       f.scheme,
+		Adapters:     f.registry,
+		Runtime:      f.runner,
+		RuntimeQueue: queue,
+	}
+}
+
+// builtinReconciler is the same reconciler with runtime loading OFF — the
+// default, and every deployment that has not opted in.
+func builtinReconciler(f *runtimeCheckFixture) *AddonCheckReconciler {
+	return &AddonCheckReconciler{Client: f.cached, Scheme: f.scheme, Adapters: f.registry}
+}
+
+func runtimeCheckKey() types.NamespacedName {
+	return types.NamespacedName{Namespace: runtimeCheckNamespace, Name: runtimeCheckName}
+}
+
+// countRuntimeEvaluations makes evaluator runs observable. The fixture counts a
+// run only while its adapter is SCRIPTED, so a test that asserts "no evaluator
+// ran" against the unscripted default asserts nothing at all.
+func countRuntimeEvaluations(f *runtimeCheckFixture) {
+	f.script(func(context.Context, adapter.Request) (adapter.Result, error) {
+		return adapter.Result{Checks: []adapter.CheckResult{{
+			Family: "health", Outcome: adapter.OutcomePass, Summary: "controller is available",
+		}}}, nil
+	})
+}
+
+// The routing decision. Each row names the reason a check does or does not
+// belong to the runtime pool; the two "false" rows at the top are the
+// default-off guarantee, and the built-in row is "preserve unrelated built-ins".
+func TestRuntimeBackedRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		arrange func(*testing.T, *runtimeCheckFixture, *AddonCheckReconciler, *fathomv1alpha1.AddonCheck)
+		want    bool
+	}{
+		{
+			name: "runtime loading disabled leaves every check on the built-in path",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				r.Runtime, r.RuntimeQueue = nil, nil
+			},
+		},
+		{
+			name: "a queue without a runner is not a wired runtime",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				r.Runtime = nil
+			},
+		},
+		{
+			// A runner with nowhere to queue would have to execute inline on a
+			// reconcile worker, which is precisely what the separate runtime
+			// pool exists to prevent.
+			name: "a runner without a queue is not a wired runtime",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				r.RuntimeQueue = nil
+			},
+		},
+		{
+			name: "a built-in adapter keeps its own path",
+			arrange: func(t *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				if err := f.registry.Register(fakeAddonAdapter{}); err != nil {
+					t.Fatalf("register built-in: %v", err)
+				}
+				check.Spec.AddonType = "cert-manager"
+			},
+		},
+		{
+			name: "a paused check runs nowhere",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				check.Spec.Paused = true
+			},
+		},
+		{
+			name: "an addon type that cannot name a definition keeps the built-in answer",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
+				f.ready()
+				check.Spec.AddonType = "Not_A_Label"
+			},
+		},
+		{
+			name: "an admitted runtime snapshot",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.ready()
+			},
+			want: true,
+		},
+		{
+			name: "a published snapshot whose dispatch is not admitted",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.publish(1)
+			},
+			want: true,
+		},
+		{
+			name: "an identity nobody claims",
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+				f.admit()
+			},
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRuntimeCheckFixture(t)
+			queue := &fakeRuntimeQueue{}
+			r := runtimeWiredReconciler(f, queue)
+			check := runtimeCheckObject()
+			tc.arrange(t, f, r, check)
+			if got := r.runtimeBacked(check); got != tc.want {
+				t.Fatalf("runtimeBacked = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A runtime-backed check is ENQUEUED, not executed inline: the contract's
+// scheduling row demands a separate runtime worker pool, so a reconcile worker
+// must never be the thing that runs a definition.
+func TestReconcileEnqueuesRuntimeChecksInsteadOfRunningThemInline(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	countRuntimeEvaluations(f)
+	queue := &fakeRuntimeQueue{}
+	r := runtimeWiredReconciler(f, queue)
+
+	result, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	works := queue.works()
+	if len(works) != 1 {
+		t.Fatalf("enqueued %d runtime runs, want exactly 1: %+v", len(works), works)
+	}
+	if works[0].Definition != lifecycleAddon || works[0].Check != runtimeCheckKey() {
+		t.Errorf("enqueued %+v, want the check keyed by its definition", works[0])
+	}
+	if _, _, _, runs := f.counters(); runs != 0 {
+		t.Errorf("the reconcile worker executed %d evaluator runs; runtime work belongs to the pool", runs)
+	}
+	if result.RequeueAfter != addonCheckInterval(runtimeCheckObject()) {
+		t.Errorf("RequeueAfter = %v, want the check interval; a runtime check must keep its cadence", result.RequeueAfter)
+	}
+	// MissingAdapter is the built-in answer for an identity no built-in claims.
+	// Reporting it for a runtime identity would contradict the runtime path,
+	// which owns UnknownAddonType and every barrier reason.
+	if cond := runtimeReadyCondition(t, f.check()); cond != nil && cond.Reason == "MissingAdapter" {
+		t.Errorf("Ready reason = MissingAdapter for a runtime-backed check")
+	}
+}
+
+// Accepted for a runtime identity belongs to the worker's uncached policy
+// validation. A cached reconcile may enqueue the next run, but it must not
+// turn a worker-published InvalidPolicy back into SpecAccepted and create a
+// self-triggering true/false status loop.
+func TestReconcilePreservesRuntimeWorkerPolicyConditions(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	invalid := f.check()
+	invalid.Generation = 2
+	invalid.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+			adapter.ThresholdKeyFailRatio: "150",
+		},
+	}
+	f.update(invalid)
+	if attempt := f.runOK(); attempt.Reason != reasonInvalidPolicy {
+		t.Fatalf("worker attempt = %+v, want %s", attempt, reasonInvalidPolicy)
+	}
+
+	queue := &fakeRuntimeQueue{}
+	r := runtimeWiredReconciler(f, queue)
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	accepted := apiMeta.FindStatusCondition(f.check().Status.Conditions, addonCheckConditionAccepted)
+	if accepted == nil || accepted.Status != metav1.ConditionFalse || accepted.Reason != reasonInvalidPolicy || accepted.ObservedGeneration != 2 {
+		t.Fatalf("Accepted after cached reconcile = %+v, want worker-owned False/%s at generation 2", accepted, reasonInvalidPolicy)
+	}
+	_, _, writesBefore, _ := f.counters()
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	_, _, writesAfter, _ := f.counters()
+	if writesAfter != writesBefore {
+		t.Fatalf("unchanged invalid runtime policy caused %d extra status writes", writesAfter-writesBefore)
+	}
+}
+
+// The same reconcile, with runtime loading off. This is the default-off
+// property stated as behaviour rather than as configuration: nothing is
+// enqueued, and the answer is the one the operator has always given.
+func TestReconcileWithoutRuntimeWiringKeepsTheBuiltInAnswer(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready() // a snapshot IS published and admitted; it must still change nothing
+	countRuntimeEvaluations(f)
+	r := builtinReconciler(f)
+
+	result, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0 for a check with no built-in adapter", result.RequeueAfter)
+	}
+	cond := runtimeReadyCondition(t, f.check())
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "MissingAdapter" {
+		t.Fatalf("Ready condition = %+v, want False/MissingAdapter", cond)
+	}
+	if _, _, _, runs := f.counters(); runs != 0 {
+		t.Errorf("an unwired reconciler ran %d evaluator runs", runs)
+	}
+}
+
+// Built-ins are preserved: with the runtime fully wired, a built-in identity
+// still runs inline on its own workers and never reaches the runtime queue.
+func TestBuiltInChecksStillRunInlineWhileRuntimeIsWired(t *testing.T) {
+	builtinCheck := &fathomv1alpha1.AddonCheck{
+		ObjectMeta: metav1.ObjectMeta{Namespace: runtimeCheckNamespace, Name: "builtin-check", UID: "builtin-uid", Generation: 1},
+		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+	}
+	f := newRuntimeCheckFixture(t, lifecycleDefinition(), lifecycleBinding(), lifecycleServiceAccount(), runtimeCheckObject(), builtinCheck)
+	f.ready()
+	if err := f.registry.Register(fakeAddonAdapter{}); err != nil {
+		t.Fatalf("register built-in: %v", err)
+	}
+	queue := &fakeRuntimeQueue{}
+	r := runtimeWiredReconciler(f, queue)
+
+	key := types.NamespacedName{Namespace: runtimeCheckNamespace, Name: "builtin-check"}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if works := queue.works(); len(works) != 0 {
+		t.Fatalf("a built-in check reached the runtime pool: %+v", works)
+	}
+	var ran fathomv1alpha1.AddonCheck
+	if err := f.store.Get(context.Background(), key, &ran); err != nil {
+		t.Fatalf("get built-in check: %v", err)
+	}
+	if ran.Status.LastRunTime == nil {
+		t.Error("the built-in adapter did not run; runtime wiring must not gate built-in dispatch")
+	}
+}
+
+// A paused check must not keep a queued wake, and a deleted one must not keep
+// one either: the pool would otherwise admit a run for an object that no longer
+// wants one.
+func TestPausedAndDeletedRuntimeChecksAreForgotten(t *testing.T) {
+	t.Run("paused", func(t *testing.T) {
+		f := newRuntimeCheckFixture(t)
+		f.ready()
+		paused := f.check()
+		paused.Spec.Paused = true
+		f.update(paused)
+		queue := &fakeRuntimeQueue{}
+		r := runtimeWiredReconciler(f, queue)
+
+		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if works := queue.works(); len(works) != 0 {
+			t.Errorf("a paused check was enqueued: %+v", works)
+		}
+		if forgets := queue.forgets(); len(forgets) != 1 || forgets[0] != runtimeCheckKey() {
+			t.Errorf("forgotten = %+v, want the paused check withdrawn once", forgets)
+		}
+	})
+
+	t.Run("deleted", func(t *testing.T) {
+		f := newRuntimeCheckFixture(t)
+		f.ready()
+		if err := f.store.Delete(context.Background(), f.check()); err != nil {
+			t.Fatalf("delete check: %v", err)
+		}
+		queue := &fakeRuntimeQueue{}
+		r := runtimeWiredReconciler(f, queue)
+
+		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if forgets := queue.forgets(); len(forgets) != 1 || forgets[0] != runtimeCheckKey() {
+			t.Errorf("forgotten = %+v, want the deleted check withdrawn once", forgets)
+		}
+	})
+}
+
+// RunRuntimeWork is the pool handler: it must execute the run AND record the
+// transition, because the runner publishes evidence and knows nothing about
+// history. A completed first run therefore produces both new evidence and the
+// one HealthReport that says the verdict moved.
+func TestRunRuntimeWorkPublishesEvidenceAndRecordsTheTransition(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("disposition = %v, want Completed", got)
+	}
+	published := f.check()
+	if published.Status.LastSuccessfulEvaluation == nil {
+		t.Fatal("no completed evidence was published; the pool handler did not run the check")
+	}
+	reports := f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("stored %d HealthReports, want exactly 1 for the first completed run", len(reports))
+	}
+	if published.Status.LastReportName != reports[0].Name {
+		t.Errorf("lastReportName = %q, want the report just created (%q); the handler persists what the transition path names",
+			published.Status.LastReportName, reports[0].Name)
+	}
+
+	// The same verdict again: "No-change verdicts do not create reports".
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("second disposition = %v, want Completed", got)
+	}
+	if reports := f.reports(); len(reports) != 1 {
+		t.Fatalf("stored %d HealthReports after an unchanged verdict, want 1", len(reports))
+	}
+}
+
+func TestRunRuntimeWorkDoesNotAttributeReportsToStaleCachedStatus(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	stale := f.check().DeepCopy()
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if check, ok := obj.(*fathomv1alpha1.AddonCheck); ok && key == runtimeCheckKey() {
+				stale.DeepCopyInto(check)
+				return nil
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("first disposition = %v, want Completed", got)
+	}
+	reports := f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("first run stored %d reports, want 1", len(reports))
+	}
+	first := f.check().Status.LastSuccessfulEvaluation
+	if first == nil || !reports[0].Spec.ObservedAt.Equal(&first.ObservedAt) {
+		t.Fatal("first report was attributed to stale evidence instead of the published observation")
+	}
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("second disposition = %v, want Completed", got)
+	}
+	if reports := f.reports(); len(reports) != 1 {
+		t.Fatalf("unchanged verdict under a stale cache stored %d reports, want 1", len(reports))
+	}
+}
+
+func TestRunRuntimeWorkReusesReportAfterReportPointerConflict(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	var conflict atomic.Bool
+	conflict.Store(true)
+	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			check, ok := obj.(*fathomv1alpha1.AddonCheck)
+			if sub == "status" && ok && check.Status.LastReportName != "" && conflict.Swap(false) {
+				return apierrors.NewConflict(fathomv1alpha1.GroupVersion.WithResource("addonchecks").GroupResource(), check.Name, errors.New("synthetic concurrent status update"))
+			}
+			return c.SubResource(sub).Update(ctx, obj, opts...)
+		},
+	})
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Retry {
+		t.Fatalf("first disposition = %v, want Retry after report pointer conflict", got)
+	}
+	reports := f.reports()
+	if len(reports) != 1 || f.check().Status.LastReportName != "" {
+		t.Fatalf("after pointer conflict reports=%d lastReportName=%q, want 1 and empty pointer", len(reports), f.check().Status.LastReportName)
+	}
+	first := reports[0].DeepCopy()
+	// A check spec edit can advance generation before the pointer recovers;
+	// the historical transition is still the one already created.
+	edited := f.check()
+	edited.Generation++
+	if err := f.store.Update(context.Background(), edited); err != nil {
+		t.Fatalf("advance check generation: %v", err)
+	}
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("retry disposition = %v, want Completed", got)
+	}
+	reports = f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("same-verdict retry stored %d reports, want one", len(reports))
+	}
+	if reports[0].Name != first.Name || !reports[0].Spec.ObservedAt.Equal(&first.Spec.ObservedAt) {
+		t.Fatal("retry replaced the original report's identity or attribution")
+	}
+	if got := f.check().Status.LastReportName; got != first.Name {
+		t.Fatalf("lastReportName=%q, want recovered pointer %q", got, first.Name)
+	}
+}
+
+// The lost-transition repair, driven through its production caller. A report
+// create that fails leaves status showing a verdict history does not hold; the
+// next run must backfill it rather than compare the verdict against itself
+// forever.
+func TestRunRuntimeWorkBackfillsATransitionLostByAFailedReportWrite(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	var blocked atomic.Bool
+	blocked.Store(true)
+	blocking := interceptor.NewClient(f.cached, interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, ok := obj.(*fathomv1alpha1.HealthReport); ok && blocked.Load() {
+				return errors.New("synthetic history write failure")
+			}
+			return c.Create(ctx, obj, opts...)
+		},
+	})
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+	r.Client = blocking
+	work := execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Retry {
+		t.Fatalf("disposition = %v, want Retry when history could not be written", got)
+	}
+	if reports := f.reports(); len(reports) != 0 {
+		t.Fatalf("stored %d HealthReports while history writes were failing", len(reports))
+	}
+	if name := f.check().Status.LastReportName; name != "" {
+		t.Fatalf("lastReportName = %q, want empty: no report exists to name", name)
+	}
+
+	// Same verdict, but history holds nothing. The backfill must write it.
+	blocked.Store(false)
+	f.advance(time.Hour)
+	if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+		t.Fatalf("disposition = %v, want Completed", got)
+	}
+	reports := f.reports()
+	if len(reports) != 1 {
+		t.Fatalf("stored %d HealthReports, want the backfilled transition", len(reports))
+	}
+	if got := f.check().Status.LastReportName; got != reports[0].Name {
+		t.Errorf("lastReportName = %q, want %q", got, reports[0].Name)
+	}
+}
+
+// What the handler does with a run that published nothing. MissingInput is the
+// contract's 60s poll and belongs to the rows whose recovery is an
+// administrator action or another controller's publication; everything else
+// rides the bounded retry ramp.
+func TestRunRuntimeWorkPacesUnpublishedOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		reason string
+		want   execution.Disposition
+	}{
+		{reasonUnknownAddonType, execution.MissingInput},
+		{reasonAuthorizationUnavailable, execution.MissingInput},
+		{reasonAuthorizationRevoked, execution.MissingInput},
+		{reasonDefinitionUnavailable, execution.MissingInput},
+		{reasonBindingMismatch, execution.MissingInput},
+		{registry.ReasonAdmissionClosed, execution.MissingInput},
+		{registry.ReasonBuiltinCollision, execution.MissingInput},
+		{registry.ReasonRuntimeCollision, execution.MissingInput},
+		{reasonRuntimeTimeout, execution.Retry},
+		{reasonSuperseded, execution.Retry},
+		{reasonPublicationConflict, execution.Retry},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			if got := runtimeDisposition(RuntimeAttempt{Reason: tc.reason}); got != tc.want {
+				t.Fatalf("disposition for %s = %v, want %v", tc.reason, got, tc.want)
+			}
+		})
+	}
+}
+
+// An unadmitted gate is the steady state of a process that is not the leader.
+// The handler must report it as a poll rather than run anything.
+func TestRunRuntimeWorkRefusesWhileDispatchIsNotAdmitted(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.publish(1) // published, never admitted
+	countRuntimeEvaluations(f)
+	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+
+	got := r.RunRuntimeWork(context.Background(), execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()})
+	if got != execution.MissingInput {
+		t.Fatalf("disposition = %v, want MissingInput while runtime dispatch is closed", got)
+	}
+	if _, _, _, runs := f.counters(); runs != 0 {
+		t.Errorf("%d evaluator runs happened while dispatch was closed", runs)
+	}
+	if f.check().Status.LastSuccessfulEvaluation != nil {
+		t.Error("evidence was published while runtime dispatch was closed")
+	}
+}
+
+// The queue entry is keyed by the check, so its spec can change between the
+// enqueue and the admission. Neither a retargeted, a paused nor a deleted check
+// is this run's to execute, and none of them is a failure to retry.
+func TestRunRuntimeWorkDeclinesWorkItsCheckNoLongerWants(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		arrange func(*runtimeCheckFixture) execution.Work
+	}{
+		{
+			name: "deleted check",
+			arrange: func(f *runtimeCheckFixture) execution.Work {
+				if err := f.store.Delete(context.Background(), f.check()); err != nil {
+					f.t.Fatalf("delete: %v", err)
+				}
+				return execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+			},
+		},
+		{
+			name: "retargeted check",
+			arrange: func(f *runtimeCheckFixture) execution.Work {
+				return execution.Work{Definition: "another-addon", Check: runtimeCheckKey()}
+			},
+		},
+		{
+			name: "paused check",
+			arrange: func(f *runtimeCheckFixture) execution.Work {
+				paused := f.check()
+				paused.Spec.Paused = true
+				f.update(paused)
+				return execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRuntimeCheckFixture(t)
+			f.ready()
+			countRuntimeEvaluations(f)
+			r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
+			work := tc.arrange(f)
+			if got := r.RunRuntimeWork(context.Background(), work); got != execution.Completed {
+				t.Fatalf("disposition = %v, want Completed", got)
+			}
+			if _, _, _, runs := f.counters(); runs != 0 {
+				t.Errorf("the handler executed %d evaluator runs for work its check no longer wants", runs)
+			}
+		})
+	}
+}

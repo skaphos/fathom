@@ -109,7 +109,7 @@ func TestRootCommand_HelpMentionsExitCodes(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("--help: %v", err)
 	}
-	if !strings.Contains(out.String(), "0 on success, 1 on any error") {
+	if !strings.Contains(out.String(), "0 on success, 1 on ordinary errors") {
 		t.Fatalf("help text should state the exit-code convention; got:\n%s", out.String())
 	}
 }
@@ -124,7 +124,7 @@ func TestRootCommand_VerbSet(t *testing.T) {
 	}
 	// cobra adds completion and help lazily at execute time, so they may or
 	// may not be present here; every fathomctl verb must be, and nothing else.
-	want := map[string]bool{"ls": true, "describe": true, "reports": true, "run": true, "version": true}
+	want := map[string]bool{"ls": true, "describe": true, "reports": true, "run": true, "version": true, "definition": true}
 	builtin := map[string]bool{"completion": true, "help": true}
 	for _, name := range got {
 		if !want[name] && !builtin[name] {

@@ -51,6 +51,15 @@ leaderElect: true
 # subdomain. Matches the operator's built-in default.
 leaderElectionID: "2d3dbc4f.skaphos.io"
 
+# -- Opt in to administrator-bound runtime AddonDefinitions. Off by default.
+# When true, the chart passes --runtime-loading-enabled to the manager. When
+# false, it passes no runtime flag, preserving FATHOM_RUNTIMELOADING_ENABLED
+# and config.data.runtimeLoading.enabled under the manager's normal precedence.
+# Runtime loading requires leaderElect=true and the release namespace/Lease;
+# leaderElect=false still starts the operator with built-in adapters only.
+runtimeLoading:
+  enabled: false
+
 # -- Enable HTTP/2 on the metrics and webhook servers. Off by default
 # (mitigates HTTP/2 rapid-reset style CVEs).
 enableHTTP2: false

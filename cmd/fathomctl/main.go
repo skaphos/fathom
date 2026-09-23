@@ -19,9 +19,9 @@ import (
 )
 
 func main() {
-	// kubectl convention: 0 on success, 1 on any error. cobra has already
+	// Ordinary errors use exit 1; preflight uses exit 2 when unverifiable. Cobra has already
 	// printed the error to stderr by the time Execute returns.
 	if err := cli.NewRootCommand().Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }

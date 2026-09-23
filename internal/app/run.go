@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -157,13 +158,14 @@ func BuildManagerOptions(opts Options, scheme *runtime.Scheme) (ctrl.Options, []
 	}
 
 	return ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsOpts,
-		WebhookServer:          webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
-		HealthProbeBindAddress: opts.HealthProbeBindAddress,
-		LeaderElection:         opts.LeaderElect,
-		LeaderElectionID:       opts.LeaderElectionID,
-		Cache:                  scopedCacheOptions(),
+		Scheme:                  scheme,
+		Metrics:                 metricsOpts,
+		WebhookServer:           webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
+		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
+		LeaderElection:          opts.LeaderElect,
+		LeaderElectionID:        opts.LeaderElectionID,
+		LeaderElectionNamespace: opts.Namespace,
+		Cache:                   scopedCacheOptions(),
 	}, watchers, nil
 }
 
@@ -216,6 +218,14 @@ func scopedCacheOptions() cache.Options {
 // so per-addon impersonation cannot silently fall open to the operator SA
 // (SKA-162). Out-of-cluster runs may leave it empty.
 func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
+	return defaultControllers(mgr, opts, nil)
+}
+
+// defaultControllers builds the built-in reconcilers and, when runtime is
+// non-nil, attaches the runtime path to them. A nil runtime is the default-off
+// case and the built-in slice it returns is byte-identical to the one this
+// function returned before runtime loading existed.
+func defaultControllers(mgr ctrl.Manager, opts Options, runtime *runtimeWiring) ([]Setupper, error) {
 	if opts.Namespace == "" && impersonation.RunningInCluster() {
 		return nil, impersonation.ErrNamespaceRequiredInCluster
 	}
@@ -230,17 +240,18 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 	// Resolve a reconciler tracer from the global provider Run installed. When
 	// tracing is disabled the provider is a no-op, so this is effectively free.
 	tracer := otel.Tracer(controller.TracerScope)
-	return []Setupper{
-		&controller.AddonCheckReconciler{
-			Client:       mgr.GetClient(),
-			Scheme:       mgr.GetScheme(),
-			Adapters:     adapterRegistry,
-			ProbeImage:   opts.ProbeImage,
-			Tracer:       tracer,
-			AddonClients: impersonation.New(mgr),
-			Namespace:    opts.Namespace,
-			Recorder:     mgr.GetEventRecorder("fathom-addoncheck-controller"),
-		},
+	addonCheck := &controller.AddonCheckReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Adapters:     adapterRegistry,
+		ProbeImage:   opts.ProbeImage,
+		Tracer:       tracer,
+		AddonClients: impersonation.New(mgr),
+		Namespace:    opts.Namespace,
+		Recorder:     mgr.GetEventRecorder("fathom-addoncheck-controller"),
+	}
+	controllers := []Setupper{
+		addonCheck,
 		&controller.HealthCheckReconciler{
 			Client:   mgr.GetClient(),
 			Scheme:   mgr.GetScheme(),
@@ -285,7 +296,20 @@ func DefaultControllers(mgr ctrl.Manager, opts Options) ([]Setupper, error) {
 			Tracer:              tracer,
 			Recorder:            mgr.GetEventRecorder("fathom-dnscheck-controller"),
 		},
-	}, nil
+	}
+	if runtime == nil {
+		// Default-off: no runtime reconciler, no runtime index, no runtime
+		// runnable, no dispatch gate. The built-in set above is the whole
+		// controller set, exactly as before.
+		return controllers, nil
+	}
+	// One registry for built-ins and runtime definitions alike, and one worker
+	// pool, shared by both runtime reconcilers and the AddonCheck runner.
+	runtimeControllers, err := runtime.attach(mgr, adapterRegistry, addonCheck)
+	if err != nil {
+		return nil, err
+	}
+	return append(controllers, runtimeControllers...), nil
 }
 
 // newUncachedProbeClient builds a client that talks to the API server directly,
@@ -377,17 +401,51 @@ func Run(
 	if cfg == nil {
 		return errors.New("rest.Config must not be nil")
 	}
-	if controllersFor == nil {
-		controllersFor = func(mgr ctrl.Manager) ([]Setupper, error) {
-			return DefaultControllers(mgr, opts)
-		}
-	}
 	if err := opts.Validate(); err != nil {
 		return fmt.Errorf("invalid options: %w", err)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts.Zap)))
-	setupLog := ctrl.Log.WithName("setup")
+	// Startup diagnostics go to the logger built HERE, not to ctrl.Log. The
+	// global delegating logger can only ever be fulfilled once per process, so
+	// a caller that already installed one would silently swallow everything
+	// this function has to say — including "runtime addon loading unavailable",
+	// which is the only place an administrator learns why runtime loading is
+	// inactive.
+	logger := zap.New(zap.UseFlagOptions(&opts.Zap))
+	ctrl.SetLogger(logger)
+	setupLog := logger.WithName("setup")
+
+	// Runtime addon loading is default-off, and every prerequisite it does not
+	// meet leaves it inactive with a diagnostic rather than failing startup:
+	// "do not fail manager startup or disable built-ins". The diagnostic is
+	// emitted here, at startup, rather than from a leader-gated controller that
+	// would never start to emit it.
+	runtimeParts, unavailable := newRuntimeWiring(opts)
+	var runtimeLeaderLock resourcelock.Interface
+	if runtimeParts != nil {
+		// The manager's Lease must be held under the SAME identity the runtime
+		// session will later demand of it, in the configured operator namespace
+		// and under the configured election ID. Without this the elected holder
+		// and the session gating runtime admission are two different identities
+		// and no epoch is ever adopted. Built-in behaviour is unchanged: this is
+		// still the manager's own single election, not a second one.
+		lock, lockErr := runtimeParts.leaderElectionLock(cfg)
+		if lockErr != nil {
+			// Fail closed for runtime only. The manager keeps controller-runtime's
+			// own lock and every built-in controller still starts.
+			runtimeParts, unavailable = nil, fmt.Sprintf("%s: %v", reasonAuthorizationUnavailable, lockErr)
+		} else {
+			runtimeLeaderLock = lock
+		}
+	}
+	if opts.RuntimeLoading.Enabled && unavailable != "" {
+		setupLog.Info("runtime addon loading unavailable", "reason", unavailable)
+	}
+	if controllersFor == nil {
+		controllersFor = func(mgr ctrl.Manager) ([]Setupper, error) {
+			return defaultControllers(mgr, opts, runtimeParts)
+		}
+	}
 
 	// Install the global tracer provider before controllers and adapters are
 	// constructed so the tracers they obtain from it are wired correctly. When
@@ -418,6 +476,9 @@ func Run(
 	mgrOpts, watchers, err := BuildManagerOptions(opts, scheme)
 	if err != nil {
 		return err
+	}
+	if runtimeLeaderLock != nil {
+		mgrOpts.LeaderElectionResourceLockInterface = runtimeLeaderLock
 	}
 
 	mgr, err := managerFactory(cfg, mgrOpts)

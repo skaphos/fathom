@@ -32,11 +32,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/go-logr/logr"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
+	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -101,6 +104,37 @@ type AddonCheckReconciler struct {
 	// operational failures) on AddonCheck resources. Optional: nil disables
 	// event recording; the check gauges are unaffected.
 	Recorder events.EventRecorder
+
+	// Runtime executes AddonChecks whose addon type is served by a published
+	// runtime snapshot rather than by a built-in adapter (T047 of
+	// specs/012-addon-definition-runtime).
+	//
+	// Nil is the DEFAULT-OFF case and it is load-bearing: with either Runtime
+	// or RuntimeQueue nil this reconciler behaves exactly as it did before
+	// runtime loading existed — no extra read, no extra branch taken, no
+	// resolution beyond the built-in Lookup it has always performed.
+	Runtime *AddonCheckRuntimeRunner
+
+	// RuntimeQueue is the manager's single runtime worker pool queue.
+	// *runtime.Scheduler implements it. It is separate from the built-in
+	// reconcile workers on purpose: contracts/runtime.md's scheduling row
+	// requires a "separate runtime worker pool/limiter ... built-ins retain
+	// their workers", so a runtime-backed check is ENQUEUED here and executed
+	// by RunRuntimeWork under that pool's ≤4-run, ≤1-per-definition,
+	// ≤1-per-check admission rather than inline on a reconcile worker.
+	RuntimeQueue RuntimeWorkQueue
+}
+
+// RuntimeWorkQueue is the runtime worker pool's queue surface, as much of
+// *runtime.Scheduler as this reconciler may touch: it may ask for a check to be
+// run and it may withdraw a queued wake, and it may do nothing else. Notably it
+// cannot start workers — only the elected leadership session does that.
+type RuntimeWorkQueue interface {
+	// Enqueue asks for one run of work, deduplicated per check.
+	Enqueue(work execution.Work, now time.Time) error
+	// Forget withdraws a queued wake. It never cancels an active run: an
+	// observed revocation cancels active work through the leadership session.
+	Forget(check types.NamespacedName, now time.Time)
 }
 
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=addonchecks,verbs=get;list;watch
@@ -145,6 +179,10 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries("AddonCheck", req.Namespace, req.Name)
+			// A deleted check must not keep a queued runtime wake alive. Forget
+			// withdraws the wake only; an active run keeps its slot and is
+			// cancelled by the leadership session, never by this reconciler.
+			r.forgetRuntimeWork(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -175,7 +213,28 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Reason:             pausedReason,
 		Message:            pausedMessage,
 	})
-	selectedAdapter, adapterReady := resolveAddonAdapter(&check, r.Adapters)
+	// Pausing a check withdraws any queued runtime wake: the pool would
+	// otherwise still admit a run for a check that has been switched off.
+	// Forget for a check the pool never heard of is a no-op, and the whole call
+	// is a no-op while runtime loading is off.
+	if check.Spec.Paused {
+		r.forgetRuntimeWork(req.NamespacedName)
+	}
+	// A runtime-backed identity never goes through resolveAddonAdapter: that
+	// path reports MissingAdapter for an identity no BUILT-IN claims, and it
+	// would run a compiled runtime adapter through the built-in impersonation
+	// path, under the per-addon ServiceAccount convention instead of the
+	// binding's dedicated identity. runtimeBacked is false for every built-in
+	// and for the whole default-off configuration, so the branch below is
+	// exactly what this reconcile did before runtime loading existed.
+	runtimeBacked := r.runtimeBacked(&check)
+	var (
+		selectedAdapter adapter.Adapter
+		adapterReady    bool
+	)
+	if !runtimeBacked {
+		selectedAdapter, adapterReady = resolveAddonAdapter(&check, r.Adapters)
+	}
 
 	// Validate spec.policy against the adapter that will run it, so a misconfig
 	// is loud (Accepted=False) and gates the run, instead of being silently
@@ -208,13 +267,30 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			ready.Message = "AddonCheck policy is invalid; adapter execution is skipped until it is corrected."
 		}
 		apiMeta.SetStatusCondition(&check.Status.Conditions, ready)
-	} else {
+	} else if !runtimeBacked {
+		// Runtime-backed checks publish Accepted from the worker after validating
+		// the uncached, fenced check against the exact snapshot that would run.
+		// Rewriting it from this cached reconcile would both misattribute policy
+		// validation and churn an InvalidPolicy check between true and false.
 		setAddonCheckAccepted(&check, nil)
 	}
 
 	interval := addonCheckInterval(&check)
 	runNow, runNowDue := runTriggerDue(check.Annotations, check.Status.LastRunTrigger)
-	if adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval) {
+	switch {
+	case runtimeBacked:
+		// The same due-ness rule as a built-in — first sight, spec change,
+		// run-now trigger, elapsed interval — but the run itself belongs to the
+		// runtime pool, so this reconcile only asks for one. The pool admits it
+		// only while the elected session is admissible, which is what keeps
+		// runtime execution behind election, cache sync and the takeover grace.
+		if addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval) {
+			r.enqueueRuntimeWork(log, &check)
+			if runNow != "" {
+				check.Status.LastRunTrigger = runNow
+			}
+		}
+	case adapterReady && policyValid && addonCheckDueForRun(&check, previousObservedGeneration, runNowDue, interval):
 		if err := r.runAddonCheck(ctx, log, &check, selectedAdapter); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -234,7 +310,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// stalls after the first run. Paused / adapterless checks are left to a
 	// spec change (generation bump) to wake them.
 	result = ctrl.Result{}
-	if adapterReady && policyValid {
+	if runtimeBacked || (adapterReady && policyValid) {
 		result.RequeueAfter = interval
 	}
 
@@ -265,6 +341,34 @@ func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGener
 	}
 }
 
+// builtinAdapterFor resolves addonType to a BUILT-IN adapter, and to nothing
+// else. [registry.Registry.Lookup] resolves runtime snapshots too once dispatch
+// is admitted, and this path — the built-in path — must never execute one: a
+// compiled definition runs under its binding's dedicated identity and its own
+// fences, not under the per-addon ServiceAccount convention built-ins use.
+//
+// The wired reconciler never reaches here for a runtime identity (runtimeBacked
+// routes it to the pool first), so this is the belt to that suspenders: the two
+// paths cannot silently disagree about who owns an identity. A registry that
+// does not expose Resolve keeps the plain lookup it always had.
+func builtinAdapterFor(adapters addonAdapterLookup, addonType string) (adapter.Adapter, error) {
+	resolver, ok := adapters.(interface {
+		Resolve(string) (registry.Resolution, error)
+	})
+	if !ok {
+		return adapters.Lookup(addonType)
+	}
+	resolution, err := resolver.Resolve(addonType)
+	switch {
+	case err != nil:
+		return nil, err
+	case resolution.Runtime:
+		return nil, fmt.Errorf("%w: %q is served by a runtime definition, not by a built-in adapter",
+			registry.ErrNotFound, addonType)
+	}
+	return resolution.Adapter, nil
+}
+
 func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
 	if check.Spec.Paused {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -286,7 +390,7 @@ func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapter
 		})
 		return nil, false
 	}
-	selectedAdapter, err := adapters.Lookup(check.Spec.AddonType)
+	selectedAdapter, err := builtinAdapterFor(adapters, check.Spec.AddonType)
 	if err != nil {
 		if errors.Is(err, registry.ErrNotFound) {
 			apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
@@ -380,7 +484,7 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 			return err
 		}
 		if created {
-			r.pruneHealthReportHistory(ctx, log, check)
+			r.pruneHealthReportHistory(ctx, log, check, persistedReport.Name)
 		}
 		observedAt = persistedReport.Spec.ObservedAt
 		newResult = string(persistedReport.Spec.Result)
@@ -476,12 +580,418 @@ func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) 
 	return r.AddonClients.ClientFor(impersonation.SAUsername(r.Namespace, sas.Items[0].Name))
 }
 
+// runtimeBacked reports whether this check's addon type is served by a runtime
+// definition rather than by a built-in adapter, and is therefore executed by
+// the runtime pool instead of inline by this reconciler.
+//
+// The three ways it answers false are the three halves of the feature's safety
+// argument:
+//
+//   - Runtime or RuntimeQueue nil — runtime loading is off (the default, and
+//     every unit test that predates it). Nothing below this line is reached,
+//     so a disabled runtime cannot change one built-in outcome.
+//   - The registry resolves the identity to a BUILT-IN adapter. "Preserve
+//     unrelated built-ins": a built-in is never routed through the runtime
+//     pool, never gated by the runtime dispatch barrier, and keeps its own
+//     reconcile workers.
+//   - The addon type cannot name a definition at all. The scheduler keys work
+//     by definition name, so an identity that is not a DNS-1123 label could
+//     never be enqueued; it keeps the existing MissingAdapter answer rather
+//     than disappearing into a queue that would refuse it.
+//
+// A paused check is likewise left to the built-in path, which is where the
+// Paused condition is written — and its queued wake is withdrawn, because a
+// paused check must not run.
+//
+// A barrier (BuiltinCollision, RuntimeCollision, RuntimeAdmissionClosed) and an
+// entirely unknown identity both answer TRUE: those outcomes belong to the
+// runtime path, which reports them with the lifecycle matrix's own reasons
+// (contracts/runtime.md), and the reconciler has nothing truer to say.
+func (r *AddonCheckReconciler) runtimeBacked(check *fathomv1alpha1.AddonCheck) bool {
+	if r.Runtime == nil || r.RuntimeQueue == nil || r.Runtime.Registry == nil {
+		return false
+	}
+	if check.Spec.Paused {
+		return false
+	}
+	if len(validation.IsDNS1123Label(check.Spec.AddonType)) != 0 {
+		return false
+	}
+	resolution, err := r.Runtime.Registry.Resolve(check.Spec.AddonType)
+	return err != nil || resolution.Runtime
+}
+
+// enqueueRuntimeWork asks the shared runtime pool for one run of check. The
+// queue deduplicates per check, so an event storm cannot multiply runs.
+func (r *AddonCheckReconciler) enqueueRuntimeWork(log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+	work := execution.Work{Definition: check.Spec.AddonType, Check: client.ObjectKeyFromObject(check)}
+	if err := r.RuntimeQueue.Enqueue(work, time.Now()); err != nil {
+		// The queue validates the names it will key work by. A rejected enqueue
+		// is a stored-input problem, not a controller malfunction, so it is
+		// logged and retried on the next interval rather than raised as a
+		// reconcile error that would back off this check's whole reconcile.
+		log.V(1).Info("runtime AddonCheck was not enqueued", "addonType", check.Spec.AddonType, "reason", err.Error())
+	}
+}
+
+// forgetRuntimeWork withdraws a queued runtime wake for key. It is a no-op
+// unless the runtime pool is wired.
+func (r *AddonCheckReconciler) forgetRuntimeWork(key types.NamespacedName) {
+	if r.RuntimeQueue == nil {
+		return
+	}
+	r.RuntimeQueue.Forget(key, time.Now())
+}
+
+// RunRuntimeWork is the runtime worker pool's handler: the production caller of
+// AddonCheckRuntimeRunner.Run and of the transition/backfill path next door.
+//
+// It runs on a runtime pool worker, never on a reconcile worker, and one
+// admission at a time per check. The order is fixed and each step is load
+// bearing:
+//
+//  1. read the check to verify the queued work still applies;
+//  2. run — the runner owns resolution, admission, both fences and publication;
+//  3. use the exact PUBLISHED check and its previous evidence returned by the
+//     runner; the manager cache may still hold an older status;
+//  4. record the transition and persist the report name it chose.
+//
+// The disposition it returns is what paces the next attempt: Completed clears
+// backoff, MissingInput polls at the contract's 60s, and everything else is the
+// bounded exponential retry. Nothing here loops or waits on its own.
+func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work execution.Work) execution.Disposition {
+	log := logf.FromContext(ctx).WithValues("namespacedName", work.Check, "addonType", work.Definition)
+	if r.Runtime == nil {
+		// Unreachable in production: the pool is started only by the wiring
+		// that also sets this field. Refusing beats running an unwired path.
+		log.Error(errRuntimeRunnerUnwired, "runtime work dispatched without a runner")
+		return execution.MissingInput
+	}
+
+	var check fathomv1alpha1.AddonCheck
+	if err := r.Get(ctx, work.Check, &check); err != nil {
+		if apierrors.IsNotFound(err) {
+			return execution.Completed
+		}
+		log.Error(err, "read AddonCheck for a runtime run")
+		return execution.Retry
+	}
+	// The queue entry is keyed by the check, not by its spec, so an edit
+	// between the enqueue and the admission can retarget or pause it. Neither
+	// is this run's to execute.
+	if check.Spec.Paused || check.Spec.AddonType != work.Definition {
+		return execution.Completed
+	}
+
+	attempt, err := r.Runtime.Run(ctx, &check)
+	if err != nil {
+		if errors.Is(err, errNotRuntimeAddonType) {
+			// The identity became a built-in (an upgrade registered it). The
+			// built-in path owns it from the next reconcile on.
+			return execution.Completed
+		}
+		log.Error(err, "runtime AddonCheck execution failed")
+		return execution.Retry
+	}
+
+	if attempt.Completed && attempt.Published {
+		if attempt.publication == nil {
+			log.Error(errors.New("published runtime attempt has no status snapshot"), "record the runtime AddonCheck transition")
+			return execution.Retry
+		}
+		published := attempt.publication
+		name, err := r.recordRuntimeTransition(ctx, log, published, attempt.previousEvidence, attempt)
+		if err != nil {
+			log.Error(err, "record the runtime AddonCheck transition")
+			return execution.Retry
+		}
+		if name != "" {
+			// Second status write, by design: the report cannot be named
+			// before it exists. See recordRuntimeTransition's "two status
+			// writes" note — a lost write here is repaired by the backfill.
+			if err := r.Status().Update(ctx, published); err != nil {
+				log.Error(err, "persist the runtime AddonCheck report name")
+				return execution.Retry
+			}
+		}
+		return execution.Completed
+	}
+
+	return runtimeDisposition(attempt)
+}
+
+// runtimeDisposition maps a run that published no completed evidence onto the
+// pool's pacing. The MissingInput reasons are the lifecycle rows whose recovery
+// is an administrator action or another controller's publication — a definition
+// that does not exist, authority that has not been granted, a contested
+// identity, a gate no leader has opened. Polling those at the contract's
+// missing-input interval is right; retrying them on an exponential ramp would
+// hammer the API server over state that cannot change on its own.
+func runtimeDisposition(attempt RuntimeAttempt) execution.Disposition {
+	switch attempt.Reason {
+	case reasonUnknownAddonType,
+		reasonInvalidPolicy,
+		reasonAuthorizationUnavailable,
+		reasonAuthorizationRevoked,
+		reasonDefinitionUnavailable,
+		reasonBindingMismatch,
+		reasonInvalidDefinition,
+		reasonInvalidBinding,
+		registry.ReasonBuiltinCollision,
+		registry.ReasonRuntimeCollision,
+		registry.ReasonAdmissionClosed:
+		return execution.MissingInput
+	default:
+		return execution.Retry
+	}
+}
+
+// recordRuntimeTransition adds the HealthReport for a COMPLETED runtime
+// evaluation, and only when the completed verdict changed (T045 of
+// specs/012-addon-definition-runtime).
+//
+// It is the runtime sibling of the report half of runAddonCheck, and it keeps
+// that reconciler's rule verbatim: "Persist a HealthReport only when the
+// aggregate result changes (or on the first run)" — contracts/runtime.md,
+// "No-change verdicts do not create reports". A run that publishes new evidence
+// under a NEW revision but the SAME verdict therefore updates status and adds
+// nothing to history, which is spec.md acceptance 2.
+//
+// Three inputs are needed and none of them can be recovered from the others:
+//
+//   - check is the AddonCheck as the runner PUBLISHED it, carrying the new
+//     evidence;
+//   - previous is the evidence stored BEFORE that publication, which is the
+//     only thing that can say whether the verdict moved (the published object
+//     already shows the new verdict in both places);
+//   - attempt says whether a completed run actually landed. A refused or lost
+//     publication wrote nothing, so it may not be reported as a transition.
+//
+// The decision reads the evidence verdict rather than Status.LastResult
+// because only completed evidence has a revision and an authority context to
+// attribute a report to. A failed attempt preserves evidence by construction
+// and therefore reports nothing: "Attempt Error still preserves previous
+// completed evidence."
+//
+// It returns the name of the report now capturing the current verdict, or ""
+// when the run was not a transition. The name is also written to
+// check.Status.LastReportName in memory; persisting that status is the
+// caller's.
+//
+// # Why a runtime transition costs TWO status writes
+//
+// The built-in path in runAddonCheck is ordered report-first / status-after, so
+// one reconcile performs one status write. The runtime path cannot be: the
+// runner publishes evidence under its own compare-and-swap before this function
+// is reached, and a report cannot be named before it exists — so the caller
+// writes status once at publication and once more to persist LastReportName.
+// Between the two, status shows the new verdict beside a stale or empty
+// lastReportName, and the process can simply stop there.
+// A repeated same-verdict completion under that stale pointer reuses the
+// existing report. If every pointer write fails across opposite verdict
+// flaps, intermediate transitions can coalesce; history cannot claim a
+// durable ordering that status never recorded.
+//
+// Creating the report BEFORE publication would collapse that to one write, and
+// was rejected deliberately: the publication fence is what decides whether this
+// run may speak for the check at all, and a report written ahead of it would
+// attribute history to a run that authority, supersession or a lost lease may
+// still refuse. The ordering stays; the intermediate state is made RECOVERABLE
+// instead, by backfillRuntimeTransition.
+func (r *AddonCheckReconciler) recordRuntimeTransition(
+	ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck,
+	previous *fathomv1alpha1.AddonCheckEvidence, attempt RuntimeAttempt,
+) (string, error) {
+	if check == nil || !attempt.Completed || !attempt.Published {
+		return "", nil
+	}
+	evidence := check.Status.LastSuccessfulEvaluation
+	if evidence == nil {
+		return "", nil
+	}
+	previousVerdict := ""
+	if previous != nil {
+		previousVerdict = string(previous.Verdict)
+		if previous.Verdict == evidence.Verdict {
+			// The verdict did not move against the evidence this run replaced.
+			// That is normally the whole answer — "No-change verdicts do not
+			// create reports" — but only while history already holds this
+			// verdict. Ask what history actually has before staying silent.
+			recorded, backfill, err := r.backfillRuntimeTransition(ctx, check, evidence.Verdict)
+			if err != nil {
+				return "", err
+			}
+			if !backfill {
+				return "", nil
+			}
+			previousVerdict = recorded
+		}
+	}
+
+	report := runtimeHealthReportForAddonCheck(check, evidence, attempt)
+	// The durable history predecessor identifies the transition. If creating
+	// the report succeeds but persisting LastReportName conflicts, a later
+	// same-verdict run must reuse that report rather than create a duplicate
+	// with its newer observation time. Once the pointer advances, a later
+	// verdict flap receives a different predecessor and a distinct name.
+	useDeterministicHealthReportName(report, check.Name,
+		"AddonCheck",
+		string(check.UID),
+		check.Status.LastReportName,
+		previousVerdict,
+		string(evidence.Verdict),
+	)
+	if r.Scheme != nil {
+		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
+			return "", err
+		}
+	}
+	persisted, created, err := createOrReuseHealthReport(ctx, r.Client, report)
+	if err != nil {
+		return "", err
+	}
+	if created {
+		r.pruneHealthReportHistory(ctx, log, check, persisted.Name)
+	}
+	check.Status.LastReportName = persisted.Name
+	return persisted.Name, nil
+}
+
+// backfillRuntimeTransition decides whether a run whose verdict did NOT move
+// must nevertheless write history, and which predecessor that entry records.
+//
+// Comparing the published verdict against the previously stored evidence
+// silently assumes history holds whatever the last publication concluded. It
+// does not. Evidence is published BEFORE the report is created, so a create
+// that fails — a transient API error, a lost lease, a restarted process —
+// leaves status showing the new verdict and history showing nothing. Every
+// later run then compares the published verdict against itself, finds no
+// change, and the transition is lost permanently: contracts/runtime.md requires
+// a report on a verdict change, and that change would never be recorded.
+//
+// Status.LastReportName is the only durable record of what history holds, so
+// the no-change decision is made against it rather than against evidence alone.
+// This is the same backfill clause the built-in path has always carried
+// (`check.Status.LastReportName == "" || newResult != check.Status.LastResult`
+// in runAddonCheck); the runtime path needs it MORE, because it writes status
+// first rather than last.
+//
+// It returns the verdict history currently records — the empty string when it
+// records nothing — and whether a report must be written. A genuine no-change,
+// where lastReportName names a report whose result already IS this verdict,
+// writes nothing: that is the contract clause this repair must not break.
+func (r *AddonCheckReconciler) backfillRuntimeTransition(
+	ctx context.Context, check *fathomv1alpha1.AddonCheck,
+	verdict fathomv1alpha1.AddonCheckEvidenceVerdict,
+) (string, bool, error) {
+	if check.Status.LastReportName == "" {
+		// Nothing was ever recorded for this check, so the current verdict is
+		// not in history at all — the transition that produced it was lost.
+		return "", true, nil
+	}
+	var recorded fathomv1alpha1.HealthReport
+	key := client.ObjectKey{Namespace: check.Namespace, Name: check.Status.LastReportName}
+	if err := r.Get(ctx, key, &recorded); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The named report is gone. Retention pruning deletes history on
+			// purpose, so this is a deliberately bounded history rather than a
+			// lost write: re-creating the entry would fight spec.historyLimit
+			// on every poll.
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if string(recorded.Spec.Result) == string(verdict) {
+		return string(recorded.Spec.Result), false, nil
+	}
+	// The pointer names a report whose result contradicts the published
+	// verdict, which is the same lost write seen one transition later: status
+	// moved on, history did not. Record the move history can actually show,
+	// from the entry it still names.
+	return string(recorded.Spec.Result), true, nil
+}
+
+// runtimeHealthReportForAddonCheck renders the history entry for one completed
+// runtime evaluation.
+//
+// The report's verdict is the PUBLISHED evidence verdict rather than a second,
+// independently recomputed aggregate: status and history must not be able to
+// disagree about what a run concluded. The per-check entries and the ratio
+// rollups are produced by the existing shared helpers, unchanged, so a runtime
+// report reads exactly like a built-in one — "Mixed results use existing
+// aggregate semantics", including the reserved warnRatio/failRatio rollups.
+//
+// Every timestamp is the evidence's own observation, never the wall clock: a
+// report is a record of when the observation happened, and re-dating it is the
+// same mistake as renewing evidence on a failed attempt.
+func runtimeHealthReportForAddonCheck(
+	check *fathomv1alpha1.AddonCheck, evidence *fathomv1alpha1.AddonCheckEvidence, attempt RuntimeAttempt,
+) *fathomv1alpha1.HealthReport {
+	sourceRef := fathomv1alpha1.HealthReportTargetRef{
+		APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Kind:       "AddonCheck",
+		Namespace:  check.Namespace,
+		Name:       check.Name,
+	}
+	observedAt := evidence.ObservedAt
+	_, rollups := aggregateWithRatioRollups(attempt.Evidence.Checks, ratioThresholdsByFamily(check))
+
+	var duration *metav1.Duration
+	if attempt.Evidence.Duration > 0 {
+		duration = &metav1.Duration{Duration: attempt.Evidence.Duration}
+	}
+	return &fathomv1alpha1.HealthReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    check.Namespace,
+			GenerateName: check.Name + "-",
+			Labels: map[string]string{
+				fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+			},
+		},
+		Spec: fathomv1alpha1.HealthReportSpec{
+			SourceRef: sourceRef,
+			AddonType: check.Spec.AddonType,
+			// A compiled runtime adapter's identity IS the addon type, and its
+			// version is the publication provenance the fence captured — taken
+			// from the evidence rather than from a live registry lookup, which
+			// could by now describe a different revision entirely.
+			AdapterName:     check.Spec.AddonType,
+			AdapterVersion:  evidence.Revision.AdapterVersion,
+			DetectedVersion: attempt.Evidence.DetectedVersion,
+			// Every runtime adapter is compiled by this operator build against
+			// this binary's adapter contract, so this is the exact contract the
+			// run used, not an assumption about someone else's adapter.
+			ContractVersion: adapter.ContractVersion,
+			Result:          fathomv1alpha1.HealthReportResult(evidence.Verdict),
+			Checks: append(healthReportChecks(attempt.Evidence.Checks, observedAt),
+				ratioRollupReportChecks(rollups, sourceRef, observedAt)...),
+			ObservedAt: observedAt,
+			Duration:   duration,
+			Attribution: &fathomv1alpha1.HealthReportAttribution{
+				Revision:  evidence.Revision,
+				Authority: *evidence.Authority.DeepCopy(),
+				Coverage:  evidence.Coverage,
+				Message:   evidence.Message,
+			},
+		},
+	}
+}
+
 // pruneHealthReportHistory enforces Spec.HistoryLimit by deleting the oldest
-// HealthReports owned by check beyond the cap. Failures are logged but not
-// returned: the user-facing write (the new HealthReport) already succeeded,
-// and the next reconcile will retry the prune. The list query is indexed by
-// the source-kind/name labels written in healthReportForAddonCheck.
-func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+// HealthReports owned by check beyond the cap. protectedName is the report
+// created by the current reconcile; keeping it prevents pruning from stranding
+// the LastReportName that the caller publishes after this operation. Failures
+// are logged but not returned: the user-facing write (the new HealthReport)
+// already succeeded, and the next reconcile will retry the prune. The list
+// query is indexed by the source-kind/name labels written in
+// healthReportForAddonCheck.
+func (r *AddonCheckReconciler) pruneHealthReportHistory(
+	ctx context.Context,
+	log logr.Logger,
+	check *fathomv1alpha1.AddonCheck,
+	protectedName string,
+) {
 	limit := defaultHealthReportHistoryLimit
 	if check.Spec.HistoryLimit != nil {
 		limit = int(*check.Spec.HistoryLimit)
@@ -508,7 +1018,17 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log
 	}
 
 	sort.Slice(reports.Items, func(i, j int) bool {
-		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
+		left, right := &reports.Items[i], &reports.Items[j]
+		if left.Name == protectedName {
+			return false
+		}
+		if right.Name == protectedName {
+			return true
+		}
+		if left.CreationTimestamp.Equal(&right.CreationTimestamp) {
+			return left.Name < right.Name
+		}
+		return left.CreationTimestamp.Before(&right.CreationTimestamp)
 	})
 	excess := len(reports.Items) - limit
 	for i := 0; i < excess; i++ {
@@ -552,7 +1072,7 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 	if len(policyErrs) > 0 {
 		cond.Status = metav1.ConditionFalse
 		cond.Reason = "InvalidPolicy"
-		cond.Message = "AddonCheck policy is invalid: " + strings.Join(policyErrs, "; ") + "."
+		cond.Message = boundedText("AddonCheck policy is invalid: "+strings.Join(policyErrs, "; ")+".", addonCheckStatusTextLimit)
 	} else if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
 		cond.Reason = conditionReasonSpecClamped
 		cond.Message = strings.Join(msgs, "; ") + "."

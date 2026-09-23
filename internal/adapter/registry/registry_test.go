@@ -125,6 +125,26 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+func TestBuiltinClaimsIsIndependentOfDispatchAndStartupClaimState(t *testing.T) {
+	r := registry.New(logr.Discard())
+	if err := r.Register(newFake("dns", "coredns")); err != nil {
+		t.Fatal(err)
+	}
+	if !r.BuiltinClaims("coredns") || r.BuiltinClaims("ordinary-addon") {
+		t.Fatalf("registered ownership: coredns=%t ordinary=%t, want true/false",
+			r.BuiltinClaims("coredns"), r.BuiltinClaims("ordinary-addon"))
+	}
+
+	r.ReserveStartupClaims([]string{"coredns"})
+	if !r.BuiltinClaims("coredns") {
+		t.Fatal("unresolved startup reservation obscured registered built-in ownership")
+	}
+	r.ObserveStartupClaim("coredns", "stored-definition-uid", 3)
+	if !r.BuiltinClaims("coredns") {
+		t.Fatal("observed startup collision obscured registered built-in ownership")
+	}
+}
+
 func TestRegister_DuplicateAddonType(t *testing.T) {
 	t.Parallel()
 

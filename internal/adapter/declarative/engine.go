@@ -30,7 +30,8 @@ var tracer = otel.Tracer("github.com/skaphos/fathom/internal/adapter/declarative
 // Run is safe for concurrent invocation from many goroutines (the contract's
 // concurrency requirement).
 type Engine struct {
-	def AddonDefinition
+	runtime bool
+	def     AddonDefinition
 }
 
 // NewEngine validates def and returns an Engine implementing pkg/adapter.Adapter.
@@ -289,6 +290,9 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 	// does (#172).
 	detectedVersion, versionGate := e.detectAndGateVersion(ctx, req.Client, req.Policy)
 	checks := append([]adapter.CheckResult{}, versionGate...)
+	if err := e.validateRuntimeResult(ctx, adapter.Result{Checks: checks, DetectedVersion: detectedVersion}); err != nil {
+		return adapter.Result{}, err
+	}
 	for _, fr := range runs {
 		if !fr.enabled {
 			continue
@@ -321,6 +325,9 @@ func (e *Engine) Run(ctx context.Context, req adapter.Request) (result adapter.R
 				return adapter.Result{Checks: checks, Duration: time.Since(started), DetectedVersion: detectedVersion}, evErr
 			}
 			checks = append(checks, out...)
+			if err := e.validateRuntimeResult(ctx, adapter.Result{Checks: checks, DetectedVersion: detectedVersion, Duration: time.Since(started)}); err != nil {
+				return adapter.Result{}, err
+			}
 		}
 		// Per-family metric, timed independently and rolled up over only this
 		// family's checks (SKA-290).

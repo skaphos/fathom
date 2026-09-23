@@ -8,6 +8,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 	"unicode/utf8"
@@ -45,6 +46,13 @@ const (
 	healthCheckTargetKindNodeHealthCheck      = "NodeHealthCheck"
 
 	healthCheckConditionMessageMaxLen = 1024
+
+	// healthCheckReadyReasonMaxLen mirrors the MaxLength on
+	// HealthCheckStatus.SourceReadyReason. A source reason admits up to 1024
+	// characters (the metav1.Condition bound), so it is truncated at the mirror
+	// boundary for the same reason Summary is: an over-long value would make
+	// the API server reject the whole status update and wedge the mirror.
+	healthCheckReadyReasonMaxLen = 128
 )
 
 type healthCheckTargetIdentity struct {
@@ -77,6 +85,82 @@ type healthCheckTargetSnapshot struct {
 	SourceObservedAt *metav1.Time
 	LastReportName   string
 	Interval         time.Duration
+
+	// Ready and ReadyReason mirror the target's own readiness: whether its most
+	// recent run could execute and complete, and why. Nil Ready means the
+	// target has never published a readiness condition.
+	Ready       *bool
+	ReadyReason string
+
+	// Freshness and FreshnessReason mirror the recency and eligibility of the
+	// completed evidence behind Result. They stay empty for target kinds that
+	// publish no evidence, which is every kind but a runtime AddonCheck.
+	Freshness       fathomv1alpha1.AddonCheckEvidenceFreshness
+	FreshnessReason string
+}
+
+// readinessFromConditions extracts the target's own Ready condition. Readiness
+// is mirrored for every supported kind because every one of them publishes it,
+// and because a wrapper that shows only a verdict cannot distinguish "the check
+// ran and reported this" from "the check could not run and this is what it last
+// reported" — the distinction the whole evidence model exists to preserve
+// (T046 of specs/012-addon-definition-runtime).
+//
+// A missing condition returns nil rather than false: "no readiness has ever
+// been published" is not the same claim as "not ready".
+func readinessFromConditions(conds []metav1.Condition) (*bool, string) {
+	for _, c := range conds {
+		if c.Type != healthCheckConditionReady {
+			continue
+		}
+		ready := c.Status == metav1.ConditionTrue
+		return &ready, truncateToRuneLimit(c.Reason, healthCheckReadyReasonMaxLen)
+	}
+	return nil, ""
+}
+
+// addonCheckMirroredObservation is the observation time behind the mirrored
+// verdict.
+//
+// When the target carries completed runtime evidence it is that evidence's
+// ORIGINAL observedAt, never the latest attempt: "Failed attempts cannot renew
+// the observation timestamp", and publishing an attempt time here would renew
+// it at the mirror boundary instead — making every cadence-relative staleness
+// rule downstream read preserved evidence as current. Without evidence (every
+// built-in check) it is lastRunTime, exactly as before.
+func addonCheckMirroredObservation(target *fathomv1alpha1.AddonCheck) *metav1.Time {
+	if evidence := target.Status.LastSuccessfulEvaluation; evidence != nil {
+		observed := evidence.ObservedAt
+		return &observed
+	}
+	return target.Status.LastRunTime
+}
+
+// addonCheckMirroredFreshness derives the freshness to publish for target as of
+// now.
+//
+// The stored freshness answers input ELIGIBILITY, which only the source can
+// know, and it was correct when it was written. Age is re-derived here instead
+// of trusted, because a stored Current only advances when the source
+// reconciles — and evidence ageing out is precisely the case where nothing
+// reconciles it. A stored Unavailable or Superseded is left alone: both are
+// stronger statements than "old", and neither becomes truer with time.
+func addonCheckMirroredFreshness(target *fathomv1alpha1.AddonCheck, now time.Time) (
+	fathomv1alpha1.AddonCheckEvidenceFreshness, string,
+) {
+	stored := target.Status.EvidenceFreshness
+	if stored == "" {
+		// Not a runtime check: it publishes no evidence, so it has no freshness
+		// to mirror. Empty says "not applicable"; Unavailable would claim the
+		// check has unusable evidence.
+		return "", ""
+	}
+	if stored == fathomv1alpha1.AddonCheckEvidenceCurrent && AddonCheckEvidenceAged(target, now) {
+		return fathomv1alpha1.AddonCheckEvidenceStale, fmt.Sprintf(
+			"the completed evaluation is older than two intervals plus one timeout (%s); the stored verdict is not current coverage",
+			AddonCheckEvidenceWindow(target))
+	}
+	return stored, truncateToRuneLimit(target.Status.EvidenceFreshnessReason, healthCheckConditionMessageMaxLen)
 }
 
 type healthCheckTargetReader func(
@@ -143,12 +227,18 @@ func readAddonCheckTarget(
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
+	ready, readyReason := readinessFromConditions(target.Status.Conditions)
+	freshness, freshnessReason := addonCheckMirroredFreshness(&target, time.Now())
 	return healthCheckTargetSnapshot{
 		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
-		SourceObservedAt: target.Status.LastRunTime,
+		SourceObservedAt: addonCheckMirroredObservation(&target),
 		LastReportName:   target.Status.LastReportName,
 		Interval:         addonCheckInterval(&target),
+		Ready:            ready,
+		ReadyReason:      readyReason,
+		Freshness:        freshness,
+		FreshnessReason:  freshnessReason,
 	}, nil
 }
 
@@ -161,12 +251,15 @@ func readDNSCheckTarget(
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
+	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
 		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
 		Interval:         dnsCheckInterval(&target),
+		Ready:            ready,
+		ReadyReason:      readyReason,
 	}, nil
 }
 
@@ -179,12 +272,15 @@ func readNodeCertificateCheckTarget(
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
+	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
 		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
 		Interval:         nodeCertInterval(&target),
+		Ready:            ready,
+		ReadyReason:      readyReason,
 	}, nil
 }
 
@@ -204,6 +300,7 @@ func readNodeHealthCheckTarget(
 	if summary == "" {
 		summary = summarizeFromConditions(target.Status.Conditions)
 	}
+	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
 		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
 		Summary:          summary,
@@ -214,7 +311,9 @@ func readNodeHealthCheckTarget(
 		// 24h interval whose agents have gone quiet must not read as current
 		// for days. The reconciler runs, refreshes lastRunTime, and rolls up on
 		// that same cadence; spec.interval above the cap has no runtime effect.
-		Interval: nodeHealthRequeueAfter(&target),
+		Interval:    nodeHealthRequeueAfter(&target),
+		Ready:       ready,
+		ReadyReason: readyReason,
 	}, nil
 }
 
@@ -224,6 +323,10 @@ func applyHealthCheckTargetSnapshot(hc *fathomv1alpha1.HealthCheck, snapshot hea
 	hc.Status.SourceObservedAt = snapshot.SourceObservedAt
 	hc.Status.LastReportName = snapshot.LastReportName
 	hc.Status.SourceInterval = &metav1.Duration{Duration: snapshot.Interval}
+	hc.Status.SourceReady = snapshot.Ready
+	hc.Status.SourceReadyReason = snapshot.ReadyReason
+	hc.Status.EvidenceFreshness = snapshot.Freshness
+	hc.Status.EvidenceFreshnessReason = snapshot.FreshnessReason
 }
 
 // HealthCheckReconciler reconciles a HealthCheck object. It is a wrapper that
@@ -442,6 +545,13 @@ func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
 	hc.Status.SourceObservedAt = nil
 	hc.Status.LastReportName = ""
 	hc.Status.Summary = ""
+	// Mirrored readiness and freshness belong to the snapshot: a freshness left
+	// behind by a target that no longer exists would describe evidence nothing
+	// can produce or refresh.
+	hc.Status.SourceReady = nil
+	hc.Status.SourceReadyReason = ""
+	hc.Status.EvidenceFreshness = ""
+	hc.Status.EvidenceFreshnessReason = ""
 }
 
 // summarizeFromConditions extracts a human-readable one-liner from the source

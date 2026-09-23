@@ -65,6 +65,15 @@ func (c ConfigMapCheck) Evaluate(ec EvalContext) ([]adapter.CheckResult, error) 
 		return []adapter.CheckResult{result(ec.Family, target, invalid, fmt.Sprintf("configmap has no %q key", c.Key), details, started)}, nil
 	}
 
+	if ec.runtime {
+		syntaxErr, limitErr := ec.runtimeYAML(value)
+		if limitErr != nil {
+			return nil, limitErr
+		}
+		if syntaxErr != nil {
+			return []adapter.CheckResult{result(ec.Family, target, invalid, fmt.Sprintf("policy under %q is not valid YAML: %v", c.Key, syntaxErr), details, started)}, nil
+		}
+	}
 	var doc map[string]interface{}
 	if err := yaml.Unmarshal([]byte(value), &doc); err != nil {
 		return []adapter.CheckResult{result(ec.Family, target, invalid, fmt.Sprintf("policy under %q is not valid YAML: %v", c.Key, err), details, started)}, nil

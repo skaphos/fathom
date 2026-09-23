@@ -292,3 +292,36 @@ for where these sit relative to the operator's grants.
 
 The contract `run` drives is documented once for every kind in
 [Status and conditions: On-demand runs](status-conditions.md#on-demand-runs).
+
+## Runtime definition authoring (preview)
+
+Runtime loading remains under implementation. These commands prepare and inspect
+resources; they do not activate runtime checks or write to the cluster.
+
+| Command | Purpose | Required flags |
+| --- | --- | --- |
+| `definition render` | Offline staged definition, dedicated SA, scoped grants, incomplete binding template | `--file`, `--service-account`, `--operator-namespace`, `--operator-service-account` |
+| `definition bind` | Read live definition/SA UIDs and print a disabled binding | `--file`, `--name`, `--service-account`, `--operator-namespace` |
+| `definition collisions` | Compare live definitions against the target binary's bundled built-in inventory | None; use target release binary |
+| `definition drain` | Independently verify Lease renewal and current disabled-binding acknowledgement | `--name`, `--operator-namespace`; `--leader-election-id` for a nondefault Lease |
+
+`render` never loads kubeconfig. Supply exactly one definition document; unknown
+fields and oversized files are rejected. Custom-resource plural/scope mappings
+that cannot be established offline produce manual-completion comments. Review
+these grants before applying prerequisites. Do not apply the incomplete binding
+at the end of the staged output: it intentionally has empty UIDs and scope.
+
+`bind` requires the reviewed spec to match the live spec exactly, including API
+admission defaults. It prints a disabled binding with the union of explicit
+primary/helper scopes. It neither proves effective RBAC nor grants permissions.
+
+`collisions` prints the binary version and source revision. Missing provenance or
+inventory fails verification; there is no external inventory-file option. Exit
+codes are 0 for no collisions, 1 for collisions, and 2 for verification/read errors.
+
+`drain` performs at most 16 Lease reads and one binding read within 15 seconds,
+with individual requests bounded to 5 seconds and renewal polling at most once
+per second. It requires progressing renewal of the same leader epoch and matching
+current-generation binding status. Exit codes are 0 for verified drained, 1 for
+not drained, and 2 for unverifiable. A leader can change after the final read;
+this is an observation, not an atomic revocation guarantee.

@@ -82,23 +82,29 @@ tasks:
     cmds:
       - go run ./internal/adapter/rbacgen/cmd
 
+  gen:runtime-definitions:
+    desc: Generate the runtime definition inventory and all-nine-kind samples
+    cmds:
+      - go run ./internal/adapter/rbacgen/runtimecmd
+
   verify-generated:
     desc: Re-run generators and fail if anything changed (CI gate against stale codegen)
     cmds:
       - task: manifests
       - task: generate
       - task: gen:addon-rbac
+      - task: gen:runtime-definitions
       - task: helm:sync
       - task: docs:api-ref
       - |
-        paths="api/ config/ {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
+        paths="api/ config/ pkg/addondefinition/inventory_generated.go {{.HELM_CHART_DIR}}/crds/ {{.HELM_CHART_DIR}}/files/manager-rules.yaml {{.HELM_CHART_DIR}}/files/addon-rbac.yaml docs/reference/api.md docs/reference/rbac.md"
         untracked_generated="$(git ls-files --others --exclude-standard -- $paths)"
         if ! git diff --exit-code -- $paths || [ -n "$untracked_generated" ]; then
           if [ -n "$untracked_generated" ]; then
             echo "::error::Untracked generated artifacts detected:" >&2
             printf '%s\n' "$untracked_generated" >&2
           fi
-          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
+          echo "::error::Generated artifacts are stale. Run 'task manifests', 'task generate', 'task gen:addon-rbac', 'task gen:runtime-definitions', 'task helm:sync', and 'task docs:api-ref' and commit the result." >&2
           exit 1
         fi
 
@@ -212,6 +218,16 @@ tasks:
         ASSETS="$({{.SETUP_ENVTEST}} use {{.ENVTEST_K8S_VERSION}} -p path)"
         KUBEBUILDER_ASSETS="$ASSETS" go test $(go list ./... | grep -v /e2e) -coverprofile=coverage.out
 
+  test:api:
+    desc: Run CRD admission and runtime authoring tests against the pinned envtest API server
+    cmds:
+      - task: manifests
+      - task: generate
+      - |
+        set -euo pipefail
+        ASSETS="$({{.SETUP_ENVTEST}} use {{.ENVTEST_K8S_VERSION}} -p path)"
+        KUBEBUILDER_ASSETS="$ASSETS" go test ./api/v1alpha1 ./pkg/addondefinition -count=1
+
   test-e2e:
     desc: Run the Ginkgo e2e suite against a Kind cluster (kind + docker + helm + helmfile required); E2E_ADDONS scopes the stack and specs
     cmds:
@@ -227,7 +243,9 @@ tasks:
       # runs (a Task var override must reach the test process env too).
       - |
         addons='{{.E2E_ADDONS}}'
-        E2E_ADDONS="${addons:-${E2E_ADDONS:-}}" go test ./test/e2e/ -v -ginkgo.v
+        cluster='{{.E2E_KIND_CLUSTER}}'
+        # Runtime serial scenarios include election grace/restarts and can exceed Go's 10m default.
+        E2E_ADDONS="${addons:-${E2E_ADDONS:-}}" E2E_KIND_CLUSTER="${cluster:-${E2E_KIND_CLUSTER:-}}" go test ./test/e2e/ -timeout=30m -v -ginkgo.v
 
   # --- Build ---
 
@@ -248,8 +266,10 @@ tasks:
       # get the exact release version from scripts/fathomctl-dist.sh instead.
       FATHOMCTL_VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+      FATHOMCTL_REVISION:
+        sh: git rev-parse HEAD
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}}" -o bin/fathomctl ./cmd/fathomctl
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}}" -o bin/fathomctl ./cmd/fathomctl
 
   fathomctl-dist:
     desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})
@@ -455,7 +475,9 @@ tasks:
       - |
         set -euo pipefail
         command -v kind >/dev/null 2>&1 || { echo "kind not found in PATH" >&2; exit 1; }
-        if kind get clusters | grep -qx "{{.E2E_KIND_CLUSTER}}"; then
+        # Named node lookup avoids the cluster-list label-map template that
+        # Podman 6 exposes as a slice, while still identifying this cluster.
+        if kind_nodes="$(kind get nodes --name {{.E2E_KIND_CLUSTER}})" && [ -n "$kind_nodes" ]; then
           echo "kind cluster {{.E2E_KIND_CLUSTER}} already exists; skipping create"
         else
           kind create cluster --name {{.E2E_KIND_CLUSTER}} --config {{.E2E_KIND_CONFIG}}

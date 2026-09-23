@@ -106,6 +106,41 @@ type HealthCheckStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	LastReportName string `json:"lastReportName,omitempty"`
+
+	// SourceReady mirrors whether the referenced check's most recent run could
+	// EXECUTE and COMPLETE with eligible inputs. It is not a verdict:
+	// contracts/runtime.md, "Ready denotes executable/completed, freshness
+	// denotes recency, and neither means Pass". A false SourceReady beside a
+	// Pass Result is the ordinary shape of preserved evidence — the last
+	// completed run passed, and the most recent attempt could not run at all.
+	//
+	// Nil when the referenced check has never published a readiness condition,
+	// which is a different statement from "the check is not ready".
+	// +optional
+	SourceReady *bool `json:"sourceReady,omitempty"`
+
+	// SourceReadyReason is the referenced check's own reason for that
+	// readiness — UnknownAddonType, AuthorizationRevoked, AccessDenied,
+	// RunCompleted and so on — so an operator can tell why a mirrored verdict
+	// is not being refreshed without reading the wrapped check.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	SourceReadyReason string `json:"sourceReadyReason,omitempty"`
+
+	// EvidenceFreshness mirrors the recency and eligibility of the completed
+	// evidence behind Result, re-derived from the evidence's age at mirror
+	// time. Empty for checks that publish no evidence (every built-in adapter),
+	// which is "not applicable" rather than "unavailable".
+	//
+	// This is the field that keeps a retained Pass from reading as a fresh
+	// success: "Freshness=Stale even if stored verdict was Pass."
+	// +optional
+	EvidenceFreshness AddonCheckEvidenceFreshness `json:"evidenceFreshness,omitempty"`
+
+	// EvidenceFreshnessReason explains a freshness that is not Current.
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	EvidenceFreshnessReason string `json:"evidenceFreshnessReason,omitempty"`
 }
 
 // +kubebuilder:object:root=true

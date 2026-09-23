@@ -53,6 +53,141 @@ spec:
                 description: AddonType is the AddonCheck addon type used to select
                   the adapter.
                 type: string
+              attribution:
+                description: |-
+                  Attribution names the runtime revision and delegated authority this
+                  report was produced under. Absent for built-in adapters, which have
+                  neither.
+                properties:
+                  authority:
+                    description: |-
+                      Authority is the delegated binding, dedicated identity, check context and
+                      leadership epoch the producing run was attributed to.
+                    properties:
+                      bindingGeneration:
+                        description: |-
+                          BindingGeneration is the binding's spec generation. Status-only binding
+                          writes do not advance it and therefore do not invalidate evidence.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      bindingUID:
+                        description: |-
+                          BindingUID is the AddonDefinitionBinding incarnation that authorized the
+                          run.
+                        maxLength: 128
+                        type: string
+                      checkGeneration:
+                        description: |-
+                          CheckGeneration is the AddonCheck spec generation the run was attributed
+                          to.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      checkUID:
+                        description: CheckUID is this AddonCheck's incarnation.
+                        maxLength: 128
+                        type: string
+                      leaderEpoch:
+                        description: LeaderEpoch is the leadership epoch observed
+                          when the run was admitted.
+                        properties:
+                          acquireTime:
+                            description: AcquireTime is the declared acquireTime.
+                            format: date-time
+                            type: string
+                          holderIdentity:
+                            description: HolderIdentity is the declared holderIdentity.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          leaseTransitions:
+                            description: LeaseTransitions is the declared leaseTransitions.
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          leaseUID:
+                            description: LeaseUID is the declared leaseUID.
+                            maxLength: 128
+                            minLength: 1
+                            type: string
+                        required:
+                        - acquireTime
+                        - holderIdentity
+                        - leaseTransitions
+                        - leaseUID
+                        type: object
+                      policyDigest:
+                        description: |-
+                          PolicyDigest fingerprints spec.policy. The policy selects which families
+                          run, so evidence produced under one policy is not interchangeable with
+                          evidence produced under another at the same generation.
+                        maxLength: 128
+                        type: string
+                      serviceAccountUID:
+                        description: |-
+                          ServiceAccountUID is the dedicated reader incarnation the evaluation
+                          impersonated.
+                        maxLength: 128
+                        type: string
+                    type: object
+                  coverage:
+                    description: |-
+                      Coverage distinguishes an assessed verdict from a completed run that
+                      evaluated nothing, so a Skipped entry in history cannot be mistaken for
+                      an assessed-and-healthy one.
+                    enum:
+                    - ChecksEvaluated
+                    - NoChecksEvaluated
+                    type: string
+                  message:
+                    description: |-
+                      Message explains the coverage in one line. A report produced by a
+                      completed all-Skipped run carries exactly
+                      [AddonCheckNoChecksEvaluatedMessage].
+                    maxLength: 1024
+                    type: string
+                  revision:
+                    description: |-
+                      Revision is the runtime definition revision that produced the report:
+                      the definition incarnation plus the operator build and adapter version
+                      that compiled it.
+                    properties:
+                      adapterVersion:
+                        description: AdapterVersion is the compiled adapter's own
+                          version.
+                        maxLength: 128
+                        type: string
+                      definitionGeneration:
+                        description: DefinitionGeneration is the definition's spec
+                          generation.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      definitionUID:
+                        description: |-
+                          DefinitionUID is the AddonDefinition incarnation. A recreated definition
+                          has a new UID and inherits no authority from the old one.
+                        maxLength: 128
+                        type: string
+                      operatorBuild:
+                        description: OperatorBuild is the operator build that compiled
+                          the snapshot.
+                        maxLength: 128
+                        type: string
+                      schemaVersion:
+                        description: SchemaVersion is the API schema version the definition
+                          was compiled from.
+                        maxLength: 63
+                        type: string
+                      semanticsVersion:
+                        description: SemanticsVersion is the declared evaluation semantics
+                          version.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                    type: object
+                type: object
               checks:
                 description: Checks are the individual observations produced by the
                   adapter.

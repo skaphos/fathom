@@ -41,6 +41,13 @@
     "replicaCount":     {"type": "integer", "minimum": 1},
     "leaderElect":      {"type": "boolean"},
     "leaderElectionID": {"type": "string", "minLength": 1},
+    "runtimeLoading": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"}
+      }
+    },
     "enableHTTP2":      {"type": "boolean"},
 
     "metrics": {

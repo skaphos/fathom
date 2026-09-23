@@ -377,6 +377,21 @@ verification steps are in the [fathomctl guide](docs/guides/fathomctl.md);
 the flag-level contract is in the
 [fathomctl reference](docs/reference/fathomctl.md).
 
+### Runtime add-on definitions (qualification preview)
+
+`AddonDefinition` supplies ordered, typed checks under a dedicated reader
+ServiceAccount. `fathomctl definition render` prepares offline manifests with
+reviewable grants and an incomplete binding template; after installing the
+definition and ServiceAccount, `definition bind` captures their live UIDs and
+prints a disabled binding. Neither command applies resources. Runtime loading is
+off by default; opt-in uses `--runtime-loading-enabled` and requires leader
+election and the operator namespace. Helm exposes `runtimeLoading.enabled`,
+which defaults to false. Use the [runtime definition operations guide](docs/guides/addon-definitions.md)
+for the staged install, target-release collision preflight, independent Lease
+drain verification and rollback. Full real-cluster qualification and the
+separate [#256 ratio-contract decision](https://github.com/skaphos/fathom/issues/256)
+remain release blockers.
+
 ## Contributing & development
 
 Contributor and AI-agent build/test/coding guardrails live in

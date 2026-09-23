@@ -108,6 +108,52 @@ type HealthReportCheck struct {
 	Duration *metav1.Duration `json:"duration,omitempty"`
 }
 
+// HealthReportAttribution records which runtime revision, under which
+// delegated authority, produced a report, and how much that run actually
+// covered (T045 of specs/012-addon-definition-runtime).
+//
+// A HealthReport is history, and history is only useful while it stays
+// attributable: contracts/runtime.md requires that when a binding or grant
+// recovers, "history remains attributable", and the lifecycle matrix keeps
+// superseded evidence "with its original time/revision/context". Without this
+// block a stored report is just a verdict and a timestamp, so a Pass produced
+// under authority that has since been revoked, or under a definition revision
+// that has since been replaced, reads exactly like one produced under the
+// current one.
+//
+// It reuses the AddonCheck evidence vocabulary deliberately rather than
+// restating it: the report is created FROM published evidence, and two
+// independent spellings of the same context would be free to drift apart —
+// which is precisely the divergence this field exists to make visible.
+//
+// It is optional and absent on reports from built-in adapters, which carry no
+// runtime revision, no delegated binding and no dedicated identity to name.
+type HealthReportAttribution struct {
+	// Revision is the runtime definition revision that produced the report:
+	// the definition incarnation plus the operator build and adapter version
+	// that compiled it.
+	// +optional
+	Revision AddonCheckEvidenceRevision `json:"revision,omitempty"`
+
+	// Authority is the delegated binding, dedicated identity, check context and
+	// leadership epoch the producing run was attributed to.
+	// +optional
+	Authority AddonCheckEvidenceAuthority `json:"authority,omitempty"`
+
+	// Coverage distinguishes an assessed verdict from a completed run that
+	// evaluated nothing, so a Skipped entry in history cannot be mistaken for
+	// an assessed-and-healthy one.
+	// +optional
+	Coverage AddonCheckEvidenceCoverage `json:"coverage,omitempty"`
+
+	// Message explains the coverage in one line. A report produced by a
+	// completed all-Skipped run carries exactly
+	// [AddonCheckNoChecksEvaluatedMessage].
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	Message string `json:"message,omitempty"`
+}
+
 // HealthReportSpec defines the desired state of HealthReport.
 type HealthReportSpec struct {
 	// SourceRef identifies the check resource that produced this report.
@@ -148,6 +194,12 @@ type HealthReportSpec struct {
 	// Duration is the total adapter run duration.
 	// +optional
 	Duration *metav1.Duration `json:"duration,omitempty"`
+
+	// Attribution names the runtime revision and delegated authority this
+	// report was produced under. Absent for built-in adapters, which have
+	// neither.
+	// +optional
+	Attribution *HealthReportAttribution `json:"attribution,omitempty"`
 }
 
 // HealthReportStatus defines the observed state of HealthReport.

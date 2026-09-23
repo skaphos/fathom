@@ -399,3 +399,62 @@ default image tag are corrected per release but are not yet part of the gate.
   `build-installer`, `bundle`, `bundle-build`, `bundle-push`, `catalog-build`,
   `catalog-push`).
 - No Homebrew cask publishing — Fathom is delivered as container/bundle images.
+
+The fathomctl archives also stamp the source Git revision for runtime-definition
+collision preflight. `definition collisions` reports both version and build and
+refuses verification when either is unknown; use the target release binary.
+
+## Runtime definition operations (qualification preview)
+
+Runtime loading remains off by default. Helm's `runtimeLoading.enabled: true`
+emits the operator's `--runtime-loading-enabled` flag; false emits no runtime
+flag so environment/config-file opt-in remains available. Enabling it
+requires leader election even for one replica and an explicit operator namespace
+containing the configured leader Lease. Keep this feature out of a release until
+the [full real-cluster installation and rollback qualification](specs/012-addon-definition-runtime/tasks.md)
+passes. The separate [#256 ratio-contract decision](https://github.com/skaphos/fathom/issues/256)
+is still a release dependency; this feature does not resolve it.
+
+Before upgrading, run `fathomctl definition collisions` from the **target**
+release. Its printed version/build and bundled compiled inventory are the
+comparison authority. A collision exits 1; missing build metadata, inventory
+or cluster verification exits 2. Review and remove conflicting runtime names
+before upgrading. Follow the [runtime definition guide](docs/guides/addon-definitions.md)
+to render offline grants, install the definition and dedicated reader account,
+then create a disabled binding with their live UIDs. Recreating either resource
+requires a new reviewed binding; status alone never delegates authority.
+
+For rollback, disable each binding and, while the runtime loader and leader
+election still run, independently verify a current leader's matching-generation
+drain with `fathomctl definition drain`. Revoke its reader and impersonation
+grants, then export complete runtime state before turning runtime loading off or
+downgrading. Store the exported files outside the cluster before replacing the
+binary. Fathom v0.5.1 lacks the newer `status.lastSuccessfulEvaluation`,
+freshness and `latestAttempt` fields; an older binary may replace or remove those
+status fields. Transition-only reports may also omit the newest same-verdict
+revision/evidence. Back up full AddonCheck objects and status as both YAML and
+JSON, not just HealthReports, definitions and bindings. After an older-binary
+rollback, stop all old pods and run the new binary with runtime loading off,
+bindings disabled and reader/impersonation grants revoked. Restore each affected
+AddonCheck's exported raw status through the status subresource only after
+checking its unchanged UID and generation; use a JSON Patch resourceVersion test
+to reject concurrent writes. Verify the original evidence and `observedAt`, and
+leave immutable HealthReports untouched. The exact backup and restore commands
+are in the [runtime definition guide](docs/guides/addon-definitions.md#changes-drain-and-rollback).
+The bounded source-built v0.5.1 downgrade, guarded restore and fresh same-verdict
+re-enable trial passed; see the [operations qualification record](specs/012-addon-definition-runtime/operations-qualification.md).
+This does not qualify a released chart upgrade or historical new-builtin behavior.
+Give the CLI
+principal `get` on the exact operator-namespace Lease and binding. Drain is an
+observation with a leadership race after the final read, not atomic RBAC
+revocation. Retain definitions, bindings, CRDs and HealthReport history; stale or
+unavailable evidence keeps its original source and time. A completed all-Skipped
+run records fresh Skipped evidence with `NoChecksEvaluated` coverage. Before
+re-enabling, repeat target-release collision preflight, UID and grant review,
+Lease configuration checks, and a fresh run. The
+[clarification supplement](specs/012-addon-definition-runtime/contracts/decision-supplement.md)
+defines the election, Skipped and target-inventory decisions.
+Same-UID definition edits retain delegation and require Git review; a recreated
+definition or reader account needs a fresh binding. The new resources' alpha
+schema track is separate from the
+[`v1alpha1` to `v1` freeze issue #149](https://github.com/skaphos/fathom/issues/149).

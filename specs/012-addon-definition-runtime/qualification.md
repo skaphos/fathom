@@ -1,0 +1,148 @@
+<!--
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
+SPDX-License-Identifier: MIT
+-->
+# Runtime qualification evidence
+
+**Date**: 2026-09-22  
+**Status**: The isolated pre-compatibility and combined ContractVersion 1.1 full suites passed. Feature PR [#352](https://github.com/skaphos/fathom/pull/352) is published for review; ContractVersion 1.1 is implemented and merged locally through [#351](https://github.com/skaphos/fathom/pull/351), whose upstream PR remains open (not draft) and is still the release gate. All 64 tasks are complete.
+
+This record preserves the FR, numeric and lifecycle coverage mapping from the
+2026-09-22 audit. Component evidence means unit, fake-client, envtest or started
+manager tests. Cluster evidence means Docker/Kind execution against the real API
+server. Exact numeric boundaries, injected panic recovery and impossible-under-
+normal-admission collision fixtures belong to component tests; real permissions,
+delegation, lifecycle, drain, rollback and hostile-input isolation belong to the
+cluster suite. The operator has no fault-injection control.
+
+The cited paths and named test declarations were checked against the current tree.
+The current map incorporates the completed isolated run; earlier failed or
+contaminated runs remain explicitly historical in execution.md.
+
+## Current qualification state
+
+- The pre-compatibility isolated pinned full suite ran all 105 of 105 specs in
+  1422.543s (Go package time 1424.597s): 105 passed, 0 failed, 0 pending and 0
+  skipped, with
+  all addons included. All ten runtime scenarios passed, including startup
+  collision/restart and metrics-off actual Pass/403, preserved Pass, recovery
+  and no duplicate report. The isolated `fathom-feature012-final` cluster was
+  deleted by the task; the exact command and log are recorded in execution.md.
+  The combined ContractVersion 1.1 run then passed 105/105 in 1410.503s
+  (1412.630s package time), also with zero failures, pending or skips.
+- T062 is closed with registry (1.066s), app (13.102s), and controller (46.055s)
+  race passes;
+  `internal/app/runtime_wiring_test.go:TestStoredBuiltinCollisionIsBarredBeforeFirstReconcile`,
+  `internal/adapter/registry/runtime_test.go:TestStartupUnknownClaimNeedsDirectConfirmationAfterCachedReconcile`,
+  `TestStartupClaimRejectsStaleGenerationReconciliation`, and
+  `internal/controller/addondefinition_lifecycle_test.go:TestStartupReservationReleasesAfterTerminalEligibility`
+  cover provisional UID/generation claims, uncached reads and terminal
+  reconciliation. T063's component references include
+  `internal/app/impersonation_namespace_test.go:TestDefaultControllers_InClusterRequiresNamespace`,
+  `internal/controller/addoncheck_impersonation_test.go:TestRunAddonCheckFailsClosedWhenNamespaceEmptyInCluster`,
+  and `internal/app/run_test.go:TestBuildManagerOptions_LeaderElectionNamespace`.
+  T063's host namespace fix is red-to-green with a 13.021s app race pass; its
+  separate Kind host rerun also passed lease acquisition, builtin advancement and
+  operator restoration.
+- An exact Dockerfile v0.5.1 downgrade stripped new status fields. Guarded restore
+  under the current default-off binary preserved original evidence and identical
+  unchanged reports, and fresh same-verdict re-enable passed in a separate Kind
+  trial. The cross-version stored-collision trial passed: the old v0.5.1 binary
+  advanced while a valid stored CoreDNS definition existed, target CLI exit 1 was
+  observed, the fixed target image produced `Ready=False/BuiltinCollision` with
+  unchanged `LastRunTime`, and deleting the conflict restored Pass. Both versions
+  already ship CoreDNS, so this is not historical new-builtin coverage; component
+  tests cover new-builtin registration. Exact operations evidence is recorded in
+  [operations-qualification.md](operations-qualification.md) and [execution.md](execution.md).
+  T050, T055, T056, T061, T062 and T063 are complete. T054 and T064 are
+  complete; the feature PR is published and the upstream #351 merge remains the
+  external release gate.
+- T064's signed correction (`e08f9af`) adds the fresh policy fence and shared
+  validation path. Final CI, coverage, generated checks, REUSE and graph update
+  passed. The dedicated ContractVersion 1.1 Kind run passed all 105 specs; the
+  full controller suite passed and the corrected race rerun passed after an
+  initial timing-only failure.
+
+## Functional requirements
+
+| Requirement | Component evidence | Live/qualification evidence |
+| --- | --- | --- |
+| FR-001 ordered typed authoring/references | `api/v1alpha1/addondefinition_types_test.go:TestAddonDefinitionAdmission`; `api/v1alpha1/addondefinition_payloads_test.go:TestAddonDefinitionAllPayloadAdmission`; `internal/adapter/declarative/runtime_compile_test.go:TestRuntimeCompilationPreservesOrderAndSnapshot`, `TestRuntimeVersionSourceMustResolveExactlyOnce` | The isolated 105-spec suite passed all 105 scenarios, including stored definition admission/evaluation |
+| FR-002 exact definition/SA incarnation and scope | `api/v1alpha1/addondefinitionbinding_types_test.go:TestAddonDefinitionBindingAdmission`; `internal/adapter/impersonation/runtime_test.go:TestRuntimeAuthorityRejectsIdentityConfusion`; `internal/controller/addondefinition_lifecycle_test.go:TestRecreatedDefinitionRequiresReauthorizationOfTheNewUID`, `TestDedicatedServiceAccountUniquenessAndExclusions` | The isolated 105-spec suite passed same-UID retarget, identity recreation/borrowing and out-of-scope lifecycle scenarios; the bounded cross-version stored-collision trial also passed |
+| FR-003 delegated read-only transport/discovery/helpers | `internal/adapter/impersonation/runtime_test.go:TestRuntimeDiscoveryUsesOnlyBoundIdentity`, `TestRuntimeClientRefusesOutOfScopeDefinition`; `internal/adapter/runtime/transport_test.go:TestTransportRejectsUnauthorizedRoutesBeforeIO`, `TestTransportHelperReadsShareIdentityAndScope` | The isolated suite passed delegated discovery 403 without fallback, held reads/timeouts and recovery; T063's separate Kind host run passed the corrected namespace and lease path. Missing factory/local configuration remains component/app-wiring proof |
+| FR-004 deterministic review-only tooling/collision inventory | `pkg/addondefinition/render_test.go:TestRenderStagedIdentityAndGrants`; `pkg/addondefinition/grants_test.go:TestOfflineGrantsDoNotBroadenMixedScope`; `internal/cli/definition_bind_test.go:TestDefinitionBindReviewedUIDs`; `internal/cli/definition_collisions_test.go:TestDefinitionCollisions` | Reviewed rendering and target-version inventory are covered by component/CLI tests; the isolated suite passed startup collision, target CLI exit 1 and collision recovery |
+| FR-005 actual-request diagnostics | `internal/adapter/runtime/diagnostics_test.go:TestPermissionsUseOnlyActualRequests`, `TestPermissionDeclarationsAreAdvisory`; `internal/adapter/impersonation/runtime_test.go:TestRuntimeDiagnosticsSurviveWithMetricsOff` | The isolated suite passed real discovery 403/no-fallback and metrics-off Pass/403, Pass preservation, recovery and no duplicate report |
+| FR-006 immutable revisions/removal/collisions | `internal/adapter/registry/runtime_test.go:TestSetRuntimeReplacementIsOwnerAware`, `TestRuntimeSnapshotHandedOutIsImmutable`, `TestRuntimeCollisionWithBuiltinSuppressesBothCandidates`; `internal/controller/addondefinition_lifecycle_test.go:TestEditedDefinitionReplacesSnapshotWithTheNewRevision`, `TestBuiltinCollisionSuppressesBothCandidates` | The isolated suite passed held valid-edit discard/recovery, definition history, startup collision and recovery; both tested versions already ship CoreDNS |
+| FR-007 final context fences/publication rejection | `internal/controller/addoncheck_runtime_test.go:TestRuntimeFenceCapturesTheFullPublicationContext`, `TestPublicationCompareAndSwapsAgainstTheFencedRevision`, `TestObservedRevocationCancelsTheRunAndRequeuesCurrentInputs` | The isolated suite passed held valid-edit discard/recovery and active-read revocation with no publication; exact single-attempt superseded/revocation reason ordering remains component proof |
+| FR-008 evidence/freshness/retries/Skipped | `internal/controller/addoncheck_runtime_test.go:TestAFailedAttemptPreservesEvidenceAndNeverRenewsItsObservationTime`, `TestAgedPassEvidenceGoesStaleWithoutLosingItsPassVerdict`, `TestCompletedAllSkippedRunReplacesEvidenceAndAdvancesItsObservation`, `TestPassToSkippedReplacesEvidenceAndCreatesATransitionReport`, `TestSkippedToSkippedUpdatesEvidenceWithoutCreatingAReport`; `internal/adapter/runtime/scheduler_test.go:TestSchedulerBackoffAndMissingInputs` | The isolated suite passed aged evidence mirrored through HealthCheck/ClusterHealth, denied-read retention and Pass→Skipped history |
+| FR-009 transition-only history/ClusterHealth source | `internal/controller/addoncheck_runtime_test.go:TestAnUnchangedVerdictUnderANewRevisionUpdatesEvidenceButAddsNoReport`, `TestAReportCarriesThePublishedVerdictNotOneRecomputedAtReportTime`; `internal/controller/healthcheck_controller_test.go` ClusterHealth status-only spec | The isolated suite passed aged evidence mirroring and unchanged-report behavior; T061 is complete |
+| FR-010 election and verified drain | `internal/app/runtime_leadership_test.go:TestRuntimeAdmissionAndDrainWaitForTheTakeoverGrace`, `TestLeadershipLossTerminatesWithoutReacquisition`; `internal/controller/addondefinitionbinding_controller_test.go:TestDrainAcknowledgementPublishesTheEvidenceTheCLIVerifies`; `internal/cli/definition_drain_test.go:TestIndependentDrainVerification`; `internal/app/run_test.go:TestRun_RuntimeEnabledWithoutElectionStillStartsBuiltIns` | The isolated suite passed startup collision/restart, election, verified drain and metrics-off epoch/drain |
+| FR-011 all numeric caps/overrides | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced`; `internal/adapter/declarative/runtime_compile_test.go:TestRuntimePolicyRejectsInvalidOverridesBeforeReads` | Exact boundaries remain component evidence. The isolated suite passed hostile ConfigMap input, metrics-off 403/Pass/recovery and compiled-peer progress |
+| FR-012 panic isolation/partial verdict/fairness | `internal/adapter/runtime/runner_test.go:TestRunnerRecoversCompilationAndEvaluationPanic`, `TestRunnerPanicDoesNotCancelConcurrentPeer`; `internal/adapter/runtime/pool_test.go:TestRuntimePoolRecoversHandlerPanicAndPreservesPeer`; `internal/adapter/runtime/result_test.go:TestResultFailureDiscardsPartialSuccessAndOwnsSnapshot` | The isolated suite passed held timeouts with a compiled peer continuing and the oversized helper path; no production panic hook is used |
+| FR-013 default-off builtins/security gate | `internal/app/runtime_wiring_test.go:TestRuntimeLoadingUnavailableRegistersNothingRuntime`, `TestAttachedGateAndPoolDriveDispatchAndExecution`; `internal/adapter/registry/runtime_test.go:TestBuiltinSemanticsUnchangedByRuntimeEntries` | Default-off and opt-in runtime scenarios passed, including startup/restart and metrics-off paths |
+| FR-014 compatibility and #256 | `internal/adapter/declarative/runtime_compile_test.go:TestRuntimeCompilerRejectsUnsupportedAndCancelledInput`; `internal/adapter/registry/runtime_test.go:TestSetRuntimeEqualGenerationRepublishesTheRecompile`; `internal/controller/addoncheck_controller_test.go:TestReconcilePreservesRuntimeWorkerPolicyConditions`; `internal/controller/addoncheck_runtime_test.go:TestRuntimePolicyIsValidatedOnTheFencedCheckBeforeRun` | v0.5.1 exact-Dockerfile downgrade, guarded restore, fresh same-verdict re-enable and cross-version stored-collision recovery passed separate Kind trials; combined ContractVersion 1.1 passed, including the invalid-ratio rejection/recovery step in `test/e2e/addondefinition_test.go:It("uses only a dedicated, UID-bound identity to produce attributed evidence")`; upstream [#351](https://github.com/skaphos/fathom/pull/351) remains the release gate |
+| FR-015 installation/migration/rollback/limits | `pkg/addondefinition/render_test.go:TestRenderStagedIdentityAndGrants`; `internal/cli/definition_drain_test.go:TestDefinitionDrainCommandDisplaysObservedEpochAndNeverWrites` | Guarded v0.5.1 downgrade/restore and fresh same-verdict re-enable passed separately with identical reports; the operations record is complete |
+| FR-016 direct rows and real acceptance | `internal/controller/runtime_rbac_guard_test.go:TestRuntimeDefinitionsAddNoForbiddenOperatorGrants`, `TestRuntimeLeaseAccessStaysInNamespacedElectionRole`; `internal/controller/addoncheck_controller_test.go:TestReconcilePreservesRuntimeWorkerPolicyConditions` plus maps below | The pre-compatibility and combined ContractVersion 1.1 105-spec gates passed, including the second policy-validation scenario. T054, T059 and T064 are complete; #351 remains the upstream release gate |
+
+## Numeric contract rows
+
+| Row | Component evidence and exact assertions | Boundary interpretation / qualification |
+| --- | --- | --- |
+| Definition | `pkg/addondefinition/bounds_test.go:TestCanonicalDefinitionByteBoundary` admits 262144 canonical bytes and rejects 262145; `TestDefinitionStructuralBoundaries/families` and `/checks` exercise 16/17 and 32/33; `api/v1alpha1/addondefinition_limits_test.go:TestDefinitionMaximumCheckAdmissionCost` admits 16×32 checks through envtest and rejects a 17th family; `TestDefinitionCanonicalByteCapAfterAdmissionDefaults` creates, gets and validates the 262144-byte stored/defaulted spec through envtest. | No separate 512/513 total-check fixture is needed: 513 is impossible under the closed 16×32 typed schema. The maximum-count fixture uses small checks, while the stored/defaulted maximum-byte path is covered separately. |
+| Strings/maps/lists | `TestDefinitionStructuralBoundaries/string bytes` and `/outcome map` exercise 1024/1025 bytes and 32/33 entries; `TestDefinitionStringBytesAndUTF8/multibyte at byte cap`, `/multibyte over byte cap`, `/invalid UTF8` distinguish bytes from runes. `api/v1alpha1/addondefinition_limits_test.go:TestDefinitionSchemaLimitParity` pins selected schema limits; `api/v1alpha1/addondefinition_payloads_test.go:TestPayloadStructuralContractRejection` rejects over-limit payload fields through envtest. Named 32/33 list cases are covered in the structural boundary table. | Depth 8 is reachable and depth 9 is impossible under the closed typed schema; there is no generic nested-list extension. The 1024-codepoint case is entailed by the enforced 1024 UTF-8-byte cap, so neither requires a separate gap. |
+| Names/identifiers | `TestDefinitionStructuralBoundaries/family name` and `/component` exercise 63/64; `pkg/addondefinition/bounds_test.go:TestDefinitionResourceSegmentAndIdentifierBoundaries` covers representative legal 253/illegal 254 workload names, API groups, resource plurals and discovery segments and rejects non-ASCII family identifiers; `TestPodProjectionSelectorUsesKubernetesLabelValueLimit` accepts selector length 63 and rejects 64; `TestRuntimeReadDeclarationGrammar` rejects malformed read paths. | Component authoring/compiler coverage is complete for these reachable boundaries; no additional live numeric smoke is implied. |
+| Binding/target scope | `internal/adapter/runtime/testutil/fixtures_test.go:TestNamespaceAndUIDFixturesExerciseBindingLimits` exercises 32/33 namespaces and 128/129 UID bytes against `ValidateBinding`; `api/v1alpha1/addondefinitionbinding_types_test.go:TestBindingMaximumContractAndStatusAdmission` admits the maximum typed binding and status through envtest; `TestBindingTypedSpecCannotReachSixteenKiB` measures a maximum-length escaped typed fixture at 4115 bytes; `TestAddonDefinitionBindingAdmission/wildcard scope` rejects `*`. | A 16 KiB typed binding cannot be reached under the closed schema; the measured maximum-length fixture is below 4.2 KiB. The isolated suite passed Kind scope/UID changes in `test/e2e/addondefinition_test.go`. |
+| Version expressions | `TestRangeAndSelectorBoundaries/comparators`, `/alternatives`, `/bytes` exercise 16/17, 8/9 and 256/257; `TestDefinitionStructuralBoundaries/API versions` exercises 8/9. | Exact component cases are the numeric evidence; live version-source behavior remains covered by the separate authority/lifecycle acceptance where applicable, with no additional per-row HTTP smoke gate. |
+| Selectors/field paths | `TestDefinitionStructuralBoundaries/field segments` and `/field segment bytes` exercise 16/17 and 128/129; `TestRangeAndSelectorBoundaries` exercises 32/33 match-label terms and 32/33 values for one expression; `TestPodProjectionSelectorUsesKubernetesLabelValueLimit` accepts 63 and rejects 64; `TestPayloadStructuralContractRejection` rejects schema-over-limit fields. | Kubernetes selector grammar makes the effective value limit 63/64, so a generic 256/257 selector-value fixture is not reachable through the typed schema. |
+| YAML/annotations | `internal/adapter/declarative/runtime_parser_test.go:TestRuntimeConfigMapParserBoundaries/{bytes at,bytes over,nodes at,nodes over,depth at,depth over,alias}` drives 64 KiB, 4096 nodes, depth 16 and alias rejection; `TestRuntimeAnnotationByteBoundary` drives 1024/1025 bytes. | Exact thresholds are component obligations. The isolated suite passed the live oversized ConfigMap/peer-isolation helper; no separate live annotation smoke is implied. |
+| API response | `internal/adapter/runtime/transport_test.go:TestTransportBoundsDecodedErrorAndSuccessBodies` rejects over-2-MiB decoded success/error bodies, including gzip; `TestTransportDeliversDecompressedBodies/compressed body decoding exactly to the per-request cap` verifies the accepted boundary; `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxResponseBytes,MaxRunResponseBytes}` drives 2 MiB and 16 MiB at/over. | Exact response/error/discovery thresholds are component evidence; no additional live HTTP fixture is implied by the numeric row. |
+| Lists/work | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxPageObjects,MaxRunObjects,MaxRunRequests,MaxObjectVisits}` drives 100/101, 1000/1001, 100/101 and 100000/100001; `internal/adapter/runtime/pagination_test.go:TestWalkPagesRefusesContinuationAtRunObjectCap`, `TestWalkPagesStopsAtTheRequestCap`, `TestWalkPagesDoesNotPublishTruncatedLists` assert whole-list failure, not partial success. | Exact pagination/continuation thresholds are component evidence; real-cluster peer progress and hostile-input scenarios remain required separately, without an additional per-row pagination smoke gate. |
+| Object traversal | `internal/adapter/runtime/transport_test.go:TestTransportTargetObjectAndPageBounds/{nodes at cap,nodes over cap,depth at cap,depth over cap}` drives 32768/32769 nodes and depth 64/65; `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxObjectNodes,MaxObjectDepth}` independently drives the same limits. | Kind hostile-input smoke is YAML size, not an oversized Kubernetes object graph; exact graph caps have component evidence. |
+| Time | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxRunDuration,MaxRequestDuration,MaxCompileDuration}` checks 30s clamp, 5s request deadline and 1s compile cutoff; `TestBudgetRequestContextClampsToRemaining` and `internal/controller/addoncheck_runtime_test.go:TestRunDeadlineIsTheCheckTimeoutAndOneBudgetCoversTheWholeRun` check remaining-time behavior. | `test/e2e/addondefinition_test.go:It("fences delegated discovery, timeout, revocation and valid edits without manager fallback")` passed held-read timeout, aging and compiled-peer progress; the isolated suite also passed the strengthened scenarios. |
+| Results | `internal/adapter/runtime/result_test.go:TestResultBoundaries/{entries,message,details}` exercises 1000/1001, 1024/1025 bytes and 32/33; `TestSerializedEvidenceExactBoundary` exercises 262144/262145 serialized bytes; `TestResultFailureDiscardsPartialSuccessAndOwnsSnapshot` checks no partial healthy evidence. | The isolated suite passed denied-read/hostile evidence retention and no partial publication; no live result-size fixture is required by the accepted split. |
+| Snapshot cache | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxCachedRevisions,MaxConcurrentRuns}` drives 128/129 idle and 4/5 active limits; `internal/adapter/runtime/cache_test.go:TestCacheIdleLRUAndActiveBounds`, `TestCachePinsSurviveIdleEvictionAndCompileOutsideLock` verify eviction/pinning. | Component proof is appropriate; cache occupancy has no live observability contract. |
+| Scheduling | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxConcurrentRuns,MaxRunsPerDefinition,MaxRunsPerCheck,MaxQueuedWakesPerCheck,RequestsPerSecond,RequestBurst}` exercises caps; `internal/adapter/runtime/scheduler_test.go:TestSchedulerLimitsAndDefinitionFairness` asserts peer admission; `internal/adapter/runtime/transport_test.go:TestIndependentRuntimeTransportsShareRequestRate` checks one shared 10 QPS/burst-20 limiter. | The isolated suite passed compiled-peer progress under held reads and hostile input. Exact slot/fairness contention across runtime definitions is component evidence under the approved split. |
+| Recovery/retry | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{InitialRetryBackoff,MaxRetryBackoff,MaxRetryJitterPercent,MissingInputPoll}` and `internal/adapter/runtime/scheduler_test.go:TestSchedulerBackoffAndMissingInputs`, `TestSchedulerCoalescesChurnAndKeepsCheckSlot` check 5/10/20/40/60 seconds, 0–20% jitter, 60s missing-input poll and one queued wake. | The isolated suite observed revocation/recovery and held-read recovery; exact backoff timing remains component evidence. |
+| Internal retry | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced/{MaxRequestRetries,MaxPaginationRestarts}` permits the initial request plus two retries, rejects a fourth attempt, and drives one/two restarts; `internal/adapter/runtime/transport_test.go:TestTransportChargesRetriesAndDiscoveryToRunBudget`, `TestTransportLimitsHiddenRetries` charge hidden requests; `internal/adapter/runtime/pagination_test.go:TestPaginationRestartIsSharedAcrossRun` checks one restart across reads. | Exact retry/restart counters are component evidence; the isolated suite passed the related real permissions, lifecycle and hostile-input progress. |
+
+## Lifecycle contract rows
+
+| Event | Component evidence | Live evidence |
+| --- | --- | --- |
+| Missing definition | `internal/controller/addondefinition_lifecycle_test.go:TestMissingDefinitionLeavesNoRuntimeSnapshot`; `internal/controller/addoncheck_runtime_test.go:TestUnknownAddonTypeRetainsEvidenceAndReportsUnknownWhenThereIsNone` | The isolated 105-spec suite passed the missing-definition/recovery scenario |
+| Valid definition added | `internal/controller/addondefinition_lifecycle_test.go:TestValidDefinitionActivatesOnlyAfterValidBindingAndCompilation` | The isolated suite passed real opt-in evidence using a dedicated, UID-bound identity |
+| Edited valid revision | `internal/controller/addondefinition_lifecycle_test.go:TestEditedDefinitionReplacesSnapshotWithTheNewRevision`; `internal/controller/addoncheck_runtime_test.go:TestAReplacedSnapshotSupersedesACompletedRun` | `test/e2e/addondefinition_test.go:It("fences delegated discovery, timeout, revocation and valid edits without manager fallback")` passed held valid-edit discard/recovery |
+| Invalid edit stored | `internal/controller/addondefinition_lifecycle_test.go:TestInvalidEditStoredRemovesEligibility` | The isolated 105-spec suite passed the stored-invalid revision lifecycle scenario |
+| Unknown kind | `api/v1alpha1/addondefinition_payloads_test.go:TestPayloadStructuralContractRejection`; `internal/controller/addondefinition_lifecycle_test.go` admission spec | The isolated suite passed inert default-off behavior and unknown-payload rejection |
+| Definition deleted | `internal/controller/addondefinition_lifecycle_test.go:TestDeletedDefinitionRemovesOnlyItsOwnSnapshot` | The isolated suite passed old-evidence retention across deletion and new-UID binding |
+| Same name recreated | `internal/controller/addondefinition_lifecycle_test.go:TestRecreatedDefinitionRequiresReauthorizationOfTheNewUID` | `It("retains old evidence across definition deletion and requires a new UID binding")` passed in the isolated suite |
+| Binding/SA revoked or replaced | `internal/controller/addondefinition_lifecycle_test.go:TestBindingRevocationRemovesEligibility`; `internal/controller/addondefinitionbinding_controller_test.go:TestDeletingABindingCancelsThisSessionsWork` | The isolated suite passed active-read binding revocation and durable drain; `It("does not inherit authority when the dedicated ServiceAccount is recreated")` passed recreated-SA recovery |
+| API read denied | `internal/controller/addondefinition_lifecycle_test.go:TestDeniedControlPlaneReadReportsAccessDenied`; `internal/adapter/runtime/diagnostics_test.go:TestPermissionsUseOnlyActualRequests` | The isolated suite observed real delegated discovery 403 without fallback and metrics-off 403/Pass/recovery |
+| Revocation during run | `internal/controller/addoncheck_runtime_test.go:TestObservedRevocationCancelsTheRunAndRequeuesCurrentInputs` | `test/e2e/addondefinition_test.go:It("fences delegated discovery, timeout, revocation and valid edits without manager fallback")` passed active-read revocation, durable drain and no publication; exact attempt reason remains component proof |
+| Restart/partial sync | `internal/controller/addondefinition_lifecycle_test.go:TestUnsynchronizedCacheBlocksRuntimePublication`; `internal/app/runtime_leadership_test.go:TestRuntimeLeadershipOpensOnlyAfterCacheSyncAndGrace` | The isolated suite passed strengthened startup collision/restart behavior |
+| Binding/grants recover | `internal/controller/addondefinition_lifecycle_test.go:TestRecoveredBindingRepublishesRuntimeAuthority`; `internal/controller/addoncheck_runtime_test.go:TestARecoveredRunClearsTheStaleFreshnessExplanation` | The isolated suite passed held valid-edit recovery and grant/binding restoration |
+| Edit during evaluation | `internal/controller/addondefinition_lifecycle_test.go:TestEditDuringReconcilePublishesOnlyTheValidatedRevision`; `internal/controller/addoncheck_runtime_test.go:TestAReplacedSnapshotSupersedesACompletedRun` | `test/e2e/addondefinition_test.go:It("fences delegated discovery, timeout, revocation and valid edits without manager fallback")` passed a held valid edit with discard/recovery; exact interleaving precedence remains component proof |
+| Two owners of one identity | `internal/controller/addondefinition_lifecycle_test.go:TestTwoRuntimeOwnersOfOneIdentityFailClosed`; `internal/adapter/registry/runtime_test.go:TestTwoRuntimeOwnersFailClosedWithoutArrivalOrderWinner` | Normal API admission makes this impossible; legacy collision remains component-only as intended |
+| Builtin collision | `internal/controller/addondefinition_lifecycle_test.go:TestBuiltinCollisionSuppressesBothCandidates`; `internal/cli/definition_collisions_test.go:TestDefinitionCollisions` | The isolated suite passed same-binary startup collision, unchanged LastRunTime and recovery; cross-version stored collision also passed target CLI exit 1 and recovery, while new-builtin registration remains component evidence |
+| Deadline/size/parser/read exhausted | `internal/adapter/runtime/budget_test.go:TestNumericRowsAreEnforced`; `internal/adapter/runtime/runner_test.go:TestRunnerCompilationDeadlineAndFailurePrecedence`; `internal/adapter/declarative/runtime_parser_test.go:TestRuntimeAnnotationByteBoundary`; `internal/controller/addondefinition_lifecycle_test.go:TestCompilationBudgetFailureLeavesOtherDefinitionsRunning` | The isolated suite passed held timeout, peer progress and oversized helper input; exact attempt precedence remains component proof |
+| Evidence ages out | `internal/controller/addoncheck_runtime_test.go:TestAgedPassEvidenceGoesStaleWithoutLosingItsPassVerdict`; `internal/controller/healthcheck_controller_test.go` stale-age spec | The isolated suite verified aged evidence mirrored through HealthCheck and ClusterHealth |
+
+## Focused security review
+
+The scoped review found no validated findings in the runtime authority, budget,
+cancellation or publication paths. Scope covered `internal/app/runtime_wiring.go`,
+`internal/controller/addoncheck_runtime.go`, `internal/adapter/impersonation/runtime.go`,
+`internal/adapter/runtime/{runner,transport,budget}.go`, and direct control-reader,
+response, worker-pool and leadership seams. `go test -race` for runtime and
+impersonation passed.
+
+The review is not a repository-wide security scan and does not claim the system is
+vulnerability-free. Scanner output included an in-scope G101 path literal for the
+mounted Kubernetes ServiceAccount token (a path, not a credential) and unrelated
+integer-conversion findings; none was validated as a vulnerability in the reviewed
+path. Real RBAC, Lease and startup-barrier behavior has functional cluster evidence
+recorded above; this is not a full cluster or dependency/image security audit.
+Arbitrary aggregated-API behavior beyond the fixtures and unrecoverable process
+faults were not exhaustively tested. The observation-based leadership limitation
+remains documented. Independent review of T062/T063 also found and corrected the
+provisional-claim recovery race, then found no further actionable issue.
