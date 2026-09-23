@@ -136,8 +136,32 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		run := millisField("in-cluster", "{.status.targetResults[0].runMillis}")
 		Expect(latency).To(BeNumerically("<", 1000),
 			"latencyMillis must be the lookup alone, not probe Pod start-up (runMillis=%d)", run)
-		Expect(run).To(BeNumerically(">", 0), "runMillis must record the pair's wall time")
-		Expect(run).To(BeNumerically(">=", latency), "the pair's wall time contains its lookup")
+		// Scheduling, image start and polling put a real probe Pod's lifecycle
+		// well above any in-cluster lookup; equal figures would mean the two
+		// fields are still the same measurement.
+		Expect(run).To(BeNumerically(">", latency),
+			"runMillis (%d) must include Pod start-up on top of the lookup (latencyMillis=%d)", run, latency)
+
+		By("carrying the same separation into the HealthReport history")
+		// History is transition-only, so the report may come from an earlier
+		// run than status: assert the split, not equality with status.
+		reportName := dnsCheckField("in-cluster", "{.status.lastReportName}")
+		Expect(reportName).NotTo(BeEmpty())
+		detailsJSON, getErr := utils.Run(exec.Command("kubectl", "get", "healthreport", reportName,
+			"-n", dnsResolutionNamespace, "-o", "jsonpath={.spec.checks[0].details}"))
+		Expect(getErr).NotTo(HaveOccurred())
+		var details map[string]string
+		Expect(json.Unmarshal([]byte(detailsJSON), &details)).To(Succeed(), "details: %s", detailsJSON)
+		reportRun, parseErr := strconv.ParseInt(details["runMillis"], 10, 64)
+		Expect(parseErr).NotTo(HaveOccurred(), "HealthReport details must carry runMillis: %v", details)
+		reportLatency := int64(0)
+		if raw, ok := details["latencyMillis"]; ok {
+			reportLatency, parseErr = strconv.ParseInt(raw, 10, 64)
+			Expect(parseErr).NotTo(HaveOccurred(), "latencyMillis %q is not an integer", raw)
+		}
+		Expect(reportLatency).To(BeNumerically("<", 1000),
+			"the report's latencyMillis must be the lookup alone (runMillis=%d)", reportRun)
+		Expect(reportRun).To(BeNumerically(">", reportLatency))
 
 		By("confirming a probe Pod was scheduled in the check's namespace, not the operator's")
 		out, err := utils.Run(exec.Command("kubectl", "get", "events",

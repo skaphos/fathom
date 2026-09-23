@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -495,16 +496,55 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(unmeasured.LatencyMillis).To(BeZero(), "a missing probe figure must not fall back to wall time")
 		Expect(unmeasured.RunMillis).To(BeNumerically(">=", podLifecycle.Milliseconds()))
 
+		// The history record must carry the same figures as status, not a
+		// second measurement: one run, so the values are exactly equal.
 		reports := dnsHealthReports(ctx, ns, "timing")
 		Expect(reports).To(HaveLen(1))
+		Expect(reports[0].Spec.Checks).To(HaveLen(2))
 		for _, c := range reports[0].Spec.Checks {
-			if c.TargetRef.Name == "measured.example.com" {
-				Expect(c.Details).To(HaveKeyWithValue("latencyMillis", "2"))
+			status := targetResultFor(got, c.TargetRef.Name, "A", "cluster")
+			Expect(status).NotTo(BeNil(), c.TargetRef.Name)
+			Expect(c.Details).To(HaveKeyWithValue("runMillis", strconv.FormatInt(status.RunMillis, 10)), c.TargetRef.Name)
+			if status.LatencyMillis > 0 {
+				Expect(c.Details).To(HaveKeyWithValue("latencyMillis", strconv.FormatInt(status.LatencyMillis, 10)), c.TargetRef.Name)
 			} else {
-				Expect(c.Details).NotTo(HaveKey("latencyMillis"))
+				Expect(c.Details).NotTo(HaveKey("latencyMillis"), c.TargetRef.Name)
 			}
-			Expect(c.Details).To(HaveKey("runMillis"))
 		}
+		Expect(reports[0].Spec.Checks).To(ContainElement(And(
+			HaveField("TargetRef.Name", "measured.example.com"),
+			HaveField("Details", HaveKeyWithValue("latencyMillis", "2")))))
+	})
+
+	// #332: a pair that could not be launched still spent wall time against
+	// the run bound (admission, quota, API round-trips), and has no lookup.
+	It("records runMillis without latency for a pair that fails to launch", func() {
+		const launchCost = 150 * time.Millisecond
+		check := createDNSCheck(ctx, ns, "launch-failure", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "rejected.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{delay: launchCost, respond: func(probe.Request) (probe.Result, error) {
+			return probe.Result{}, &probe.LaunchError{Err: fmt.Errorf("admission webhook denied the request")}
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		rejected := targetResultFor(got, "rejected.example.com", "A", "cluster")
+		Expect(rejected.Result).To(Equal("Error"))
+		Expect(rejected.Message).To(ContainSubstring("probe execution failed"))
+		Expect(rejected.LatencyMillis).To(BeZero(), "a pair that never ran has no lookup to report")
+		Expect(rejected.RunMillis).To(BeNumerically(">=", launchCost.Milliseconds()))
+
+		reports := dnsHealthReports(ctx, ns, "launch-failure")
+		Expect(reports).To(HaveLen(1))
+		Expect(reports[0].Spec.Checks).To(HaveLen(1))
+		details := reports[0].Spec.Checks[0].Details
+		Expect(details).To(HaveKeyWithValue("runMillis", strconv.FormatInt(rejected.RunMillis, 10)))
+		Expect(details).NotTo(HaveKey("latencyMillis"))
 	})
 
 	// #332: a probe figure that is not a non-negative int64 is dropped, never
