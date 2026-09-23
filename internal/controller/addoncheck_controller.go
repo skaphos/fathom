@@ -484,7 +484,7 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 			return err
 		}
 		if created {
-			r.pruneHealthReportHistory(ctx, log, check)
+			r.pruneHealthReportHistory(ctx, log, check, persistedReport.Name)
 		}
 		observedAt = persistedReport.Spec.ObservedAt
 		newResult = string(persistedReport.Spec.Result)
@@ -851,7 +851,7 @@ func (r *AddonCheckReconciler) recordRuntimeTransition(
 		return "", err
 	}
 	if created {
-		r.pruneHealthReportHistory(ctx, log, check)
+		r.pruneHealthReportHistory(ctx, log, check, persisted.Name)
 	}
 	check.Status.LastReportName = persisted.Name
 	return persisted.Name, nil
@@ -979,11 +979,19 @@ func runtimeHealthReportForAddonCheck(
 }
 
 // pruneHealthReportHistory enforces Spec.HistoryLimit by deleting the oldest
-// HealthReports owned by check beyond the cap. Failures are logged but not
-// returned: the user-facing write (the new HealthReport) already succeeded,
-// and the next reconcile will retry the prune. The list query is indexed by
-// the source-kind/name labels written in healthReportForAddonCheck.
-func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+// HealthReports owned by check beyond the cap. protectedName is the report
+// created by the current reconcile; keeping it prevents pruning from stranding
+// the LastReportName that the caller publishes after this operation. Failures
+// are logged but not returned: the user-facing write (the new HealthReport)
+// already succeeded, and the next reconcile will retry the prune. The list
+// query is indexed by the source-kind/name labels written in
+// healthReportForAddonCheck.
+func (r *AddonCheckReconciler) pruneHealthReportHistory(
+	ctx context.Context,
+	log logr.Logger,
+	check *fathomv1alpha1.AddonCheck,
+	protectedName string,
+) {
 	limit := defaultHealthReportHistoryLimit
 	if check.Spec.HistoryLimit != nil {
 		limit = int(*check.Spec.HistoryLimit)
@@ -1010,7 +1018,17 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(ctx context.Context, log
 	}
 
 	sort.Slice(reports.Items, func(i, j int) bool {
-		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
+		left, right := &reports.Items[i], &reports.Items[j]
+		if left.Name == protectedName {
+			return false
+		}
+		if right.Name == protectedName {
+			return true
+		}
+		if left.CreationTimestamp.Equal(&right.CreationTimestamp) {
+			return left.Name < right.Name
+		}
+		return left.CreationTimestamp.Before(&right.CreationTimestamp)
 	})
 	excess := len(reports.Items) - limit
 	for i := 0; i < excess; i++ {

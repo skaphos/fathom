@@ -1130,14 +1130,9 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
 		})
 
-		// Seed three HealthReports above the eventual cap. metav1.Time
-		// serializes at second precision (RFC3339, not Nano), so the seeds
-		// may share a second among themselves. We don't care which seed
-		// survives — only that the just-reconciled report does. The 2s
-		// sleep between the seed batch and Reconcile guarantees the new
-		// report's CreationTimestamp is strictly later (in seconds) than
-		// every seed, making the oldest-first prune deterministic at the
-		// new-vs-seed boundary.
+		// Seed three HealthReports above the eventual cap. Creation timestamps
+		// may tie with each other or with the report created by Reconcile; the
+		// retention boundary must still preserve that just-created report.
 		var seeded []string
 		for i := 0; i < 3; i++ {
 			seed := &fathomv1alpha1.HealthReport{
@@ -1158,8 +1153,6 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(k8sClient.Create(ctx, seed)).To(Succeed())
 			seeded = append(seeded, seed.Name)
 		}
-		time.Sleep(2 * time.Second)
-
 		// Reconcile creates a fourth HealthReport, then prunes to limit=2.
 		adapters := registry.New(logr.Discard())
 		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
@@ -1182,9 +1175,8 @@ var _ = Describe("AddonCheck Controller", func() {
 			survivors[r.Name] = true
 		}
 		Expect(survivors[updated.Status.LastReportName]).To(BeTrue(), "newly created HealthReport must survive pruning")
-		// Two of the three seeds must be deleted — but since seeds may share
-		// a CreationTimestamp second, we cannot claim which two. The new-vs-
-		// seed boundary is the only reliably ordered cut.
+		// With the latest report retained, exactly one of the three seeds fills
+		// the remaining history slot.
 		seedSurvivors := 0
 		for _, s := range seeded {
 			if survivors[s] {
@@ -1228,7 +1220,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		}
 
 		(&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
-			pruneHealthReportHistory(ctx, logr.Discard(), check)
+			pruneHealthReportHistory(ctx, logr.Discard(), check, "")
 
 		var reports fathomv1alpha1.HealthReportList
 		Expect(k8sClient.List(ctx, &reports,
