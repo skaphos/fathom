@@ -240,7 +240,9 @@ type DNSTargetResult struct {
 
 	// RunMillis is the wall time Fathom spent performing this pair: probe pod
 	// scheduling, image pull, any admission-injected init containers, the
-	// lookup itself and result collection. When it dwarfs LatencyMillis, pod
+	// lookup itself, result collection and the probe Pod delete request (which
+	// does not wait for termination). It is what the pair costs against the
+	// run bound, not the probe's own runtime. When it dwarfs LatencyMillis, pod
 	// start-up rather than DNS is what consumes the run bound (spec.timeout).
 	// +optional
 	// +kubebuilder:validation:Minimum=0
