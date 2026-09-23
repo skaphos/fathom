@@ -35,6 +35,7 @@ type Guard struct {
 	namespaces  map[string]bool
 	cluster     bool
 	expected    map[schema.GroupVersionKind]bool
+	versions    map[string]bool
 	discoveryMu sync.RWMutex
 	resources   map[schema.GroupVersionResource]discoveredResource
 	discovered  map[string]map[schema.GroupVersionResource]discoveredResource
@@ -49,7 +50,7 @@ func NewGuard(b *Budget, scope api.DefinitionBindingScope, expected map[schema.G
 	}
 	g := &Guard{
 		budget: b, namespaces: map[string]bool{}, cluster: scope.AllowClusterScoped,
-		expected: map[schema.GroupVersionKind]bool{}, resources: map[schema.GroupVersionResource]discoveredResource{},
+		expected: map[schema.GroupVersionKind]bool{}, versions: map[string]bool{}, resources: map[schema.GroupVersionResource]discoveredResource{},
 		discovered: map[string]map[schema.GroupVersionResource]discoveredResource{}, retries: map[string]int{},
 	}
 	for _, ns := range scope.Namespaces {
@@ -60,6 +61,7 @@ func NewGuard(b *Budget, scope api.DefinitionBindingScope, expected map[schema.G
 	}
 	for kind, namespaced := range expected {
 		g.expected[kind] = namespaced
+		g.versions[kind.GroupVersion().String()] = true
 	}
 	return g, nil
 }
@@ -89,8 +91,13 @@ func (t *guardedTransport) RoundTrip(request *http.Request) (*http.Response, err
 	if t.control != nil && !t.control.permits(route) {
 		return nil, b.Fail("ScopeDenied", "request is outside the run's control-plane metadata targets")
 	}
-	if t.control == nil && !route.discovery && !g.permitsResource(route) {
-		return nil, b.Fail("ScopeDenied", "request resource was not mapped from a declared kind by discovery")
+	if t.control == nil {
+		if route.discovery && !g.permitsDiscovery(route) {
+			return nil, b.Fail("ScopeDenied", "request discovery endpoint is not required by a declared kind")
+		}
+		if !route.discovery && !g.permitsResource(route) {
+			return nil, b.Fail("ScopeDenied", "request resource was not mapped from a declared kind by discovery")
+		}
 	}
 	ctx, done := b.RequestContext(request.Context())
 	defer done()
@@ -220,6 +227,10 @@ type discoveredResource struct {
 	namespaced bool
 }
 
+func (g *Guard) permitsDiscovery(route apiRoute) bool {
+	return route.discoveryRoot || route.groupVersion != "" && g.versions[route.groupVersion]
+}
+
 func (g *Guard) permitsResource(route apiRoute) bool {
 	gv, err := schema.ParseGroupVersion(route.groupVersion)
 	if err != nil {
@@ -253,9 +264,9 @@ func (g *Guard) recordDiscovery(
 }
 
 type apiRoute struct {
-	list, discovery           bool
-	groupVersion              string
-	resource, name, namespace string
+	list, discovery, discoveryRoot bool
+	groupVersion                   string
+	resource, name, namespace      string
 }
 
 func (g *Guard) route(req *http.Request) (apiRoute, error) {
@@ -279,7 +290,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 	switch parts[0] {
 	case "api":
 		if len(parts) == 1 {
-			return apiRoute{discovery: true}, nil
+			return apiRoute{discovery: true, discoveryRoot: true}, nil
 		}
 		if !apiVersionToken(parts[1]) {
 			return apiRoute{}, fmt.Errorf("invalid core API version")
@@ -291,7 +302,7 @@ func (g *Guard) route(req *http.Request) (apiRoute, error) {
 		tail = parts[2:]
 	case "apis":
 		if len(parts) == 1 {
-			return apiRoute{discovery: true}, nil
+			return apiRoute{discovery: true, discoveryRoot: true}, nil
 		}
 		if len(validation.IsDNS1123Subdomain(parts[1])) != 0 {
 			return apiRoute{}, fmt.Errorf("invalid API group")

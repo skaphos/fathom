@@ -213,6 +213,57 @@ func TestTransportAllowsOnlyResourcesMappedToDeclaredKinds(t *testing.T) {
 	}
 }
 
+func TestTransportRestrictsDiscoveryToDeclaredVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, body string
+		allowed          bool
+	}{
+		{name: "api root required by mapper", path: "/api", body: `{"kind":"APIVersions","versions":["v1"]}`, allowed: true},
+		{name: "apis root required by mapper", path: "/apis", body: `{"kind":"APIGroupList","groups":[]}`, allowed: true},
+		{name: "declared core version", path: "/api/v1", body: `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":true}]}`, allowed: true},
+		{name: "declared API group version", path: "/apis/apps/v1", body: `{"kind":"APIResourceList","groupVersion":"apps/v1","resources":[{"name":"deployments","kind":"Deployment","namespaced":true}]}`, allowed: true},
+		{name: "declared helper version", path: "/apis/discovery.k8s.io/v1", body: `{"kind":"APIResourceList","groupVersion":"discovery.k8s.io/v1","resources":[{"name":"endpointslices","kind":"EndpointSlice","namespaced":true}]}`, allowed: true},
+		{name: "declared group-only endpoint is unnecessary", path: "/apis/apps", body: `{"kind":"APIGroup","name":"apps"}`},
+		{name: "undeclared version of declared group", path: "/apis/apps/v2", body: `{"kind":"APIResourceList","groupVersion":"apps/v2","resources":[]}`},
+		{name: "unrelated group version", path: "/apis/rbac.authorization.k8s.io/v1", body: `{"kind":"APIResourceList","groupVersion":"rbac.authorization.k8s.io/v1","resources":[]}`},
+		{name: "undeclared core version", path: "/api/v2", body: `{"kind":"APIResourceList","groupVersion":"v2","resources":[]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, closeBudget := execution.NewBudget(context.Background(), time.Minute)
+			defer closeBudget()
+			guard, err := execution.NewGuard(b, api.DefinitionBindingScope{
+				Namespaces: []api.DefinitionDNSLabel{"allowed"}, AllowClusterScoped: true,
+			}, map[schema.GroupVersionKind]bool{
+				{Group: "", Version: "v1", Kind: "ConfigMap"}:                     true,
+				{Group: "apps", Version: "v1", Kind: "Deployment"}:                true,
+				{Group: "discovery.k8s.io", Version: "v1", Kind: "EndpointSlice"}: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			transport := guard.Wrap(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			}))
+			req, _ := http.NewRequest(http.MethodGet, "https://cluster"+tc.path, nil)
+			response, err := transport.RoundTrip(req)
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			if tc.allowed {
+				if err != nil || calls != 1 {
+					t.Fatalf("declared discovery refused: calls=%d err=%v", calls, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "ScopeDenied") || calls != 0 {
+				t.Fatalf("undeclared discovery reached API: calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}
+
 func TestTransportBoundsDecodedErrorAndSuccessBodies(t *testing.T) {
 	for _, status := range []int{200, 403} {
 		for _, compressed := range []bool{false, true} {
@@ -256,14 +307,12 @@ func TestTransportListLimitAndDiscoveryScope(t *testing.T) {
 		{name: "compressed discovery body", path: "/api/v1", body: declared, compressed: true},
 		{name: "mismatched discovery scope", path: "/api/v1", body: `{"apiVersion":"v1","kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap","namespaced":false}]}`, denied: true, reason: "ScopeDenied"},
 		{name: "discovery omits the namespaced flag", path: "/api/v1", body: `{"apiVersion":"v1","kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","kind":"ConfigMap"}]}`, denied: true, reason: "ScopeDenied"},
-		// Root and group routes carry no groupVersion, so they are bounded and
-		// identity-scoped but have no declaration to confirm.
+		// DynamicRESTMapper requires only these two group-agnostic bootstrap
+		// routes. Group-only and undeclared group/version routes remain denied.
 		{name: "root api discovery", path: "/api", body: `{"kind":"APIVersions","versions":["v1"]}`},
 		{name: "root apis discovery", path: "/apis", body: `{"kind":"APIGroupList","groups":[]}`},
-		{name: "group discovery", path: "/apis/apps", body: `{"kind":"APIGroup","name":"apps"}`},
-		// A kind nobody declared is skipped, not denied: the guard only confirms
-		// the scopes the definition actually depends on.
-		{name: "undeclared kind is skipped", path: "/apis/apps/v1", body: `{"kind":"APIResourceList","groupVersion":"apps/v1","resources":[{"name":"deployments","kind":"Deployment","namespaced":false}]}`},
+		{name: "group-only discovery is unnecessary", path: "/apis/apps", body: `{"kind":"APIGroup","name":"apps"}`, denied: true, reason: "ScopeDenied"},
+		{name: "undeclared group version is denied", path: "/apis/apps/v1", body: `{"kind":"APIResourceList","groupVersion":"apps/v1","resources":[{"name":"deployments","kind":"Deployment","namespaced":false}]}`, denied: true, reason: "ScopeDenied"},
 		{name: "unexpected discovery kind", path: "/api/v1", body: `{"kind":"Status","groupVersion":"v1","resources":[]}`, denied: true, reason: "unexpected resource discovery response"},
 		{name: "unexpected discovery groupVersion", path: "/api/v1", body: `{"kind":"APIResourceList","groupVersion":"apps/v1","resources":[]}`, denied: true, reason: "unexpected resource discovery response"},
 		{name: "discovery resources not a list", path: "/api/v1", body: `{"kind":"APIResourceList","groupVersion":"v1","resources":5}`, denied: true, reason: "invalid discovery resources"},
