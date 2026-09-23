@@ -198,7 +198,7 @@ spec:
       enabled: true
       thresholds:
         targets: "kubernetes.default.svc.cluster.local"
-        probeImage: "ghcr.io/skaphos/fathom-probe:v0.5.1" # x-release-please-version
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.6.0" # x-release-please-version
 ```
 
 | Family | Checks | Key thresholds |
