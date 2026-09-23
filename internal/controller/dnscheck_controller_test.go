@@ -464,6 +464,49 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(gauge["healthy.example.com|A|cluster|Pass"]).To(Equal(1.0))
 	})
 
+	// #332: pod start-up must not be reported as lookup latency. On clusters
+	// that inject init containers a pair takes seconds around a millisecond
+	// lookup, so the two timings are recorded apart and never substituted.
+	It("reports the probe-measured lookup time as latency and pod lifecycle as runMillis", func() {
+		const podLifecycle = 250 * time.Millisecond
+		check := createDNSCheck(ctx, ns, "timing", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "measured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "unmeasured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{delay: podLifecycle, respond: func(req probe.Request) (probe.Result, error) {
+			details := map[string]string{"answers": "10.0.0.1"}
+			if req.Target == "measured.example.com" {
+				details["latencyMillis"] = "2"
+			}
+			return probe.Result{Outcome: probe.OutcomePass, Summary: "resolved", Details: details}, nil
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		measured := targetResultFor(got, "measured.example.com", "A", "cluster")
+		Expect(measured.LatencyMillis).To(Equal(int64(2)), "latency is the probe's figure, not the pod's wall time")
+		Expect(measured.RunMillis).To(BeNumerically(">=", podLifecycle.Milliseconds()))
+
+		unmeasured := targetResultFor(got, "unmeasured.example.com", "A", "cluster")
+		Expect(unmeasured.LatencyMillis).To(BeZero(), "a missing probe figure must not fall back to wall time")
+		Expect(unmeasured.RunMillis).To(BeNumerically(">=", podLifecycle.Milliseconds()))
+
+		reports := dnsHealthReports(ctx, ns, "timing")
+		Expect(reports).To(HaveLen(1))
+		for _, c := range reports[0].Spec.Checks {
+			if c.TargetRef.Name == "measured.example.com" {
+				Expect(c.Details).To(HaveKeyWithValue("latencyMillis", "2"))
+			} else {
+				Expect(c.Details).NotTo(HaveKey("latencyMillis"))
+			}
+			Expect(c.Details).To(HaveKey("runMillis"))
+		}
+	})
+
 	// T029 / US2 — FR-036 and SC-105: a pair the spec no longer declares must
 	// leave both the status and the registry, within one run.
 	It("withdraws a removed target's result and metric series", func() {

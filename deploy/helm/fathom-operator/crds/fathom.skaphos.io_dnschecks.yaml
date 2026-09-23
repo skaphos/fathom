@@ -403,8 +403,11 @@ spec:
                       x-kubernetes-list-type: set
                     latencyMillis:
                       description: |-
-                        LatencyMillis is how long the lookup took. It is recorded as evidence
-                        only; slow resolution is not by itself a failure in this API version.
+                        LatencyMillis is how long the lookup took, as measured by the probe
+                        inside its pod. It excludes pod scheduling and start-up, and is absent
+                        when the probe reported no measurement (for example, a pair that was
+                        never reached). It is recorded as evidence only; slow resolution is not
+                        by itself a failure in this API version.
                       format: int64
                       minimum: 0
                       type: integer
@@ -444,6 +447,15 @@ spec:
                       - Skipped
                       - Unknown
                       type: string
+                    runMillis:
+                      description: |-
+                        RunMillis is the wall time Fathom spent performing this pair: probe pod
+                        scheduling, image pull, any admission-injected init containers, the
+                        lookup itself and result collection. When it dwarfs LatencyMillis, pod
+                        start-up rather than DNS is what consumes the run bound (spec.timeout).
+                      format: int64
+                      minimum: 0
+                      type: integer
                   required:
                   - name
                   - recordType

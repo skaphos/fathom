@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,18 @@ func dnsCheckField(name, jsonPath string) string {
 	return strings.TrimSpace(out)
 }
 
+// millisField reads an optional integer status field, treating an omitted
+// (zero-valued) field as 0.
+func millisField(name, jsonPath string) int64 {
+	raw := dnsCheckField(name, jsonPath)
+	if raw == "" {
+		return 0
+	}
+	millis, err := strconv.ParseInt(raw, 10, 64)
+	Expect(err).NotTo(HaveOccurred(), "%s on DNSCheck %s is not an integer: %q", jsonPath, name, raw)
+	return millis
+}
+
 // eventuallyDNSResult waits for a check to settle on a verdict, reporting the
 // summary on failure so a wrong verdict explains itself.
 func eventuallyDNSResult(name, want string) {
@@ -116,6 +129,15 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 
 		Expect(dnsCheckField("in-cluster", "{.status.observedTargets}")).To(Equal("1"))
 		Expect(dnsCheckField("in-cluster", "{.status.targetResults[0].resolver}")).To(Equal("cluster"))
+
+		By("separating the probe-measured lookup time from the probe Pod's lifecycle (#332)")
+		// A sub-millisecond lookup rounds to 0 and is omitted, so empty reads as 0.
+		latency := millisField("in-cluster", "{.status.targetResults[0].latencyMillis}")
+		run := millisField("in-cluster", "{.status.targetResults[0].runMillis}")
+		Expect(latency).To(BeNumerically("<", 1000),
+			"latencyMillis must be the lookup alone, not probe Pod start-up (runMillis=%d)", run)
+		Expect(run).To(BeNumerically(">", 0), "runMillis must record the pair's wall time")
+		Expect(run).To(BeNumerically(">=", latency), "the pair's wall time contains its lookup")
 
 		By("confirming a probe Pod was scheduled in the check's namespace, not the operator's")
 		out, err := utils.Run(exec.Command("kubectl", "get", "events",

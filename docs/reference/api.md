@@ -807,7 +807,8 @@ _Appears in:_
 | `result` _string_ | Result is the outcome for this pair. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
 | `message` _string_ | Message says what was asked and what came back. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
 | `answers` _string array_ | Answers are the records returned, retained as the evidence behind the<br />verdict. |  | MaxItems: 16 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
-| `latencyMillis` _integer_ | LatencyMillis is how long the lookup took. It is recorded as evidence<br />only; slow resolution is not by itself a failure in this API version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `latencyMillis` _integer_ | LatencyMillis is how long the lookup took, as measured by the probe<br />inside its pod. It excludes pod scheduling and start-up, and is absent<br />when the probe reported no measurement (for example, a pair that was<br />never reached). It is recorded as evidence only; slow resolution is not<br />by itself a failure in this API version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `runMillis` _integer_ | RunMillis is the wall time Fathom spent performing this pair: probe pod<br />scheduling, image pull, any admission-injected init containers, the<br />lookup itself and result collection. When it dwarfs LatencyMillis, pod<br />start-up rather than DNS is what consumes the run bound (spec.timeout). |  | Minimum: 0 <br />Optional: \{\} <br /> |
 
 
 #### DefinitionAnnotationStaleness

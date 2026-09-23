@@ -229,11 +229,22 @@ type DNSTargetResult struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	Answers []string `json:"answers,omitempty"`
 
-	// LatencyMillis is how long the lookup took. It is recorded as evidence
-	// only; slow resolution is not by itself a failure in this API version.
+	// LatencyMillis is how long the lookup took, as measured by the probe
+	// inside its pod. It excludes pod scheduling and start-up, and is absent
+	// when the probe reported no measurement (for example, a pair that was
+	// never reached). It is recorded as evidence only; slow resolution is not
+	// by itself a failure in this API version.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	LatencyMillis int64 `json:"latencyMillis,omitempty"`
+
+	// RunMillis is the wall time Fathom spent performing this pair: probe pod
+	// scheduling, image pull, any admission-injected init containers, the
+	// lookup itself and result collection. When it dwarfs LatencyMillis, pod
+	// start-up rather than DNS is what consumes the run bound (spec.timeout).
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	RunMillis int64 `json:"runMillis,omitempty"`
 }
 
 // DNSCheckStatus defines the observed state of DNSCheck.
