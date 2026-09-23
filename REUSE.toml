@@ -19,3 +19,12 @@ path = ".claude/skills/speckit-*/**"
 precedence = "override"
 SPDX-FileCopyrightText = "GitHub, Inc. and spec-kit contributors"
 SPDX-License-Identifier = "MIT"
+
+# Skaphos-authored additions synced from skaphos-resources/llm_resources/speckit
+# share the speckit-* prefix but are not upstream content. Listed after the
+# spec-kit rule so this narrower match wins.
+[[annotations]]
+path = ".claude/skills/speckit-adversarial-review/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Skaphos"
+SPDX-License-Identifier = "MIT"
