@@ -825,6 +825,10 @@ func acknowledgementEligible(observed, live *fathomv1alpha1.AddonDefinitionBindi
 	switch {
 	case !live.DeletionTimestamp.IsZero():
 		return drainUnverifiable("binding %q is being deleted; there is no durable object to acknowledge", live.Name), false
+	case live.UID == "":
+		return drainUnverifiable("binding %q has no live UID; acknowledgement identity cannot be verified", live.Name), false
+	case live.UID != observed.UID:
+		return drainUnverifiable("binding %q was recreated while UID %q was being drained", live.Name, observed.UID), false
 	case live.Spec.Enabled:
 		// Re-enabled under the reconcile. Admission stays closed: reopening it
 		// belongs to the reconcile that observes the enabled binding and

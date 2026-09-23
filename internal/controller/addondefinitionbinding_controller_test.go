@@ -363,6 +363,19 @@ func (f *drainFixture) putLive(obj client.Object) {
 	f.write(f.live, obj)
 }
 
+func (f *drainFixture) recreateLiveBinding(uid types.UID) {
+	f.t.Helper()
+	old := drainDisabledBinding(4)
+	if err := f.live.Delete(context.Background(), old); err != nil {
+		f.t.Fatalf("delete live binding: %v", err)
+	}
+	recreated := drainDisabledBinding(4)
+	recreated.UID = uid
+	if err := f.live.Create(context.Background(), recreated); err != nil {
+		f.t.Fatalf("recreate live binding: %v", err)
+	}
+}
+
 func (f *drainFixture) write(c client.Client, obj client.Object) {
 	f.t.Helper()
 	ctx := context.Background()
@@ -562,6 +575,41 @@ func TestDrainRequiresUncachedBindingAndLeaseReadsBeforePublishing(t *testing.T)
 		edited := drainDisabledBinding(5)
 		edited.Spec.TargetScope.Namespaces = []fathomv1alpha1.DefinitionDNSLabel{"kube-system"}
 		f.putLive(edited)
+
+		f.reconcileOK()
+
+		requireNotDrained(t, f.binding())
+	})
+
+	t.Run("binding recreated before the first direct fence", func(t *testing.T) {
+		f := newDrainFixture(t, lifecycleDefinition(), drainDisabledBinding(4), lifecycleServiceAccount(), drainLeaseObject())
+		f.recreateLiveBinding("replacement-binding-uid")
+		f.session.afterAcknowledge = func() {
+			t.Fatal("the old binding incarnation reached drain acknowledgement")
+		}
+
+		f.reconcileOK()
+
+		requireNotDrained(t, f.binding())
+	})
+
+	t.Run("live binding without a UID at the first direct fence", func(t *testing.T) {
+		f := newDrainFixture(t, lifecycleDefinition(), drainDisabledBinding(4), lifecycleServiceAccount(), drainLeaseObject())
+		f.recreateLiveBinding("")
+		f.session.afterAcknowledge = func() {
+			t.Fatal("a binding without a verified identity reached drain acknowledgement")
+		}
+
+		f.reconcileOK()
+
+		requireNotDrained(t, f.binding())
+	})
+
+	t.Run("binding recreated before the final direct fence", func(t *testing.T) {
+		f := newDrainFixture(t, lifecycleDefinition(), drainDisabledBinding(4), lifecycleServiceAccount(), drainLeaseObject())
+		f.session.afterAcknowledge = func() {
+			f.recreateLiveBinding("replacement-binding-uid")
+		}
 
 		f.reconcileOK()
 
