@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0](https://github.com/skaphos/fathom/compare/v0.5.1...v0.6.0) (2026-09-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **node-agent:** serve node metrics through authenticated operator ([#347](https://github.com/skaphos/fathom/issues/347))
+* **api:** ClusterHealth staleness is the stalest child, not the newest ([#307](https://github.com/skaphos/fathom/issues/307))
+
+### Features
+
+* add runtime addon definitions ([#352](https://github.com/skaphos/fathom/issues/352)) ([2fb65fa](https://github.com/skaphos/fathom/commit/2fb65fa12182e9473c1bcef6165ac3b7f08802f8))
+* **cli:** fathomctl MVP — run/ls/describe/reports/version and the run-now trigger on every kind ([#325](https://github.com/skaphos/fathom/issues/325)) ([f32f964](https://github.com/skaphos/fathom/commit/f32f964e3da3ffbec2c6028c91ad242a7c9e0b97))
+* **controller:** generalize HealthCheck target mirroring ([#313](https://github.com/skaphos/fathom/issues/313)) ([45c6ea9](https://github.com/skaphos/fathom/commit/45c6ea9dbcc2bcd1702789fa2c1bfbd65c3d7e1c))
+* **nodehealth:** NodeHealthCheck CRD, reconciler, node-agent health mode, and e2e ([#206](https://github.com/skaphos/fathom/issues/206)) ([#336](https://github.com/skaphos/fathom/issues/336)) ([485660a](https://github.com/skaphos/fathom/commit/485660aa724cb70c3a8a43177bd059a2e72652ea))
+
+
+### Bug Fixes
+
+* **adapter:** gate ratio policies on contract 1.1 ([#351](https://github.com/skaphos/fathom/issues/351)) ([d24cae1](https://github.com/skaphos/fathom/commit/d24cae19b37ca52fbb29fe12d41cc7e4a02e64ab))
+* **api:** ClusterHealth staleness is the stalest child, not the newest ([#307](https://github.com/skaphos/fathom/issues/307)) ([003e0d8](https://github.com/skaphos/fathom/commit/003e0d832e1c68ed9caef3d0232ba90e6ebe4a99))
+* **controller:** COR-2/3/4 — persist provisioning failures, freeze verdicts, per-node coverage ([#326](https://github.com/skaphos/fathom/issues/326)) ([e06d234](https://github.com/skaphos/fathom/commit/e06d2342da88bc3566a84d84b2a4b519b75aa0cf))
+* **node-agent:** serve node metrics through authenticated operator ([#347](https://github.com/skaphos/fathom/issues/347)) ([c3c484d](https://github.com/skaphos/fathom/commit/c3c484d4004918957ea097a9f268898c9922fa18))
+* **nodecert:** SEC-1 — bind node-report authenticity to the writing identity ([#329](https://github.com/skaphos/fathom/issues/329)) ([11364f0](https://github.com/skaphos/fathom/commit/11364f05720b87a369d874118f9eb6b7f0f89c54))
+* **probe:** query CNAME subjects absolutely so a search list cannot fake a record ([#310](https://github.com/skaphos/fathom/issues/310)) ([49b894e](https://github.com/skaphos/fathom/commit/49b894eb821fe98cafdc43defb3e65c653810184))
+* **rbac:** scope node-agent permissions to namespaced roles ([#346](https://github.com/skaphos/fathom/issues/346)) ([91ac230](https://github.com/skaphos/fathom/commit/91ac230efb8697b77a0b74041af1570fc7bba9dc)), closes [#255](https://github.com/skaphos/fathom/issues/255) [#274](https://github.com/skaphos/fathom/issues/274)
+
 ## [0.5.1](https://github.com/skaphos/fathom/compare/v0.5.0...v0.5.1) (2026-08-10)
 
 
