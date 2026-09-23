@@ -281,10 +281,12 @@ probe-measured lookup time only, and the Pod lifecycle moves to a new
 
 After upgrading, expect `latencyMillis` to drop sharply. Revisit any alert or
 dashboard built on it: a threshold tuned to the old values was measuring Pod
-start-up, not DNS. HealthReport history is not rewritten. To tell the two
-meanings apart, check for `runMillis`: a status row or HealthReport check that
-carries `runMillis` uses the 0.6.0 meaning, and one without it predates the
-upgrade. If `spec.timeout` was raised only to fit wall-time figures, keep it.
+start-up, not DNS. HealthReport history is not rewritten. A record that
+carries `runMillis` uses the 0.6.0 meaning. Absence proves nothing, because
+0.6.0 also omits `runMillis` for a pair a truncated run never started and for a
+sub-millisecond duration. For records without it, compare the HealthReport's
+`metadata.creationTimestamp` with the time of the upgrade. If `spec.timeout`
+was raised only to fit wall-time figures, keep it.
 The run bound still has to absorb Pod start-up, which `runMillis` now shows
 directly.
 
