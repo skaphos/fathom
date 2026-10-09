@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 # Build the node-agent binary.
 #
 # The node-agent is a dedicated, purpose-built image distinct from the operator
@@ -7,7 +7,7 @@
 #
 # Base image pinned by digest for reproducible, tamper-evident builds (SKA-295).
 # Refresh with `go -C tools tool task images:refresh`.
-FROM golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS builder
+FROM golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
