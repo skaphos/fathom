@@ -65,27 +65,43 @@ func TestEveryMetricAndLabelIsDocumentedInTheContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read monitoring guide: %v", err)
 	}
-	rows := map[string]string{}
+	labelCells := map[string]string{}
 	for line := range strings.SplitSeq(string(raw), "\n") {
 		if m := regexp.MustCompile("^\\| `(fathom_[a-z_]+)` \\|").FindStringSubmatch(line); m != nil {
-			rows[m[1]] = line
+			labelCells[m[1]] = labelsCell(t, line)
 		}
 	}
 
 	for _, c := range contractCollectors {
 		name, labels := describe(t, c)
-		row, ok := rows[name]
+		cell, ok := labelCells[name]
 		if !ok {
 			t.Errorf("%s is registered but has no row in docs/guides/monitoring.md; "+
 				"document it in the metric contract", name)
 			continue
 		}
 		for _, l := range labels {
-			if !strings.Contains(row, "`"+l+"`") {
-				t.Errorf("%s label %q is not documented in its monitoring.md row", name, l)
+			if !strings.Contains(cell, "`"+l+"`") {
+				t.Errorf("%s label %q is not in the Labels column of its monitoring.md row", name, l)
 			}
 		}
 	}
+}
+
+// labelsCell returns the Labels column (| Metric | Type | Labels | Use |) of a
+// metric table row. Only that cell counts: a label named in the Use prose
+// must not mask its removal from the Labels column.
+func labelsCell(t *testing.T, row string) string {
+	t.Helper()
+	// Cells may contain an escaped pipe (`bytes` \| `inodes`); protect it so
+	// it does not split the row.
+	const escaped = "\x00"
+	cells := strings.Split(strings.ReplaceAll(row, `\|`, escaped), "|")
+	// A row "| a | b | c | d |" splits into "", a, b, c, d, "".
+	if len(cells) < 4 {
+		t.Fatalf("metric table row has no Labels column: %s", row)
+	}
+	return strings.ReplaceAll(cells[3], escaped, `\|`)
 }
 
 // contractCollectors must list every metric metrics.go declares, or a new

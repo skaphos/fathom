@@ -133,8 +133,9 @@ carries a second `== 0` clause. Without it a `ClusterHealth` whose selector
 matches nothing would silently stop alerting, and a typo'd selector is exactly
 the mistake that rule exists to catch.
 
-Label cardinality is bounded by design: one series set per check resource,
-and never any free-text label.
+Label cardinality is bounded by design: one series set per check resource
+(plus the schema-capped per-target and per-item sets below), and label values
+never carry observed free text.
 
 ### Stability promise
 
@@ -151,8 +152,12 @@ so it changes only deliberately.
   than zero when it cannot be resolved, the wrapper-kind staleness rules
   (`HealthCheck` follows its target, `ClusterHealth` its stalest child and
   slowest cadence), and series that live and die with their resource;
-- the absence of free-text labels: messages, reasons, versions, paths and
-  subjects stay in status, Events and `HealthReport`, never in a label.
+- where label values come from: only from the specs of your own resources —
+  resource names, `DNSCheck` target names and `NodeHealthCheck` item `path`s,
+  each capped by the CRD schema — plus node names and the enumerated values
+  above. Values Fathom *observes* (messages, reasons, versions, discovered
+  certificate paths, subjects, issuers) stay in status, Events and
+  `HealthReport`, never in a label.
 
 **Breaking** — made only in a release whose notes flag it as a breaking change,
 never silently and never in a patch release:
