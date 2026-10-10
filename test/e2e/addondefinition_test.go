@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
@@ -381,9 +382,10 @@ spec:
 			status := definitionE2ECheckStatus()
 			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("AccessDenied"))
-			g.Expect(status.LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, time.Second).Should(Succeed(),
 			"delegated discovery denial did not complete: users=%v", fixture.observedUsers())
+		before = definitionE2EFrozenEvidence(before)
 		Expect(definitionE2EReportCount()).To(Equal(passReports))
 
 		fixture.setDenial(false)
@@ -428,7 +430,6 @@ spec:
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterhealth", definitionE2EName+"-fixture-aggregate",
 				"--ignore-not-found=true"))
 		})
-		beforeTimeout := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		peerBefore := definitionE2EPeerStatus().LastRunTime.DeepCopy()
 		fixture.holdNextRead()
 		_, err = utils.Run(exec.Command("kubectl", "annotate", "addoncheck", definitionE2EName,
@@ -440,6 +441,11 @@ spec:
 		case <-time.After(40 * time.Second):
 			Fail("the delegated LIST never reached the fixture for the timeout case")
 		}
+		// The runtime scheduler admits one run per check and holds that slot
+		// through publication, so with this run held nothing else can publish.
+		// A baseline read before the hold could miss a publish from the run
+		// admitted ahead of it (#356).
+		beforeTimeout := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
 			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
@@ -483,7 +489,6 @@ spec:
 		Expect(definitionE2EReportCount()).To(Equal(passReports))
 
 		By("revoking the binding after observing a delegated API read in flight")
-		beforeRevocation := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		fixture.holdNextRead()
 		_, err = utils.Run(exec.Command("kubectl", "annotate", "addoncheck", definitionE2EName,
 			"-n", definitionE2ENS, "fathom.skaphos.io/run-now=fixture-held", "--overwrite"))
@@ -505,6 +510,9 @@ spec:
 		definitionE2EApply(definitionE2EBinding(definitionUID, readerUID, false))
 		var disabled fathomv1alpha1.AddonDefinitionBinding
 		definitionE2EGetJSON(&disabled, "addondefinitionbinding", definitionE2EName, "-n", namespace)
+		// Baseline taken while the only admissible run is still held (see
+		// beforeTimeout), after the time-critical revocation write.
+		beforeRevocation := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		held.Release()
 		fixture.releaseRead()
 		Eventually(func(g Gomega) {
@@ -538,7 +546,6 @@ spec:
 		Expect(definitionE2EReportCount()).To(Equal(passReports))
 
 		By("editing a valid definition while its delegated read is held")
-		beforeEdit := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		fixture.holdNextRead()
 		_, err = utils.Run(exec.Command("kubectl", "annotate", "addoncheck", definitionE2EName,
 			"-n", definitionE2ENS, "fathom.skaphos.io/run-now=fixture-edit", "--overwrite"))
@@ -558,6 +565,12 @@ spec:
 			"adapterVersion: 1.0.0", "adapterVersion: 1.0.1", 1))
 		var edited fathomv1alpha1.AddonDefinition
 		definitionE2EGetJSON(&edited, "addondefinition", definitionE2EName)
+		// Baseline taken while the only admissible run is still held, so the
+		// exact Equal below keeps catching the defect it guards: the held
+		// old-revision run publishing after the edit instead of being superseded
+		// by its final fence. (#356: a baseline read before the hold also saw
+		// the preceding run's legitimate publish.)
+		beforeEdit := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		held.Release()
 		Eventually(func(g Gomega) {
 			g.Expect(held.done).To(BeClosed())
@@ -632,9 +645,7 @@ spec:
 			g.Expect(def.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse))))
 		}, time.Minute, 3*time.Second).Should(Succeed())
-		Consistently(func(g Gomega) {
-			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(Equal(before))
-		}, 12*time.Second, 3*time.Second).Should(Succeed())
+		definitionE2EFrozenEvidence(before)
 		definitionE2EApply(definitionE2EDefinition("external-secrets", "external-secrets"))
 		var recovered fathomv1alpha1.AddonDefinition
 		definitionE2EGetJSON(&recovered, "addondefinition", definitionE2EName)
@@ -663,8 +674,9 @@ spec:
 				HaveField("Reason", "InvalidDefinition"))))
 			status := definitionE2ECheckStatus()
 			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
-			g.Expect(status.LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		before = definitionE2EFrozenEvidence(before)
 
 		out, err = utils.Run(exec.Command("kubectl", "patch", "addondefinition", definitionE2EName,
 			"--type=merge", "-p", `{"spec":{"versionSource":null}}`))
@@ -718,8 +730,9 @@ spec:
 					HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse),
 					HaveField("Reason", "BindingMismatch"))), name)
 			}
-			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		before = definitionE2EFrozenEvidence(before)
 		_, err := utils.Run(exec.Command("kubectl", "delete", "addondefinitionbinding", definitionE2ERival,
 			"-n", namespace))
 		Expect(err).NotTo(HaveOccurred())
@@ -754,8 +767,9 @@ spec:
 			definitionE2EGetJSON(&binding, "addondefinitionbinding", definitionE2EName, "-n", namespace)
 			g.Expect(binding.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse))))
-			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		before = definitionE2EFrozenEvidence(before)
 
 		// Binding references are immutable: reauthorization requires a new binding
 		// object with the new SA UID, rather than a status write to the old one.
@@ -822,8 +836,9 @@ spec:
 			definitionE2EGetJSON(&binding, "addondefinitionbinding", definitionE2EName, "-n", namespace)
 			g.Expect(binding.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse))))
-			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(definitionE2ECheckStatus().LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		before = definitionE2EFrozenEvidence(before)
 
 		definitionE2EApply(definitionE2EDefinition("external-secrets", "external-secrets"))
 		var replacement fathomv1alpha1.AddonDefinition
@@ -870,8 +885,9 @@ spec:
 			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("AccessDenied"))
 			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
-			g.Expect(status.LastSuccessfulEvaluation).To(Equal(before))
+			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		before = definitionE2EFrozenEvidence(before)
 		Eventually(func(g Gomega) {
 			peer := definitionE2EPeerStatus()
 			g.Expect(peer.LastResult).To(Equal("Pass"))
@@ -1043,6 +1059,10 @@ spec:
 			g.Expect(binding.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Drained"), HaveField("Status", metav1.ConditionTrue))))
 		}, 2*time.Minute, 3*time.Second).Should(Succeed())
+		// Drained counts admissions, which are released when evaluation
+		// returns; a run already past its final fence may still publish under
+		// the enabled binding. Settle before taking the exact baseline.
+		before = definitionE2EFrozenEvidence(before)
 		out, err = fathomctl("definition", "drain", "--name", definitionE2EName,
 			"--operator-namespace", namespace, "--leader-election-id", definitionE2ELease)
 		Expect(err).NotTo(HaveOccurred(), out)
@@ -1218,6 +1238,41 @@ func definitionE2ECheckStatus() fathomv1alpha1.AddonCheckStatus {
 	return check.Status
 }
 
+// definitionE2EAttributedTo matches completed evidence carried over from the
+// context `before` was published under: same definition revision and same
+// authority. A whole-struct Equal(before) is wrong for a freeze caused by an
+// action, because a run the scheduler admitted before that action may still
+// pass its final fence and publish once more under the old context, with a
+// newer observedAt (#356). That publication is legitimate; evidence attributed
+// to any other revision or authority is not.
+func definitionE2EAttributedTo(before *fathomv1alpha1.AddonCheckEvidence) OmegaMatcher {
+	return SatisfyAll(
+		Not(BeNil()),
+		HaveField("Revision", Equal(before.Revision)),
+		HaveField("Authority", Equal(before.Authority)),
+		HaveField("ObservedAt.Time", Not(BeTemporally("<", before.ObservedAt.Time))),
+	)
+}
+
+// definitionE2EFrozenEvidence waits until the runtime check's evidence is still
+// attributed to `before` and has stopped changing for longer than one
+// evaluation interval, then returns it. Specs take their exact baseline from
+// here, AFTER the freeze, rather than from a snapshot taken before the action
+// that froze publication.
+func definitionE2EFrozenEvidence(before *fathomv1alpha1.AddonCheckEvidence) *fathomv1alpha1.AddonCheckEvidence {
+	var frozen *fathomv1alpha1.AddonCheckEvidence
+	EventuallyWithOffset(1, func(g Gomega) {
+		current := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
+		g.Expect(current).To(definitionE2EAttributedTo(before))
+		if changed := frozen == nil || !equality.Semantic.DeepEqual(current, frozen); changed {
+			frozen = current
+			g.Expect(changed).To(BeFalse(), "runtime evidence is still changing")
+		}
+	}, 2*time.Minute, 2*time.Second).MustPassRepeatedly(int(definitionE2EInterval/(2*time.Second))+2).
+		Should(Succeed(), "runtime evidence did not settle on the pre-freeze context")
+	return frozen
+}
+
 func definitionE2EPeerStatus() fathomv1alpha1.AddonCheckStatus {
 	var check fathomv1alpha1.AddonCheck
 	definitionE2EGetJSON(&check, "addoncheck", definitionE2EPeer, "-n", definitionE2ENS)
@@ -1295,8 +1350,9 @@ subjects:
 		status := definitionE2ECheckStatus()
 		g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
 		g.Expect(status.LatestAttemptReason).To(Equal("InputLimitExceeded"))
-		g.Expect(status.LastSuccessfulEvaluation).To(Equal(before))
+		g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+	before = definitionE2EFrozenEvidence(before)
 	Eventually(func(g Gomega) {
 		peer := definitionE2EPeerStatus()
 		g.Expect(peer.LastResult).To(Equal("Pass"))
