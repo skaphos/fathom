@@ -67,7 +67,7 @@ func TestEveryMetricAndLabelIsDocumentedInTheContract(t *testing.T) {
 	}
 	labelCells := map[string]string{}
 	for line := range strings.SplitSeq(string(raw), "\n") {
-		if m := regexp.MustCompile("^\\| `(fathom_[a-z_]+)` \\|").FindStringSubmatch(line); m != nil {
+		if m := regexp.MustCompile("^\\| `(fathom_[a-zA-Z0-9_:]+)` \\|").FindStringSubmatch(line); m != nil {
 			labelCells[m[1]] = labelsCell(t, line)
 		}
 	}
@@ -116,7 +116,7 @@ func TestContractCollectorsCoverEveryDeclaredMetric(t *testing.T) {
 		name, _ := describe(t, c)
 		listed = append(listed, name)
 	}
-	for _, m := range regexp.MustCompile(`Name:\s+"(fathom_[a-z_]+)"`).FindAllStringSubmatch(string(src), -1) {
+	for _, m := range regexp.MustCompile(`Name:\s+"(fathom_[a-zA-Z0-9_:]+)"`).FindAllStringSubmatch(string(src), -1) {
 		if !slices.Contains(listed, m[1]) {
 			t.Errorf("metrics.go declares %s but contractCollectors does not list it", m[1])
 		}

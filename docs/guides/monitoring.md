@@ -265,18 +265,24 @@ so it changes only deliberately.
 
 - metric names, types and units;
 - label keys, and the documented values of enumerated labels (`kind`,
-  `result`, `type`, `resource`, `record_type`);
+  `result`, `type`, `resource`, `record_type`, and `outcome`: `success` /
+  `error` on `fathom_reconcile_total`, the adapter result
+  `Pass` / `Warn` / `Fail` / `Error` on `fathom_adapter_run_duration_seconds`);
 - the documented semantics: one-hot result sets with exactly one series at `1`,
   the `0` "never ran" last-run sentinel, an interval that is **absent** rather
   than zero when it cannot be resolved, the wrapper-kind staleness rules
   (`HealthCheck` follows its target, `ClusterHealth` its stalest child and
   slowest cadence), and series that live and die with their resource;
-- where label values come from: only from the specs of your own resources —
-  resource names, `DNSCheck` target names and `NodeHealthCheck` item `path`s,
-  each capped by the CRD schema — plus node names and the enumerated values
-  above. Values Fathom *observes* (messages, reasons, versions, discovered
-  certificate paths, subjects, issuers) stay in status, Events and
-  `HealthReport`, never in a label.
+- where label values come from — only three bounded sources:
+  - the specs of your own resources: resource names, `DNSCheck` target names,
+    `NodeHealthCheck` item `path`s, and a runtime `AddonDefinition`'s addon
+    type and family names (the `adapter` / `family` labels), each capped by the
+    CRD schema;
+  - identifiers Fathom defines: node names, built-in adapter and family names
+    (`adapter`, `family`), and the enumerated values above;
+  - nothing else. Values Fathom *observes* (messages, reasons, versions,
+    discovered certificate paths, subjects, issuers) stay in status, Events and
+    `HealthReport`, never in a label.
 
 **Breaking** — made only in a release whose notes flag it as a breaking change,
 never silently and never in a patch release:
@@ -295,8 +301,8 @@ never silently and never in a patch release:
 - new metrics;
 - opt-in labels that are off unless you enable them;
 - new values of an enumerated label that come with a new check kind, item type
-  or result — match the values you care about (`result=~"Fail|Error"`) rather
-  than assuming the set is closed;
+  or result, and new built-in adapter or family names — match the values you
+  care about (`result=~"Fail|Error"`) rather than assuming the set is closed;
 - histogram bucket boundaries;
 - the sample alert rules, the `ServiceMonitor` and Helm scrape defaults, and the
   controller-runtime and Go runtime metrics, which belong to their upstreams.
