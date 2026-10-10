@@ -71,8 +71,18 @@ Tag creation triggers `.github/workflows/release.yml`, which:
 11. Creates a GitHub Release with `dist/install.yaml`, the SBOMs, and the
    `fathomctl` archives, checksums, and signature bundle attached, plus
    auto-generated release notes.
+12. In a follow-up `verify-public` job, runs `scripts/check-ghcr-public.sh`
+   against `fathom-operator`, `fathom-probe`, `fathom-node-agent`, and
+   `charts/fathom-operator` and fails the release if any of them cannot be
+   pulled anonymously (see
+   [First publish of a new GHCR package](#first-publish-of-a-new-ghcr-package)).
 
 ## 5. Verify the Release
+
+- Confirm the `verify-public` job passed. If it failed, a package is private:
+  follow [First publish of a new GHCR package](#first-publish-of-a-new-ghcr-package),
+  then re-run the failed job. The images and chart are already pushed and
+  signed, so only the check needs re-running.
 
 - Confirm all five images exist under `ghcr.io/skaphos` (operator, probe,
   node-agent, bundle, catalog).
@@ -95,6 +105,43 @@ Tag creation triggers `.github/workflows/release.yml`, which:
   ```bash
   operator-sdk run bundle ghcr.io/skaphos/fathom-operator-bundle:vX.Y.Z
   ```
+
+## First publish of a new GHCR package
+
+GHCR creates every **new** package name private. This holds even though the
+release workflow pushes from the public `skaphos/fathom` repository with
+`GITHUB_TOKEN` and the artifacts link back to it (the chart already carries
+`org.opencontainers.image.source`): a linked package inherits the repository's
+access permissions but not its visibility. GitHub offers no org-wide "new
+packages are public" default and no REST API to change visibility, so the step
+is manual and recurs for every new package name — a new image, a renamed
+chart, or a new OLM artifact. v0.5.1 shipped with all four install-path
+packages private until they were flipped by hand.
+
+After the first release that pushes a new package name:
+
+1. Open <https://github.com/orgs/skaphos/packages>, select the package, then
+   **Package settings → Danger Zone → Change visibility → Public**. This is
+   one-way: a public package cannot be made private again.
+2. Verify anonymously (no credentials). `200` means public; `401`/`403` means
+   private or missing:
+
+   ```bash
+   for pkg in fathom-operator fathom-probe fathom-node-agent charts/fathom-operator; do
+     printf '%s ' "$pkg"
+     curl -s -o /dev/null -w '%{http_code}\n' \
+       "https://ghcr.io/token?scope=repository:skaphos/${pkg}:pull"
+   done
+   # or: ./scripts/check-ghcr-public.sh fathom-operator fathom-probe fathom-node-agent charts/fathom-operator
+   ```
+
+3. Re-run the release's `verify-public` job.
+
+When a release starts publishing a new package that users pull anonymously,
+add it to the `verify-public` job in `.github/workflows/release.yml`. The OLM
+bundle (`fathom-operator-bundle`) and catalog (`fathom-operator-catalog`) are
+currently private and not gated; make them public and add them to the job
+before documenting anonymous OLM installs.
 
 ## Supply-Chain Verification
 

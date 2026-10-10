@@ -342,3 +342,34 @@ jobs:
             dist/sbom/*.spdx.json
             dist/fathomctl/*
           generate_release_notes: true
+
+  verify-public:
+    name: Verify GHCR packages are public
+    # GHCR creates every new package name private, regardless of the source
+    # repository's visibility or the org.opencontainers.image.source link, and
+    # offers no API to change it (skaphos/fathom#333). Anonymous `helm install`
+    # and image pulls are the documented install path, so fail the release when
+    # any of those packages cannot be pulled anonymously. Runs after publishing
+    # so a first publish of a new package name is caught at release time.
+    needs: release
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check anonymous pull access
+        # The anonymous install surface: the three runtime images and the Helm
+        # chart (pushed to oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts above).
+        # The OLM bundle and catalog are a side offering and are deliberately
+        # not gated here; add them when they are made public.
+        env:
+          GHCR_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+        run: |
+          ./scripts/check-ghcr-public.sh \
+            "${IMAGE_NAME}" \
+            "${PROBE_NAME}" \
+            "${NODE_AGENT_NAME}" \
+            "charts/${IMAGE_NAME}"
