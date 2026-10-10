@@ -101,8 +101,11 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Monitoring & alerting](docs/guides/monitoring.md) — metrics, tracing,
   alerts, and deployment gates. Every check exports a current-result gauge
   (`fathom_check_result`) and a staleness timestamp, records Kubernetes Events
-  on result transitions and failures (`kubectl describe` shows the story), and
-  the failing/stale alert rules ship as an opt-in `PrometheusRule` component.
+  on result transitions and failures (`kubectl describe` shows the story). The
+  metric names and labels are the contract; failing/stale alert rules are
+  provided as an opt-in **sample** `PrometheusRule` to adapt, not as policy
+  (`metrics.prometheusRule.enabled` in the Helm chart, which also has
+  Dynatrace and Sumo Logic scrape presets).
 
 **Reference and internals:**
 

@@ -8,6 +8,10 @@
 #   components:
 #     - ../components/prometheus
 #
+# This is scrape wiring, not policy: it decides how Prometheus reaches the
+# metric surface, never what to alert on (the sample rules live in
+# ../prometheus-rule). Adjust the interval, labels and TLS to your Prometheus.
+#
 # The ServiceMonitor scrapes the controller-manager-metrics-service over HTTPS.
 # By default it uses insecureSkipVerify: true because the metrics server's TLS
 # cert is self-signed by controller-runtime at startup. To use cert-manager-

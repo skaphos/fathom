@@ -7,6 +7,52 @@ metadata:
   labels:
     {{- include "fathom-operator.labels" . | nindent 4 }}
     control-plane: controller-manager
+  {{- /*
+  The Dynatrace preset contributes metrics.dynatrace.com/* keys; explicit
+  metrics.service.annotations win on any key both set (merge keeps the first
+  dict's values). metrics.dynatrace.com/port is the CONTAINER port, which
+  Dynatrace requires when annotating a Service.
+  */}}
+  {{- $annotations := deepCopy (.Values.metrics.service.annotations | default dict) }}
+  {{- with .Values.metrics.integrations.dynatrace }}
+  {{- if .enabled }}
+  {{- /*
+  TLS and auth keys are owned by the typed preset values: an annotation
+  override could turn off verification while the ActiveGate still forwards
+  its token, bypassing the insecureSkipVerify opt-in below.
+  */}}
+  {{- range list "secure" "insecure_skip_verify" "tls.ca.crt" "tls.crt" "tls.key" "http.auth" }}
+  {{- if hasKey $annotations (printf "metrics.dynatrace.com/%s" .) }}
+  {{- fail (printf "metrics.service.annotations must not set metrics.dynatrace.com/%s while metrics.integrations.dynatrace is enabled: TLS verification and token forwarding are controlled only by metrics.integrations.dynatrace.caConfigMap / insecureSkipVerify (and metrics.secure)." .) }}
+  {{- end }}
+  {{- end }}
+  {{- $dt := dict
+        "metrics.dynatrace.com/scrape" "true"
+        "metrics.dynatrace.com/port" (include "fathom-operator.port" $.Values.metrics.bindAddress | toString)
+        "metrics.dynatrace.com/path" "/metrics"
+        "metrics.dynatrace.com/secure" ($.Values.metrics.secure | toString) }}
+  {{- if $.Values.metrics.secure }}
+  {{- /*
+  The ActiveGate forwards its own ServiceAccount token, so refuse to render
+  token forwarding over an unverified TLS connection unless explicitly chosen.
+  */}}
+  {{- if .caConfigMap.name }}
+  {{- $_ := set $dt "metrics.dynatrace.com/tls.ca.crt" (printf "configmap:%s:%s:%s" (.caConfigMap.namespace | default $.Release.Namespace) .caConfigMap.name .caConfigMap.key) }}
+  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" "false" }}
+  {{- else if .insecureSkipVerify }}
+  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" "true" }}
+  {{- else }}
+  {{- fail "metrics.integrations.dynatrace: the ActiveGate sends its ServiceAccount token to the metrics endpoint, so its certificate must be verified. Set metrics.integrations.dynatrace.caConfigMap.name to a ConfigMap holding the CA of a CA-signed metrics certificate (metrics.certSecretName), or explicitly accept the risk with metrics.integrations.dynatrace.insecureSkipVerify=true." }}
+  {{- end }}
+  {{- $_ := set $dt "metrics.dynatrace.com/http.auth" "builtin:default" }}
+  {{- end }}
+  {{- $annotations = merge $annotations $dt }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: ClusterIP
   ports:
