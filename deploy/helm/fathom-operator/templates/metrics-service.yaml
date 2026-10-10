@@ -16,6 +16,16 @@ metadata:
   {{- $annotations := deepCopy (.Values.metrics.service.annotations | default dict) }}
   {{- with .Values.metrics.integrations.dynatrace }}
   {{- if .enabled }}
+  {{- /*
+  TLS and auth keys are owned by the typed preset values: an annotation
+  override could turn off verification while the ActiveGate still forwards
+  its token, bypassing the insecureSkipVerify opt-in below.
+  */}}
+  {{- range list "secure" "insecure_skip_verify" "tls.ca.crt" "tls.crt" "tls.key" "http.auth" }}
+  {{- if hasKey $annotations (printf "metrics.dynatrace.com/%s" .) }}
+  {{- fail (printf "metrics.service.annotations must not set metrics.dynatrace.com/%s while metrics.integrations.dynatrace is enabled: TLS verification and token forwarding are controlled only by metrics.integrations.dynatrace.caConfigMap / insecureSkipVerify (and metrics.secure)." .) }}
+  {{- end }}
+  {{- end }}
   {{- $dt := dict
         "metrics.dynatrace.com/scrape" "true"
         "metrics.dynatrace.com/port" (include "fathom-operator.port" $.Values.metrics.bindAddress | toString)

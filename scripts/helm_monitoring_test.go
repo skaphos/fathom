@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package scripts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -217,6 +218,26 @@ func TestHelmDynatracePresetVerifiesWithACAConfigMap(t *testing.T) {
 	roleBinding := helmObjectNamed(objects, "RoleBinding", "-dynatrace-metrics-ca")
 	if roleBinding == nil || !reflect.DeepEqual(roleBinding["subjects"], activeGate) {
 		t.Errorf("CA RoleBinding = %v, want it bound to the ActiveGate", roleBinding)
+	}
+}
+
+// The TLS and auth keys belong to the typed preset values: an annotation must
+// not be able to switch off verification (or redirect auth) while the
+// ActiveGate keeps forwarding its token.
+func TestHelmDynatracePresetRejectsSecurityKeyOverrides(t *testing.T) {
+	for _, key := range []string{"secure", "insecure_skip_verify", "tls.ca.crt", "tls.crt", "tls.key", "http.auth"} {
+		t.Run(key, func(t *testing.T) {
+			_, out, err := renderRuntimeChart(t,
+				"--set", "metrics.integrations.dynatrace.enabled=true",
+				"--set", "metrics.integrations.dynatrace.caConfigMap.name=fathom-metrics-ca",
+				"--set-json", fmt.Sprintf(`metrics.service.annotations={"metrics.dynatrace.com/%s":"true"}`, key))
+			if err == nil {
+				t.Fatalf("an annotation override of metrics.dynatrace.com/%s was accepted", key)
+			}
+			if !strings.Contains(out, "metrics.dynatrace.com/"+key) {
+				t.Errorf("render error does not name the rejected key:\n%s", out)
+			}
+		})
 	}
 }
 

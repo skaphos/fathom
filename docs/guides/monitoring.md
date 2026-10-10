@@ -135,7 +135,10 @@ port, as Dynatrace requires on a Service — `path`, `secure`), and with
 ServiceAccount token**. It then binds that ServiceAccount to the
 `metrics-reader` role. Anything you set in `metrics.service.annotations`
 overrides the preset key by key — for example `metrics.dynatrace.com/filter` to
-ingest only some metrics.
+ingest only some metrics — **except** the TLS and auth keys (`secure`,
+`insecure_skip_verify`, `tls.ca.crt`, `tls.crt`, `tls.key`, `http.auth`): those
+are controlled only by the typed values below, and the chart refuses to render
+if an annotation sets one while the preset is enabled.
 
 Because that token is the ActiveGate's own — usually with broad cluster read —
 **the serving certificate must be verified**. The operator's default
