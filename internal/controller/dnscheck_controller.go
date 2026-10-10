@@ -364,7 +364,10 @@ func (r *DNSCheckReconciler) runPair(
 
 	started := time.Now()
 	result, err := r.launcher().Run(ctx, req)
-	out.LatencyMillis = time.Since(started).Milliseconds()
+	// Wall time covers the whole pod lifecycle, which on clusters that inject
+	// init containers is seconds of start-up around a millisecond lookup. It
+	// is kept apart from LatencyMillis, which only the probe can measure.
+	out.RunMillis = time.Since(started).Milliseconds()
 
 	if err != nil {
 		if ctx.Err() != nil {
@@ -391,7 +394,19 @@ func (r *DNSCheckReconciler) runPair(
 	out.Result = string(dnsResultFromProbeOutcome(result.Outcome))
 	out.Message = truncateTargetMessage(result.Summary)
 	out.Answers = splitProbeAnswers(result.Details["answers"])
+	out.LatencyMillis = probeLatencyMillis(result.Details)
 	return out
+}
+
+// probeLatencyMillis reads the lookup time the probe measured around its own
+// resolver call. A missing or malformed figure yields zero (omitted), never a
+// substitute: wall time would silently reintroduce pod start-up (#332).
+func probeLatencyMillis(details map[string]string) int64 {
+	millis, err := strconv.ParseInt(details["latencyMillis"], 10, 64)
+	if err != nil || millis < 0 {
+		return 0
+	}
+	return millis
 }
 
 // dnsResultFromProbeOutcome maps the probe's vocabulary onto the project's.
@@ -518,7 +533,7 @@ func (r *DNSCheckReconciler) setDNSCheckComplete(check *fathomv1alpha1.DNSCheck,
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = "RunTruncated"
 		condition.Message = fmt.Sprintf(
-			"%d of %d pairs were not reached before the run bound elapsed; raise spec.timeout (and spec.interval) or declare fewer targets.",
+			"%d of %d pairs were not reached before the run bound elapsed; raise spec.timeout (and spec.interval) or declare fewer targets. Each pair runs in its own probe pod, so pod start-up (scheduling, image pull, admission-injected init containers) usually dominates: compare targetResults[].runMillis with latencyMillis.",
 			unreached, planned)
 	}
 	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
@@ -625,6 +640,9 @@ func healthReportForDNSCheck(
 		}
 		if outcome.result.LatencyMillis > 0 {
 			details["latencyMillis"] = strconv.FormatInt(outcome.result.LatencyMillis, 10)
+		}
+		if outcome.result.RunMillis > 0 {
+			details["runMillis"] = strconv.FormatInt(outcome.result.RunMillis, 10)
 		}
 		// Polarity is not recoverable from the result alone, and a reader of the
 		// history needs it for the same reason the summary does (FR-021).

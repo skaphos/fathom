@@ -195,7 +195,14 @@ kubectl -n platform-health get dnscheck cluster-dns \
 
 `status.lastResult` is the worst pair verdict. `status.summary` is the concise
 run summary; `status.targetResults` retains each pair's result, message,
-answers, and latency. `status.lastRunTime` advances on every completed run.
+answers, and timing. `status.lastRunTime` advances on every completed run.
+
+Each pair carries two timings. `latencyMillis` is the lookup alone, measured by
+the probe around its resolver call; this is the figure to alert on for slow DNS.
+`runMillis` is the wall time Fathom spent on the whole pair, including probe Pod
+scheduling, image pull and any init containers an admission webhook injects. A
+`runMillis` in seconds beside a `latencyMillis` of a few milliseconds means DNS
+is healthy and Pod start-up is what consumes the run bound.
 `status.lastReportName` changes only when the verdict changes because
 `HealthReport` history is transition-based.
 
@@ -234,6 +241,18 @@ expired before every `(target, resolver)` pair ran; unreached pairs become
 `Unknown`. Increase `timeout` (it cannot exceed `interval`), reduce fan-out, or
 name one resolver per target. See
 [DNSCheck fan-out](../reference/configuration.md#dnscheck-fan-out).
+
+The usual cause is probe Pod start-up, not DNS. Every pair runs in its own probe
+Pod, so the bound must absorb scheduling, image pull and any init containers
+injected by admission webhooks (service meshes, APM agents). On such clusters a
+single pair can take several seconds while the lookup itself takes milliseconds.
+Compare `runMillis` with `latencyMillis` on the pairs that did complete. If
+`runMillis` dominates, set `timeout` to at least the observed `runMillis`
+multiplied by the number of pair batches, where the batch count is the pair
+count divided by `--dnscheck-max-concurrent-probes` (default `4`), rounded up.
+Add headroom. When the cluster injects init containers into every Pod, start
+from at least `30s`. The sample's `10s` is comfortable on kind but marginal
+there.
 
 ### An explicit resolver is unreachable
 

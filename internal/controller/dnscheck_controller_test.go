@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -464,6 +465,125 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(gauge["healthy.example.com|A|cluster|Pass"]).To(Equal(1.0))
 	})
 
+	// #332: pod start-up must not be reported as lookup latency. On clusters
+	// that inject init containers a pair takes seconds around a millisecond
+	// lookup, so the two timings are recorded apart and never substituted.
+	It("reports the probe-measured lookup time as latency and pod lifecycle as runMillis", func() {
+		const podLifecycle = 250 * time.Millisecond
+		check := createDNSCheck(ctx, ns, "timing", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "measured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				{Name: "unmeasured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{delay: podLifecycle, respond: func(req probe.Request) (probe.Result, error) {
+			details := map[string]string{"answers": "10.0.0.1"}
+			if req.Target == "measured.example.com" {
+				details["latencyMillis"] = "2"
+			}
+			return probe.Result{Outcome: probe.OutcomePass, Summary: "resolved", Details: details}, nil
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		measured := targetResultFor(got, "measured.example.com", "A", "cluster")
+		Expect(measured.LatencyMillis).To(Equal(int64(2)), "latency is the probe's figure, not the pod's wall time")
+		Expect(measured.RunMillis).To(BeNumerically(">=", podLifecycle.Milliseconds()))
+
+		unmeasured := targetResultFor(got, "unmeasured.example.com", "A", "cluster")
+		Expect(unmeasured.LatencyMillis).To(BeZero(), "a missing probe figure must not fall back to wall time")
+		Expect(unmeasured.RunMillis).To(BeNumerically(">=", podLifecycle.Milliseconds()))
+
+		// The history record must carry the same figures as status, not a
+		// second measurement: one run, so the values are exactly equal.
+		reports := dnsHealthReports(ctx, ns, "timing")
+		Expect(reports).To(HaveLen(1))
+		Expect(reports[0].Spec.Checks).To(HaveLen(2))
+		for _, c := range reports[0].Spec.Checks {
+			status := targetResultFor(got, c.TargetRef.Name, "A", "cluster")
+			Expect(status).NotTo(BeNil(), c.TargetRef.Name)
+			Expect(c.Details).To(HaveKeyWithValue("runMillis", strconv.FormatInt(status.RunMillis, 10)), c.TargetRef.Name)
+			if status.LatencyMillis > 0 {
+				Expect(c.Details).To(HaveKeyWithValue("latencyMillis", strconv.FormatInt(status.LatencyMillis, 10)), c.TargetRef.Name)
+			} else {
+				Expect(c.Details).NotTo(HaveKey("latencyMillis"), c.TargetRef.Name)
+			}
+		}
+		Expect(reports[0].Spec.Checks).To(ContainElement(And(
+			HaveField("TargetRef.Name", "measured.example.com"),
+			HaveField("Details", HaveKeyWithValue("latencyMillis", "2")))))
+	})
+
+	// #332: a pair that could not be launched still spent wall time against
+	// the run bound (admission, quota, API round-trips), and has no lookup.
+	It("records runMillis without latency for a pair that fails to launch", func() {
+		const launchCost = 150 * time.Millisecond
+		check := createDNSCheck(ctx, ns, "launch-failure", fathomv1alpha1.DNSCheckSpec{
+			Targets: []fathomv1alpha1.DNSTarget{
+				{Name: "rejected.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			},
+		})
+
+		launcher := &fakeDNSLauncher{delay: launchCost, respond: func(probe.Request) (probe.Result, error) {
+			return probe.Result{}, &probe.LaunchError{Err: fmt.Errorf("admission webhook denied the request")}
+		}}
+		r := newDNSCheckReconciler(launcher, 4)
+		reconcileDNSCheck(ctx, r, check)
+
+		got := reloadDNSCheck(ctx, check).Status
+		rejected := targetResultFor(got, "rejected.example.com", "A", "cluster")
+		Expect(rejected.Result).To(Equal("Error"))
+		Expect(rejected.Message).To(ContainSubstring("probe execution failed"))
+		Expect(rejected.LatencyMillis).To(BeZero(), "a pair that never ran has no lookup to report")
+		Expect(rejected.RunMillis).To(BeNumerically(">=", launchCost.Milliseconds()))
+
+		reports := dnsHealthReports(ctx, ns, "launch-failure")
+		Expect(reports).To(HaveLen(1))
+		Expect(reports[0].Spec.Checks).To(HaveLen(1))
+		details := reports[0].Spec.Checks[0].Details
+		Expect(details).To(HaveKeyWithValue("runMillis", strconv.FormatInt(rejected.RunMillis, 10)))
+		Expect(details).NotTo(HaveKey("latencyMillis"))
+	})
+
+	// #332: a probe figure that is not a non-negative int64 is dropped, never
+	// replaced, so no parser change can smuggle wall time back in unnoticed.
+	DescribeTable("omits latency when the probe's figure is invalid",
+		func(checkName, raw string) {
+			check := createDNSCheck(ctx, ns, checkName, fathomv1alpha1.DNSCheckSpec{
+				Targets: []fathomv1alpha1.DNSTarget{
+					{Name: "invalid.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+				},
+			})
+
+			launcher := &fakeDNSLauncher{delay: 20 * time.Millisecond, respond: func(probe.Request) (probe.Result, error) {
+				return probe.Result{
+					Outcome: probe.OutcomePass,
+					Summary: "resolved",
+					Details: map[string]string{"latencyMillis": raw},
+				}, nil
+			}}
+			r := newDNSCheckReconciler(launcher, 4)
+			reconcileDNSCheck(ctx, r, check)
+
+			result := targetResultFor(reloadDNSCheck(ctx, check).Status, "invalid.example.com", "A", "cluster")
+			Expect(result.LatencyMillis).To(BeZero(), "invalid probe latency %q must be omitted", raw)
+			Expect(result.RunMillis).To(BeNumerically(">=", 20), "the pair's wall time is still recorded")
+
+			reports := dnsHealthReports(ctx, ns, checkName)
+			Expect(reports).To(HaveLen(1))
+			Expect(reports[0].Spec.Checks).To(HaveLen(1))
+			Expect(reports[0].Spec.Checks[0].Details).NotTo(HaveKey("latencyMillis"))
+			Expect(reports[0].Spec.Checks[0].Details).To(HaveKey("runMillis"))
+		},
+		Entry("empty", "latency-empty", ""),
+		Entry("non-numeric", "latency-text", "fast"),
+		Entry("fractional", "latency-fraction", "1.5"),
+		Entry("negative", "latency-negative", "-5"),
+		Entry("overflowing int64", "latency-overflow", "9223372036854775808"),
+	)
+
 	// T029 / US2 — FR-036 and SC-105: a pair the spec no longer declares must
 	// leave both the status and the registry, within one run.
 	It("withdraws a removed target's result and metric series", func() {
@@ -551,13 +671,20 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultUnknown)),
 			"a truncated run must not report the pairs it did reach as the whole story")
 		Expect(targetResultFor(got, "fast-1.example.com", "A", "cluster").Result).To(Equal("Pass"))
-		Expect(targetResultFor(got, "slow-1.example.com", "A", "cluster").Result).To(Equal("Unknown"))
+		slow := targetResultFor(got, "slow-1.example.com", "A", "cluster")
+		Expect(slow.Result).To(Equal("Unknown"))
+		// #332: an unreached pair still records how long it held the bound, and
+		// has no lookup to report.
+		Expect(slow.RunMillis).To(BeNumerically(">", 0))
+		Expect(slow.LatencyMillis).To(BeZero())
 
 		complete := apiMeta.FindStatusCondition(got.Conditions, dnsCheckConditionComplete)
 		Expect(complete).NotTo(BeNil())
 		Expect(complete.Status).To(Equal(metav1.ConditionFalse))
 		Expect(complete.Reason).To(Equal("RunTruncated"))
 		Expect(complete.Message).To(ContainSubstring("2 of 4"))
+		Expect(complete.Message).To(ContainSubstring("runMillis"),
+			"the truncation message must point at the evidence for pod start-up")
 		Expect(got.Summary).To(ContainSubstring("not reached"))
 
 		// Ready stays True: the bound was too small, which is a configuration
