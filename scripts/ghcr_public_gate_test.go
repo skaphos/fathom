@@ -96,10 +96,20 @@ func TestGHCRPublicCheckFailsForPrivatePackage(t *testing.T) {
 	if ok {
 		t.Fatalf("check passed although fathom-probe is private:\n%s", out)
 	}
-	for _, want := range []string{"ghcr.io/skaphos/fathom-probe", "Change visibility -> Public", "not public: fathom-probe"} {
+	for _, want := range []string{
+		"ghcr.io/skaphos/fathom-probe",
+		"Change visibility -> Public",
+		"scripts/check-ghcr-public.sh fathom-probe",
+		"not public: fathom-probe",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+	// The remediation must point back at the gate, not at a raw curl status
+	// probe, which would pass the truncated / token-less 200s the gate rejects.
+	if strings.Contains(out, "curl") {
+		t.Errorf("remediation suggests a raw curl check instead of the gate script:\n%s", out)
 	}
 	// One request for the public package, GHCR_CHECK_ATTEMPTS=2 for the private one.
 	if got := hits.Load(); got != 3 {

@@ -93,9 +93,15 @@ check_package() {
         ;;
     esac
     echo "  Fix: github.com/orgs/${namespace} -> Packages -> ${pkg} -> Package settings ->"
-    echo "       Danger Zone -> Change visibility -> Public, then re-run this check:"
-    printf "       curl -s -o /dev/null -w '%%{http_code}\\\\n' '%s'\n" \
-      "${endpoint}?scope=repository:${namespace}/${pkg}:pull"
+    echo "       Danger Zone -> Change visibility -> Public, then re-run this check"
+    # Point back at this script rather than a raw curl: a bare status-code
+    # probe would report 200 for the truncated / token-less responses the
+    # gate deliberately rejects.
+    if [[ "${namespace}" == "skaphos" ]]; then
+      echo "       (from the repo root): scripts/check-ghcr-public.sh ${pkg}"
+    else
+      echo "       (from the repo root): GHCR_NAMESPACE=${namespace} scripts/check-ghcr-public.sh ${pkg}"
+    fi
   } >&2
   return 1
 }

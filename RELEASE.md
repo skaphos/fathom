@@ -123,17 +123,19 @@ After the first release that pushes a new package name:
 1. Open <https://github.com/orgs/skaphos/packages>, select the package, then
    **Package settings → Danger Zone → Change visibility → Public**. This is
    one-way: a public package cannot be made private again.
-2. Verify anonymously (no credentials). `200` means public; `401`/`403` means
-   private or missing:
+2. Verify anonymously with the same gate the release runs, from the repo root:
 
    ```bash
-   for pkg in fathom-operator fathom-probe fathom-node-agent charts/fathom-operator; do
-     printf '%s ' "$pkg"
-     curl -s -o /dev/null -w '%{http_code}\n' \
-       "https://ghcr.io/token?scope=repository:skaphos/${pkg}:pull"
-   done
-   # or: ./scripts/check-ghcr-public.sh fathom-operator fathom-probe fathom-node-agent charts/fathom-operator
+   ./scripts/check-ghcr-public.sh fathom-operator fathom-probe fathom-node-agent charts/fathom-operator
    ```
+
+   It exits non-zero and names every package that is not anonymously pullable.
+   Under the hood it requests a pull token from
+   `https://ghcr.io/token?scope=repository:skaphos/<pkg>:pull` with no
+   credentials and passes only a complete `200` response that actually carries
+   a token (`401`/`403` means private or missing). Use the script rather than
+   a bare `curl -w '%{http_code}'` probe, which would also report `200` for a
+   truncated or token-less response.
 
 3. Re-run the release's `verify-public` job.
 
