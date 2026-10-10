@@ -72,8 +72,9 @@ Tag creation triggers `.github/workflows/release.yml`, which:
    `fathomctl` archives, checksums, and signature bundle attached, plus
    auto-generated release notes.
 12. In a follow-up `verify-public` job, runs `scripts/check-ghcr-public.sh`
-   against `fathom-operator`, `fathom-probe`, `fathom-node-agent`, and
-   `charts/fathom-operator` and fails the release if any of them cannot be
+   against `fathom-operator`, `fathom-probe`, `fathom-node-agent`,
+   `charts/fathom-operator`, `fathom-operator-bundle`, and
+   `fathom-operator-catalog` and fails the release if any of them cannot be
    pulled anonymously (see
    [First publish of a new GHCR package](#first-publish-of-a-new-ghcr-package)).
 
@@ -126,7 +127,8 @@ After the first release that pushes a new package name:
 2. Verify anonymously with the same gate the release runs, from the repo root:
 
    ```bash
-   ./scripts/check-ghcr-public.sh fathom-operator fathom-probe fathom-node-agent charts/fathom-operator
+   ./scripts/check-ghcr-public.sh fathom-operator fathom-probe fathom-node-agent \
+     charts/fathom-operator fathom-operator-bundle fathom-operator-catalog
    ```
 
    It exits non-zero and names every package that is not anonymously pullable.
@@ -140,10 +142,9 @@ After the first release that pushes a new package name:
 3. Re-run the release's `verify-public` job.
 
 When a release starts publishing a new package that users pull anonymously,
-add it to the `verify-public` job in `.github/workflows/release.yml`. The OLM
-bundle (`fathom-operator-bundle`) and catalog (`fathom-operator-catalog`) are
-currently private and not gated; make them public and add them to the job
-before documenting anonymous OLM installs.
+add it to the `verify-public` job in `.github/workflows/release.yml`. The job
+gates every package the workflow publishes today, including the OLM bundle
+(`fathom-operator-bundle`) and catalog (`fathom-operator-catalog`).
 
 ## Supply-Chain Verification
 
