@@ -361,10 +361,9 @@ jobs:
           persist-credentials: false
 
       - name: Check anonymous pull access
-        # The anonymous install surface: the three runtime images and the Helm
-        # chart (pushed to oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts above).
-        # The OLM bundle and catalog are a side offering and are deliberately
-        # not gated here; add them when they are made public.
+        # Every package this workflow publishes: the three runtime images, the
+        # Helm chart (pushed to oci://${REGISTRY}/${IMAGE_NAMESPACE}/charts
+        # above), and the OLM bundle and catalog images.
         env:
           GHCR_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
         run: |
@@ -372,4 +371,6 @@ jobs:
             "${IMAGE_NAME}" \
             "${PROBE_NAME}" \
             "${NODE_AGENT_NAME}" \
-            "charts/${IMAGE_NAME}"
+            "charts/${IMAGE_NAME}" \
+            "${BUNDLE_NAME}" \
+            "${CATALOG_NAME}"
