@@ -63,6 +63,49 @@ rules:
 {{- $subjects = append $subjects (dict "kind" "ServiceAccount" "name" .activeGateServiceAccount.name "namespace" .activeGateServiceAccount.namespace) }}
 {{- end }}
 {{- end }}
+{{- with .Values.metrics.integrations.dynatrace }}
+{{- if and .enabled .caConfigMap.name }}
+{{- $ns := .caConfigMap.namespace | default $.Release.Namespace }}
+---
+{{/*
+Dynatrace resolves metrics.dynatrace.com/tls.ca.crt through the ActiveGate's
+own identity, which has no ConfigMap access by default. Grant it get on that
+one ConfigMap and nothing else.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fathom-operator.fullname" $ }}-dynatrace-metrics-ca
+  namespace: {{ $ns }}
+  labels:
+    {{- include "fathom-operator.labels" $ | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - {{ .caConfigMap.name }}
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" $ }}-dynatrace-metrics-ca
+  namespace: {{ $ns }}
+  labels:
+    {{- include "fathom-operator.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fathom-operator.fullname" $ }}-dynatrace-metrics-ca
+subjects:
+  - kind: ServiceAccount
+    name: {{ .activeGateServiceAccount.name }}
+    namespace: {{ .activeGateServiceAccount.namespace }}
+{{- end }}
+{{- end }}
 {{- with $subjects }}
 ---
 {{/*

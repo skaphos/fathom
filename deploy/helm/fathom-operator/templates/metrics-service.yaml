@@ -22,7 +22,18 @@ metadata:
         "metrics.dynatrace.com/path" "/metrics"
         "metrics.dynatrace.com/secure" ($.Values.metrics.secure | toString) }}
   {{- if $.Values.metrics.secure }}
-  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" (.insecureSkipVerify | toString) }}
+  {{- /*
+  The ActiveGate forwards its own ServiceAccount token, so refuse to render
+  token forwarding over an unverified TLS connection unless explicitly chosen.
+  */}}
+  {{- if .caConfigMap.name }}
+  {{- $_ := set $dt "metrics.dynatrace.com/tls.ca.crt" (printf "configmap:%s:%s:%s" (.caConfigMap.namespace | default $.Release.Namespace) .caConfigMap.name .caConfigMap.key) }}
+  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" "false" }}
+  {{- else if .insecureSkipVerify }}
+  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" "true" }}
+  {{- else }}
+  {{- fail "metrics.integrations.dynatrace: the ActiveGate sends its ServiceAccount token to the metrics endpoint, so its certificate must be verified. Set metrics.integrations.dynatrace.caConfigMap.name to a ConfigMap holding the CA of a CA-signed metrics certificate (metrics.certSecretName), or explicitly accept the risk with metrics.integrations.dynatrace.insecureSkipVerify=true." }}
+  {{- end }}
   {{- $_ := set $dt "metrics.dynatrace.com/http.auth" "builtin:default" }}
   {{- end }}
   {{- $annotations = merge $annotations $dt }}

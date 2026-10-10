@@ -121,16 +121,32 @@ metrics:
       activeGateServiceAccount:     # defaults shown
         name: dynatrace-activegate
         namespace: dynatrace
+      caConfigMap:                  # CA of a CA-signed metrics certificate
+        name: fathom-metrics-ca
+        key: ca.crt
+  certSecretName: fathom-metrics-cert   # e.g. issued by cert-manager
+  certPath: /tmp/k8s-metrics-server/metrics-certs
 ```
 
 The preset annotates the metrics `Service` with the `metrics.dynatrace.com/*`
 keys Dynatrace's Prometheus scraping reads (`scrape`, `port` — the container
-port, as Dynatrace requires on a Service — `path`, `secure`,
-`insecure_skip_verify`), and with `http.auth: builtin:default`, which makes the
-ActiveGate send **its own ServiceAccount token**. It then binds that
-ServiceAccount to the `metrics-reader` role. Anything you set in
-`metrics.service.annotations` overrides the preset key by key — for example
-`metrics.dynatrace.com/filter` to ingest only some metrics.
+port, as Dynatrace requires on a Service — `path`, `secure`), and with
+`http.auth: builtin:default`, which makes the ActiveGate send **its own
+ServiceAccount token**. It then binds that ServiceAccount to the
+`metrics-reader` role. Anything you set in `metrics.service.annotations`
+overrides the preset key by key — for example `metrics.dynatrace.com/filter` to
+ingest only some metrics.
+
+Because that token is the ActiveGate's own — usually with broad cluster read —
+**the serving certificate must be verified**. The operator's default
+certificate is self-signed and regenerated on every start, so it cannot be
+pinned: serve a CA-signed metrics certificate (`metrics.certSecretName`) and
+point `caConfigMap` at a ConfigMap holding its CA. The preset then sets
+`metrics.dynatrace.com/tls.ca.crt` and grants the ActiveGate `get` on that one
+ConfigMap, which Dynatrace needs and does not grant by default. With secure
+metrics and no `caConfigMap`, the chart **refuses to render** unless you
+explicitly accept unverified TLS with
+`metrics.integrations.dynatrace.insecureSkipVerify: true`.
 
 - Authenticated scraping needs an **in-cluster ActiveGate that monitors the
   local Kubernetes API**; an ActiveGate outside the cluster cannot scrape this

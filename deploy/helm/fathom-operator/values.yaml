@@ -115,8 +115,20 @@ metrics:
       activeGateServiceAccount:
         name: dynatrace-activegate
         namespace: dynatrace
-      # The serving certificate is self-signed unless certSecretName is set.
-      insecureSkipVerify: true
+      # The ActiveGate sends its OWN ServiceAccount token (typically broad
+      # cluster read) to this endpoint, so the serving certificate must be
+      # verified. Serve a CA-signed metrics certificate (certSecretName, e.g.
+      # from cert-manager) and point caConfigMap at a ConfigMap holding that
+      # CA; the chart grants the ActiveGate read access to exactly that
+      # ConfigMap. Rendering fails with secure metrics unless caConfigMap.name
+      # is set or you explicitly accept insecureSkipVerify: true (the
+      # controller-runtime default certificate is self-signed and regenerated
+      # at startup, so it cannot be pinned).
+      caConfigMap:
+        namespace: ""     # defaults to the release namespace
+        name: ""
+        key: ca.crt
+      insecureSkipVerify: false
     # Sumo Logic Kubernetes Collection (v4+, OpenTelemetry): renders the
     # ServiceMonitor (even with serviceMonitor.enabled=false) labelled for the
     # collection's Target Allocator, which selects release: <its release name>.

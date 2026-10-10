@@ -153,14 +153,29 @@ func helmAnnotations(t *testing.T, objects []map[string]any) map[string]any {
 	return annotations
 }
 
-// The Dynatrace preset makes an in-cluster ActiveGate scrape the HTTPS
-// endpoint with its own ServiceAccount token, and grants that identity exactly
-// the metrics-reader role. An explicit service annotation wins over the preset.
-func TestHelmDynatracePresetAnnotatesAndAuthorizesTheActiveGate(t *testing.T) {
+// The ActiveGate forwards its own (typically cluster-wide) ServiceAccount token
+// to the metrics endpoint, so the preset refuses to render token forwarding over
+// unverified TLS unless the adopter supplies a CA or explicitly accepts it.
+func TestHelmDynatracePresetRefusesUnverifiedTokenForwarding(t *testing.T) {
+	_, out, err := renderRuntimeChart(t, "--set", "metrics.integrations.dynatrace.enabled=true")
+	if err == nil {
+		t.Fatal("the Dynatrace preset rendered token forwarding without a CA or an explicit insecureSkipVerify")
+	}
+	if !strings.Contains(out, "caConfigMap") || !strings.Contains(out, "insecureSkipVerify") {
+		t.Errorf("render error does not name both remedies:\n%s", out)
+	}
+}
+
+// With a CA ConfigMap the preset verifies the serving certificate, grants the
+// ActiveGate get on exactly that ConfigMap, and binds it to the metrics-reader
+// role. An explicit service annotation is kept alongside the preset's keys.
+func TestHelmDynatracePresetVerifiesWithACAConfigMap(t *testing.T) {
 	objects, out, err := renderRuntimeChart(t,
 		"--set", "metrics.integrations.dynatrace.enabled=true",
 		"--set", "metrics.integrations.dynatrace.activeGateServiceAccount.namespace=dt",
-		"--set-string", `metrics.service.annotations.metrics\.dynatrace\.com/insecure_skip_verify=false`)
+		"--set", "metrics.integrations.dynatrace.caConfigMap.name=fathom-metrics-ca",
+		// --set-json: --set-string would parse the braces of the JSON value.
+		"--set-json", `metrics.service.annotations={"metrics.dynatrace.com/filter":"{\"mode\":\"include\",\"names\":[\"fathom_check_result\"]}"}`)
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, out)
 	}
@@ -169,19 +184,58 @@ func TestHelmDynatracePresetAnnotatesAndAuthorizesTheActiveGate(t *testing.T) {
 		"metrics.dynatrace.com/port":                 "8443",
 		"metrics.dynatrace.com/path":                 "/metrics",
 		"metrics.dynatrace.com/secure":               "true",
-		"metrics.dynatrace.com/insecure_skip_verify": "false", // explicit annotation wins
+		"metrics.dynatrace.com/tls.ca.crt":           "configmap:default:fathom-metrics-ca:ca.crt",
+		"metrics.dynatrace.com/insecure_skip_verify": "false",
 		"metrics.dynatrace.com/http.auth":            "builtin:default",
+		"metrics.dynatrace.com/filter":               `{"mode":"include","names":["fathom_check_result"]}`,
 	}
 	if got := helmAnnotations(t, objects); !reflect.DeepEqual(got, want) {
 		t.Errorf("metrics Service annotations\n got %v\nwant %v", got, want)
 	}
+
+	activeGate := []any{map[string]any{"kind": "ServiceAccount", "name": "dynatrace-activegate", "namespace": "dt"}}
 	binding := helmObjectNamed(objects, "ClusterRoleBinding", "-metrics-reader")
 	if binding == nil {
 		t.Fatal("the Dynatrace preset did not bind the ActiveGate to the metrics-reader role")
 	}
-	wantSubjects := []any{map[string]any{"kind": "ServiceAccount", "name": "dynatrace-activegate", "namespace": "dt"}}
-	if got := binding["subjects"]; !reflect.DeepEqual(got, wantSubjects) {
-		t.Errorf("binding subjects = %v, want %v", got, wantSubjects)
+	if got := binding["subjects"]; !reflect.DeepEqual(got, activeGate) {
+		t.Errorf("metrics-reader subjects = %v, want %v", got, activeGate)
+	}
+
+	role := helmObjectNamed(objects, "Role", "-dynatrace-metrics-ca")
+	if role == nil {
+		t.Fatal("no Role lets the ActiveGate read the CA ConfigMap")
+	}
+	wantRules := []any{map[string]any{
+		"apiGroups": []any{""}, "resources": []any{"configmaps"},
+		"resourceNames": []any{"fathom-metrics-ca"}, "verbs": []any{"get"},
+	}}
+	if got := role["rules"]; !reflect.DeepEqual(got, wantRules) {
+		t.Errorf("CA Role rules = %v, want get on the one ConfigMap", got)
+	}
+	roleBinding := helmObjectNamed(objects, "RoleBinding", "-dynatrace-metrics-ca")
+	if roleBinding == nil || !reflect.DeepEqual(roleBinding["subjects"], activeGate) {
+		t.Errorf("CA RoleBinding = %v, want it bound to the ActiveGate", roleBinding)
+	}
+}
+
+// Accepting unverified TLS is possible, but only as an explicit choice.
+func TestHelmDynatracePresetExplicitInsecureSkipVerify(t *testing.T) {
+	objects, out, err := renderRuntimeChart(t,
+		"--set", "metrics.integrations.dynatrace.enabled=true",
+		"--set", "metrics.integrations.dynatrace.insecureSkipVerify=true")
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, out)
+	}
+	annotations := helmAnnotations(t, objects)
+	if annotations["metrics.dynatrace.com/insecure_skip_verify"] != "true" {
+		t.Errorf("insecure_skip_verify = %v, want true when explicitly accepted", annotations["metrics.dynatrace.com/insecure_skip_verify"])
+	}
+	if _, ok := annotations["metrics.dynatrace.com/tls.ca.crt"]; ok {
+		t.Error("tls.ca.crt set without a CA ConfigMap")
+	}
+	if helmObjectNamed(objects, "Role", "-dynatrace-metrics-ca") != nil {
+		t.Error("CA ConfigMap access granted without a CA ConfigMap")
 	}
 }
 
