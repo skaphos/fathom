@@ -997,6 +997,48 @@ func TestAReplacedSnapshotSupersedesACompletedRun(t *testing.T) {
 	}
 }
 
+// The same matrix row, in the window before the definition reconciler has
+// republished the snapshot: the valid edit is stored but the registry still
+// serves the revision the run dispatched to. Only the final fence's uncached
+// generation re-read can discard the run here, and it must, or the old revision
+// publishes after the edit (the defect the e2e valid-edit fence guards, #356).
+func TestAStoredValidEditSupersedesARunBeforeTheSnapshotIsReplaced(t *testing.T) {
+	f := newRuntimeCheckFixture(t)
+	f.ready()
+	if attempt := f.runOK(); !attempt.Published {
+		t.Fatalf("the baseline run did not publish: %+v", attempt)
+	}
+	before := f.evidence().DeepCopy()
+
+	f.runner.barrier = func(_ context.Context, phase string) {
+		if phase != runtimeBarrierAfterExecute {
+			return
+		}
+		d := f.definition()
+		d.Spec.AdapterVersion = "1.0.1"
+		d.Generation = 2
+		f.update(d)
+	}
+	f.advance(time.Minute)
+
+	attempt := f.runOK()
+	if attempt.Published || attempt.Completed {
+		t.Fatalf("a run of the pre-edit revision published after a valid edit was stored: %+v", attempt)
+	}
+	if attempt.Reason != reasonSuperseded {
+		t.Fatalf("reason = %q, want %q (%s)", attempt.Reason, reasonSuperseded, attempt.Message)
+	}
+	if !strings.Contains(attempt.Message, "advanced to generation 2") {
+		t.Errorf("message = %q, want the stored definition generation named", attempt.Message)
+	}
+	if attempt.Requeue <= 0 {
+		t.Fatal("a superseded run must enqueue the current revision")
+	}
+	if after := f.evidence(); !equality.Semantic.DeepEqual(after, before) {
+		t.Errorf("evidence changed under a superseded run:\n got %+v\nwant %+v", after, before)
+	}
+}
+
 // Matrix row: "Edit during evaluation | Final revision/context mismatch discards
 // completion | Superseded attempt recorded; enqueue current revision". The three
 // ways an AddonCheck's own context can move are independently load-bearing: a
