@@ -273,16 +273,19 @@ so it changes only deliberately.
   than zero when it cannot be resolved, the wrapper-kind staleness rules
   (`HealthCheck` follows its target, `ClusterHealth` its stalest child and
   slowest cadence), and series that live and die with their resource;
-- where label values come from — only three bounded sources:
-  - the specs of your own resources: resource names, `DNSCheck` target names,
-    `NodeHealthCheck` item `path`s, and a runtime `AddonDefinition`'s addon
-    type and family names (the `adapter` / `family` labels), each capped by the
-    CRD schema;
-  - identifiers Fathom defines: node names, built-in adapter and family names
-    (`adapter`, `family`), and the enumerated values above;
-  - nothing else. Values Fathom *observes* (messages, reasons, versions,
-    discovered certificate paths, subjects, issuers) stay in status, Events and
-    `HealthReport`, never in a label.
+- where label values come from — only these bounded sources:
+  - Kubernetes object names: your check resources' names and namespaces, and
+    node names;
+  - the specs of your own resources, each capped by the CRD schema: `DNSCheck`
+    target names and resolver names (`spec.resolvers`), `NodeHealthCheck` item
+    `path`s, and a runtime `AddonDefinition`'s addon type and family names (the
+    `adapter` / `family` labels);
+  - identifiers Fathom defines: built-in adapter and family names, the
+    implicit `cluster` resolver, and the enumerated values above.
+
+  Values Fathom *observes* (messages, reasons, versions, discovered certificate
+  paths, subjects, issuers) stay in status, Events and `HealthReport`, never in
+  a label.
 
 **Breaking** — made only in a release whose notes flag it as a breaking change,
 never silently and never in a patch release:

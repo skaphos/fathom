@@ -168,21 +168,22 @@ func TestHelmDynatracePresetRefusesUnverifiedTokenForwarding(t *testing.T) {
 
 // With a CA ConfigMap the preset verifies the serving certificate, grants the
 // ActiveGate get on exactly that ConfigMap, and binds it to the metrics-reader
-// role. An explicit service annotation is kept alongside the preset's keys.
+// role. Explicit service annotations are kept alongside the preset's keys and
+// win over a key the preset also sets (here `path`).
 func TestHelmDynatracePresetVerifiesWithACAConfigMap(t *testing.T) {
 	objects, out, err := renderRuntimeChart(t,
 		"--set", "metrics.integrations.dynatrace.enabled=true",
 		"--set", "metrics.integrations.dynatrace.activeGateServiceAccount.namespace=dt",
 		"--set", "metrics.integrations.dynatrace.caConfigMap.name=fathom-metrics-ca",
 		// --set-json: --set-string would parse the braces of the JSON value.
-		"--set-json", `metrics.service.annotations={"metrics.dynatrace.com/filter":"{\"mode\":\"include\",\"names\":[\"fathom_check_result\"]}"}`)
+		"--set-json", `metrics.service.annotations={"metrics.dynatrace.com/filter":"{\"mode\":\"include\",\"names\":[\"fathom_check_result\"]}","metrics.dynatrace.com/path":"/custom-metrics"}`)
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, out)
 	}
 	want := map[string]any{
 		"metrics.dynatrace.com/scrape":               "true",
 		"metrics.dynatrace.com/port":                 "8443",
-		"metrics.dynatrace.com/path":                 "/metrics",
+		"metrics.dynatrace.com/path":                 "/custom-metrics", // explicit annotation wins
 		"metrics.dynatrace.com/secure":               "true",
 		"metrics.dynatrace.com/tls.ca.crt":           "configmap:default:fathom-metrics-ca:ca.crt",
 		"metrics.dynatrace.com/insecure_skip_verify": "false",
