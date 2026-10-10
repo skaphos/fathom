@@ -19,7 +19,8 @@
 # token from the GHCR token endpoint with no credentials:
 #   200       -> public (pass)
 #   401 / 403 -> private or missing (fail)
-#   anything else (5xx, network error) -> retried, then fail
+#   anything else (5xx, transport error, truncated body, 200 without a
+#   token) -> retried, then fail
 # Every non-200 is retried with exponential backoff, since a just-pushed
 # package can take a moment to settle.
 #
@@ -41,15 +42,28 @@ if [[ $# -eq 0 ]]; then
   exit 2
 fi
 
+body_file=$(mktemp)
+trap 'rm -f "${body_file}"' EXIT
+
 # anon_status prints the HTTP status of an unauthenticated pull-token request
-# for one package, or 000 when the request itself failed.
+# for one package. It prints 000 when the transfer itself failed (curl exits
+# non-zero even if a 200 status line already arrived, e.g. a truncated body)
+# and 200-notoken when the 200 response carries no token, so only a complete
+# response that actually grants an anonymous token counts as public.
 anon_status() {
   local pkg="$1" status
   # No credentials on purpose: this is exactly what an anonymous
   # `docker pull` / `helm install oci://...` does first.
-  status=$(curl --silent --show-error --output /dev/null \
+  if ! status=$(curl --silent --output "${body_file}" \
     --max-time 20 --write-out '%{http_code}' \
-    "${endpoint}?scope=repository:${namespace}/${pkg}:pull" 2>/dev/null) || true
+    "${endpoint}?scope=repository:${namespace}/${pkg}:pull" 2>/dev/null); then
+    echo "000"
+    return
+  fi
+  if [[ "${status}" == "200" ]] && ! grep -Eq '"(access_)?token"[[:space:]]*:[[:space:]]*"[^"]+"' "${body_file}"; then
+    echo "200-notoken"
+    return
+  fi
   echo "${status:-000}"
 }
 
