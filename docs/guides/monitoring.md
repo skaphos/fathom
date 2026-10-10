@@ -7,8 +7,16 @@ SPDX-License-Identifier: MIT
 Fathom turns platform integrity into Kubernetes resource status. This guide
 covers the three ways a platform team consumes that: reading status with
 `kubectl`, scraping Prometheus metrics, and tracing reconciles. It closes with
-practical alerting patterns and an honest note on what is and isn't a metric
-today.
+example alerting rules and deployment gates.
+
+Fathom emits signal; it does not fire alerts. What pages whom, at which
+severity and after how long, differs between every platform that adopts it, so
+that policy is yours. What Fathom promises is the **metric surface** — the
+names, labels and semantics in [The metric contract](#the-metric-contract) —
+and it holds that surface to an explicit
+[stability promise](#stability-promise). The alert rules in this guide, and
+the opt-in `PrometheusRule` component, are worked examples you are expected to
+adapt.
 
 ## 1. Read status with `kubectl`
 
@@ -72,15 +80,17 @@ helm upgrade fathom oci://ghcr.io/skaphos/charts/fathom-operator \
 If you deploy via kustomize instead, the Prometheus `ServiceMonitor` is an
 opt-in overlay under `config/components/prometheus`.
 
-### Operator metrics
+### The metric contract
 
 Registered with the controller-runtime registry (so the built-in
-controller-runtime and Go metrics are exposed alongside them):
+controller-runtime and Go metrics are exposed alongside them). Every `fathom_*`
+metric in this guide is part of the contract described under
+[Stability promise](#stability-promise):
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
 | `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
-| `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
+| `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Example alerting rules](#4-example-alerting-rules). |
 | `fathom_check_interval_seconds` | gauge | `kind`, `name`, `namespace` | The cadence a check is currently expected to run at, after per-resource override and floor clamping. For `NodeHealthCheck` this is the **capped agent cadence** (`min(spec.interval, 5m)`), not `spec.interval`: a frozen verdict must read as stale within minutes even on a daily check. Join it against the last-run timestamp to express staleness relative to cadence instead of a fixed threshold. **Absent** — not zero — when the cadence cannot be resolved. |
 | `fathom_dnscheck_target_result` | gauge | `namespace`, `check`, `name`, `record_type`, `resolver`, `result` | **`fathom_check_result` one level down**, for `DNSCheck` only: one-hot per (target, vantage point) pair, so you can alert on the single name that broke rather than on the check as a whole. See [Per-target DNS results](#per-target-dns-results) for the cardinality budget. |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
@@ -118,13 +128,57 @@ refreshed contributor. Together with the stalest-observation rule above, that is
 what lets one alert cover a mixed-cadence aggregate without false positives: a
 healthy hourly child no longer drags a five-minute aggregate into permanent
 staleness. Checks whose cadence cannot be resolved publish no interval series, so the
-vector join in the first clause drops them — which is why the shipped rule
+vector join in the first clause drops them — which is why the sample rule
 carries a second `== 0` clause. Without it a `ClusterHealth` whose selector
 matches nothing would silently stop alerting, and a typo'd selector is exactly
 the mistake that rule exists to catch.
 
 Label cardinality is bounded by design: one series set per check resource,
 and never any free-text label.
+
+### Stability promise
+
+The metric surface is Fathom's alerting contract: you write rules against it,
+so it changes only deliberately.
+
+**Covered** — every `fathom_*` metric documented in this guide:
+
+- metric names, types and units;
+- label keys, and the documented values of enumerated labels (`kind`,
+  `result`, `type`, `resource`, `record_type`);
+- the documented semantics: one-hot result sets with exactly one series at `1`,
+  the `0` "never ran" last-run sentinel, an interval that is **absent** rather
+  than zero when it cannot be resolved, the wrapper-kind staleness rules
+  (`HealthCheck` follows its target, `ClusterHealth` its stalest child and
+  slowest cadence), and series that live and die with their resource;
+- the absence of free-text labels: messages, reasons, versions, paths and
+  subjects stay in status, Events and `HealthReport`, never in a label.
+
+**Breaking** — made only in a release whose notes flag it as a breaking change,
+never silently and never in a patch release:
+
+- renaming or removing a metric or a label;
+- changing a metric's type or unit;
+- changing what a value means (for example #307, which switched a
+  `ClusterHealth`'s last-run timestamp from its freshest to its stalest child,
+  shipped as a breaking change);
+- adding a label to an existing metric **by default** — it changes series
+  identity and breaks `on(...)` joins and recording rules;
+- removing a documented value of an enumerated label.
+
+**Not breaking:**
+
+- new metrics;
+- opt-in labels that are off unless you enable them;
+- new values of an enumerated label that come with a new check kind, item type
+  or result — match the values you care about (`result=~"Fail|Error"`) rather
+  than assuming the set is closed;
+- histogram bucket boundaries;
+- the sample alert rules, the `ServiceMonitor` and Helm scrape defaults, and the
+  controller-runtime and Go runtime metrics, which belong to their upstreams.
+
+Series continuity across an operator restart is not promised: standard
+Prometheus gauge semantics apply.
 
 ### Per-target DNS results
 
@@ -257,7 +311,15 @@ Spans emitted:
 Full setup (endpoint, sampling ratio, TLS) is in
 [Configuration → Tracing](../reference/configuration.md#tracing).
 
-## 4. Alerting patterns
+## 4. Example alerting rules
+
+> **These are starting points, not Fathom policy.** Fathom does not decide what
+> pages you. Every rule below is a composition over the
+> [metric contract](#the-metric-contract): copy it into your own rule set and
+> tune the severity, the `for` window and any threshold to your platform and
+> on-call. Rule names and expressions in this section and in the sample
+> component may change in any release; the metrics they read change only under
+> the [stability promise](#stability-promise).
 
 ### Certificate expiry (the clean case)
 
@@ -337,12 +399,15 @@ groups:
           severity: warning
 ```
 
-Both rules also ship ready-to-install as an opt-in kustomize component,
+The same two rules are available as an opt-in **sample** kustomize component,
 `config/components/prometheus-rule` (requires the prometheus-operator CRDs;
 enable it next to the `prometheus` ServiceMonitor component in
-`config/default/kustomization.yaml`). The shipped rules are build-validated in
-CI (`task verify-alert-rules`); they are not exercised by promtool-style rule
-unit tests.
+`config/default/kustomization.yaml`). It exists so you can see the rules
+working end to end; treat it as a template, review it before enabling it, and
+prefer copying the rules into a rule set you own. The sample is build-validated
+in CI (`task verify-alert-rules`), and a gate test keeps the staleness rule
+cadence-relative; it is not exercised by promtool-style rule unit tests. The
+Helm chart ships no `PrometheusRule`.
 
 Status remains the source of truth the metric is derived from — for a
 just-in-time verdict or a deploy gate, keep reading status

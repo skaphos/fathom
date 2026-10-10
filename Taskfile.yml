@@ -118,7 +118,7 @@ tasks:
       - ./scripts/check-crd-compat.sh
 
   verify-alert-rules:
-    desc: Render the opt-in prometheus components (and the default overlay with them disabled) so YAML/kustomize breakage in the shipped alert rules fails CI (skaphos/fathom#154)
+    desc: Render the opt-in prometheus components (and the default overlay with them disabled) so YAML/kustomize breakage in the sample alert rules fails CI (skaphos/fathom#154)
     cmds:
       - '{{.KUSTOMIZE}} build config/components/build-check >/dev/null'
       - '{{.KUSTOMIZE}} build config/default >/dev/null'
