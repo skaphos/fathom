@@ -72,8 +72,9 @@ Tag creation triggers `.github/workflows/release.yml`, which:
    `fathomctl` archives, checksums, and signature bundle attached, plus
    auto-generated release notes.
 12. In a follow-up `verify-public` job, runs `scripts/check-ghcr-public.sh`
-   against `fathom-operator`, `fathom-probe`, `fathom-node-agent`, and
-   `charts/fathom-operator` and fails the release if any of them cannot be
+   against `fathom-operator`, `fathom-probe`, `fathom-node-agent`,
+   `charts/fathom-operator`, `fathom-operator-bundle`, and
+   `fathom-operator-catalog` and fails the release if any of them cannot be
    pulled anonymously (see
    [First publish of a new GHCR package](#first-publish-of-a-new-ghcr-package)).
 
