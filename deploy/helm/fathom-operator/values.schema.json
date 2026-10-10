@@ -77,7 +77,69 @@
           "type": "object",
           "properties": {
             "enabled": {"type": "boolean"},
-            "port":    {"type": "integer", "minimum": 1, "maximum": 65535}
+            "port":    {"type": "integer", "minimum": 1, "maximum": 65535},
+            "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+          }
+        },
+        "reader": {
+          "type": "object",
+          "properties": {
+            "subjects": {
+              "$comment": "RBAC subjects bound to the metrics-reader ClusterRole (get on /metrics only). A ServiceAccount subject must name its namespace.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["kind", "name"],
+                "properties": {
+                  "kind":      {"type": "string", "enum": ["ServiceAccount", "User", "Group"]},
+                  "name":      {"type": "string", "minLength": 1},
+                  "namespace": {"type": "string"},
+                  "apiGroup":  {"type": "string"}
+                },
+                "if":   {"properties": {"kind": {"const": "ServiceAccount"}}},
+                "then": {"required": ["namespace"], "properties": {"namespace": {"minLength": 1}}}
+              }
+            }
+          }
+        },
+        "integrations": {
+          "type": "object",
+          "properties": {
+            "dynatrace": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "activeGateServiceAccount": {
+                  "type": "object",
+                  "required": ["name", "namespace"],
+                  "properties": {
+                    "name":      {"type": "string", "minLength": 1},
+                    "namespace": {"type": "string", "minLength": 1}
+                  }
+                },
+                "insecureSkipVerify": {"type": "boolean"}
+              }
+            },
+            "sumologic": {
+              "type": "object",
+              "properties": {
+                "enabled":     {"type": "boolean"},
+                "releaseName": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled":   {"type": "boolean"},
+            "namespace": {"type": "string"},
+            "labels":    {"type": "object", "additionalProperties": {"type": "string"}},
+            "groups": {
+              "$comment": "Rule groups rendered instead of the sample; empty renders the sample.",
+              "type": "array",
+              "items": {"type": "object", "required": ["name", "rules"]}
+            }
           }
         },
         "serviceMonitor": {

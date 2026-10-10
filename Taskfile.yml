@@ -126,7 +126,7 @@ tasks:
   # --- Helm chart (derived from config/; kustomize stays source of truth) ---
 
   helm:sync:
-    desc: Regenerate the chart's derived CRDs and manager RBAC rules from config/
+    desc: Regenerate the chart's derived CRDs, manager RBAC rules and sample alert rules from config/
     cmds:
       # CRDs: Helm-native crds/ dir is installed as-is (never upgraded by Helm).
       - task: manifests
@@ -142,6 +142,14 @@ tasks:
         out="{{.HELM_CHART_DIR}}/files/manager-rules.yaml"
         mkdir -p "$(dirname "$out")"
         awk 'f && /^[A-Za-z]/ {f=0} /^rules:/ {f=1; next} f' config/rbac/role.yaml > "$out"
+      # Sample alert rules: the chart's opt-in PrometheusRule embeds the
+      # kustomize sample's rule groups verbatim (de-indented to a top-level
+      # list) so the two install paths can never drift (skaphos/fathom#276).
+      - |
+        set -euo pipefail
+        out="{{.HELM_CHART_DIR}}/files/prometheus-rule-groups.yaml"
+        awk 'f {sub(/^    /, ""); print} /^  groups:/ {f=1}' \
+          config/components/prometheus-rule/prometheusrule.yaml > "$out"
 
   # --- Docs ---
 

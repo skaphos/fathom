@@ -56,17 +56,28 @@ Fathom serves metrics with controller-runtime's built-in authn/authz filter
   (`metrics.allowInsecure`). See
   [Configuration → Options](../reference/configuration.md#options).
 
-### Wiring up a ServiceMonitor (Helm)
+### Wiring up Prometheus (Helm)
 
-The chart can create the metrics `Service` and a Prometheus-Operator
-`ServiceMonitor` for you:
+The chart can create everything a Prometheus Operator install needs: the
+metrics `Service`, a `ServiceMonitor`, the RBAC that lets your Prometheus
+scrape, and the sample alert rules:
 
-```sh
-helm upgrade fathom oci://ghcr.io/skaphos/charts/fathom-operator \
-  -n fathom-system \
-  --reuse-values \
-  --set metrics.service.enabled=true \
-  --set metrics.serviceMonitor.enabled=true
+```yaml
+# values.yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack   # your Prometheus serviceMonitorSelector
+  reader:
+    subjects:                          # who may GET /metrics
+      - kind: ServiceAccount
+        name: kube-prometheus-stack-prometheus
+        namespace: monitoring
+  prometheusRule:
+    enabled: true                      # renders the SAMPLE rules
+    labels:
+      release: kube-prometheus-stack   # your Prometheus ruleSelector
 ```
 
 - `metrics.service.enabled` (default `true`) exposes a ClusterIP Service on
@@ -76,9 +87,101 @@ helm upgrade fathom oci://ghcr.io/skaphos/charts/fathom-operator \
   The default `tlsConfig.insecureSkipVerify: true` trusts the self-signed
   serving cert; for a CA-signed metrics cert set `caFile` / `serverName` and
   flip it to `false`.
+- `metrics.reader.subjects` (default empty) binds each listed identity to the
+  chart's `metrics-reader` ClusterRole, which grants `get` on `/metrics` and
+  nothing else. Secure metrics refuse any scrape whose token lacks it, so
+  list your scraper's ServiceAccount here (or bind the role yourself).
+- `metrics.prometheusRule.enabled` (default `false`) creates a
+  `PrometheusRule`. By default it carries the **sample** rules from
+  [Example alerting rules](#4-example-alerting-rules) — review them first. Set
+  `metrics.prometheusRule.groups` to render your own rule groups instead; they
+  replace the sample rather than adding to it. Requires the prometheus-operator
+  CRDs.
 
-If you deploy via kustomize instead, the Prometheus `ServiceMonitor` is an
-opt-in overlay under `config/components/prometheus`.
+If you deploy via kustomize instead, the `ServiceMonitor` is an opt-in overlay
+under `config/components/prometheus` and the sample rules are
+`config/components/prometheus-rule`. The chart's rules are synced from that
+component (`task helm:sync`), so both install paths ship the same sample.
+
+### Other monitoring backends
+
+Fathom only exposes Prometheus-format metrics over HTTPS with a bearer-token
+check; any backend that can scrape that can consume the
+[metric contract](#the-metric-contract). The chart has presets for two common
+ones under `metrics.integrations`. Each wires **scraping only** — alerting is
+configured in the backend itself — and both are off by default.
+
+#### Dynatrace
+
+```yaml
+metrics:
+  integrations:
+    dynatrace:
+      enabled: true
+      activeGateServiceAccount:     # defaults shown
+        name: dynatrace-activegate
+        namespace: dynatrace
+```
+
+The preset annotates the metrics `Service` with the `metrics.dynatrace.com/*`
+keys Dynatrace's Prometheus scraping reads (`scrape`, `port` — the container
+port, as Dynatrace requires on a Service — `path`, `secure`,
+`insecure_skip_verify`), and with `http.auth: builtin:default`, which makes the
+ActiveGate send **its own ServiceAccount token**. It then binds that
+ServiceAccount to the `metrics-reader` role. Anything you set in
+`metrics.service.annotations` overrides the preset key by key — for example
+`metrics.dynatrace.com/filter` to ingest only some metrics.
+
+- Authenticated scraping needs an **in-cluster ActiveGate that monitors the
+  local Kubernetes API**; an ActiveGate outside the cluster cannot scrape this
+  endpoint.
+- Dynatrace now recommends its OpenTelemetry Collector (Target Allocator) for
+  new Prometheus ingestion and for large estates. That path discovers the
+  chart's `ServiceMonitor`: enable `metrics.serviceMonitor` and list the
+  Collector's ServiceAccount in `metrics.reader.subjects` instead.
+- Prometheus labels become Dynatrace dimensions. Confirm the ingested metric
+  keys in your tenant before writing alerts against them.
+
+#### Sumo Logic
+
+```yaml
+metrics:
+  integrations:
+    sumologic:
+      enabled: true
+      releaseName: collection   # the Sumo Logic Kubernetes Collection release
+```
+
+The Sumo Logic Kubernetes Collection (v4 and later, OpenTelemetry) discovers
+`ServiceMonitor`s through its Target Allocator, selecting `release: <its release
+name>`. The preset renders the chart's `ServiceMonitor` — even with
+`metrics.serviceMonitor.enabled=false` — with that label. The collection's
+metrics collector role already allows `get` on `/metrics`, so no extra RBAC is
+needed. Its pod-annotation (`prometheus.io/scrape`) path is HTTP-only and
+unauthenticated, so it cannot scrape Fathom; use the preset.
+
+- By default the collection **drops histogram and summary metrics**
+  (`dropHistogramBuckets` with `allowHistogramRegex: "^$"`). To keep
+  `fathom_reconcile_duration_seconds` and `fathom_adapter_run_duration_seconds`,
+  widen `allowHistogramRegex` (for example `^fathom_.*`). The check gauges are
+  unaffected.
+- Recent OpenTelemetry Operator releases stop honouring file-based
+  `ServiceMonitor` credentials such as `bearerTokenFile` by default. If your
+  collection's operator does, the scrape is refused with `401`; add a scrape job
+  through `sumologic.metrics.collector.otelcol.config.merge` instead, with
+  `scheme: https`, `authorization.credentials_file:
+  /var/run/secrets/kubernetes.io/serviceaccount/token` and
+  `tls_config.insecure_skip_verify: true`.
+
+#### Anything else
+
+Any scraper works if it can send a bearer token over HTTPS: point it at the
+metrics `Service` (port `8443`, path `/metrics`), let it skip verification of
+the self-signed certificate (or mount a CA-signed one via
+`metrics.certSecretName`), and list its identity in `metrics.reader.subjects`.
+Annotation conventions differ — use `metrics.service.annotations` to set the
+ones your agent reads. The generic `prometheus.io/*` annotations carry no
+scheme or credentials in most agents, so on their own they are not enough.
 
 ### The metric contract
 
@@ -412,7 +515,78 @@ working end to end; treat it as a template, review it before enabling it, and
 prefer copying the rules into a rule set you own. The sample is build-validated
 in CI (`task verify-alert-rules`), and a gate test keeps the staleness rule
 cadence-relative; it is not exercised by promtool-style rule unit tests. The
-Helm chart ships no `PrometheusRule`.
+Helm chart renders the same sample with `metrics.prometheusRule.enabled=true`
+(see [Wiring up Prometheus (Helm)](#wiring-up-prometheus-helm)).
+
+### The same rules in other backends
+
+Dynatrace and Sumo Logic define alerts in the backend, usually as code. These
+are the two sample rules translated, as starting points only: **they have not
+been run against a live tenant**, so check the metric keys, dimension names and
+query syntax in yours before relying on them.
+
+Dynatrace metric event (Terraform, `dynatrace-oss/dynatrace` provider) for
+`FathomCheckFailing`:
+
+```hcl
+resource "dynatrace_metric_events" "fathom_check_failing" {
+  enabled = true
+  summary = "Fathom check failing"
+  event_template {
+    title       = "Fathom check failing"
+    description = "{dims}"
+    event_type  = "CUSTOM_ALERT"
+  }
+  model_properties {
+    type               = "STATIC_THRESHOLD"
+    alert_condition    = "ABOVE"
+    threshold          = 0.5
+    samples            = 10 # one-minute samples: "for 10m"
+    violating_samples  = 10
+    dealerting_samples = 10
+    alert_on_no_data   = false
+  }
+  query_definition {
+    type            = "METRIC_SELECTOR"
+    metric_selector = "fathom_check_result:filter(or(eq(\"result\",\"Fail\"),eq(\"result\",\"Error\"))):splitBy(\"namespace\",\"name\"):max"
+  }
+}
+```
+
+Sumo Logic monitor (Terraform, `sumologic_monitor`) for the same condition:
+
+```hcl
+resource "sumologic_monitor" "fathom_check_failing" {
+  name         = "Fathom check failing"
+  type         = "MonitorsLibraryMonitor"
+  monitor_type = "Metrics"
+  queries {
+    row_id = "A"
+    query  = "metric=fathom_check_result (result=Fail OR result=Error) | max by namespace, name"
+  }
+  trigger_conditions {
+    metrics_static_condition {
+      critical {
+        time_range      = "10m"
+        occurrence_type = "Always"
+        alert {
+          threshold      = 1
+          threshold_type = "GreaterThanOrEqual"
+        }
+        resolution {
+          threshold      = 1
+          threshold_type = "LessThan"
+        }
+      }
+    }
+  }
+}
+```
+
+The staleness rule translates the same way: alert when
+`time() - fathom_check_last_run_timestamp_seconds` exceeds three times
+`fathom_check_interval_seconds`, or the last-run timestamp is `0`. How to
+express that arithmetic between two metrics differs per backend.
 
 Status remains the source of truth the metric is derived from — for a
 just-in-time verdict or a deploy gate, keep reading status

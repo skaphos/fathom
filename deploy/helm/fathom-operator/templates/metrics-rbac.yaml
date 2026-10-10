@@ -42,8 +42,9 @@ subjects:
 ---
 {{/*
 Allows clients holding this role to scrape /metrics. Mirrors
-config/rbac/metrics_reader_role.yaml. Not bound by this chart — bind it to the
-scraper's identity (e.g. a Prometheus ServiceAccount) out of band.
+config/rbac/metrics_reader_role.yaml. Bound to the identities listed in
+metrics.reader.subjects (e.g. a Prometheus, Sumo Logic collector or Dynatrace
+ActiveGate ServiceAccount); with no subjects it is left for you to bind.
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -56,4 +57,29 @@ rules:
       - "/metrics"
     verbs:
       - get
+{{- $subjects := .Values.metrics.reader.subjects | default list }}
+{{- with .Values.metrics.integrations.dynatrace }}
+{{- if .enabled }}
+{{- $subjects = append $subjects (dict "kind" "ServiceAccount" "name" .activeGateServiceAccount.name "namespace" .activeGateServiceAccount.namespace) }}
+{{- end }}
+{{- end }}
+{{- with $subjects }}
+---
+{{/*
+Grants the scrapers in metrics.reader.subjects get on /metrics and nothing
+else: this binding's only role is the metrics-reader role above.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fathom-operator.fullname" $ }}-metrics-reader
+  labels:
+    {{- include "fathom-operator.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fathom-operator.fullname" $ }}-metrics-reader
+subjects:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end }}

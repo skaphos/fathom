@@ -7,6 +7,31 @@ metadata:
   labels:
     {{- include "fathom-operator.labels" . | nindent 4 }}
     control-plane: controller-manager
+  {{- /*
+  The Dynatrace preset contributes metrics.dynatrace.com/* keys; explicit
+  metrics.service.annotations win on any key both set (merge keeps the first
+  dict's values). metrics.dynatrace.com/port is the CONTAINER port, which
+  Dynatrace requires when annotating a Service.
+  */}}
+  {{- $annotations := deepCopy (.Values.metrics.service.annotations | default dict) }}
+  {{- with .Values.metrics.integrations.dynatrace }}
+  {{- if .enabled }}
+  {{- $dt := dict
+        "metrics.dynatrace.com/scrape" "true"
+        "metrics.dynatrace.com/port" (include "fathom-operator.port" $.Values.metrics.bindAddress | toString)
+        "metrics.dynatrace.com/path" "/metrics"
+        "metrics.dynatrace.com/secure" ($.Values.metrics.secure | toString) }}
+  {{- if $.Values.metrics.secure }}
+  {{- $_ := set $dt "metrics.dynatrace.com/insecure_skip_verify" (.insecureSkipVerify | toString) }}
+  {{- $_ := set $dt "metrics.dynatrace.com/http.auth" "builtin:default" }}
+  {{- end }}
+  {{- $annotations = merge $annotations $dt }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: ClusterIP
   ports:
