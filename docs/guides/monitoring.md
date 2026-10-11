@@ -65,6 +65,10 @@ scrape, and the sample alert rules:
 ```yaml
 # values.yaml
 metrics:
+  # A CA-signed serving certificate (e.g. from cert-manager) whose Secret
+  # carries ca.crt; the ServiceMonitor verifies against it automatically.
+  certSecretName: fathom-metrics-cert
+  certPath: /tmp/k8s-metrics-server/metrics-certs
   serviceMonitor:
     enabled: true
     labels:
@@ -84,9 +88,21 @@ metrics:
   port `8443`.
 - `metrics.serviceMonitor.enabled` (default `false`) creates the
   `ServiceMonitor`. Tune `interval`, `scrapeTimeout`, `labels`, and `tlsConfig`.
-  The default `tlsConfig.insecureSkipVerify: true` trusts the self-signed
-  serving cert; for a CA-signed metrics cert set `caFile` / `serverName` and
-  flip it to `false`.
+  Prometheus sends its own ServiceAccount token on every scrape, so the
+  serving certificate **must be verified**:
+  - with `metrics.certSecretName` set and the `ServiceMonitor` in the release
+    namespace, the chart verifies against that Secret's `ca.crt` and the
+    metrics Service's DNS name (`<release>-fathom-operator-metrics.<ns>.svc`,
+    which the certificate must cover) — nothing else to set;
+  - otherwise set `metrics.serviceMonitor.tlsConfig` yourself; it is used
+    verbatim (`ca`, `caFile`, `serverName`, …);
+  - with neither, the chart **refuses to render**. To accept an unverified
+    self-signed certificate anyway, say so explicitly with
+    `tlsConfig: {insecureSkipVerify: true}`. The operator's default
+    certificate is regenerated on every start, so it cannot be pinned.
+
+  Plaintext metrics (`metrics.secure=false`) carry no token and need none of
+  this.
 - `metrics.reader.subjects` (default empty) binds each listed identity to the
   chart's `metrics-reader` ClusterRole, which grants `get` on `/metrics` and
   nothing else. Secure metrics refuse any scrape whose token lacks it, so
@@ -177,7 +193,9 @@ name>`. The preset renders the chart's `ServiceMonitor` — even with
 `metrics.serviceMonitor.enabled=false` — with that label. The collection's
 metrics collector role already allows `get` on `/metrics`, so no extra RBAC is
 needed. Its pod-annotation (`prometheus.io/scrape`) path is HTTP-only and
-unauthenticated, so it cannot scrape Fathom; use the preset.
+unauthenticated, so it cannot scrape Fathom; use the preset. The rendered
+`ServiceMonitor` follows the same TLS rules as above: set
+`metrics.certSecretName` or an explicit `metrics.serviceMonitor.tlsConfig`.
 
 - By default the collection **drops histogram and summary metrics**
   (`dropHistogramBuckets` with `allowHistogramRegex: "^$"`). To keep

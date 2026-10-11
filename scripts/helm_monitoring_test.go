@@ -290,7 +290,8 @@ func TestHelmSumoLogicPresetRendersALabelledServiceMonitor(t *testing.T) {
 	objects, out, err := renderRuntimeChart(t,
 		"--set", "metrics.integrations.sumologic.enabled=true",
 		"--set", "metrics.integrations.sumologic.releaseName=sumo",
-		"--set", "metrics.serviceMonitor.labels.team=platform")
+		"--set", "metrics.serviceMonitor.labels.team=platform",
+		"--set", "metrics.serviceMonitor.tlsConfig.insecureSkipVerify=true")
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, out)
 	}
