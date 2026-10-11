@@ -134,7 +134,12 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		// A sub-millisecond lookup rounds to 0 and is omitted, so empty reads as 0.
 		latency := millisField("in-cluster", "{.status.targetResults[0].latencyMillis}")
 		run := millisField("in-cluster", "{.status.targetResults[0].runMillis}")
-		Expect(latency).To(BeNumerically("<", 1000),
+		// The bound allows ONE resolver retransmit: a lost UDP query is retried
+		// after resolv.conf's default 5s timeout, so a healthy cluster lookup can
+		// legitimately measure ~5s (CI saw 5018ms with runMillis=7514). That is
+		// real lookup time, not Pod start-up, which the runMillis comparison
+		// below is what actually separates.
+		Expect(latency).To(BeNumerically("<", 6500),
 			"latencyMillis must be the lookup alone, not probe Pod start-up (runMillis=%d)", run)
 		// Scheduling, image start and polling put a real probe Pod's lifecycle
 		// well above any in-cluster lookup; equal figures would mean the two
