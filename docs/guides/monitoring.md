@@ -259,6 +259,57 @@ Label cardinality is bounded by design: one series set per check resource
 (plus the schema-capped per-target and per-item sets below), and label values
 never carry observed free text.
 
+### Projected labels
+
+The check gauges identify a check by `kind`, `name` and `namespace`, which is
+not enough to route on: there is no tier, team or owner. Rather than encode
+those in check names or keep a parallel relabel config, you can have the
+operator copy an **allowlist of the check resources' own labels** onto the
+three `fathom_check_*` gauges:
+
+```sh
+--metrics-projected-labels=tier,app.kubernetes.io/team
+# or FATHOM_METRICS_PROJECTED_LABELS=tier,app.kubernetes.io/team
+# or, in the config file:  metrics: {projected_labels: [tier, app.kubernetes.io/team]}
+# or, with Helm:           metrics.projectedLabels: [tier, app.kubernetes.io/team]
+```
+
+Each key becomes a `label_<key>` label with every character outside
+`[a-zA-Z0-9_]` replaced by `_` — the kube-state-metrics convention — so
+`app.kubernetes.io/team` is `label_app_kubernetes_io_team`:
+
+```text
+fathom_check_result{kind="AddonCheck",name="cert-manager",namespace="fathom-system",result="Fail",label_tier="gold",label_app_kubernetes_io_team="payments"} 1
+```
+
+```yaml
+- alert: FathomGoldCheckFailing
+  expr: fathom_check_result{result=~"Fail|Error", label_tier="gold"} == 1
+  for: 5m
+  labels:
+    team: '{{ $labels.label_app_kubernetes_io_team }}'
+```
+
+- **Off by default.** With no allowlist the gauges carry exactly the labels in
+  the table above.
+- **Bounded.** At most 10 keys, each a valid Kubernetes label key; two keys
+  that sanitize to the same name (`a.b` and `a_b`) are rejected at startup.
+  Projection adds dimensions, never series: each check still has exactly one
+  series set, and each value is a Kubernetes label value (at most 63
+  characters) that you set on the resource.
+- **Uniform.** A check that lacks a projected label carries it with an empty
+  value, so every series has the same label set and `on(...)` joins keep
+  working. All three gauges carry the same projected labels, so the
+  cadence-relative staleness join needs no relabeling.
+- **Follows the resource.** Changing a projected label on a check replaces its
+  series set (the old one is withdrawn, never left beside the new one).
+  Prometheus sees that as a new series, so history before the change is under
+  the old label value.
+- **Check gauges only.** Per-target and per-node metrics
+  (`fathom_dnscheck_target_result`, `fathom_node_*`) keep their own label sets;
+  join them to the check gauges on `namespace` and the check name if you need
+  the projected labels there.
+
 ### Stability promise
 
 The metric surface is Fathom's alerting contract: you write rules against it,
@@ -284,7 +335,9 @@ so it changes only deliberately.
     `path`s, and a runtime `AddonDefinition`'s addon type and family names (the
     `adapter` / `family` labels);
   - identifiers Fathom defines: built-in adapter and family names, the
-    implicit `cluster` resolver, and the enumerated values above.
+    implicit `cluster` resolver, and the enumerated values above;
+  - when you opt in, the values of the check resources' own labels you
+    allowlist for [projection](#projected-labels).
 
   Values Fathom *observes* (messages, reasons, versions, discovered certificate
   paths, subjects, issuers) stay in status, Events and `HealthReport`, never in
@@ -305,7 +358,9 @@ never silently and never in a patch release:
 **Not breaking:**
 
 - new metrics;
-- opt-in labels that are off unless you enable them;
+- opt-in labels that are off unless you enable them, such as
+  [projected labels](#projected-labels) — which `label_*` labels appear is
+  your configuration, not part of the contract;
 - new values of an enumerated label that come with a new check kind, item type
   or result, and new built-in adapter or family names — match the values you
   care about (`result=~"Fail|Error"`) rather than assuming the set is closed;

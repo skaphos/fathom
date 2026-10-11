@@ -76,6 +76,11 @@ metrics:
   # (secure=false with bindAddress != "0"). Only for service-mesh-fronted
   # deployments; the operator refuses insecure-on-network otherwise.
   allowInsecure: false
+  # Check-resource label keys copied onto the fathom_check_* gauges as
+  # label_<sanitized key>, so alerts can route on dimensions kept in the CR
+  # (e.g. [tier, app.kubernetes.io/team] -> label_tier,
+  # label_app_kubernetes_io_team). At most 10; empty projects nothing.
+  projectedLabels: []
   # Optional metrics serving certificate, mounted from a Secret. When set,
   # the operator reads tls.crt/tls.key from this directory.
   certPath: ""        # e.g. /tmp/k8s-metrics-server/metrics-certs

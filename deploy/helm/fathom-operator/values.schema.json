@@ -69,6 +69,13 @@
         "bindAddress":   {"type": "string"},
         "secure":        {"type": "boolean"},
         "allowInsecure": {"type": "boolean"},
+        "projectedLabels": {
+          "$comment": "Kubernetes label keys projected onto the check gauges; the operator validates the keys and the sanitized-name uniqueness at startup.",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 317}
+        },
         "certPath":      {"type": "string"},
         "certName":      {"type": "string"},
         "certKey":       {"type": "string"},

@@ -71,7 +71,7 @@ func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
 	if lastRun != nil {
 		observedAt = lastRun.Time
 	}
-	metrics.ObserveCheck(kind, obj.GetNamespace(), obj.GetName(), string(result), observedAt, interval)
+	metrics.ObserveCheck(kind, obj.GetNamespace(), obj.GetName(), string(result), observedAt, interval, obj.GetLabels())
 
 	if recorder == nil {
 		return
