@@ -13,6 +13,11 @@
 # ../prometheus-rule). Adjust the interval, labels and TLS to your Prometheus.
 #
 # The ServiceMonitor scrapes the controller-manager-metrics-service over HTTPS.
+# WARNING: Prometheus sends its own ServiceAccount token on every scrape, and
+# with the default below that token goes to an UNVERIFIED endpoint. Prefer the
+# cert-manager-backed monitor_tls_patch.yaml (see below). The Helm chart
+# refuses this combination unless explicitly opted into.
+#
 # By default it uses insecureSkipVerify: true because the metrics server's TLS
 # cert is self-signed by controller-runtime at startup. To use cert-manager-
 # issued certs, also uncomment the monitor_tls_patch.yaml patch below and

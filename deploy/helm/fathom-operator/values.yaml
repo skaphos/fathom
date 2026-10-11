@@ -153,12 +153,17 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
-    # Passed verbatim to the ServiceMonitor endpoint when metrics.secure=true
-    # (ignored for plaintext metrics). Default trusts the self-signed serving
-    # cert; for a CA-signed metrics cert set caFile/serverName and flip
-    # insecureSkipVerify to false.
-    tlsConfig:
-      insecureSkipVerify: true
+    # TLS for the ServiceMonitor endpoint when metrics.secure=true (ignored for
+    # plaintext metrics). The scraper sends its own ServiceAccount token, so
+    # the certificate must be verified:
+    #   - empty + metrics.certSecretName AND metrics.certPath set (so the
+    #     manager serves that certificate): verify against the Secret's
+    #     ca.crt and the metrics Service DNS name (automatic);
+    #   - set: used verbatim, e.g. {ca: {secret: {...}}, serverName: ...}, or
+    #     {insecureSkipVerify: true} to explicitly accept an unverified
+    #     self-signed certificate;
+    #   - empty otherwise: rendering fails.
+    tlsConfig: {}
 
 healthProbe:
   bindAddress: ":8081"

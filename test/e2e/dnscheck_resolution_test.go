@@ -114,6 +114,15 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		_, _ = fmt.Fprintf(GinkgoWriter, "dnschecks:\n%s\n", out)
 	})
 
+	// dnsLookupLatencyBoundMillis bounds a probe-measured lookup. It allows ONE
+	// resolver retransmit: a lost UDP query is retried after resolv.conf's
+	// default 5s timeout, so a healthy cluster lookup can legitimately measure
+	// ~5s (CI saw latencyMillis=5018 with runMillis=7514). That is real lookup
+	// time, not Pod start-up; the runMillis > latencyMillis comparisons are what
+	// separate the two measurements. Status and the HealthReport share it, since
+	// the report may record an earlier lookup than status.
+	const dnsLookupLatencyBoundMillis = 6500
+
 	// T046 — SC-008 and FR-031, the most important row in this file. The check
 	// lives in a namespace the operator does not own, and resolution must happen
 	// THERE: that is what makes a check author's reach exactly their own, and
@@ -134,7 +143,7 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 		// A sub-millisecond lookup rounds to 0 and is omitted, so empty reads as 0.
 		latency := millisField("in-cluster", "{.status.targetResults[0].latencyMillis}")
 		run := millisField("in-cluster", "{.status.targetResults[0].runMillis}")
-		Expect(latency).To(BeNumerically("<", 1000),
+		Expect(latency).To(BeNumerically("<", dnsLookupLatencyBoundMillis),
 			"latencyMillis must be the lookup alone, not probe Pod start-up (runMillis=%d)", run)
 		// Scheduling, image start and polling put a real probe Pod's lifecycle
 		// well above any in-cluster lookup; equal figures would mean the two
@@ -159,7 +168,7 @@ var _ = Describe("DNSCheck resolution", Ordered, Label(utils.CoreLabel, "dnschec
 			reportLatency, parseErr = strconv.ParseInt(raw, 10, 64)
 			Expect(parseErr).NotTo(HaveOccurred(), "latencyMillis %q is not an integer", raw)
 		}
-		Expect(reportLatency).To(BeNumerically("<", 1000),
+		Expect(reportLatency).To(BeNumerically("<", dnsLookupLatencyBoundMillis),
 			"the report's latencyMillis must be the lookup alone (runMillis=%d)", reportRun)
 		Expect(reportRun).To(BeNumerically(">", reportLatency))
 
