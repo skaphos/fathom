@@ -90,8 +90,10 @@ metrics:
   `ServiceMonitor`. Tune `interval`, `scrapeTimeout`, `labels`, and `tlsConfig`.
   Prometheus sends its own ServiceAccount token on every scrape, so the
   serving certificate **must be verified**:
-  - with `metrics.certSecretName` set and the `ServiceMonitor` in the release
-    namespace, the chart verifies against that Secret's `ca.crt` and the
+  - with `metrics.certSecretName` **and** `metrics.certPath` set (both are
+    needed for the manager to serve that certificate) and the `ServiceMonitor`
+    in the release namespace, the chart verifies against that Secret's
+    `ca.crt` and the
     metrics Service's DNS name (`<release>-fathom-operator-metrics.<ns>.svc`,
     which the certificate must cover) — nothing else to set;
   - otherwise set `metrics.serviceMonitor.tlsConfig` yourself; it is used
@@ -195,7 +197,8 @@ metrics collector role already allows `get` on `/metrics`, so no extra RBAC is
 needed. Its pod-annotation (`prometheus.io/scrape`) path is HTTP-only and
 unauthenticated, so it cannot scrape Fathom; use the preset. The rendered
 `ServiceMonitor` follows the same TLS rules as above: set
-`metrics.certSecretName` or an explicit `metrics.serviceMonitor.tlsConfig`.
+`metrics.certSecretName` and `metrics.certPath`, or an explicit
+`metrics.serviceMonitor.tlsConfig`.
 
 - By default the collection **drops histogram and summary metrics**
   (`dropHistogramBuckets` with `allowHistogramRegex: "^$"`). To keep

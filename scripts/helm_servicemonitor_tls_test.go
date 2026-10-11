@@ -58,6 +58,22 @@ func TestHelmServiceMonitorVerifiesAgainstTheMetricsCertificate(t *testing.T) {
 	}
 }
 
+// The manager serves the Secret's certificate only when certPath is set too
+// (deployment.yaml mounts it on both). With certSecretName alone the manager
+// still serves its self-signed certificate, so trusting the Secret's CA would
+// fail every scrape: the chart must refuse rather than verify against it.
+func TestHelmServiceMonitorNeedsBothCertSecretNameAndCertPath(t *testing.T) {
+	_, out, err := renderRuntimeChart(t,
+		"--set", "metrics.serviceMonitor.enabled=true",
+		"--set", "metrics.certSecretName=fathom-metrics-cert")
+	if err == nil {
+		t.Fatal("automatic TLS trusted a certificate the manager is not serving (certPath unset)")
+	}
+	if !strings.Contains(out, "certSecretName") || !strings.Contains(out, "certPath") {
+		t.Errorf("render error does not name both settings:\n%s", out)
+	}
+}
+
 // An explicit tlsConfig is used verbatim. Regression: the old default
 // (insecureSkipVerify: true) deep-merged into a user's own tlsConfig, so
 // setting only caFile silently kept verification off.

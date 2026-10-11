@@ -39,23 +39,25 @@ spec:
       must be verified. In order:
         1. an explicit metrics.serviceMonitor.tlsConfig is used verbatim (the
            only way to opt into insecureSkipVerify: true);
-        2. with a mounted CA-signed metrics certificate (certSecretName) and
-           the ServiceMonitor in the release namespace, verify against that
-           Secret's ca.crt and the metrics Service's DNS name;
+        2. with a CA-signed metrics certificate the manager actually serves
+           (certSecretName AND certPath: deployment.yaml mounts and serves
+           the Secret only when both are set) and the ServiceMonitor in the
+           release namespace, verify against that Secret's ca.crt and the
+           metrics Service's DNS name;
         3. otherwise refuse to render. The controller-runtime default
            certificate is self-signed and regenerated on every start, so it
            cannot be pinned.
       */}}
       {{- $smNamespace := .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
       {{- $tls := .Values.metrics.serviceMonitor.tlsConfig }}
-      {{- if and (not $tls) .Values.metrics.certSecretName (eq $smNamespace .Release.Namespace) }}
+      {{- if and (not $tls) .Values.metrics.certSecretName .Values.metrics.certPath (eq $smNamespace .Release.Namespace) }}
       {{- $tls = dict
             "ca" (dict "secret" (dict "name" .Values.metrics.certSecretName "key" "ca.crt"))
             "serverName" (printf "%s-metrics.%s.svc" (include "fathom-operator.fullname" .) .Release.Namespace)
             "insecureSkipVerify" false }}
       {{- end }}
       {{- if not $tls }}
-      {{- fail "metrics.serviceMonitor: the scraper sends its ServiceAccount token to the metrics endpoint, so its certificate must be verified. Serve a CA-signed metrics certificate (metrics.certSecretName, whose Secret carries ca.crt; the ServiceMonitor must be in the release namespace) or set metrics.serviceMonitor.tlsConfig explicitly — {insecureSkipVerify: true} accepts the risk." }}
+      {{- fail "metrics.serviceMonitor: the scraper sends its ServiceAccount token to the metrics endpoint, so its certificate must be verified. Serve a CA-signed metrics certificate (set both metrics.certSecretName, whose Secret carries ca.crt, and metrics.certPath; the ServiceMonitor must be in the release namespace) or set metrics.serviceMonitor.tlsConfig explicitly — {insecureSkipVerify: true} accepts the risk." }}
       {{- end }}
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
