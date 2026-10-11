@@ -404,6 +404,11 @@ func Run(
 	if err := opts.Validate(); err != nil {
 		return fmt.Errorf("invalid options: %w", err)
 	}
+	// Before any controller can observe a check: a gauge's label names are
+	// fixed when it is built, so projected CR labels must be configured first.
+	if err := metrics.ConfigureCheckLabels(opts.Metrics.ProjectedLabels); err != nil {
+		return fmt.Errorf("configure projected check labels: %w", err)
+	}
 
 	// Startup diagnostics go to the logger built HERE, not to ctrl.Log. The
 	// global delegating logger can only ever be fulfilled once per process, so

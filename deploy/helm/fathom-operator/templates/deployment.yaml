@@ -41,6 +41,9 @@ spec:
             {{- if .Values.metrics.allowInsecure }}
             - --metrics-allow-insecure
             {{- end }}
+            {{- with .Values.metrics.projectedLabels }}
+            - --metrics-projected-labels={{ join "," . }}
+            {{- end }}
             {{- if and .Values.metrics.certPath .Values.metrics.certSecretName }}
             - --metrics-cert-path={{ .Values.metrics.certPath }}
             - --metrics-cert-name={{ .Values.metrics.certName }}

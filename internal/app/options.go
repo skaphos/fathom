@@ -21,6 +21,8 @@ import (
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/skaphos/fathom/internal/metrics"
 )
 
 // EnvPrefix is the prefix Viper uses when reading environment variables.
@@ -44,6 +46,11 @@ type MetricsOptions struct {
 	// otherwise. Intended for operators fronting the endpoint with a service
 	// mesh (mTLS, authz at the proxy).
 	AllowInsecure bool `mapstructure:"allow_insecure"`
+	// ProjectedLabels is an allowlist of check-resource label keys copied onto
+	// the fathom_check_* gauges as label_<sanitized key>, so adopters can route
+	// alerts on dimensions kept in the CR (#279). Empty (the default) projects
+	// nothing and leaves the gauges unchanged.
+	ProjectedLabels []string `mapstructure:"projected_labels"`
 }
 
 // WebhookOptions configures the controller manager's webhook server.
@@ -261,6 +268,10 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("tracing.sampling_ratio %v is out of range; must be between 0 and 1", o.Tracing.SamplingRatio))
 	}
 
+	if err := metrics.ValidateProjectedLabels(o.Metrics.ProjectedLabels); err != nil {
+		errs = append(errs, fmt.Errorf("metrics.projected_labels: %w", err))
+	}
+
 	// A zero or negative fan-out cap would stall every DNSCheck rather than
 	// slow it down: no pair could ever be launched, so every run would truncate
 	// to all-Unknown. Fail closed at startup instead of shipping checks that
@@ -275,8 +286,8 @@ func (o *Options) Validate() error {
 // flagBinding pairs a flag name with its corresponding Viper key. Keeping them
 // in one table guarantees flags, env vars, and config file keys stay in sync.
 //
-// At most one of isBool/isFloat/isInt is set; otherwise the binding registers a
-// string flag with stringDef as its default.
+// At most one of isBool/isFloat/isInt/isStringSlice is set; otherwise the
+// binding registers a string flag with stringDef as its default.
 type flagBinding struct {
 	flagName  string
 	viperKey  string
@@ -288,6 +299,10 @@ type flagBinding struct {
 	isFloat   bool
 	intDef    int
 	isInt     bool
+	// A string-slice flag takes comma-separated values; the env var and config
+	// file key take the same comma-separated string or a list.
+	sliceDef      []string
+	isStringSlice bool
 }
 
 func bindings(defaults Options) []flagBinding {
@@ -296,6 +311,8 @@ func bindings(defaults Options) []flagBinding {
 			usage: "Enable administrator-bound runtime addon definitions. Requires leader election and an explicit operator namespace. Disabled by default."},
 		{flagName: "metrics-bind-address", viperKey: "metrics.bind_address", stringDef: defaults.Metrics.BindAddress,
 			usage: "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service."},
+		{flagName: "metrics-projected-labels", viperKey: "metrics.projected_labels", isStringSlice: true, sliceDef: defaults.Metrics.ProjectedLabels,
+			usage: fmt.Sprintf("Comma-separated check-resource label keys to project onto the fathom_check_* gauges as label_<key> (at most %d). Empty projects none.", metrics.MaxProjectedLabels)},
 		{flagName: "metrics-secure", viperKey: "metrics.secure", isBool: true, boolDef: defaults.Metrics.Secure,
 			usage: "If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead."},
 		{flagName: "metrics-allow-insecure", viperKey: "metrics.allow_insecure", isBool: true, boolDef: defaults.Metrics.AllowInsecure,
@@ -352,6 +369,8 @@ func RegisterFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			fs.Float64(b.flagName, b.floatDef, b.usage)
 		case b.isInt:
 			fs.Int(b.flagName, b.intDef, b.usage)
+		case b.isStringSlice:
+			fs.StringSlice(b.flagName, b.sliceDef, b.usage)
 		default:
 			fs.String(b.flagName, b.stringDef, b.usage)
 		}
@@ -386,6 +405,8 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 			v.SetDefault(b.viperKey, b.floatDef)
 		case b.isInt:
 			v.SetDefault(b.viperKey, b.intDef)
+		case b.isStringSlice:
+			v.SetDefault(b.viperKey, b.sliceDef)
 		default:
 			v.SetDefault(b.viperKey, b.stringDef)
 		}

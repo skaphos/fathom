@@ -68,18 +68,15 @@ var (
 // NodeHealthCheck, HealthCheck, ClusterHealth), so operators can alert on
 // failing or stale checks
 // without bridging CRD status into their monitoring stack (skaphos/fathom#154).
+//
+// They are package variables built by newCheckGauges so ConfigureCheckLabels
+// can rebuild them at startup with projected CR label names (#279).
 var (
 	// CheckResult is a one-hot state set: for every existing check there is one
 	// series per result value, and exactly one of them is 1. Series exist from
 	// the moment a check is first observed (result "Unknown" until the first
 	// evaluation completes) and are removed when the check is deleted.
-	CheckResult = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "fathom_check_result",
-			Help: "Current result of a check by kind, name, namespace, and result (one-hot: exactly one series per check is 1).",
-		},
-		[]string{"kind", "name", "namespace", "result"},
-	)
+	CheckResult *prometheus.GaugeVec
 
 	// CheckLastRunTimestamp is the unix time of the evaluation backing the
 	// check's current result, 0 until the first evaluation completes — so one
@@ -90,13 +87,7 @@ var (
 	// object's own reconcile: a HealthCheck carries its mirrored target's run
 	// time, and a ClusterHealth the STALEST of its children, so a stale
 	// contributor cannot hide behind a live sibling (#277).
-	CheckLastRunTimestamp = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "fathom_check_last_run_timestamp_seconds",
-			Help: "Unix time of the most recent completed evaluation backing a check's current result (0 = never evaluated).",
-		},
-		[]string{"kind", "name", "namespace"},
-	)
+	CheckLastRunTimestamp *prometheus.GaugeVec
 
 	// CheckInterval publishes the cadence a check is currently expected to run
 	// at, so staleness can be expressed relative to that cadence instead of a
@@ -113,14 +104,37 @@ var (
 	// Left unset — not zero — for a check whose cadence cannot be resolved, so
 	// such a check drops out of that join rather than appearing infinitely
 	// overdue.
-	CheckInterval = prometheus.NewGaugeVec(
+	CheckInterval *prometheus.GaugeVec
+)
+
+// newCheckGauges builds the three check gauges with the base labels plus any
+// projected CR label names. Projected names are appended identically to all
+// three, so the last-run and interval gauges still join without relabeling.
+func newCheckGauges(projectedNames []string) (result, lastRun, interval *prometheus.GaugeVec) {
+	labels := func(base ...string) []string { return append(base, projectedNames...) }
+	result = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_result",
+			Help: "Current result of a check by kind, name, namespace, and result (one-hot: exactly one series per check is 1).",
+		},
+		labels("kind", "name", "namespace", "result"),
+	)
+	lastRun = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_check_last_run_timestamp_seconds",
+			Help: "Unix time of the most recent completed evaluation backing a check's current result (0 = never evaluated).",
+		},
+		labels("kind", "name", "namespace"),
+	)
+	interval = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "fathom_check_interval_seconds",
 			Help: "Cadence a check is currently expected to run at, after per-resource override and floor clamping. Absent when the cadence cannot be resolved.",
 		},
-		[]string{"kind", "name", "namespace"},
+		labels("kind", "name", "namespace"),
 	)
-)
+	return result, lastRun, interval
+}
 
 // DNSCheck publishes one further gauge: the check-level result above says a
 // check is failing, but a check may cover sixteen names from three vantage
@@ -198,14 +212,16 @@ var (
 )
 
 func init() {
+	// The check gauges are built here rather than in their declarations so
+	// ConfigureCheckLabels can rebuild them with projected label names. They
+	// are registered through checkGauges, not directly: see its comment.
+	CheckResult, CheckLastRunTimestamp, CheckInterval = newCheckGauges(nil)
 	ctrlmetrics.Registry.MustRegister(
 		ReconcileTotal,
 		ReconcileDuration,
 		AdapterRunDuration,
 		AdapterRegistered,
-		CheckResult,
-		CheckLastRunTimestamp,
-		CheckInterval,
+		checkGauges{},
 		DNSCheckTargetResult,
 		NodeCertificateExpiryDays,
 		NodeHealthCheckResult,
@@ -214,7 +230,10 @@ func init() {
 }
 
 // ObserveCheck mirrors a check's current status into the check gauges: the
-// full one-hot result set plus the last-run timestamp. An empty or
+// full one-hot result set plus the last-run timestamp. objLabels are the check
+// resource's own labels; the configured allowlist of them is projected onto
+// the series (see ConfigureCheckLabels), and nil is fine when none is
+// configured. An empty or
 // unrecognized result is coerced to "Unknown" (the sentinel for "not yet
 // evaluated"), and a zero lastRun becomes 0 ("never ran"). Idempotent —
 // reconcilers call it on every pass, whatever the exit path.
@@ -223,31 +242,39 @@ func init() {
 // operator cannot yet look up — and leaves the series unset rather than
 // asserting a cadence of zero, which would make the check read as permanently
 // overdue in any cadence-relative rule (#277).
-func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, interval time.Duration) {
+func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, interval time.Duration, objLabels map[string]string) {
 	if !slices.Contains(checkResultValues, result) {
 		result = "Unknown"
 	}
+	extra, changed := projected.values(checkID{kind, namespace, name}, objLabels)
+	if changed {
+		// A projected CR label changed value: the old values name a different
+		// series set, which would otherwise linger as a duplicate check.
+		deleteCheckGauges(kind, namespace, name)
+	}
+	with := func(base ...string) []string { return append(base, extra...) }
+
 	for _, value := range checkResultValues {
 		current := 0.0
 		if value == result {
 			current = 1
 		}
-		CheckResult.WithLabelValues(kind, name, namespace, value).Set(current)
+		CheckResult.WithLabelValues(with(kind, name, namespace, value)...).Set(current)
 	}
 	ts := 0.0
 	if !lastRun.IsZero() {
 		ts = float64(lastRun.Unix())
 	}
-	CheckLastRunTimestamp.WithLabelValues(kind, name, namespace).Set(ts)
+	CheckLastRunTimestamp.WithLabelValues(with(kind, name, namespace)...).Set(ts)
 	if interval > 0 {
-		CheckInterval.WithLabelValues(kind, name, namespace).Set(interval.Seconds())
+		CheckInterval.WithLabelValues(with(kind, name, namespace)...).Set(interval.Seconds())
 	} else {
 		// A cadence can stop being resolvable — for example, a wrapper's target is
 		// deleted. Leaving the last known value behind would be worse
 		// than never publishing one: the staleness rule would keep joining against
 		// a cadence that no longer applies, so the check silently retains alert
 		// coverage it should have lost. Withdraw the series instead.
-		CheckInterval.DeleteLabelValues(kind, name, namespace)
+		CheckInterval.DeletePartialMatch(prometheus.Labels{"kind": kind, "name": name, "namespace": namespace})
 	}
 }
 
@@ -256,6 +283,13 @@ func ObserveCheck(kind, namespace, name, result string, lastRun time.Time, inter
 // cannot keep asserting a result. An operator restart clears the registry
 // wholesale; startup reconciles repopulate only checks that still exist.
 func DeleteCheckSeries(kind, namespace, name string) {
+	deleteCheckGauges(kind, namespace, name)
+	projected.forget(checkID{kind, namespace, name})
+}
+
+// deleteCheckGauges withdraws one check's series whatever projected label
+// values they carry: the base labels identify a check on their own.
+func deleteCheckGauges(kind, namespace, name string) {
 	labels := prometheus.Labels{"kind": kind, "name": name, "namespace": namespace}
 	CheckResult.DeletePartialMatch(labels)
 	CheckLastRunTimestamp.DeletePartialMatch(labels)

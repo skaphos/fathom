@@ -71,6 +71,7 @@ the viper key by the rule above.
 | `--metrics-bind-address` | `metrics.bind_address` | `FATHOM_METRICS_BIND_ADDRESS` | `0` | Address the metrics endpoint binds to (`:8443` HTTPS, `:8080` HTTP). `0` disables the metrics server entirely. |
 | `--metrics-secure` | `metrics.secure` | `FATHOM_METRICS_SECURE` | `true` | Serve metrics over HTTPS with the authn/authz filter. `--metrics-secure=false` serves plaintext HTTP. |
 | `--metrics-allow-insecure` | `metrics.allow_insecure` | `FATHOM_METRICS_ALLOW_INSECURE` | `false` | Explicit opt-in to expose plaintext metrics on a cluster-routable port (i.e. `--metrics-secure=false` with a non-`0` bind address). Intended for service-mesh-fronted deployments; `Validate` rejects insecure-on-network otherwise. |
+| `--metrics-projected-labels` | `metrics.projected_labels` | `FATHOM_METRICS_PROJECTED_LABELS` | empty | Comma-separated (or, in the config file, a list of) check-resource label keys copied onto the `fathom_check_*` gauges as `label_<sanitized key>` — e.g. `app.kubernetes.io/team` becomes `label_app_kubernetes_io_team`. At most 10. A check without the label projects an empty value. See [Monitoring → Projected labels](../guides/monitoring.md#projected-labels). |
 | `--metrics-cert-path` | `metrics.cert_path` | `FATHOM_METRICS_CERT_PATH` | _(empty)_ | Directory containing the metrics server certificate. |
 | `--metrics-cert-name` | `metrics.cert_name` | `FATHOM_METRICS_CERT_NAME` | `tls.crt` | Metrics server certificate file name. |
 | `--metrics-cert-key` | `metrics.cert_key` | `FATHOM_METRICS_CERT_KEY` | `tls.key` | Metrics server key file name. |
@@ -102,6 +103,9 @@ inconsistent configuration, including:
 
 - Insecure metrics on a cluster-routable port without `metrics.allow_insecure`
   (SKA-287).
+- A `metrics.projected_labels` allowlist with more than 10 keys, a key that is
+  not a valid Kubernetes label key, or two keys that sanitize to the same
+  metric label (`a.b` and `a_b` are both `label_a_b`).
 - A `*.cert_path` set without the corresponding `cert_name` / `cert_key`.
 - A `metrics.bind_address` or `health_probe_bind_address` that is not a valid
   `host:port` (use `0` to disable; SKA-299).

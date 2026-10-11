@@ -8,6 +8,8 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,7 +42,16 @@ func TestDefaultOptions_MatchFlagDefaults(t *testing.T) {
 	if !want.LeaderElect {
 		t.Errorf("DefaultOptions().LeaderElect: got false, want true")
 	}
-	if got.Metrics != want.Metrics {
+	// MetricsOptions holds a slice, so compare it field-wise: the projection
+	// allowlist must default to empty (nil vs [] is not a behavioural
+	// difference), and every other field must match exactly.
+	gotMetrics, wantMetrics := got.Metrics, want.Metrics
+	if len(gotMetrics.ProjectedLabels) != 0 || len(wantMetrics.ProjectedLabels) != 0 {
+		t.Errorf("Metrics.ProjectedLabels: got %v, want empty by default (and DefaultOptions %v)",
+			gotMetrics.ProjectedLabels, wantMetrics.ProjectedLabels)
+	}
+	gotMetrics.ProjectedLabels, wantMetrics.ProjectedLabels = nil, nil
+	if !reflect.DeepEqual(gotMetrics, wantMetrics) {
 		t.Errorf("Metrics: got %+v, want %+v", got.Metrics, want.Metrics)
 	}
 	if got.Webhook != want.Webhook {
@@ -693,5 +704,77 @@ func TestLoad_MetricsAllowInsecureFlag(t *testing.T) {
 	}
 	if err := got.Validate(); err != nil {
 		t.Errorf("Validate with allow_insecure=true: %v", err)
+	}
+}
+
+// TestLoad_MetricsProjectedLabelsPrecedence walks the precedence chain for the
+// only string-slice binding (#279): the env var and the flag take a
+// comma-separated string, the config file a YAML list.
+func TestLoad_MetricsProjectedLabelsPrecedence(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "fathom.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+metrics:
+  projected_labels: [tier, app.kubernetes.io/team]
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	load := func(t *testing.T, args []string, config string) []string {
+		t.Helper()
+		fs, zapOpts := newTestFlags(t)
+		if err := fs.Parse(args); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		got, err := Load(fs, *zapOpts, config, config != "")
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		return got.Metrics.ProjectedLabels
+	}
+
+	if got := load(t, nil, ""); len(got) != 0 {
+		t.Errorf("default: got %v, want none", got)
+	}
+	if got := load(t, nil, configPath); !slices.Equal(got, []string{"tier", "app.kubernetes.io/team"}) {
+		t.Errorf("config: got %v", got)
+	}
+	t.Run("env beats config", func(t *testing.T) {
+		t.Setenv("FATHOM_METRICS_PROJECTED_LABELS", "owner,cost-center")
+		if got := load(t, nil, configPath); !slices.Equal(got, []string{"owner", "cost-center"}) {
+			t.Errorf("env: got %v", got)
+		}
+	})
+	t.Run("flag beats env", func(t *testing.T) {
+		t.Setenv("FATHOM_METRICS_PROJECTED_LABELS", "owner")
+		if got := load(t, []string{"--metrics-projected-labels=team,tier"}, configPath); !slices.Equal(got, []string{"team", "tier"}) {
+			t.Errorf("flag: got %v", got)
+		}
+	})
+}
+
+// An invalid allowlist fails startup validation rather than surfacing later
+// as a gauge that cannot be built.
+func TestValidate_MetricsProjectedLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		labels  []string
+		wantErr string
+	}{
+		{"valid", []string{"tier", "app.kubernetes.io/team"}, ""},
+		{"invalid key", []string{"bad key"}, "metrics.projected_labels"},
+		{"colliding keys", []string{"a.b", "a_b"}, "both map"},
+		{"over the cap", []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}, "exceeds the maximum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.Metrics.ProjectedLabels = tc.labels
+			err := opts.Validate()
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
