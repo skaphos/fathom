@@ -452,9 +452,6 @@ the correct state and exits as specified.
 - **SC-003**: 100% of unsanctioned incompatible CRD changes and CRD scope
   changes are refused with nothing in the cluster modified, and the message
   names the CRD and the manual path.
-- **SC-009**: 100% of upgrades that cannot go straight to the target are
-  refused before any change, and the message names the next version to
-  upgrade to.
 - **SC-004**: After `fathomctl uninstall`, zero Fathom workloads remain and
   100% of the user's check resources and CRDs are still present.
 - **SC-005**: After `fathomctl uninstall --purge-crds --yes`, zero
@@ -468,6 +465,9 @@ the correct state and exits as specified.
   and can be upgraded with `helm`.
 - **SC-008**: An agent following the documented runbook can install, verify,
   upgrade and uninstall Fathom using only `fathomctl`.
+- **SC-009**: 100% of upgrades that cannot go straight to the target are
+  refused before any change, and the message names the next version to
+  upgrade to.
 
 ## Assumptions
 
@@ -479,7 +479,9 @@ the correct state and exits as specified.
 - Downgrades are out of scope for `upgrade`; `helm rollback` remains available
   for the operator itself and is not extended to CRDs.
 - Images are pinned by digest using the digests recorded for each release, per
-  the deploy-by-digest contract in `RELEASE.md`.
+  the deploy-by-digest contract in `RELEASE.md`. A development build of
+  `fathomctl` (not produced by the release workflow) has no recorded digests
+  and installs by tag; `status` and the docs say so.
 - The CRD compatibility verdict for an upgrade uses the same rules as the
   repository's `crd-compat` gate. Each release records which incompatible
   changes it sanctions and the oldest version it can be upgraded from
