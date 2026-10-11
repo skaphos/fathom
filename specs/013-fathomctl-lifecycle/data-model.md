@@ -63,7 +63,7 @@ Computed from Install + CRD set + declaration for A (installed) → B (CLI).
 | `path` | `direct` or ordered list of stop versions | Stops S with A < S < B. |
 | `crds[]` | `{name, action, findings[]}` | `action`: `add` \| `update` \| `unchanged` \| `refuse`. |
 | `crds[].findings[]` | `{check, path, message, sanctionedBy?}` | crdify findings; `sanctionedBy` names the release + issue when matched. |
-| `refusals[]` | `{reason, detail, next}` | `reason`: `stop-skipped`, `scope-change`, `unsanctioned-incompatible`, `acknowledgement-required`, `downgrade`, `not-installed`, `not-helm`, `multiple-installs`, `release-pending`. `next` is the exact next command. |
+| `refusals[]` | `{reason, detail, next}` | `reason`: `stop-skipped`, `scope-change`, `unsanctioned-incompatible`, `acknowledgement-required`, `downgrade`, `not-installed`, `not-helm`, `multiple-installs`, `release-pending`, `missing-permissions`. `next` is the exact next command. |
 | `operator` | `{fromImages, toImages}` | Digest or tag references. |
 | `values` | map | Effective values after reuse + overrides (secrets are not printed). |
 

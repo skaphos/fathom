@@ -10,6 +10,11 @@ Global flags are unchanged (`--kubeconfig`, `--context`, `-n/--namespace`,
 refusal happens before the cluster is changed and ends with a `next:` line
 holding the exact command to run.
 
+Refusals common to install, upgrade and uninstall: `missing-permissions`
+(a SelfSubjectAccessReview pre-check names each missing permission),
+`multiple-installs` (names each Fathom release, FR-008), `not-helm`
+(names kustomize or OLM, FR-006).
+
 ## Shared flags (install, upgrade)
 
 | Flag | Default | Meaning |

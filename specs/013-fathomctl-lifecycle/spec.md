@@ -61,7 +61,7 @@ with `fathomctl` and the reverse.
 | Backup before purge | Only on request, with `--export <file>`; the prompt names the flag | Explicit and predictable: a purge does exactly what it says, and the prompt reminds the user before anything is deleted. A default backup was safer but leaves files behind on every purge. |
 | `status` verb | Included in this feature | The other three verbs need the same facts (is it installed, which version, by which tool, are the CRDs current) to be idempotent and to print a plan; exposing them as a verb costs little and gives agents and runbooks one read-only question to ask. |
 | Installs not made through Helm | Detected and refused, never adopted | An operator installed from kustomize manifests (`dist/install.yaml`) or through OLM has no Helm release to continue. Taking it over silently would put two tools in charge of the same objects. OLM is out of scope (#330); the refusal names the tool that owns the install. |
-| Uninstall leaves no Fathom workloads | Without `--purge-crds`, uninstall removes the operator and the workloads the operator created for check resources (node-agent DaemonSets, probe Pods and their per-check ServiceAccounts, roles and NetworkPolicies) but keeps every CRD and every check resource | Those workloads are owned by the check resources, not the operator, so removing the operator alone leaves agents running with nothing to report to. Keeping the check resources means a later reinstall picks them up and recreates the workloads; nothing the user wrote is lost. |
+| Uninstall leaves no operator-created objects | Without `--purge-crds`, uninstall removes the operator and the workloads the operator created for check resources (node-agent DaemonSets, probe Pods and their per-check ServiceAccounts, roles and NetworkPolicies) but keeps every CRD and every check resource | Those workloads are owned by the check resources, not the operator, so removing the operator alone leaves agents running with nothing to report to. Keeping the check resources means a later reinstall picks them up and recreates the workloads; nothing the user wrote is lost. |
 
 Doing nothing leaves CRD upgrades as a manual step users forget, leaves
 agent DaemonSets running after an uninstall, and leaves agents scripting three
@@ -310,20 +310,29 @@ the correct state and exits as specified.
   is not managed by Helm and name the tool that appears to own it.
 - **FR-007**: `install` and `upgrade` MUST accept chart values the same ways
   Helm does (values files and individual overrides) and MUST validate them
-  against the chart's schema before changing the cluster.
+  against the chart's schema before changing the cluster. The image
+  references (repository, tag and digest of the operator, probe and
+  node-agent images) are the one exception: they are fixed by the CLI's own
+  release (FR-003, FR-011), and an override MUST be refused as a usage error
+  naming that reason.
+- **FR-008**: Every verb except `status` MUST refuse to act when more than one
+  Fathom release exists in the cluster, naming each release; `status` MUST
+  report them and exit `1`.
 
 **install**
 
 - **FR-010**: `install` MUST create every Fathom CRD, then the operator, in the
   chosen namespace, creating the namespace only with `--create-namespace`.
 - **FR-011**: `install` MUST install the CLI's own version and MUST reference
-  the operator, probe and node-agent images by digest.
+  the operator, probe and node-agent images by digest (release builds; a
+  development build, which carries no recorded digests, references them by
+  tag and says so — see Assumptions).
 - **FR-012**: `install` MUST be idempotent: on an install at the CLI's version
   it changes nothing and exits `0`; on an older install it refuses and points
   at `upgrade`; on a newer install it refuses and names the matching
   `fathomctl` release; it MUST never create a second release.
-- **FR-013**: `install` MUST wait until the operator is Available, bounded by
-  `--timeout`.
+- **FR-013**: `install` MUST wait until the operator is Available (bounded per
+  FR-004).
 
 **upgrade**
 
@@ -345,8 +354,8 @@ the correct state and exits as specified.
 - **FR-025**: `upgrade` MUST keep the release's existing values unless the
   user overrides them, and MUST refuse a target version older than the
   installed one.
-- **FR-026**: `upgrade` MUST wait until the new operator is Available, bounded
-  by `--timeout`. If it is not Available in time, `upgrade` MUST leave the new
+- **FR-026**: `upgrade` MUST wait until the new operator is Available (bounded
+  per FR-004). If it is not Available in time, `upgrade` MUST leave the new
   release in place, exit `1`, name the unmet condition and print the recovery
   commands (inspect, retry with a longer `--timeout`, roll the operator back).
 - **FR-029**: `upgrade --rollback-on-failure` MUST, when the new operator is
@@ -368,10 +377,14 @@ the correct state and exits as specified.
 
 **uninstall**
 
-- **FR-030**: `uninstall` MUST remove the operator release and every workload
-  the operator created for check resources (node-agent DaemonSets, probe Pods,
-  and their per-check ServiceAccounts, roles, role bindings and
-  NetworkPolicies), and MUST keep every CRD and every Fathom custom resource.
+- **FR-030**: `uninstall` MUST remove the operator release and every
+  operator-created object: in check namespaces, the node-agent DaemonSets,
+  probe Pods, per-check ServiceAccounts, roles, role bindings, NetworkPolicies
+  and node-report ConfigMaps; probe Pods the operator launched in other
+  namespaces (such as `kube-system`) with no owner; the cluster-scoped
+  `ValidatingAdmissionPolicy` and binding `fathom-node-report-authenticity`;
+  and the operator's leader-election Lease. It MUST keep every CRD and every
+  Fathom custom resource.
 - **FR-031**: `uninstall --purge-crds` MUST, before deleting anything, show the
   number of resources of each Fathom kind that will be deleted —
   `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, `NodeHealthCheck`,
@@ -381,10 +394,12 @@ the correct state and exits as specified.
   `--yes` to skip it, refusal without either.
 - **FR-032**: `uninstall --purge-crds --export <file>` MUST write every
   Fathom custom resource to `<file>` in a form that can be re-applied, and
-  MUST delete nothing if writing the file fails. The confirmation prompt MUST
+  MUST delete nothing if writing the file fails. Re-applied resources carry no
+  owner references (the owners are recreated with new identities), which the
+  documentation MUST state. The confirmation prompt MUST
   mention `--export` when it is not set; without it nothing is saved.
 - **FR-033**: After `uninstall --purge-crds` succeeds, no `fathom.skaphos.io`
-  CRD, custom resource or Fathom workload MUST remain.
+  CRD, custom resource or operator-created object MUST remain.
 - **FR-034**: `uninstall` on a cluster without a Fathom install MUST report
   that there is nothing to remove and exit `0`.
 - **FR-035**: `uninstall` MUST keep the release namespace unless
@@ -434,10 +449,14 @@ the correct state and exits as specified.
 - **Upgrade plan**: for one transition from the installed version A to the CLI's own version B, the per-CRD
   outcome (add, change, unchanged, refuse with reason), the operator change and
   the values in effect.
-- **Fathom-managed workloads**: objects the operator creates on behalf of
-  check resources — node-agent DaemonSets, probe Pods and their per-check
-  ServiceAccounts, roles, role bindings and NetworkPolicies — owned by the
-  check resource rather than the operator.
+- **Operator-created objects** (formerly referred to as "Fathom-managed
+  workloads"): objects the operator creates at run time rather than the chart
+  — node-agent DaemonSets, probe Pods, per-check ServiceAccounts, roles, role
+  bindings, NetworkPolicies and node-report ConfigMaps (mostly owned by the
+  check resource), plus objects with no owner: addon probe Pods outside check
+  namespaces, the cluster-scoped admission policy and binding
+  `fathom-node-report-authenticity`, and the leader-election Lease. `helm
+  uninstall` removes none of them.
 
 ## Success Criteria *(mandatory)*
 
@@ -452,7 +471,7 @@ the correct state and exits as specified.
 - **SC-003**: 100% of unsanctioned incompatible CRD changes and CRD scope
   changes are refused with nothing in the cluster modified, and the message
   names the CRD and the manual path.
-- **SC-004**: After `fathomctl uninstall`, zero Fathom workloads remain and
+- **SC-004**: After `fathomctl uninstall`, zero operator-created objects remain and
   100% of the user's check resources and CRDs are still present.
 - **SC-005**: After `fathomctl uninstall --purge-crds --yes`, zero
   `fathom.skaphos.io` CRDs, resources or workloads remain; with `--export`,
