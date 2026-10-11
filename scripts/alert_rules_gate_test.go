@@ -13,18 +13,21 @@ import (
 	"testing"
 )
 
-// The shipped staleness rule must stay cadence-relative (skaphos/fathom#277).
+// The sample staleness rule must stay cadence-relative (skaphos/fathom#277).
+//
+// It is a worked example rather than Fathom policy (#276), but adopters copy it,
+// so a regression here is copied into their rule sets.
 //
 // verify-alert-rules only proves the YAML still builds, so nothing else stops a
 // well-meaning edit from reintroducing an absolute threshold. That would be a
 // silent regression: an absolute number cannot be right for every kind at once,
 // and the failure mode is a rule that quietly false-positives on every check
 // slower than the value chosen — which is precisely the bug this replaced.
-func TestShippedStalenessRuleIsCadenceRelative(t *testing.T) {
+func TestSampleStalenessRuleIsCadenceRelative(t *testing.T) {
 	path := filepath.Join("..", "config", "components", "prometheus-rule", "prometheusrule.yaml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read shipped rules: %v", err)
+		t.Fatalf("read sample rules: %v", err)
 	}
 	rules := string(raw)
 
@@ -34,7 +37,7 @@ func TestShippedStalenessRuleIsCadenceRelative(t *testing.T) {
 	}
 
 	if loc, bare := bareStalenessThreshold(rules); bare {
-		t.Errorf("shipped rule compares staleness against a hardcoded threshold (%q); "+
+		t.Errorf("sample rule compares staleness against a hardcoded threshold (%q); "+
 			"express it as a multiple of fathom_check_interval_seconds instead", loc)
 	}
 }
@@ -59,9 +62,9 @@ func bareStalenessThreshold(doc string) (string, bool) {
 	return "", false
 }
 
-// The documented rule and the shipped rule must not drift apart: an operator who
-// copies the guide should get the behaviour the component actually ships.
-func TestDocumentedStalenessRuleMatchesShipped(t *testing.T) {
+// The documented rule and the sample component must not drift apart: an operator
+// who copies the guide should get the behaviour the component actually renders.
+func TestDocumentedStalenessRuleMatchesSample(t *testing.T) {
 	guide, err := os.ReadFile(filepath.Join("..", "docs", "guides", "monitoring.md"))
 	if err != nil {
 		t.Fatalf("read monitoring guide: %v", err)
@@ -77,7 +80,7 @@ func TestDocumentedStalenessRuleMatchesShipped(t *testing.T) {
 	}
 }
 
-// The cadence-relative clause alone silently loses coverage, so the shipped
+// The cadence-relative clause alone silently loses coverage, so the sample
 // rule must keep its never-ran clause (found by adversarial review of #277).
 //
 // A check with no resolvable cadence publishes no interval series, so the vector
@@ -88,7 +91,7 @@ func TestDocumentedStalenessRuleMatchesShipped(t *testing.T) {
 // clause would reintroduce that blind spot with no visible failure.
 func TestStalenessRuleStillCatchesNeverRan(t *testing.T) {
 	for _, f := range []struct{ label, path string }{
-		{"shipped rule", filepath.Join("..", "config", "components", "prometheus-rule", "prometheusrule.yaml")},
+		{"sample rule", filepath.Join("..", "config", "components", "prometheus-rule", "prometheusrule.yaml")},
 		{"monitoring guide", filepath.Join("..", "docs", "guides", "monitoring.md")},
 	} {
 		raw, err := os.ReadFile(f.path)

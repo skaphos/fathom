@@ -1,0 +1,23 @@
+- name: fathom-checks
+  rules:
+    - alert: FathomCheckFailing
+      expr: fathom_check_result{result=~"Fail|Error"} == 1
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} reports {{ $labels.result }}'
+        description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has reported {{ $labels.result }} for 10 minutes. Inspect it with: kubectl describe {{ $labels.kind }} {{ $labels.name }}'
+    - alert: FathomCheckStale
+      # 3 = the overdue allowance: three consecutive missed runs. Raise it
+      # for a noisier cluster, lower it to detect wedges sooner.
+      expr: >-
+        (time() - fathom_check_last_run_timestamp_seconds
+        > 3 * fathom_check_interval_seconds)
+        or (fathom_check_last_run_timestamp_seconds == 0)
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} is stale'
+        description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over three times its own interval (0 = never ran). The last recorded result can no longer be trusted: the operator may be wedged, the check paused, or its target selector matching nothing. For a ClusterHealth the interval is its slowest contributing check, and the age is its stalest contributing evidence.'

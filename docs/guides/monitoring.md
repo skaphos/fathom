@@ -7,8 +7,16 @@ SPDX-License-Identifier: MIT
 Fathom turns platform integrity into Kubernetes resource status. This guide
 covers the three ways a platform team consumes that: reading status with
 `kubectl`, scraping Prometheus metrics, and tracing reconciles. It closes with
-practical alerting patterns and an honest note on what is and isn't a metric
-today.
+example alerting rules and deployment gates.
+
+Fathom emits signal; it does not fire alerts. What pages whom, at which
+severity and after how long, differs between every platform that adopts it, so
+that policy is yours. What Fathom promises is the **metric surface** — the
+names, labels and semantics in [The metric contract](#the-metric-contract) —
+and it holds that surface to an explicit
+[stability promise](#stability-promise). The alert rules in this guide, and
+the opt-in `PrometheusRule` component, are worked examples you are expected to
+adapt.
 
 ## 1. Read status with `kubectl`
 
@@ -48,17 +56,28 @@ Fathom serves metrics with controller-runtime's built-in authn/authz filter
   (`metrics.allowInsecure`). See
   [Configuration → Options](../reference/configuration.md#options).
 
-### Wiring up a ServiceMonitor (Helm)
+### Wiring up Prometheus (Helm)
 
-The chart can create the metrics `Service` and a Prometheus-Operator
-`ServiceMonitor` for you:
+The chart can create everything a Prometheus Operator install needs: the
+metrics `Service`, a `ServiceMonitor`, the RBAC that lets your Prometheus
+scrape, and the sample alert rules:
 
-```sh
-helm upgrade fathom oci://ghcr.io/skaphos/charts/fathom-operator \
-  -n fathom-system \
-  --reuse-values \
-  --set metrics.service.enabled=true \
-  --set metrics.serviceMonitor.enabled=true
+```yaml
+# values.yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack   # your Prometheus serviceMonitorSelector
+  reader:
+    subjects:                          # who may GET /metrics
+      - kind: ServiceAccount
+        name: kube-prometheus-stack-prometheus
+        namespace: monitoring
+  prometheusRule:
+    enabled: true                      # renders the SAMPLE rules
+    labels:
+      release: kube-prometheus-stack   # your Prometheus ruleSelector
 ```
 
 - `metrics.service.enabled` (default `true`) exposes a ClusterIP Service on
@@ -68,19 +87,132 @@ helm upgrade fathom oci://ghcr.io/skaphos/charts/fathom-operator \
   The default `tlsConfig.insecureSkipVerify: true` trusts the self-signed
   serving cert; for a CA-signed metrics cert set `caFile` / `serverName` and
   flip it to `false`.
+- `metrics.reader.subjects` (default empty) binds each listed identity to the
+  chart's `metrics-reader` ClusterRole, which grants `get` on `/metrics` and
+  nothing else. Secure metrics refuse any scrape whose token lacks it, so
+  list your scraper's ServiceAccount here (or bind the role yourself).
+- `metrics.prometheusRule.enabled` (default `false`) creates a
+  `PrometheusRule`. By default it carries the **sample** rules from
+  [Example alerting rules](#4-example-alerting-rules) — review them first. Set
+  `metrics.prometheusRule.groups` to render your own rule groups instead; they
+  replace the sample rather than adding to it. Requires the prometheus-operator
+  CRDs.
 
-If you deploy via kustomize instead, the Prometheus `ServiceMonitor` is an
-opt-in overlay under `config/components/prometheus`.
+If you deploy via kustomize instead, the `ServiceMonitor` is an opt-in overlay
+under `config/components/prometheus` and the sample rules are
+`config/components/prometheus-rule`. The chart's rules are synced from that
+component (`task helm:sync`), so both install paths ship the same sample.
 
-### Operator metrics
+### Other monitoring backends
+
+Fathom only exposes Prometheus-format metrics over HTTPS with a bearer-token
+check; any backend that can scrape that can consume the
+[metric contract](#the-metric-contract). The chart has presets for two common
+ones under `metrics.integrations`. Each wires **scraping only** — alerting is
+configured in the backend itself — and both are off by default.
+
+#### Dynatrace
+
+```yaml
+metrics:
+  integrations:
+    dynatrace:
+      enabled: true
+      activeGateServiceAccount:     # defaults shown
+        name: dynatrace-activegate
+        namespace: dynatrace
+      caConfigMap:                  # CA of a CA-signed metrics certificate
+        name: fathom-metrics-ca
+        key: ca.crt
+  certSecretName: fathom-metrics-cert   # e.g. issued by cert-manager
+  certPath: /tmp/k8s-metrics-server/metrics-certs
+```
+
+The preset annotates the metrics `Service` with the `metrics.dynatrace.com/*`
+keys Dynatrace's Prometheus scraping reads (`scrape`, `port` — the container
+port, as Dynatrace requires on a Service — `path`, `secure`), and with
+`http.auth: builtin:default`, which makes the ActiveGate send **its own
+ServiceAccount token**. It then binds that ServiceAccount to the
+`metrics-reader` role. Anything you set in `metrics.service.annotations`
+overrides the preset key by key — for example `metrics.dynatrace.com/filter` to
+ingest only some metrics — **except** the TLS and auth keys (`secure`,
+`insecure_skip_verify`, `tls.ca.crt`, `tls.crt`, `tls.key`, `http.auth`): those
+are controlled only by the typed values below, and the chart refuses to render
+if an annotation sets one while the preset is enabled.
+
+Because that token is the ActiveGate's own — usually with broad cluster read —
+**the serving certificate must be verified**. The operator's default
+certificate is self-signed and regenerated on every start, so it cannot be
+pinned: serve a CA-signed metrics certificate (`metrics.certSecretName`) and
+point `caConfigMap` at a ConfigMap holding its CA. The preset then sets
+`metrics.dynatrace.com/tls.ca.crt` and grants the ActiveGate `get` on that one
+ConfigMap, which Dynatrace needs and does not grant by default. With secure
+metrics and no `caConfigMap`, the chart **refuses to render** unless you
+explicitly accept unverified TLS with
+`metrics.integrations.dynatrace.insecureSkipVerify: true`.
+
+- Authenticated scraping needs an **in-cluster ActiveGate that monitors the
+  local Kubernetes API**; an ActiveGate outside the cluster cannot scrape this
+  endpoint.
+- Dynatrace now recommends its OpenTelemetry Collector (Target Allocator) for
+  new Prometheus ingestion and for large estates. That path discovers the
+  chart's `ServiceMonitor`: enable `metrics.serviceMonitor` and list the
+  Collector's ServiceAccount in `metrics.reader.subjects` instead.
+- Prometheus labels become Dynatrace dimensions. Confirm the ingested metric
+  keys in your tenant before writing alerts against them.
+
+#### Sumo Logic
+
+```yaml
+metrics:
+  integrations:
+    sumologic:
+      enabled: true
+      releaseName: collection   # the Sumo Logic Kubernetes Collection release
+```
+
+The Sumo Logic Kubernetes Collection (v4 and later, OpenTelemetry) discovers
+`ServiceMonitor`s through its Target Allocator, selecting `release: <its release
+name>`. The preset renders the chart's `ServiceMonitor` — even with
+`metrics.serviceMonitor.enabled=false` — with that label. The collection's
+metrics collector role already allows `get` on `/metrics`, so no extra RBAC is
+needed. Its pod-annotation (`prometheus.io/scrape`) path is HTTP-only and
+unauthenticated, so it cannot scrape Fathom; use the preset.
+
+- By default the collection **drops histogram and summary metrics**
+  (`dropHistogramBuckets` with `allowHistogramRegex: "^$"`). To keep
+  `fathom_reconcile_duration_seconds` and `fathom_adapter_run_duration_seconds`,
+  widen `allowHistogramRegex` (for example `^fathom_.*`). The check gauges are
+  unaffected.
+- Recent OpenTelemetry Operator releases stop honouring file-based
+  `ServiceMonitor` credentials such as `bearerTokenFile` by default. If your
+  collection's operator does, the scrape is refused with `401`; add a scrape job
+  through `sumologic.metrics.collector.otelcol.config.merge` instead, with
+  `scheme: https`, `authorization.credentials_file:
+  /var/run/secrets/kubernetes.io/serviceaccount/token` and
+  `tls_config.insecure_skip_verify: true`.
+
+#### Anything else
+
+Any scraper works if it can send a bearer token over HTTPS: point it at the
+metrics `Service` (port `8443`, path `/metrics`), let it skip verification of
+the self-signed certificate (or mount a CA-signed one via
+`metrics.certSecretName`), and list its identity in `metrics.reader.subjects`.
+Annotation conventions differ — use `metrics.service.annotations` to set the
+ones your agent reads. The generic `prometheus.io/*` annotations carry no
+scheme or credentials in most agents, so on their own they are not enough.
+
+### The metric contract
 
 Registered with the controller-runtime registry (so the built-in
-controller-runtime and Go metrics are exposed alongside them):
+controller-runtime and Go metrics are exposed alongside them). Every `fathom_*`
+metric in this guide is part of the contract described under
+[Stability promise](#stability-promise):
 
 | Metric | Type | Labels | Use |
 | --- | --- | --- | --- |
 | `fathom_check_result` | gauge | `kind`, `name`, `namespace`, `result` | **Current result of every check**, one-hot: one series per result value (`Pass`/`Warn`/`Fail`/`Error`/`Skipped`/`Unknown`), exactly one of them `1`. The alerting signal for "is this check failing right now". |
-| `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Alerting patterns](#4-alerting-patterns). |
+| `fathom_check_last_run_timestamp_seconds` | gauge | `kind`, `name`, `namespace` | Unix time of the most recent completed evaluation backing the check's current result. The staleness signal — see [Example alerting rules](#4-example-alerting-rules). |
 | `fathom_check_interval_seconds` | gauge | `kind`, `name`, `namespace` | The cadence a check is currently expected to run at, after per-resource override and floor clamping. For `NodeHealthCheck` this is the **capped agent cadence** (`min(spec.interval, 5m)`), not `spec.interval`: a frozen verdict must read as stale within minutes even on a daily check. Join it against the last-run timestamp to express staleness relative to cadence instead of a fixed threshold. **Absent** — not zero — when the cadence cannot be resolved. |
 | `fathom_dnscheck_target_result` | gauge | `namespace`, `check`, `name`, `record_type`, `resolver`, `result` | **`fathom_check_result` one level down**, for `DNSCheck` only: one-hot per (target, vantage point) pair, so you can alert on the single name that broke rather than on the check as a whole. See [Per-target DNS results](#per-target-dns-results) for the cardinality budget. |
 | `fathom_reconcile_total` | counter | `kind`, `outcome` | Reconcile volume and error rate per resource kind. |
@@ -118,13 +250,71 @@ refreshed contributor. Together with the stalest-observation rule above, that is
 what lets one alert cover a mixed-cadence aggregate without false positives: a
 healthy hourly child no longer drags a five-minute aggregate into permanent
 staleness. Checks whose cadence cannot be resolved publish no interval series, so the
-vector join in the first clause drops them — which is why the shipped rule
+vector join in the first clause drops them — which is why the sample rule
 carries a second `== 0` clause. Without it a `ClusterHealth` whose selector
 matches nothing would silently stop alerting, and a typo'd selector is exactly
 the mistake that rule exists to catch.
 
-Label cardinality is bounded by design: one series set per check resource,
-and never any free-text label.
+Label cardinality is bounded by design: one series set per check resource
+(plus the schema-capped per-target and per-item sets below), and label values
+never carry observed free text.
+
+### Stability promise
+
+The metric surface is Fathom's alerting contract: you write rules against it,
+so it changes only deliberately.
+
+**Covered** — every `fathom_*` metric documented in this guide:
+
+- metric names, types and units;
+- label keys, and the documented values of enumerated labels (`kind`,
+  `result`, `type`, `resource`, `record_type`, and `outcome`: `success` /
+  `error` on `fathom_reconcile_total`, the adapter result
+  `Pass` / `Warn` / `Fail` / `Error` on `fathom_adapter_run_duration_seconds`);
+- the documented semantics: one-hot result sets with exactly one series at `1`,
+  the `0` "never ran" last-run sentinel, an interval that is **absent** rather
+  than zero when it cannot be resolved, the wrapper-kind staleness rules
+  (`HealthCheck` follows its target, `ClusterHealth` its stalest child and
+  slowest cadence), and series that live and die with their resource;
+- where label values come from — only these bounded sources:
+  - Kubernetes object names: your check resources' names and namespaces, and
+    node names;
+  - the specs of your own resources, each capped by the CRD schema: `DNSCheck`
+    target names and resolver names (`spec.resolvers`), `NodeHealthCheck` item
+    `path`s, and a runtime `AddonDefinition`'s addon type and family names (the
+    `adapter` / `family` labels);
+  - identifiers Fathom defines: built-in adapter and family names, the
+    implicit `cluster` resolver, and the enumerated values above.
+
+  Values Fathom *observes* (messages, reasons, versions, discovered certificate
+  paths, subjects, issuers) stay in status, Events and `HealthReport`, never in
+  a label.
+
+**Breaking** — made only in a release whose notes flag it as a breaking change,
+never silently and never in a patch release:
+
+- renaming or removing a metric or a label;
+- changing a metric's type or unit;
+- changing what a value means (for example #307, which switched a
+  `ClusterHealth`'s last-run timestamp from its freshest to its stalest child,
+  shipped as a breaking change);
+- adding a label to an existing metric **by default** — it changes series
+  identity and breaks `on(...)` joins and recording rules;
+- removing a documented value of an enumerated label.
+
+**Not breaking:**
+
+- new metrics;
+- opt-in labels that are off unless you enable them;
+- new values of an enumerated label that come with a new check kind, item type
+  or result, and new built-in adapter or family names — match the values you
+  care about (`result=~"Fail|Error"`) rather than assuming the set is closed;
+- histogram bucket boundaries;
+- the sample alert rules, the `ServiceMonitor` and Helm scrape defaults, and the
+  controller-runtime and Go runtime metrics, which belong to their upstreams.
+
+Series continuity across an operator restart is not promised: standard
+Prometheus gauge semantics apply.
 
 ### Per-target DNS results
 
@@ -257,7 +447,15 @@ Spans emitted:
 Full setup (endpoint, sampling ratio, TLS) is in
 [Configuration → Tracing](../reference/configuration.md#tracing).
 
-## 4. Alerting patterns
+## 4. Example alerting rules
+
+> **These are starting points, not Fathom policy.** Fathom does not decide what
+> pages you. Every rule below is a composition over the
+> [metric contract](#the-metric-contract): copy it into your own rule set and
+> tune the severity, the `for` window and any threshold to your platform and
+> on-call. Rule names and expressions in this section and in the sample
+> component may change in any release; the metrics they read change only under
+> the [stability promise](#stability-promise).
 
 ### Certificate expiry (the clean case)
 
@@ -337,12 +535,86 @@ groups:
           severity: warning
 ```
 
-Both rules also ship ready-to-install as an opt-in kustomize component,
+The same two rules are available as an opt-in **sample** kustomize component,
 `config/components/prometheus-rule` (requires the prometheus-operator CRDs;
 enable it next to the `prometheus` ServiceMonitor component in
-`config/default/kustomization.yaml`). The shipped rules are build-validated in
-CI (`task verify-alert-rules`); they are not exercised by promtool-style rule
-unit tests.
+`config/default/kustomization.yaml`). It exists so you can see the rules
+working end to end; treat it as a template, review it before enabling it, and
+prefer copying the rules into a rule set you own. The sample is build-validated
+in CI (`task verify-alert-rules`), and a gate test keeps the staleness rule
+cadence-relative; it is not exercised by promtool-style rule unit tests. The
+Helm chart renders the same sample with `metrics.prometheusRule.enabled=true`
+(see [Wiring up Prometheus (Helm)](#wiring-up-prometheus-helm)).
+
+### The same rules in other backends
+
+Dynatrace and Sumo Logic define alerts in the backend, usually as code. These
+are the two sample rules translated, as starting points only: **they have not
+been run against a live tenant**, so check the metric keys, dimension names and
+query syntax in yours before relying on them.
+
+Dynatrace metric event (Terraform, `dynatrace-oss/dynatrace` provider) for
+`FathomCheckFailing`:
+
+```hcl
+resource "dynatrace_metric_events" "fathom_check_failing" {
+  enabled = true
+  summary = "Fathom check failing"
+  event_template {
+    title       = "Fathom check failing"
+    description = "{dims}"
+    event_type  = "CUSTOM_ALERT"
+  }
+  model_properties {
+    type               = "STATIC_THRESHOLD"
+    alert_condition    = "ABOVE"
+    threshold          = 0.5
+    samples            = 10 # one-minute samples: "for 10m"
+    violating_samples  = 10
+    dealerting_samples = 10
+    alert_on_no_data   = false
+  }
+  query_definition {
+    type            = "METRIC_SELECTOR"
+    metric_selector = "fathom_check_result:filter(or(eq(\"result\",\"Fail\"),eq(\"result\",\"Error\"))):splitBy(\"namespace\",\"name\"):max"
+  }
+}
+```
+
+Sumo Logic monitor (Terraform, `sumologic_monitor`) for the same condition:
+
+```hcl
+resource "sumologic_monitor" "fathom_check_failing" {
+  name         = "Fathom check failing"
+  type         = "MonitorsLibraryMonitor"
+  monitor_type = "Metrics"
+  queries {
+    row_id = "A"
+    query  = "metric=fathom_check_result (result=Fail OR result=Error) | max by namespace, name"
+  }
+  trigger_conditions {
+    metrics_static_condition {
+      critical {
+        time_range      = "10m"
+        occurrence_type = "Always"
+        alert {
+          threshold      = 1
+          threshold_type = "GreaterThanOrEqual"
+        }
+        resolution {
+          threshold      = 1
+          threshold_type = "LessThan"
+        }
+      }
+    }
+  }
+}
+```
+
+The staleness rule translates the same way: alert when
+`time() - fathom_check_last_run_timestamp_seconds` exceeds three times
+`fathom_check_interval_seconds`, or the last-run timestamp is `0`. How to
+express that arithmetic between two metrics differs per backend.
 
 Status remains the source of truth the metric is derived from — for a
 just-in-time verdict or a deploy gate, keep reading status

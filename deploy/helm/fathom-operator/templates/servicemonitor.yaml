@@ -1,8 +1,15 @@
 {{- /*
 Only meaningful when metrics are actually served and exposed by a Service:
-gate on serviceMonitor.enabled AND a real bind address AND the metrics Service.
+gate on (serviceMonitor.enabled OR the Sumo Logic preset) AND a real bind
+address AND the metrics Service. The Sumo preset adds the release label its
+Target Allocator selects on; explicit serviceMonitor.labels win on conflict.
 */ -}}
-{{- if and .Values.metrics.serviceMonitor.enabled (ne .Values.metrics.bindAddress "0") .Values.metrics.service.enabled -}}
+{{- $sumo := .Values.metrics.integrations.sumologic }}
+{{- if and (or .Values.metrics.serviceMonitor.enabled $sumo.enabled) (ne .Values.metrics.bindAddress "0") .Values.metrics.service.enabled -}}
+{{- $labels := deepCopy (.Values.metrics.serviceMonitor.labels | default dict) }}
+{{- if $sumo.enabled }}
+{{- $labels = merge $labels (dict "release" $sumo.releaseName) }}
+{{- end }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -10,7 +17,7 @@ metadata:
   namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
   labels:
     {{- include "fathom-operator.labels" . | nindent 4 }}
-    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- with $labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:

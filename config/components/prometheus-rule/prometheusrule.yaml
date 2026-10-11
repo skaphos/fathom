@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Rillan AI LLC
 # SPDX-License-Identifier: MIT
 #
-# Shipped alert rules over the fathom_check_* gauges (spec 001, FR-009a).
+# SAMPLE alert rules over the fathom_check_* gauges (spec 001, FR-009a). This
+# is a worked example to adapt, not Fathom policy: see kustomization.yaml in
+# this directory and docs/guides/monitoring.md (skaphos/fathom#276).
 #
 # FathomCheckStale is cadence-relative: it compares a check's age against that
 # check's OWN published interval rather than one constant for the whole fleet
