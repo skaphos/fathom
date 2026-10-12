@@ -7,6 +7,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -176,6 +177,22 @@ func TestPurgeWithOnlyCRDsLeft(t *testing.T) {
 	}
 	if exists(t, env.c, &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: dnsCRD}}) {
 		t.Error("CRDs survived")
+	}
+}
+
+// With no release namespace to find, the purge still runs the permission
+// preflight, so a missing permission refuses before anything is deleted.
+func TestPurgeWithOnlyCRDsLeftChecksPermissionsFirst(t *testing.T) {
+	env := newLifecycleEnv(t, append(liveCRDs(t, "0.6.0", nil), addonCheck("team-a", "coredns"))...)
+	env.denied["delete customresourcedefinitions"] = true
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "uninstall", "--purge-crds", "--yes")
+	var r refusal
+	if !errors.As(err, &r) || r.Reason != reasonMissingPermissions || !strings.Contains(r.Error(), "customresourcedefinitions") {
+		t.Fatalf("err = %v, want a %s refusal naming the CRD permission", err, reasonMissingPermissions)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("refused purge changed the cluster: %v", w)
 	}
 }
 

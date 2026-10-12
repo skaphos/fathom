@@ -72,7 +72,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | N1 | P2 | After an uninstall failed post-release-removal, a rerun said "nothing to remove" and orphaned operator-created objects. | Fixed — rerun detects and removes leftovers; actionable `next:`; `TestUninstallRerunCleansUpLeftovers`. |
 | N2 | P3 | Post-upgrade-failure recovery suggested a retry that `release-pending` would refuse. | Fixed — says to `helm rollback` a failed latest revision first. |
 | N3 | P3 | The rerun-after-failed-uninstall path cannot find the leader-election Lease (no release namespace or values). | Accepted — the Lease is inert without an operator and a reinstall takes it over once it expires. |
-| N4 | P3 | On that path the permission preflight and `--delete-namespace` are skipped (no namespace is known). | Accepted — the cleanup is idempotent and safe to rerun; deleting a namespace the CLI cannot identify would be the riskier behaviour. Owner: spec 013 follow-up if users hit it. |
+| N4 | P3 | On that path the permission preflight and `--delete-namespace` are skipped (no namespace is known). | Partly superseded by C5: the preflight now runs for the cluster-wide and purge permissions. `--delete-namespace` is still skipped — deleting a namespace the CLI cannot identify would be the riskier behaviour. |
 | N5 | P3 | On that path the CLI cannot wait for a manager it cannot identify. | Accepted — only reachable with a pod stuck beyond `--timeout`, which the error's force-delete hint covers. |
 | N6 | P3 | `redactValues` does not descend into lists. | Accepted — no chart value carries a secret inside a list today. |
 | N7 | P3 | `waitBounded` aborts on a transient API error instead of retrying. | Deferred — bounded and reported; revisit with real-cluster e2e data. |
@@ -82,6 +82,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | C2 | P2 | PR review: the `--delete-namespace` inventory skipped kinds the user may not list, so it could delete objects it never showed. | Fixed — a `Forbidden` list refuses with `missing-permissions` before anything changes; `TestDeleteNamespaceRefusesWhenAKindCannotBeListed`. |
 | C3 | P3 | PR review: `status -o json\|yaml` with more than one install printed table text. | Fixed — a structured report whose `problems` names the installs, still exiting 1; `TestStatusStructuredOutputWithTwoReleases`. |
 | C4 | P3 | PR review: the upgrade-path append-only gate did not reject a new entry dated at or below the latest tag. | Fixed — `releasedHistoryViolations` flags it; `TestReleasedHistoryViolations`. |
+| C5 | P2 | PR review: with only CRDs and resources left, `uninstall --purge-crds --yes` skipped the permission preflight and could stop part-way through a purge. | Fixed — the preflight always runs; without a release namespace it checks the cluster-wide and purge permissions; `TestPurgeWithOnlyCRDsLeftChecksPermissionsFirst`. |
 
 ## Re-review history
 
@@ -96,5 +97,5 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
 5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
-   CI and locally. PR review then raised C1–C4, fixed with unit regression
+   CI and locally. PR review then raised C1–C5, fixed with unit regression
    tests. Like E1, these postdate the independent review.

@@ -108,11 +108,13 @@ func runUninstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *uni
 	default:
 		return notHelmRefusal(in)
 	}
+	// The preflight runs even when no release namespace is known (a rerun
+	// after the release was removed): the cluster-wide cleanup and a purge
+	// must not start and then stop part-way on a missing permission.
 	ns := in.Namespace
-	if ns != "" {
-		if err := preflightPermissions(ctx, f, c, lifecyclePermissions("uninstall", ns, permissionScope{purgeCRDs: opts.purgeCRDs, deleteNamespace: opts.deleteNamespace})); err != nil {
-			return err
-		}
+	scope := permissionScope{purgeCRDs: opts.purgeCRDs, deleteNamespace: opts.deleteNamespace && ns != ""}
+	if err := preflightPermissions(ctx, f, c, lifecyclePermissions("uninstall", ns, scope)); err != nil {
+		return err
 	}
 
 	// Everything that needs confirming is gathered before anything changes.

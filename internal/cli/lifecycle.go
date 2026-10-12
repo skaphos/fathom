@@ -568,13 +568,19 @@ func lifecyclePermissions(verb, namespace string, scope permissionScope) []permi
 			perms = append(perms, permission{Verb: "create", Resource: "namespaces"})
 		}
 	case "uninstall":
-		perms = []permission{
-			{Verb: "delete", Group: "apps", Resource: "deployments", Namespace: namespace},
+		// The release's own objects only exist when its namespace is known;
+		// a rerun after the release was removed has none to delete.
+		if namespace != "" {
+			perms = []permission{
+				{Verb: "delete", Group: "apps", Resource: "deployments", Namespace: namespace},
+				{Verb: "delete", Resource: "secrets", Namespace: namespace},
+				{Verb: "delete", Resource: "services", Namespace: namespace},
+				{Verb: "delete", Group: "coordination.k8s.io", Resource: "leases", Namespace: namespace},
+			}
+		}
+		perms = append(perms, []permission{
 			{Verb: "delete", Group: rbac, Resource: "clusterroles"},
 			{Verb: "delete", Group: rbac, Resource: "clusterrolebindings"},
-			{Verb: "delete", Resource: "secrets", Namespace: namespace},
-			{Verb: "delete", Resource: "services", Namespace: namespace},
-			{Verb: "delete", Group: "coordination.k8s.io", Resource: "leases", Namespace: namespace},
 			// Operator-created objects, in any namespace.
 			{Verb: "delete", Group: "apps", Resource: "daemonsets"},
 			{Verb: "delete", Resource: "pods"},
@@ -585,7 +591,7 @@ func lifecyclePermissions(verb, namespace string, scope permissionScope) []permi
 			{Verb: "delete", Group: "networking.k8s.io", Resource: "networkpolicies"},
 			{Verb: "delete", Group: admission, Resource: "validatingadmissionpolicies"},
 			{Verb: "delete", Group: admission, Resource: "validatingadmissionpolicybindings"},
-		}
+		}...)
 		if scope.purgeCRDs {
 			perms = append(perms, crd("delete"))
 			for _, r := range []string{"addondefinitions", "addondefinitionbindings", "addonchecks", "dnschecks",
