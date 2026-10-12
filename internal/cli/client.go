@@ -6,12 +6,14 @@ SPDX-License-Identifier: MIT
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
 	"golang.org/x/term"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -47,9 +49,18 @@ type factory struct {
 	stdin      io.Reader
 	isTerminal func() bool
 
-	// pollInterval paces `run --wait`. Two seconds against a handful of
-	// objects is negligible load; tests use milliseconds.
+	// pollInterval paces `run --wait` and the lifecycle verbs' waits. Two
+	// seconds against a handful of objects is negligible load; tests use
+	// milliseconds.
 	pollInterval time.Duration
+
+	// newReleaseClient builds the Helm seam the lifecycle verbs drive; tests
+	// supply a fake so no verb needs Helm storage or a cluster.
+	newReleaseClient func(*factory) (releaseClient, error)
+
+	// accessReview answers the lifecycle preflight's permission questions.
+	// The default issues SelfSubjectAccessReviews; the fake client cannot.
+	accessReview func(context.Context, client.Client, permission) (bool, error)
 }
 
 // defaultPollInterval is how often `run --wait` re-reads a check.
@@ -65,6 +76,8 @@ func newFactory() *factory {
 		stdin:                 os.Stdin,
 		isTerminal:            func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
 		pollInterval:          defaultPollInterval,
+		newReleaseClient:      newHelmReleaseClient,
+		accessReview:          selfAccessReview,
 	}
 }
 
@@ -80,13 +93,16 @@ func defaultClientConfig(o *globalOptions) clientcmd.ClientConfig {
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides)
 }
 
-// newScheme registers the client-go core types plus the Fathom API so typed
-// Get/List/Patch calls work for every kind the CLI addresses. It deliberately
-// omits apiextensions: the CLI never reads CRD objects.
+// newScheme registers the client-go core types, apiextensions (the lifecycle
+// verbs read, compare and apply the Fathom CRDs) and the Fathom API so typed
+// Get/List/Patch calls work for every kind the CLI addresses.
 func newScheme() (*runtime.Scheme, error) {
 	s := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(s); err != nil {
 		return nil, fmt.Errorf("add client-go scheme: %w", err)
+	}
+	if err := apiextensionsv1.AddToScheme(s); err != nil {
+		return nil, fmt.Errorf("add apiextensions scheme: %w", err)
 	}
 	if err := fathomv1alpha1.AddToScheme(s); err != nil {
 		return nil, fmt.Errorf("add fathom v1alpha1 scheme: %w", err)

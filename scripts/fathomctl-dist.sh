@@ -17,6 +17,11 @@
 #   OUT                  Output directory. Default: dist/fathomctl
 #   FATHOMCTL_PLATFORMS  Space-separated GOOS/GOARCH pairs. Default: the six
 #                        release targets.
+#   FATHOM_OPERATOR_DIGEST, FATHOM_PROBE_DIGEST, FATHOM_NODE_AGENT_DIGEST
+#                        The release's image digests (sha256:…). The release
+#                        workflow sets all three so `fathomctl install` pins
+#                        images by digest; without them the binary is a
+#                        development build that installs by tag.
 #
 # Output (in OUT):
 #   fathomctl_<VERSION>_<os>_<arch>.tar.gz   (linux, darwin)
@@ -34,6 +39,18 @@ out="${OUT:-dist/fathomctl}"
 platforms="${FATHOMCTL_PLATFORMS:-linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64}"
 revision="$(git rev-parse HEAD)"
 ldflags="-s -w -buildid= -X github.com/skaphos/fathom/internal/cli.Version=v${version} -X github.com/skaphos/fathom/internal/cli.BuildRevision=${revision}"
+for pair in operatorDigest:FATHOM_OPERATOR_DIGEST probeDigest:FATHOM_PROBE_DIGEST nodeAgentDigest:FATHOM_NODE_AGENT_DIGEST; do
+  goVar="${pair%%:*}"
+  envVar="${pair#*:}"
+  digest="${!envVar:-}"
+  if [[ -n "$digest" ]]; then
+    if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      echo "fathomctl-dist: $envVar=$digest is not a sha256 digest" >&2
+      exit 1
+    fi
+    ldflags+=" -X github.com/skaphos/fathom/internal/cli.${goVar}=${digest}"
+  fi
+done
 
 case "$out" in
   /*) outabs="$out" ;;

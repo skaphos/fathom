@@ -279,12 +279,16 @@ tasks:
     vars:
       # A local build identifies itself by the nearest tag; release archives
       # get the exact release version from scripts/fathomctl-dist.sh instead.
+      # The lifecycle verbs need a SemVer version: set FATHOMCTL_VERSION in the
+      # environment to build with an explicit one (e.g. the e2e lifecycle shard).
       FATHOMCTL_VERSION:
-        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+        sh: echo "${FATHOMCTL_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
       FATHOMCTL_REVISION:
         sh: git rev-parse HEAD
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}}" -o bin/fathomctl ./cmd/fathomctl
+      # Image digests are injected only when set (the release workflow, via
+      # fathomctl-dist); without them the binary installs by tag.
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}} -X github.com/skaphos/fathom/internal/cli.operatorDigest=${FATHOM_OPERATOR_DIGEST:-} -X github.com/skaphos/fathom/internal/cli.probeDigest=${FATHOM_PROBE_DIGEST:-} -X github.com/skaphos/fathom/internal/cli.nodeAgentDigest=${FATHOM_NODE_AGENT_DIGEST:-}" -o bin/fathomctl ./cmd/fathomctl
 
   fathomctl-dist:
     desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})

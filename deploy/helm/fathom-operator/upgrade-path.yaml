@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Stops and sanctioned incompatible CRD changes, one entry per release that has
+# either. Maintained in the release PR; see RELEASE.md. Read by fathomctl from
+# its embedded chart (skaphos/fathom#330; contract:
+# specs/013-fathomctl-lifecycle/contracts/upgrade-path.md).
+#
+# Append-only: entries for a released version are never edited or removed, so
+# every later fathomctl knows every earlier stop. scripts/upgrade_path_gate_test.go
+# enforces that, and that every SANCTIONED crd-compat finding has an entry here.
+#
+#   floor                  oldest version this data covers; never changed.
+#   releases[].version     semver without v; strictly increasing.
+#   releases[].stop        an upgrade from below this version to above it must
+#                          install it first (default false). Make a release a
+#                          stop when existing resources need its operator to
+#                          migrate before a later schema accepts them.
+#   releases[].sanctioned  incompatible CRD changes the release deliberately
+#                          makes: crd (metadata.name), path (crdify property
+#                          path, or "*"), reason and issue (shown verbatim).
+#                          `upgrade` applies them only with
+#                          --accept-incompatible-crds.
+floor: 0.5.0
+releases:
+  # Neither change needs an intermediate operator to migrate data, so 0.6.0 is
+  # not a stop: later releases may upgrade straight from v0.5.x (2026-10-11).
+  - version: 0.6.0
+    stop: false
+    sanctioned:
+      - crd: clusterhealths.fathom.skaphos.io
+        path: ^.status.children
+        reason: status.children capped at 100 items; previously unbounded, so one selector could grow the stored object without limit. The controller truncates worst-verdict-then-stalest first and computes result/observedAt across every selected check before truncating, so the cap bounds what is reported, never what is measured, and cannot fail a status write. Sanctioned v1alpha1 churn.
+        issue: https://github.com/skaphos/fathom/issues/277
+      - crd: healthchecks.fathom.skaphos.io
+        path: ^.spec.checkRef.apiVersion
+        reason: checkRef.apiVersion bounded to Kubernetes' 317-character API-version limit while remaining enum-free for migration safety; sanctioned v1alpha1 validation hardening.
+        issue: https://github.com/skaphos/fathom/issues/267

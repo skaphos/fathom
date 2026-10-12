@@ -3,9 +3,14 @@
 
 # -- Operator container image. Tag defaults to "v<.Chart.AppVersion>"
 # (fathom image tags carry a leading v); set tag explicitly to override.
+# A digest ("sha256:<64 hex>"), when set, replaces the tag: the image renders
+# as repository@digest, per the deploy-by-digest contract in RELEASE.md. The
+# same applies to probeImage.digest and nodeAgent.image.digest; fathomctl sets
+# all three from the digests of its own release.
 image:
   repository: ghcr.io/skaphos/fathom-operator
   tag: ""              # defaults to v{{ .Chart.AppVersion }}
+  digest: ""           # sha256:...; overrides tag when set
   pullPolicy: IfNotPresent
 
 # -- Probe container image. The probe is NOT a Deployment — the operator
@@ -15,6 +20,7 @@ image:
 probeImage:
   repository: ghcr.io/skaphos/fathom-probe
   tag: ""              # defaults to v{{ .Chart.AppVersion }}
+  digest: ""           # sha256:...; overrides tag when set
 
 # -- Node-agent. A dedicated, purpose-built image (NOT the operator or probe
 # image). The node-agent is NOT templated as a workload here — the
@@ -27,6 +33,7 @@ nodeAgent:
   image:
     repository: ghcr.io/skaphos/fathom-node-agent
     tag: ""            # defaults to v{{ .Chart.AppVersion }}
+    digest: ""         # sha256:...; overrides tag when set
 
 imagePullSecrets: []
 
