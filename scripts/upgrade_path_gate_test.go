@@ -228,7 +228,18 @@ func TestUpgradePathRecordsEverySanctionedFinding(t *testing.T) {
 		t.Skip("runs the crd-compat gate")
 	}
 	_, tagVersion := latestReleaseTag(t)
-	doc := readUpgradePath(t)
+	for _, v := range unrecordedSanctions(readUpgradePath(t), tagVersion, sanctionedFindings(t, nil)) {
+		t.Error(v)
+	}
+}
+
+// unrecordedSanctions reports each finding ("crd path") the declaration's
+// unreleased entry does not record, and more than one unreleased entry. A
+// finding is recorded by its exact path or by an explicit path "*" for its
+// CRD — the same match fathomctl applies, so the gate never accepts a
+// declaration the CLI would read as incomplete.
+func unrecordedSanctions(doc upgradePathDoc, tagVersion *semver.Version, findings []string) []string {
+	var out []string
 	unreleased := map[string]bool{}
 	var unreleasedVersions []string
 	for _, r := range doc.Releases {
@@ -238,17 +249,46 @@ func TestUpgradePathRecordsEverySanctionedFinding(t *testing.T) {
 		unreleasedVersions = append(unreleasedVersions, r.Version)
 		for _, s := range r.Sanctioned {
 			unreleased[s.CRD+" "+s.Path] = true
-			unreleased[s.CRD+" *"] = true
 		}
 	}
 	if len(unreleasedVersions) > 1 {
-		t.Errorf("more than one unreleased entry (%v); the upcoming release has exactly one", unreleasedVersions)
+		out = append(out, fmt.Sprintf("more than one unreleased entry (%v); the upcoming release has exactly one", unreleasedVersions))
 	}
-	for _, f := range sanctionedFindings(t, nil) {
+	for _, f := range findings {
 		crd := strings.SplitN(f, " ", 2)[0]
 		if !unreleased[f] && !unreleased[crd+" *"] {
-			t.Errorf("crd-compat sanctions %q but %s has no unreleased entry for it; add it (RELEASE.md, upgrade-path upkeep)", f, upgradePathFile)
+			out = append(out, fmt.Sprintf("crd-compat sanctions %q but %s has no unreleased entry for it; add it (RELEASE.md, upgrade-path upkeep)", f, upgradePathFile))
 		}
+	}
+	return out
+}
+
+func TestUnrecordedSanctions(t *testing.T) {
+	doc := parseUpgradePathDoc(t, []byte(`floor: 0.5.0
+releases:
+- version: 0.5.0
+- version: 0.6.0
+  sanctioned:
+  - {crd: healthchecks.fathom.skaphos.io, path: ^.spec.a, reason: r, issue: i}
+  - {crd: clusterhealths.fathom.skaphos.io, path: "*", reason: r, issue: i}
+`))
+	tag := semver.MustParse("0.5.0")
+	cases := map[string]struct {
+		findings []string
+		want     int
+	}{
+		"exact path":            {findings: []string{"healthchecks.fathom.skaphos.io ^.spec.a"}},
+		"explicit wildcard":     {findings: []string{"clusterhealths.fathom.skaphos.io ^.status.anything"}},
+		"other path, same CRD":  {findings: []string{"healthchecks.fathom.skaphos.io ^.spec.b"}, want: 1},
+		"unrecorded CRD":        {findings: []string{"dnschecks.fathom.skaphos.io ^.spec.a"}, want: 1},
+		"one recorded, one not": {findings: []string{"healthchecks.fathom.skaphos.io ^.spec.a", "healthchecks.fathom.skaphos.io ^.spec.c"}, want: 1},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := unrecordedSanctions(doc, tag, tc.findings); len(got) != tc.want {
+				t.Errorf("violations = %q, want %d", got, tc.want)
+			}
+		})
 	}
 }
 
