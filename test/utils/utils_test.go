@@ -26,8 +26,16 @@ func TestParseAddonSelection(t *testing.T) {
 		wantFilter    string
 		wantErr       bool
 	}{
-		{name: "empty means full stack", spec: "", wantSelectors: nil, wantFilter: ""},
-		{name: "all means full stack", spec: " all ", wantSelectors: nil, wantFilter: ""},
+		{name: "empty means full stack", spec: "", wantSelectors: nil, wantFilter: "!lifecycle"},
+		{name: "all means full stack", spec: " all ", wantSelectors: nil, wantFilter: "!lifecycle"},
+		{
+			// The lifecycle shard installs Fathom itself on the core tier.
+			name:          "lifecycle shard",
+			spec:          "lifecycle",
+			wantSelectors: []string{"tier=core"},
+			wantFilter:    "lifecycle",
+		},
+		{name: "lifecycle must stand alone", spec: "core,lifecycle", wantErr: true},
 		{
 			name:          "core tier only",
 			spec:          "core",

@@ -45,11 +45,12 @@ Ginkgo suite runs (addon names double as spec labels):
 
 | `E2E_ADDONS` | Installs | Runs |
 | ------------ | -------- | ---- |
-| unset / `all` | everything | every spec |
+| unset / `all` | everything | every spec except `lifecycle` |
 | `core` | core tier only | core-labeled specs (operator infra + core-tier addons) |
 | `istio` | core tier + istio charts | istio specs only |
 | `cert-manager` | core tier (cert-manager is in it) | cert-manager specs only |
 | `core,istio,external-dns` | core tier + istio + external-dns | the union of their specs |
+| `lifecycle` (alone) | core tier; **no operator deploy** | the `fathomctl` lifecycle specs |
 
 Examples:
 
@@ -74,6 +75,25 @@ clusters: a `plan` job path-filters the PR diff via `scripts/e2e-shards.sh`,
 so an adapter-scoped PR runs only its own shard plus `core`, docs-only PRs
 run nothing, and shared-surface changes (or pushes to `main`) run the full
 matrix. The branch-protection check is the aggregate `kind e2e` job.
+
+### The `lifecycle` shard
+
+`fathomctl install`/`upgrade`/`uninstall` deliberately refuse an operator
+deployed with kustomize, so their end-to-end specs
+(`test/e2e/fathomctl_lifecycle_test.go`, label `lifecycle`) need a cluster
+without one. With `E2E_ADDONS=lifecycle`, `e2e:cluster:fathom` still builds
+the three images but, instead of deploying, tags and loads them as
+`ghcr.io/skaphos/<image>:v<version>` for each version in
+`E2E_LIFECYCLE_VERSIONS` (default `0.5.99-e2e.1 0.5.99-e2e.2`) — the names
+`fathomctl` installs. The spec builds one `fathomctl` per version and runs
+install → status → re-install → upgrade across the older-schema fixture in
+`lifecycle/older-crds/` → uninstall → reinstall → Helm interop → purge with
+export and restore. `lifecycle` must be the whole `E2E_ADDONS` value, and every
+other selection, the full stack included, skips these specs.
+
+```sh
+go -C tools tool task test-e2e E2E_ADDONS=lifecycle
+```
 
 ### Adding an addon to the stack
 

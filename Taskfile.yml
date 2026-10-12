@@ -52,6 +52,13 @@ vars:
   # alongside internal/app/options.go DefaultNodeAgentImage.
   E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.5.1"}}' # x-release-please-version
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
+  # The lifecycle e2e shard (E2E_ADDONS=lifecycle) installs Fathom with
+  # fathomctl itself, which deploys ghcr.io/skaphos/<image>:v<its version>.
+  # These two SemVer versions sit above the upgrade-path floor (0.5.0, never
+  # changed) and below every recorded release, so upgrading between them is a
+  # real rollout with no stops or sanctioned changes in range. The spec
+  # (test/e2e/fathomctl_lifecycle_test.go) builds one fathomctl per version.
+  E2E_LIFECYCLE_VERSIONS: '{{.E2E_LIFECYCLE_VERSIONS | default "0.5.99-e2e.1 0.5.99-e2e.2"}}'
 
 tasks:
   default:
@@ -529,7 +536,7 @@ tasks:
         helmfile -f {{.E2E_HELMFILE}} sync "$@"
 
   e2e:cluster:fathom:
-    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom
+    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom (E2E_ADDONS=lifecycle loads the fathomctl-tagged images and skips the deploy)
     cmds:
       - task: docker-build
         vars: {IMG: '{{.E2E_IMG}}'}
@@ -540,9 +547,25 @@ tasks:
       - kind load docker-image {{.E2E_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_PROBE_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_NODE_AGENT_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      # The lifecycle shard installs Fathom with fathomctl, which deploys
+      # ghcr.io/skaphos/<image>:v<version>: tag the freshly built images under
+      # exactly those names, and skip the kustomize deploy, which the
+      # lifecycle verbs would refuse as a non-Helm operator.
+      - cmd: |
+          set -euo pipefail
+          for v in {{.E2E_LIFECYCLE_VERSIONS}}; do
+            for pair in "{{.E2E_IMG}} fathom-operator" "{{.E2E_PROBE_IMG}} fathom-probe" "{{.E2E_NODE_AGENT_IMG}} fathom-node-agent"; do
+              set -- $pair
+              docker tag "$1" "ghcr.io/skaphos/$2:v$v"
+              kind load docker-image "ghcr.io/skaphos/$2:v$v" --name {{.E2E_KIND_CLUSTER}}
+            done
+          done
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" = lifecycle ]'
       - task: install
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" != lifecycle ]'
       - task: deploy
         vars: {IMG: '{{.E2E_IMG}}'}
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" != lifecycle ]'
 
   e2e:cluster:samples:
     desc: Apply check samples (CoreDNS, cert-manager, external-secrets, Cilium, node-certificates)

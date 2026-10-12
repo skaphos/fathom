@@ -242,10 +242,10 @@ func TestUpgradeAcceptsSanctionedChangesWithTheFlag(t *testing.T) {
 func TestUpgradeValues(t *testing.T) {
 	withVersion(t, "v0.6.0", true)
 	installed := map[string]any{
-		"metrics":    map[string]any{"prometheusRule": map[string]any{"enabled": true}},
+		"metrics":     map[string]any{"prometheusRule": map[string]any{"enabled": true}},
 		"leaderElect": true,
-		"image":      map[string]any{"repository": operatorRepository, "tag": "v0.5.1-custom"},
-		"nodeAgent":  map[string]any{"image": map[string]any{"repository": nodeAgentRepository, "digest": fakeProbeDigest}},
+		"image":       map[string]any{"repository": operatorRepository, "tag": "v0.5.1-custom"},
+		"nodeAgent":   map[string]any{"image": map[string]any{"repository": nodeAgentRepository, "digest": fakeProbeDigest}},
 	}
 	env := upgradeEnv(t, "0.5.1", "0.5.1", nil, installed)
 	if _, _, err := execVerb(env.f, "upgrade", "--set", "leaderElect=false"); err != nil {

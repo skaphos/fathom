@@ -42,6 +42,32 @@ When Release Please detects releasable commits, it opens or updates a release
 PR. Review the changelog and version bump, then merge when correct. Merging
 creates the `vX.Y.Z` tag.
 
+### Upgrade-path upkeep
+
+`deploy/helm/fathom-operator/upgrade-path.yaml` ships in the chart and is
+embedded in every `fathomctl`; `fathomctl upgrade` reads it to find sanctioned
+incompatible CRD changes and stops. Before merging the release PR:
+
+- If the release sanctions any incompatible CRD change (an entry in
+  `.crd-compat-allowlist.yaml` reported as `SANCTIONED` by
+  `go -C tools tool task crd-compat`), the file must have exactly one entry
+  for the release's version (no leading `v`), listing each change as
+  `sanctioned[]` with `crd`, `path`, `reason` and `issue`. `reason` and
+  `issue` are shown verbatim in `fathomctl` plans and refusals.
+- Decide `stop`. Set `stop: true` when existing resources need this
+  release's operator to migrate them before a later schema accepts them;
+  `fathomctl` then refuses to upgrade across the release and points users at
+  this release's `fathomctl` first. Otherwise leave it `false`.
+- Never edit or remove an entry for a released version, and never change
+  `floor`: later `fathomctl` releases rely on every earlier entry.
+
+`scripts/upgrade_path_gate_test.go` (run by `go -C tools tool task test`, so
+also by `ci`) enforces this: the file is well formed with strictly increasing
+versions; released entries and `floor` are unchanged against the latest
+`v*` tag; every `SANCTIONED` crd-compat finding has a matching entry among
+the unreleased entries, of which there is at most one; and in a release PR
+the unreleased entry carries the version being cut.
+
 ## 4. Tag-Triggered Publish
 
 Tag creation triggers `.github/workflows/release.yml`, which:
@@ -60,7 +86,14 @@ Tag creation triggers `.github/workflows/release.yml`, which:
    `amd64` and `arm64` (`scripts/fathomctl-dist.sh` via the `fathomctl-dist`
    task) into one archive per platform plus
    `fathomctl_X.Y.Z_checksums.txt`. The CLI is a client tool and ships as
-   archives only; it is never published as a container image.
+   archives only; it is never published as a container image. The "Build
+   fathomctl release archives" step passes the digests of the operator, probe
+   and node-agent images pushed in steps 1–3 as `FATHOM_OPERATOR_DIGEST`,
+   `FATHOM_PROBE_DIGEST` and `FATHOM_NODE_AGENT_DIGEST`; the script rejects a
+   value that is not a `sha256:` digest and links all three into the binary,
+   so `fathomctl install` and `upgrade` deploy this release's images by
+   digest. A binary built without them is a development build that installs
+   by tag.
 9. Signs every published image and the chart with keyless cosign signatures and
    records SLSA build provenance (`actions/attest-build-provenance`) for the
    operator image, probe image, node-agent image, OLM bundle, OLM catalog, and
@@ -101,6 +134,10 @@ Tag creation triggers `.github/workflows/release.yml`, which:
   attached, and that a downloaded binary reports `vX.Y.Z` from
   `fathomctl version --client` (see
   [Verify a fathomctl download](#verify-a-fathomctl-download)).
+- Keep every release's `fathomctl` archives published; never delete them from
+  a GitHub Release. Each `fathomctl` installs and upgrades only to its own
+  version, so a multi-step upgrade through a stop, or an install of an older
+  release, needs that release's `fathomctl`.
 - Optionally install the bundle into a cluster via OLM:
 
   ```bash

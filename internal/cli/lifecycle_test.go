@@ -171,7 +171,7 @@ func TestPreflightPermissionsNamesEachMissingPermission(t *testing.T) {
 	env := newLifecycleEnv(t)
 	env.denied["create customresourcedefinitions"] = true
 	env.denied["create secrets"] = true
-	err := preflightPermissions(context.Background(), env.f, env.c, lifecyclePermissions("install", "fathom-system"))
+	err := preflightPermissions(context.Background(), env.f, env.c, lifecyclePermissions("install", "fathom-system", permissionScope{}))
 	var r refusal
 	if !errors.As(err, &r) || r.Reason != reasonMissingPermissions {
 		t.Fatalf("err = %v, want missing-permissions", err)
@@ -183,6 +183,40 @@ func TestPreflightPermissionsNamesEachMissingPermission(t *testing.T) {
 	}
 	if len(env.clusterWrites()) != 0 {
 		t.Errorf("preflight wrote %v", env.clusterWrites())
+	}
+}
+
+// The flags in use widen the preflight to what they will do, so a passing
+// preflight never fails part-way.
+func TestLifecyclePermissionsFollowTheFlags(t *testing.T) {
+	has := func(perms []permission, verb, resource string) bool {
+		for _, p := range perms {
+			if p.Verb == verb && p.Resource == resource {
+				return true
+			}
+		}
+		return false
+	}
+	if has(lifecyclePermissions("install", "ns", permissionScope{}), "create", "namespaces") {
+		t.Error("install without --create-namespace checks namespace creation")
+	}
+	if !has(lifecyclePermissions("install", "ns", permissionScope{createNamespace: true}), "create", "namespaces") {
+		t.Error("install --create-namespace does not check namespace creation")
+	}
+	plain := lifecyclePermissions("uninstall", "ns", permissionScope{})
+	for _, r := range []string{"leases", "roles", "rolebindings", "networkpolicies", "configmaps", "serviceaccounts", "validatingadmissionpolicybindings"} {
+		if !has(plain, "delete", r) {
+			t.Errorf("uninstall does not check delete %s", r)
+		}
+	}
+	if has(plain, "delete", "customresourcedefinitions") || has(plain, "delete", "namespaces") {
+		t.Error("plain uninstall checks purge or namespace deletion")
+	}
+	full := lifecyclePermissions("uninstall", "ns", permissionScope{purgeCRDs: true, deleteNamespace: true})
+	for _, r := range []string{"customresourcedefinitions", "healthreports", "namespaces"} {
+		if !has(full, "delete", r) {
+			t.Errorf("uninstall --purge-crds --delete-namespace does not check delete %s", r)
+		}
 	}
 }
 

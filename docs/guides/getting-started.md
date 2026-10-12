@@ -20,8 +20,10 @@ this guide top-to-bottom and pick up the model as you go.
   the Kubernetes version pinned in the repo's e2e fixtures (currently v1.37);
   recent releases are expected to work.
 - `kubectl` configured for that cluster's context.
-- [Helm](https://helm.sh/) v3.8+ (the operator ships as an OCI chart, which
-  requires OCI support — standard in v3.8 and later).
+- [`fathomctl`](fathomctl.md#install) from the Fathom release you want to
+  install, or [Helm](https://helm.sh/) v3.8+ if you install the chart
+  directly (the operator ships as an OCI chart, which requires OCI support —
+  standard in v3.8 and later).
 - At least one add-on Fathom can check. This guide uses
   [cert-manager](https://cert-manager.io/); the same shape applies to the
   other fifteen built-in adapters (see [Add-on checks](addon-checks.md)).
@@ -36,7 +38,33 @@ this guide top-to-bottom and pick up the model as you go.
 ## 1. Install the operator
 
 Fathom publishes an OCI-only Helm chart to GHCR. It installs the operator
-Deployment, its CRDs, and the RBAC the operator needs:
+Deployment, its CRDs, and the RBAC the operator needs.
+
+### With fathomctl
+
+`fathomctl` installs, upgrades and removes that chart, which is embedded in
+the binary, as a Helm release `helm` can read:
+
+```sh
+fathomctl install --create-namespace
+fathomctl status
+```
+
+Each `fathomctl` installs exactly its own release's version, with the
+release's images pinned by digest, into `fathom-system` unless you pass `-n`.
+It applies the CRDs before the operator and waits until the operator is
+`Available`; `status` should then report `Operator: Available` and
+`CRDs: 9/9 current`. Later, `fathomctl upgrade` with a newer release's
+`fathomctl` applies the new CRDs before rolling out the new operator, and
+`fathomctl uninstall` removes the operator and everything it created. See
+[Install, upgrade and remove Fathom](fathomctl.md#install-upgrade-and-remove-fathom)
+for upgrades across several releases, the `uninstall --purge-crds --export`
+path, mixing `fathomctl` with `helm`, and air-gapped clusters. Installs made
+with kustomize (`dist/install.yaml`) or OLM are not managed by these verbs.
+
+### With Helm
+
+Installing the chart with Helm directly is equivalent:
 
 ```sh
 helm install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
@@ -47,9 +75,14 @@ helm install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
 Replace `X.Y.Z` with a released chart version (plain semver, no leading `v`).
 See the chart's GHCR page or the project releases for the current version.
 
+If a `fathomctl` install is later upgraded with `helm upgrade`, pass
+`--reset-values` together with your own values; otherwise Helm reuses the
+image digests `fathomctl` pinned and runs the old images under the new chart.
+
 A few things worth knowing up front:
 
-- **CRDs install once.** Helm installs CRDs from the chart's `crds/` directory
+- **CRDs install once with Helm.** (`fathomctl` applies them on every install
+  and upgrade.) Helm installs CRDs from the chart's `crds/` directory
   on first install only; it never upgrades or removes them. Before a breaking
   `helm upgrade`, apply the new CRDs with `kubectl` yourself. The exception is
   a CRD whose **scope** changed (e.g. `clusterhealths` became cluster-scoped in
@@ -59,7 +92,8 @@ A few things worth knowing up front:
 - **The probe image is not a separate Deployment.** Some checks launch
   short-lived probe pods on demand; you do not run or scale them. Point at a
   specific build with `--set probeImage.tag=vX.Y.Z` if you mirror images
-  privately.
+  privately (Helm only: `fathomctl` sets every image value itself and refuses
+  overrides, so with `fathomctl` mirror images at the container runtime).
 - **Metrics are HTTPS by default** on `:8443` behind controller-runtime's
   authn/authz filter. See [Monitoring](monitoring.md) for scraping.
 

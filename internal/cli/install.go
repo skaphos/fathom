@@ -122,7 +122,7 @@ func runInstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *lifec
 	default:
 		return notHelmRefusal(in)
 	}
-	if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("install", ns)); err != nil {
+	if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("install", ns, permissionScope{createNamespace: opts.createNamespace})); err != nil {
 		return err
 	}
 

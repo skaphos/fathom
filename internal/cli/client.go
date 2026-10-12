@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,6 +62,10 @@ type factory struct {
 	// accessReview answers the lifecycle preflight's permission questions.
 	// The default issues SelfSubjectAccessReviews; the fake client cannot.
 	accessReview func(context.Context, client.Client, permission) (bool, error)
+
+	// namespacedKinds lists the namespaced resource types for the
+	// --delete-namespace inventory; the default uses discovery.
+	namespacedKinds func(*factory) ([]schema.GroupVersionKind, error)
 }
 
 // defaultPollInterval is how often `run --wait` re-reads a check.
@@ -78,6 +83,7 @@ func newFactory() *factory {
 		pollInterval:          defaultPollInterval,
 		newReleaseClient:      newHelmReleaseClient,
 		accessReview:          selfAccessReview,
+		namespacedKinds:       discoverNamespacedKinds,
 	}
 }
 

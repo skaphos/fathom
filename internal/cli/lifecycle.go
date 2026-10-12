@@ -454,31 +454,71 @@ func (p permission) String() string {
 // lifecyclePermissions is what each mutating verb needs. Cluster RBAC is
 // checked because the chart creates ClusterRoles and bindings; escalate and
 // bind are implied for cluster-admin-level users (FR-050).
-func lifecyclePermissions(verb, namespace string) []permission {
+//
+// The list covers every kind each verb writes or deletes, so an identity that
+// passes it does not fail part-way through; scope adds what the flags in use
+// need.
+func lifecyclePermissions(verb, namespace string, scope permissionScope) []permission {
+	const rbac, admission = "rbac.authorization.k8s.io", "admissionregistration.k8s.io"
 	crd := func(v string) permission {
 		return permission{Verb: v, Group: "apiextensions.k8s.io", Resource: "customresourcedefinitions"}
 	}
+	var perms []permission
 	switch verb {
 	case "install", "upgrade":
-		return []permission{
+		perms = []permission{
 			crd("create"), crd("update"), crd("get"),
-			{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
-			{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings"},
+			{Verb: "create", Group: rbac, Resource: "clusterroles"},
+			{Verb: "create", Group: rbac, Resource: "clusterrolebindings"},
+			{Verb: "create", Group: rbac, Resource: "roles", Namespace: namespace},
+			{Verb: "create", Group: rbac, Resource: "rolebindings", Namespace: namespace},
+			{Verb: "create", Resource: "serviceaccounts", Namespace: namespace},
+			{Verb: "create", Resource: "configmaps", Namespace: namespace},
+			{Verb: "create", Resource: "services", Namespace: namespace},
 			{Verb: "create", Group: "apps", Resource: "deployments", Namespace: namespace},
+			{Verb: "update", Group: "apps", Resource: "deployments", Namespace: namespace},
 			{Verb: "create", Resource: "secrets", Namespace: namespace},
 			{Verb: "update", Resource: "secrets", Namespace: namespace},
 		}
+		if scope.createNamespace {
+			perms = append(perms, permission{Verb: "create", Resource: "namespaces"})
+		}
 	case "uninstall":
-		return []permission{
+		perms = []permission{
 			{Verb: "delete", Group: "apps", Resource: "deployments", Namespace: namespace},
-			{Verb: "delete", Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
+			{Verb: "delete", Group: rbac, Resource: "clusterroles"},
+			{Verb: "delete", Group: rbac, Resource: "clusterrolebindings"},
 			{Verb: "delete", Resource: "secrets", Namespace: namespace},
+			{Verb: "delete", Resource: "services", Namespace: namespace},
+			{Verb: "delete", Group: "coordination.k8s.io", Resource: "leases", Namespace: namespace},
+			// Operator-created objects, in any namespace.
 			{Verb: "delete", Group: "apps", Resource: "daemonsets"},
 			{Verb: "delete", Resource: "pods"},
-			{Verb: "delete", Group: "admissionregistration.k8s.io", Resource: "validatingadmissionpolicies"},
+			{Verb: "delete", Resource: "serviceaccounts"},
+			{Verb: "delete", Resource: "configmaps"},
+			{Verb: "delete", Group: rbac, Resource: "roles"},
+			{Verb: "delete", Group: rbac, Resource: "rolebindings"},
+			{Verb: "delete", Group: "networking.k8s.io", Resource: "networkpolicies"},
+			{Verb: "delete", Group: admission, Resource: "validatingadmissionpolicies"},
+			{Verb: "delete", Group: admission, Resource: "validatingadmissionpolicybindings"},
+		}
+		if scope.purgeCRDs {
+			perms = append(perms, crd("delete"))
+			for _, r := range []string{"addondefinitions", "addondefinitionbindings", "addonchecks", "dnschecks",
+				"nodecertificatechecks", "nodehealthchecks", "healthchecks", "clusterhealths", "healthreports"} {
+				perms = append(perms, permission{Verb: "delete", Group: "fathom.skaphos.io", Resource: r})
+			}
+		}
+		if scope.deleteNamespace {
+			perms = append(perms, permission{Verb: "delete", Resource: "namespaces", Name: namespace})
 		}
 	}
-	return nil
+	return perms
+}
+
+// permissionScope is what the verb's flags add to its permission needs.
+type permissionScope struct {
+	createNamespace, purgeCRDs, deleteNamespace bool
 }
 
 // preflightPermissions refuses before any change when the user lacks a

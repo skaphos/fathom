@@ -7,7 +7,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -286,9 +285,4 @@ func chartMetadata(c *chart.Chart) *chart.Metadata {
 		return nil
 	}
 	return c.Metadata
-}
-
-// isReleaseNotFound reports Helm's "release not found".
-func isReleaseNotFound(err error) bool {
-	return errors.Is(err, driver.ErrReleaseNotFound)
 }

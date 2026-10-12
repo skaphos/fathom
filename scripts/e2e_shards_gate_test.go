@@ -48,6 +48,22 @@ func TestE2EShardPlannerKnowsEveryOptInAddon(t *testing.T) {
 // default. A typo in one of these case patterns would not fail loudly: the
 // path would fall through to the full matrix (expensive) or, worse, to a
 // shard that never runs its specs. Each row is one `--classify` invocation.
+// The full matrix includes the lifecycle shard, and the suite accepts its
+// name as an E2E_ADDONS value.
+func TestE2EShardPlannerIncludesTheLifecycleShard(t *testing.T) {
+	out, err := exec.Command("bash", "e2e-shards.sh").Output()
+	if err != nil {
+		t.Fatalf("e2e-shards.sh: %v", err)
+	}
+	if !strings.Contains(string(out), `"lifecycle"`) {
+		t.Errorf("full matrix %s lacks the lifecycle shard", out)
+	}
+	sel, err := utils.ParseAddonSelection("lifecycle")
+	if err != nil || !sel.Lifecycle() {
+		t.Errorf("E2E_ADDONS=lifecycle: %v (lifecycle=%v)", err, sel.Lifecycle())
+	}
+}
+
 func TestE2EShardPlannerClassifiesPaths(t *testing.T) {
 	cases := []struct {
 		path string
@@ -66,6 +82,12 @@ func TestE2EShardPlannerClassifiesPaths(t *testing.T) {
 		{path: "test/e2e/coredns_test.go", want: "core"},
 		{path: "docs/guides/dns-checks.md", want: ""},
 		{path: "scripts/e2e-shards.sh", want: "all"},
+		// The fathomctl lifecycle shard owns its spec and fixtures; the verbs
+		// and the embedded chart are shared surface.
+		{path: "test/e2e/fathomctl_lifecycle_test.go", want: "lifecycle"},
+		{path: "test/e2e/fixtures/lifecycle/older-crds/fathom.skaphos.io_dnschecks.yaml", want: "lifecycle"},
+		{path: "internal/cli/install.go", want: "all"},
+		{path: "deploy/helm/fathom-operator/upgrade-path.yaml", want: "all"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {

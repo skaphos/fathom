@@ -138,7 +138,10 @@ jobs:
 
       - name: Build, load, and deploy Fathom
         # Builds the operator + probe images, loads them into kind, installs
-        # CRDs, and deploys the operator into fathom-system.
+        # CRDs, and deploys the operator into fathom-system. In the `lifecycle`
+        # shard (E2E_ADDONS=lifecycle) it loads the images under the names
+        # fathomctl installs and skips the deploy: those specs install Fathom
+        # with fathomctl, which refuses a kustomize-managed operator.
         run: go -C tools tool task e2e:cluster:fathom
 
       - name: Run e2e suite

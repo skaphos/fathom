@@ -293,7 +293,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	if in.pending() {
 		return pendingRefusal(in)
 	}
-	if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("upgrade", in.Namespace)); err != nil {
+	if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("upgrade", in.Namespace, permissionScope{})); err != nil {
 		return err
 	}
 	plan, err := buildUpgradePlan(ctx, env.c, planRequest{from: in.Version, to: version, accept: opts.acceptIncompatible, command: command})
@@ -438,7 +438,7 @@ func printPlan(w io.Writer, format outputFormat, plan *upgradePlan) error {
 				if fd.SanctionedBy != "" {
 					label += " (sanctioned by " + fd.SanctionedBy + ")"
 				}
-				parts = append(parts, fmt.Sprintf("%s: %s %s", label, fd.Path, fd.Check))
+				parts = append(parts, fmt.Sprintf("%s: %s %s: %s", label, fd.Path, fd.Check, fd.Message))
 			}
 			detail = strings.Join(parts, "; ")
 		}

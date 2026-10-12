@@ -11,10 +11,13 @@ operator already honours. Everything it shows is in the resources already;
 view of verdicts across every kind, and a `run --wait` you can put in a
 pipeline.
 
-Five verbs: `ls`, `describe`, `reports`, `run`, `version`. There is no
-`pause` or `resume`: Fathom emits signal and does not own suppression, so
-stopping a check means deleting it. Authoring checks stays in Git; the CLI
-never creates or edits them. The flag-by-flag contract is in the
+Five verbs work with checks: `ls`, `describe`, `reports`, `run`, `version`.
+There is no `pause` or `resume`: Fathom emits signal and does not own
+suppression, so stopping a check means deleting it. Authoring checks stays in
+Git; the CLI never creates or edits them. Four more verbs manage the operator
+itself: `install`, `upgrade`, `uninstall` and `status` (see
+[Install, upgrade and remove Fathom](#install-upgrade-and-remove-fathom)).
+The flag-by-flag contract is in the
 [fathomctl reference](../reference/fathomctl.md).
 
 ## Install
@@ -67,6 +70,119 @@ Offline, or without permission to read Deployments, the operator line reads
 one minor version of the operator; an older operator that does not yet honour
 the run trigger for a kind shows up as a `run --wait` timeout, not an error
 up front.
+
+## Install, upgrade and remove Fathom
+
+`fathomctl` is the primary way to install, upgrade and remove the operator.
+It drives the same Helm chart that `helm install` uses, embedded in the
+binary, as a Helm release `helm` can read; installing with Helm directly, as
+in [Getting started](getting-started.md#1-install-the-operator), remains an
+equivalent alternative. These verbs need cluster-admin-level rights; see
+[Permissions](../reference/fathomctl.md#permissions).
+
+```sh
+fathomctl install --create-namespace   # into fathom-system, at this fathomctl's version
+fathomctl status                       # installed, Available, CRDs 9/9 current
+```
+
+`install` applies every Fathom CRD, installs the operator with the images of
+this `fathomctl`'s release (pinned by digest in release archives), and waits
+until it is `Available`. Without `-n` it uses `fathom-system`, not your
+kubeconfig context's namespace. `-f`/`--values` and `--set` take chart values
+with Helm semantics; the image values are set by the CLI and cannot be
+overridden.
+
+### One version per fathomctl
+
+Each `fathomctl` installs and upgrades to exactly its own version, from the
+chart embedded in it. There is no `--version` flag and no chart download, so
+the verbs work without registry access to the chart. To install or upgrade to
+another release, download that release's `fathomctl`.
+
+### Upgrade
+
+```sh
+fathomctl status             # where you are, and the upgrade path to this fathomctl
+fathomctl upgrade --dry-run  # the plan: each CRD added, updated or unchanged; the images
+fathomctl upgrade
+```
+
+`upgrade` applies the CRDs and waits for them to be `Established` before it
+rolls out the new operator, keeping the release's values. It refuses, before
+changing anything:
+
+- an incompatible CRD change that no release sanctions, and any CRD scope
+  change;
+- a sanctioned incompatible change, until you repeat the command with
+  `--accept-incompatible-crds` (the refusal lists each change with its reason
+  and issue; `--yes` does not count);
+- a skipped stop: a release that must be installed on the way to a later one.
+
+A multi-step upgrade means running each intermediate release's `fathomctl`
+in turn. The refusal prints the whole path and the first step, for example
+with a hypothetical stop at v0.8.0:
+
+```text
+stop-skipped: v0.7.0 cannot be upgraded to v0.9.0 directly; upgrade through each stop in order. Upgrade path: v0.7.0 -> v0.8.0 -> v0.9.0
+next: download fathomctl v0.8.0 and run "fathomctl upgrade -n fathom-system"
+```
+
+If the new operator is not `Available` within `--timeout`, the new release
+stays in place and `upgrade` prints the recovery commands;
+`--rollback-on-failure` rolls the operator back instead. CRDs are never
+rolled back.
+
+### Uninstall
+
+```sh
+fathomctl uninstall
+```
+
+This removes the release and everything the operator created at run time
+(node-agent DaemonSets, probe Pods, per-check ServiceAccounts, Roles,
+RoleBindings and NetworkPolicies, node-report ConfigMaps, the shared
+admission policy and the leader-election Lease). It keeps every CRD, every
+Fathom resource and the namespace, so a later `install` picks the resources
+up again. Any `fathomctl` version can uninstall any install.
+
+To remove everything, including your checks and their report history:
+
+```sh
+fathomctl uninstall --purge-crds --export fathom-backup.yaml
+```
+
+This shows how many resources of each kind will be deleted and asks once for
+confirmation (`--yes` skips the prompt and is required without a terminal).
+`--export` writes every resource to the file before anything is deleted, so
+you can `kubectl apply -f fathom-backup.yaml` after a reinstall. Restored
+resources carry no owner references: HealthReports no longer point at the
+checks that wrote them and are not garbage-collected with those checks.
+`--delete-namespace` also deletes the namespace, after listing anything in it
+that Fathom did not create.
+
+### Mixing fathomctl and Helm
+
+`helm ls`, `helm history` and `helm rollback` work on a release `fathomctl`
+made, and `fathomctl upgrade` works on a release made with `helm install`.
+In the other direction, `helm upgrade` given no values reuses the previous
+revision's, which include the image digests `fathomctl` pinned: moving a
+`fathomctl`-made install to a newer chart with plain `helm upgrade` would run
+the old images under the new chart. Pass `--reset-values` together with your
+own values (`-f` or `--set`) when you do that.
+
+### Not supported by these verbs
+
+Installs made with kustomize (`dist/install.yaml`) or OLM are refused, never
+taken over; manage them with the tool that installed them. One Fathom install
+per cluster is supported, because the CRDs are shared.
+
+### Air-gapped clusters
+
+The chart is embedded, so only the images must be pullable from the cluster.
+Image repositories are fixed by the release and cannot be overridden through
+values, so configure the container runtime with a registry mirror for
+`ghcr.io` that serves the same digests of `skaphos/fathom-operator`,
+`skaphos/fathom-probe` and `skaphos/fathom-node-agent`.
 
 ## See every verdict
 
@@ -150,6 +266,10 @@ scan; on a large cluster give `--wait` a longer `--timeout`. See
 [Forcing a scan](node-certificate-checks.md#forcing-a-scan).
 
 ## Permissions
+
+`install`, `upgrade` and `uninstall` need cluster-admin-level rights and
+check them before changing anything; `status` needs only read access. The
+exact lists are in [Permissions](../reference/fathomctl.md#permissions).
 
 The read verbs need `get`, `list`, and `watch` on the Fathom kinds and
 `healthreports`; `run` additionally needs `patch` on the three executable

@@ -49,10 +49,11 @@ for and the key entrypoints to start reading from. For the design rationale see
 
 ## `api/v1alpha1/` — CRD types
 
-Defines the seven kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+Defines the nine kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
 (`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
 `clusterhealth_types.go`, `healthreport_types.go`,
-`nodecertificatecheck_types.go`, `nodehealthcheck_types.go`), plus
+`nodecertificatecheck_types.go`, `nodehealthcheck_types.go`,
+`addondefinition_types.go`, `addondefinitionbinding_types.go`), plus
 `groupversion_info.go` (scheme registration) and the generated
 `zz_generated.deepcopy.go` (**never hand-edit**).
 
