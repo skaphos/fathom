@@ -114,8 +114,9 @@ scope by design.** The agent is not granted `CAP_DAC_READ_SEARCH` or root to
 reach it, because that would turn a read-only scanner into a reader of every
 private key on the node. The kubelet PKI directory is the main case: it holds
 the kubelet's private keys, so distributions make it root-only. For kubelet
-certificate health, use the kubelet's own client-certificate rotation (on by
-default) and its metrics, such as
+certificate health, use the kubelet's own client-certificate rotation
+(`rotateCertificates`, which kubeadm and most managed platforms enable) and its
+metrics, such as
 `kubelet_certificate_manager_client_ttl_seconds`.
 
 What the default scan set reaches on each platform:
@@ -135,8 +136,7 @@ empty:
 
 - `NoReadableCertificates` — certificates were found, but every one was
   unreadable by the non-root agent.
-- `NoCertificatesFound` — none of the configured paths held a certificate (the
-  message counts any that were unreadable).
+- `NoCertificatesFound` — none of the configured paths held a certificate.
 
 In both cases the check is not watching anything. Point `spec.paths` at
 world-readable certificates under the allowlist, or rely on your platform's

@@ -256,7 +256,7 @@ func TestIsUnreadable(t *testing.T) {
 	}{
 		{"current summary", skippedResult("/var/lib/kubelet/pki", "dir", permissionDeniedSummary), true},
 		{"pre-#334 summary", skippedResult("/var/lib/kubelet/pki", "dir", "permission denied: the non-root node-agent cannot read this path (run the agent with elevated read access to scan root-only certificates)"), true},
-		{"empty directory", skippedResult("/etc/kubernetes/certs", "dir", "no certificates found"), false},
+		{"non-permission skipped (no current agent emits one)", skippedResult("/etc/kubernetes/certs", "dir", "something else"), false},
 		{"error with permission text is not a skip", errorResult("/etc/kubernetes/pki", "file", permissionDeniedSummary), false},
 		{"pass", CertResult{Outcome: OutcomePass}, false},
 	}

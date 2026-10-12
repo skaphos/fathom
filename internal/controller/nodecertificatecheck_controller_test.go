@@ -527,7 +527,7 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		Expect(ready.Reason).To(Equal(nodeCertReasonNoReadableCertificates))
-		Expect(ready.Message).To(ContainSubstring("all 2 certificate path(s)"))
+		Expect(ready.Message).To(ContainSubstring("all 1 certificate path(s) found on 2 node(s)"))
 	})
 
 	It("refreshes liveness without a new HealthReport when the aggregate is unchanged across an interval", func() {
