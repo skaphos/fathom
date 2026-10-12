@@ -200,6 +200,12 @@ func describeObject(obj client.Object) string {
 // fathomResources lists every Fathom custom resource, in purgeKinds order.
 // A kind whose CRD is already gone has no resources.
 func fathomResources(ctx context.Context, c client.Client) (map[string][]unstructured.Unstructured, error) {
+	// The purge deletes every CRD in the group, but can only count and
+	// export the kinds this binary knows; a newer release's kind would lose
+	// its resources unseen.
+	if err := refuseUnknownKinds(ctx, c); err != nil {
+		return nil, err
+	}
 	out := map[string][]unstructured.Unstructured{}
 	for _, kind := range purgeKinds {
 		list := &unstructured.UnstructuredList{}
@@ -292,6 +298,35 @@ func purgeResources(ctx context.Context, f *factory, c client.Client, resources 
 		return fmt.Errorf("delete Fathom CRDs: %w", err)
 	}
 	return nil
+}
+
+// refuseUnknownKinds refuses when the group holds a CRD whose kind is not in
+// purgeKinds, naming each one.
+func refuseUnknownKinds(ctx context.Context, c client.Client) error {
+	crds, err := fathomCRDs(ctx, c)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, k := range purgeKinds {
+		known[k] = true
+	}
+	var unknown []string
+	for _, obj := range crds {
+		crd := obj.(*apiextensionsv1.CustomResourceDefinition)
+		if !known[crd.Spec.Names.Kind] {
+			unknown = append(unknown, crd.Name)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return refusal{
+		Reason: reasonUnknownKinds,
+		Detail: "--purge-crds would delete CRDs this fathomctl does not know (" + strings.Join(unknown, ", ") + ") without counting or exporting their resources; they come from a newer Fathom release",
+		Next:   "run the uninstall with the fathomctl from the installed release",
+	}
 }
 
 // fathomCRDs lists every CRD in the fathom.skaphos.io group, shipped by this
@@ -437,8 +472,11 @@ func discoverNamespacedKinds(f *factory) ([]schema.GroupVersionKind, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Partial results (an unavailable aggregated API) would hide that
+	// group's objects from the inventory while the namespace deletion still
+	// removes them, so any discovery error fails closed.
 	lists, err := dc.ServerPreferredNamespacedResources()
-	if err != nil && len(lists) == 0 {
+	if err != nil {
 		return nil, err
 	}
 	var out []schema.GroupVersionKind

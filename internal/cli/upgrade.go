@@ -403,23 +403,21 @@ func allUnchanged(plan *upgradePlan) bool {
 // secretKey matches value keys whose values must not be printed.
 var secretKey = regexp.MustCompile(`(?i)(password|passwd|token|secret|apikey|api_key|credential)`)
 
-// redactValues copies values with secret-looking scalars replaced, so a plan
-// never prints credentials (data-model "values without secrets").
+// redactValues copies values with the value of every secret-looking key
+// replaced, scalar or structured, so a plan never prints credentials
+// (data-model "values without secrets").
 func redactValues(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		switch val := v.(type) {
-		case map[string]any:
-			out[k] = redactValues(val)
-		case string, int, int64, float64, bool:
-			if secretKey.MatchString(k) {
-				out[k] = "<redacted>"
-			} else {
-				out[k] = val
-			}
-		default:
-			out[k] = val
+		if secretKey.MatchString(k) {
+			out[k] = "<redacted>"
+			continue
 		}
+		if val, ok := v.(map[string]any); ok {
+			out[k] = redactValues(val)
+			continue
+		}
+		out[k] = v
 	}
 	return out
 }

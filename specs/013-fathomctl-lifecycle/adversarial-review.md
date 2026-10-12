@@ -83,6 +83,10 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | C3 | P3 | PR review: `status -o json\|yaml` with more than one install printed table text. | Fixed — a structured report whose `problems` names the installs, still exiting 1; `TestStatusStructuredOutputWithTwoReleases`. |
 | C4 | P3 | PR review: the upgrade-path append-only gate did not reject a new entry dated at or below the latest tag. | Fixed — `releasedHistoryViolations` flags it; `TestReleasedHistoryViolations`. |
 | C5 | P2 | PR review: with only CRDs and resources left, `uninstall --purge-crds --yes` skipped the permission preflight and could stop part-way through a purge. | Fixed — the preflight always runs; without a release namespace it checks the cluster-wide and purge permissions; `TestPurgeWithOnlyCRDsLeftChecksPermissionsFirst`. |
+| C6 | P2 | PR review: an unlabelled operator Deployment in the release namespace counted as the release's own, hiding a second install. | Fixed — ownership requires the chart's `instance` and `managed-by: Helm` labels (every released chart sets both); `TestDetectInstallTreatsAnUnlabelledManagerAsAnotherInstall`. |
+| C7 | P2 | PR review: `--purge-crds` deletes every CRD in the group but counts and exports only the kinds this binary knows, so an older CLI could drop a newer kind's data unseen. | Fixed — refuses with `unknown-kinds`, naming the CRDs; `TestPurgeRefusesUnknownKinds`. |
+| C8 | P2 | PR review: partial discovery results were accepted, hiding an unavailable group's objects from the `--delete-namespace` inventory. | Fixed — any discovery error fails closed; `TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery` (fails on the old code). |
+| C9 | P3 | PR review: a secret-looking key with a structured value was recursed into and printed. | Fixed — the key decides, whatever the value's shape; `TestRedactValuesRedactsStructuredSecrets`. N6 (lists) stands. |
 
 ## Re-review history
 
@@ -97,5 +101,5 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
 5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
-   CI and locally. PR review then raised C1–C5, fixed with unit regression
+   CI and locally. PR review then raised C1–C9, fixed with unit regression
    tests. Like E1, these postdate the independent review.

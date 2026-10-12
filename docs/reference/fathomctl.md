@@ -470,7 +470,9 @@ removed and names those Fathom did not create. Objects Kubernetes creates in
 every namespace are reported, not treated as someone else's. If the identity
 cannot list a kind in the namespace, the verb refuses with
 `missing-permissions`, naming the kind, before anything changes: it would
-otherwise delete objects it never showed.
+otherwise delete objects it never showed. For the same reason, an API group
+that discovery cannot reach (for example an unavailable aggregated API) stops
+the uninstall.
 
 Everything that needs consent is gathered into one confirmation before
 anything changes: `--purge-crds` always needs it, and `--delete-namespace`
@@ -547,6 +549,7 @@ the release is pending or failed, or more than one Fathom release exists.
 | `unsanctioned-incompatible` | install, upgrade | An incompatible CRD change no release sanctions. |
 | `acknowledgement-required` | install, upgrade | Sanctioned incompatible changes need `--accept-incompatible-crds`. |
 | `rollback-refused` | upgrade | `--rollback-on-failure` with an incompatible CRD change in the plan. |
+| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` does not know (from a newer release), so it could not count or export its resources. Use the `fathomctl` from the installed release. |
 | `confirmation-required` | uninstall | A destructive uninstall without a terminal and without `--yes`. |
 
 Supplying image values is a usage error rather than a refusal reason; it also

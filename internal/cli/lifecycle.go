@@ -61,6 +61,7 @@ const (
 	reasonMissingPermissions = "missing-permissions"
 	reasonNamespaceMissing   = "namespace-missing"
 	reasonRollbackRefused    = "rollback-refused"
+	reasonUnknownKinds       = "unknown-kinds"
 )
 
 // refusal is a verb declining to act, with why and what to do instead.
@@ -290,9 +291,12 @@ func helmInstall(r helmRelease, managers []*appsv1.Deployment) *install {
 	return in
 }
 
-// releaseOwns reports whether d is the release's manager Deployment.
+// releaseOwns reports whether d is the release's manager Deployment. Every
+// released chart stamps the instance and managed-by labels on it, so an
+// unlabelled operator — even in the release namespace — belongs to another
+// install.
 func releaseOwns(r helmRelease, d *appsv1.Deployment) bool {
-	return d.Namespace == r.Namespace && (d.Labels[instanceLabel] == r.Name || d.Labels[instanceLabel] == "")
+	return d.Namespace == r.Namespace && d.Labels[instanceLabel] == r.Name && d.Labels[managedByKey] == "Helm"
 }
 
 // strayManagers names every manager Deployment beyond the one the release
