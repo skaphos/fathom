@@ -201,7 +201,8 @@ var _ = Describe("fathomctl lifecycle", Ordered, Label(utils.LifecycleLabel), fu
 		for _, name := range lifecycleCRDNames() {
 			version, _ := kubectl("get", "crd", name, "-o", "jsonpath={.metadata.annotations.fathom\\.skaphos\\.io/version}")
 			Expect(version).To(Equal(v2.version), "%s not stamped", name)
-			raw, err := kubectl("get", "crd", name, "-o", "json")
+			// kubectl omits managedFields from -o json unless asked.
+			raw, err := kubectl("get", "crd", name, "-o", "json", "--show-managed-fields")
 			Expect(err).NotTo(HaveOccurred())
 			var crd struct {
 				Metadata struct {
@@ -218,7 +219,7 @@ var _ = Describe("fathomctl lifecycle", Ordered, Label(utils.LifecycleLabel), fu
 				}
 			}
 		}
-		Expect(latestCRDWrite.IsZero()).To(BeFalse())
+		Expect(latestCRDWrite.IsZero()).To(BeFalse(), "no CRD has a fathomctl managedFields entry")
 		rsTimes, err := kubectl("get", "rs", "-n", lifecycleNS, "-l", "app.kubernetes.io/instance="+lifecycleRelease,
 			"--sort-by=.metadata.creationTimestamp", "-o", "jsonpath={range .items[*]}{.metadata.creationTimestamp}{\"\\n\"}{end}")
 		Expect(err).NotTo(HaveOccurred())
