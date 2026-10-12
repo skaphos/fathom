@@ -152,7 +152,7 @@ releases:
 			name: "pending release",
 			env: func(t *testing.T) *lifecycleEnv {
 				env := newLifecycleEnv(t)
-				env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.5.1", Status: "pending-upgrade"}, true)
+				env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.5.1", Status: "pending-upgrade", Revision: 2}, true)
 				return env
 			},
 			reason:   reasonReleasePending,
@@ -282,6 +282,35 @@ func TestUpgradeSameVersionIsANoOp(t *testing.T) {
 	}
 	if w := env.log.all()[before:]; len(w) != 0 {
 		t.Errorf("no-op upgrade wrote %v", w)
+	}
+}
+
+// At the same version, value changes still upgrade (adversarial review F4).
+func TestUpgradeSameVersionWithValuesUpgrades(t *testing.T) {
+	withVersion(t, "v0.6.0", true)
+	env := upgradeEnv(t, "0.6.0", "0.6.0", nil, nil)
+	if _, _, err := execVerb(env.f, "upgrade", "--set", "leaderElect=false"); err != nil {
+		t.Fatalf("upgrade --set: %v", err)
+	}
+	if env.log.index("release:upgrade") < 0 {
+		t.Fatal("--set at the same version was dropped")
+	}
+	if v := env.rc.releases["fathom-system/fathom"].Config["leaderElect"]; v != false {
+		t.Errorf("leaderElect = %v, want false", v)
+	}
+}
+
+// A dry run is read-only, so it needs no write permissions (F7).
+func TestUpgradeDryRunNeedsNoWritePermissions(t *testing.T) {
+	withVersion(t, "v0.6.0", true)
+	env := upgradeEnv(t, "0.5.1", "0.5.1", olderDNSCheck, nil)
+	env.denied["update customresourcedefinitions"] = true
+	out, _, err := execVerb(env.f, "upgrade", "--dry-run")
+	if err != nil {
+		t.Fatalf("read-only dry run refused: %v", err)
+	}
+	if !strings.Contains(out, "Values:") {
+		t.Errorf("table plan omits the values in effect (FR-024):\n%s", out)
 	}
 }
 

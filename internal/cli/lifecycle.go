@@ -358,12 +358,21 @@ func notHelmRefusal(in *install) refusal {
 
 // pendingRefusal stops install/upgrade from stacking a change on a release
 // left mid-change.
+//
+// A first install that never completed (revision 1, or pending-install) has
+// no earlier revision to roll back to, so the way out is to remove it
+// (adversarial review F6); so is a release caught mid-uninstall.
 func pendingRefusal(in *install) refusal {
-	return refusal{
+	r := refusal{
 		Reason: reasonReleasePending,
 		Detail: fmt.Sprintf("release %s in %s is %s; finish or roll back that change first", in.Release, in.Namespace, in.ReleaseStatus),
 		Next:   fmt.Sprintf("helm history %s -n %s && helm rollback %s -n %s", in.Release, in.Namespace, in.Release, in.Namespace),
 	}
+	if in.Revision <= 1 || in.ReleaseStatus == "pending-install" || in.ReleaseStatus == "uninstalling" {
+		r.Detail = fmt.Sprintf("release %s in %s is %s and has no earlier revision to roll back to", in.Release, in.Namespace, in.ReleaseStatus)
+		r.Next = fmt.Sprintf("fathomctl uninstall -n %s, then rerun fathomctl install -n %s", in.Namespace, in.Namespace)
+	}
+	return r
 }
 
 // waitManagerAvailable polls the release's manager Deployment until it is
@@ -380,22 +389,54 @@ func waitManagerAvailable(ctx context.Context, f *factory, c client.Client, name
 			last = fmt.Sprintf("no operator Deployment for release %s in namespace %s", release, namespace)
 			return false, nil
 		}
-		d := &list.Items[0]
-		if d.Status.ObservedGeneration < d.Generation {
-			last = fmt.Sprintf("Deployment %s/%s rollout not yet observed (generation %d, observed %d)", d.Namespace, d.Name, d.Generation, d.Status.ObservedGeneration)
-			return false, nil
-		}
-		ok, reason := deploymentAvailable(d)
-		if ok && d.Status.UpdatedReplicas < replicasOf(d) {
-			ok, reason = false, fmt.Sprintf("Deployment %s/%s has %d of %d replicas updated", d.Namespace, d.Name, d.Status.UpdatedReplicas, replicasOf(d))
-		}
+		done, reason, failed := rolloutComplete(&list.Items[0])
 		last = reason
-		return ok, nil
+		if failed {
+			return false, errRolloutFailed
+		}
+		return done, nil
 	})
-	if errors.Is(err, errWaitTimeout) {
+	switch {
+	case errors.Is(err, errWaitTimeout):
 		return fmt.Errorf("operator not Available within %s: %s", timeout, last)
+	case errors.Is(err, errRolloutFailed):
+		return fmt.Errorf("operator rollout failed: %s", last)
 	}
 	return err
+}
+
+// errRolloutFailed marks a rollout the Deployment controller gave up on.
+var errRolloutFailed = errors.New("rollout failed")
+
+// rolloutComplete applies `kubectl rollout status` semantics: the new
+// revision is observed, every replica is updated, no old replica remains,
+// and every updated replica is available. The Available condition alone is
+// not enough — during a surge the old pod keeps the Deployment Available
+// while the new one crash-loops (adversarial review F2). failed reports a
+// rollout past its progress deadline.
+func rolloutComplete(d *appsv1.Deployment) (done bool, reason string, failed bool) {
+	name := d.Namespace + "/" + d.Name
+	if d.Status.ObservedGeneration < d.Generation {
+		return false, fmt.Sprintf("Deployment %s rollout not yet observed (generation %d, observed %d)", name, d.Generation, d.Status.ObservedGeneration), false
+	}
+	for _, c := range d.Status.Conditions {
+		if c.Type == appsv1.DeploymentProgressing && c.Reason == "ProgressDeadlineExceeded" {
+			return false, fmt.Sprintf("Deployment %s exceeded its progress deadline: %s", name, c.Message), true
+		}
+	}
+	if ok, reason := deploymentAvailable(d); !ok {
+		return false, reason, false
+	}
+	want := replicasOf(d)
+	switch {
+	case d.Status.UpdatedReplicas < want:
+		return false, fmt.Sprintf("Deployment %s has %d of %d replicas updated", name, d.Status.UpdatedReplicas, want), false
+	case d.Status.Replicas > d.Status.UpdatedReplicas:
+		return false, fmt.Sprintf("Deployment %s has %d old replica(s) pending termination", name, d.Status.Replicas-d.Status.UpdatedReplicas), false
+	case d.Status.AvailableReplicas < d.Status.UpdatedReplicas:
+		return false, fmt.Sprintf("Deployment %s has %d of %d updated replicas available", name, d.Status.AvailableReplicas, d.Status.UpdatedReplicas), false
+	}
+	return true, "", false
 }
 
 func replicasOf(d *appsv1.Deployment) int32 {
@@ -479,6 +520,18 @@ func lifecyclePermissions(verb, namespace string, scope permissionScope) []permi
 			{Verb: "update", Group: "apps", Resource: "deployments", Namespace: namespace},
 			{Verb: "create", Resource: "secrets", Namespace: namespace},
 			{Verb: "update", Resource: "secrets", Namespace: namespace},
+			{Verb: "get", Resource: "secrets", Namespace: namespace},
+			{Verb: "list", Resource: "secrets", Namespace: namespace},
+		}
+		// Helm applies the chart server-side, which patches every object.
+		for _, p := range []permission{
+			{Group: rbac, Resource: "clusterroles"}, {Group: rbac, Resource: "clusterrolebindings"},
+			{Group: rbac, Resource: "roles", Namespace: namespace}, {Group: rbac, Resource: "rolebindings", Namespace: namespace},
+			{Resource: "serviceaccounts", Namespace: namespace}, {Resource: "configmaps", Namespace: namespace},
+			{Resource: "services", Namespace: namespace}, {Group: "apps", Resource: "deployments", Namespace: namespace},
+		} {
+			p.Verb = "patch"
+			perms = append(perms, p)
 		}
 		if scope.createNamespace {
 			perms = append(perms, permission{Verb: "create", Resource: "namespaces"})

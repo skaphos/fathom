@@ -54,11 +54,13 @@ vars:
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
   # The lifecycle e2e shard (E2E_ADDONS=lifecycle) installs Fathom with
   # fathomctl itself, which deploys ghcr.io/skaphos/<image>:v<its version>.
-  # These two SemVer versions sit above the upgrade-path floor (0.5.0, never
-  # changed) and below every recorded release, so upgrading between them is a
-  # real rollout with no stops or sanctioned changes in range. The spec
-  # (test/e2e/fathomctl_lifecycle_test.go) builds one fathomctl per version.
-  E2E_LIFECYCLE_VERSIONS: '{{.E2E_LIFECYCLE_VERSIONS | default "0.5.99-e2e.1 0.5.99-e2e.2"}}'
+  # The two versions are pre-releases of the chart's own appVersion: above
+  # the upgrade-path floor (0.5.0, never changed), with no stop or sanctioned
+  # change between them, and tracking every release-please bump so the chart
+  # can never appear newer than the CLI. The spec
+  # (test/e2e/fathomctl_lifecycle_test.go) derives the same pair.
+  E2E_LIFECYCLE_VERSIONS:
+    sh: 'v="${E2E_LIFECYCLE_VERSIONS:-}"; if [ -z "$v" ]; then a="$(awk -F''"'' ''/^appVersion:/ {print $2}'' deploy/helm/fathom-operator/Chart.yaml)"; v="$a-e2e.1 $a-e2e.2"; fi; echo "$v"'
 
 tasks:
   default:

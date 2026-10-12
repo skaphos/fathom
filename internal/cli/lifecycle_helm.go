@@ -43,6 +43,16 @@ type helmReleaseClient struct {
 	newConfig func(namespace string) (*action.Configuration, error)
 	// renderConfig backs client-side dry runs: no cluster, no storage.
 	renderConfig func() *action.Configuration
+	// loadChart loads the chart a request installs; nil means the embedded
+	// chart. Tests substitute an older chart to exercise real upgrades.
+	loadChart func(version string) (*chart.Chart, error)
+}
+
+func (h *helmReleaseClient) chart(version string) (*chart.Chart, error) {
+	if h.loadChart != nil {
+		return h.loadChart(version)
+	}
+	return helmchart.Load(version)
 }
 
 func newHelmReleaseClient(f *factory) (releaseClient, error) {
@@ -93,8 +103,12 @@ func (h *helmReleaseClient) List(_ context.Context, namespaces []string) ([]helm
 		// The latest revision in any live state: a pending or failed release
 		// is still an install the verbs must see (spec Edge "Interrupted
 		// install"); uninstalled ones are not.
+		// An interrupted `helm uninstall` (uninstalling) is listed too, so
+		// `fathomctl uninstall` can finish it rather than calling the
+		// leftover operator a non-Helm install (FR-036).
 		list.StateMask = action.ListDeployed | action.ListFailed | action.ListUnknown |
-			action.ListPendingInstall | action.ListPendingUpgrade | action.ListPendingRollback
+			action.ListPendingInstall | action.ListPendingUpgrade | action.ListPendingRollback |
+			action.ListUninstalling
 		releasers, err := list.Run()
 		if err != nil {
 			return nil, fmt.Errorf("list releases in %s: %w", ns, err)
@@ -113,7 +127,7 @@ func (h *helmReleaseClient) List(_ context.Context, namespaces []string) ([]helm
 }
 
 func (h *helmReleaseClient) Install(ctx context.Context, req releaseRequest) (*helmRelease, error) {
-	ch, err := helmchart.Load(req.Version)
+	ch, err := h.chart(req.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +155,7 @@ func (h *helmReleaseClient) Install(ctx context.Context, req releaseRequest) (*h
 }
 
 func (h *helmReleaseClient) Upgrade(ctx context.Context, req releaseRequest) (*helmRelease, error) {
-	ch, err := helmchart.Load(req.Version)
+	ch, err := h.chart(req.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +166,12 @@ func (h *helmReleaseClient) Upgrade(ctx context.Context, req releaseRequest) (*h
 	up := action.NewUpgrade(cfg)
 	up.Namespace = req.Namespace
 	up.SkipCRDs = true
-	up.ReuseValues = req.ReuseValues
+	// ResetThenReuseValues, not ReuseValues: Helm's ReuseValues replaces the
+	// new chart's defaults with the previous chart's, so values a newer chart
+	// added (and its templates read) would be missing. This keeps the new
+	// defaults and lays the release's own values over them — exactly what
+	// Render validated before anything changed.
+	up.ResetThenReuseValues = req.ReuseValues
 	// Keep whichever apply method the release already uses (Helm v3
 	// installs are client-side apply).
 	up.ServerSideApply = "auto"
@@ -200,7 +219,7 @@ func (h *helmReleaseClient) Rollback(_ context.Context, name, namespace string, 
 // validates the values against the chart's schema without contacting the
 // cluster (FR-007, research R9 step 3).
 func (h *helmReleaseClient) Render(ctx context.Context, req releaseRequest) (string, error) {
-	ch, err := helmchart.Load(req.Version)
+	ch, err := h.chart(req.Version)
 	if err != nil {
 		return "", err
 	}

@@ -160,7 +160,10 @@ func runInstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *lifec
 	}
 	rel, err := env.rc.Install(ctx, req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w\nThe CRDs were applied but the operator was not installed. To recover:\n"+
+			"  inspect: helm history %s -n %s\n"+
+			"  clean up and retry: fathomctl uninstall -n %s, then rerun %s  # the CRDs and any resources are kept",
+			err, opts.release, ns, ns, command)
 	}
 	if err := waitManagerAvailable(ctx, f, env.c, ns, opts.release, opts.timeout); err != nil {
 		deploy := managerDeploymentName(ctx, env.c, ns, opts.release)

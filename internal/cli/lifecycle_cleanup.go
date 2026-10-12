@@ -108,13 +108,46 @@ func leaderElectionID(in *install) string {
 
 // deleteOperatorCreated removes every operator-created object and waits,
 // bounded by timeout, until they are gone (FR-030). It runs after the
-// release is uninstalled, so nothing recreates them.
+// release is uninstalled and its manager has stopped (waitManagerGone), so
+// nothing recreates them.
 func deleteOperatorCreated(ctx context.Context, f *factory, c client.Client, in *install, timeout time.Duration) (int, error) {
 	objs, err := operatorCreatedObjects(ctx, c, in)
 	if err != nil {
 		return 0, err
 	}
 	return len(objs), deleteAndWait(ctx, f, c, objs, timeout)
+}
+
+// waitManagerGone waits, bounded by timeout, until the release's manager
+// Deployment and every pod of it are gone, so no operator is left to recreate
+// what uninstall removes next (adversarial review F3).
+func waitManagerGone(ctx context.Context, f *factory, c client.Client, ns, release string, timeout time.Duration) error {
+	var last string
+	err := waitBounded(ctx, f, timeout, func(ctx context.Context) (bool, error) {
+		var deploys appsv1.DeploymentList
+		if err := c.List(ctx, &deploys, client.InNamespace(ns), client.MatchingLabels{instanceLabel: release, operatorLabelKey: operatorLabelValue}); err != nil {
+			return false, err
+		}
+		var pods corev1.PodList
+		if err := c.List(ctx, &pods, client.InNamespace(ns), client.MatchingLabels{instanceLabel: release}); err != nil {
+			return false, err
+		}
+		switch {
+		case len(deploys.Items) > 0:
+			last = "Deployment " + ns + "/" + deploys.Items[0].Name
+		case len(pods.Items) > 0:
+			last = "Pod " + ns + "/" + pods.Items[0].Name
+		default:
+			return true, nil
+		}
+		return false, nil
+	})
+	if errors.Is(err, errWaitTimeout) {
+		return fmt.Errorf("the release was removed but the operator is still running after %s (%s); its objects were not cleaned up yet\n"+
+			"next: fathomctl uninstall -n %s --timeout %s  # finishes the cleanup; if a pod is stuck on an unreachable node, `kubectl -n %s delete pod <pod> --force --grace-period=0` first",
+			timeout, last, ns, timeout*2, ns)
+	}
+	return err
 }
 
 // deleteAndWait deletes objs with foreground propagation and waits until

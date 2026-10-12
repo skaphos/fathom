@@ -17,6 +17,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	helmchart "github.com/skaphos/fathom/deploy/helm"
 )
@@ -293,8 +294,11 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	if in.pending() {
 		return pendingRefusal(in)
 	}
-	if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("upgrade", in.Namespace, permissionScope{})); err != nil {
-		return err
+	// A dry run changes nothing, so a read-only identity may still see the plan.
+	if !opts.dryRun {
+		if err := preflightPermissions(ctx, f, env.c, lifecyclePermissions("upgrade", in.Namespace, permissionScope{})); err != nil {
+			return err
+		}
 	}
 	plan, err := buildUpgradePlan(ctx, env.c, planRequest{from: in.Version, to: version, accept: opts.acceptIncompatible, command: command})
 	if err != nil {
@@ -333,7 +337,9 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 			return err
 		}
 	}
-	if plan.From == plan.To && allUnchanged(plan) {
+	// Same version and current CRDs is a no-op only when the user asked for no
+	// value changes; -f/--set at the same version still upgrades (FR-025).
+	if plan.From == plan.To && allUnchanged(plan) && len(env.userValues) == 0 {
 		_, _ = fmt.Fprintf(out, "Fathom is already at v%s; nothing to do.\n", version)
 		return nil
 	}
@@ -345,7 +351,10 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 		Name: in.Release, Namespace: in.Namespace, Version: version,
 		Values: mergeValues(env.userValues, imageValues(version)), ReuseValues: true, Timeout: opts.timeout,
 	}); err != nil {
-		return err
+		return fmt.Errorf("%w\nThe CRDs are already at v%s's schema; the operator was not upgraded. To recover:\n"+
+			"  inspect: helm history %s -n %s\n"+
+			"  if the latest revision is failed: helm rollback %s -n %s  # restores the previous operator; CRDs stay\n"+
+			"  retry:   fathomctl upgrade -n %s  # once the cause above is fixed", err, version, in.Release, in.Namespace, in.Release, in.Namespace, in.Namespace)
 	}
 	if err := waitManagerAvailable(ctx, f, env.c, in.Namespace, in.Release, opts.timeout); err != nil {
 		if opts.rollbackOnFailure {
@@ -446,5 +455,15 @@ func printPlan(w io.Writer, format outputFormat, plan *upgradePlan) error {
 	}
 	_ = tw.Flush()
 	_, _ = fmt.Fprintf(w, "Operator:  %s -> %s\n", plan.Operator.FromImages["operator"], plan.Operator.ToImages["operator"])
+	if len(plan.Values) > 0 {
+		raw, err := yaml.Marshal(plan.Values)
+		if err != nil {
+			return fmt.Errorf("encode values: %w", err)
+		}
+		_, _ = fmt.Fprintln(w, "Values:    (in effect; the chart's defaults apply to everything else)")
+		for _, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+			_, _ = fmt.Fprintln(w, "  "+line)
+		}
+	}
 	return nil
 }

@@ -91,11 +91,20 @@ func runUninstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *uni
 		if err != nil {
 			return err
 		}
-		if !opts.purgeCRDs || len(crds) == 0 {
+		// An earlier uninstall that stopped after removing the release can
+		// leave operator-created objects behind; a rerun must finish the job
+		// (FR-030), not report that there is nothing to remove.
+		leftovers, err := operatorCreatedObjects(ctx, c, nil)
+		if err != nil {
+			return err
+		}
+		if len(leftovers) == 0 && (!opts.purgeCRDs || len(crds) == 0) {
 			_, _ = fmt.Fprintln(out, "Fathom is not installed; nothing to remove.")
 			return nil
 		}
-		// Only CRDs remain (after a plain uninstall): --purge-crds still purges.
+		if len(leftovers) > 0 && !opts.purgeCRDs {
+			_, _ = fmt.Fprintf(out, "Fathom is not installed, but %d operator-created object(s) remain from an earlier uninstall; removing them.\n", len(leftovers))
+		}
 	default:
 		return notHelmRefusal(in)
 	}
@@ -147,6 +156,11 @@ func runUninstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *uni
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "Removed release %s from %s.\n", in.Release, ns)
+		// Helm deletes in the background; a terminating manager can still
+		// reconcile and recreate what we are about to remove.
+		if err := waitManagerGone(ctx, f, c, ns, in.Release, opts.timeout); err != nil {
+			return err
+		}
 	}
 	n, err := deleteOperatorCreated(ctx, f, c, in, opts.timeout)
 	if err != nil {

@@ -134,8 +134,9 @@ func TestInstallRefusals(t *testing.T) {
 			setup: func(_ *testing.T, env *lifecycleEnv) {
 				seedRelease(env, "0.6.0", "pending-install")
 			},
-			reason:   reasonReleasePending,
-			mentions: []string{"helm rollback fathom -n fathom-system"},
+			reason: reasonReleasePending,
+			// A first install has nothing to roll back to (F6).
+			mentions: []string{"next: fathomctl uninstall -n fathom-system"},
 		},
 		{
 			name:     "missing permissions",

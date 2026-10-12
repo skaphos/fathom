@@ -229,6 +229,48 @@ func TestWaitManagerAvailableNamesTheUnmetCondition(t *testing.T) {
 	}
 }
 
+// The Available condition is not enough: during a surge the old pod keeps
+// the Deployment Available while the new one fails (adversarial review F2).
+func TestRolloutComplete(t *testing.T) {
+	avail := func(s corev1.ConditionStatus) appsv1.DeploymentCondition {
+		return appsv1.DeploymentCondition{Type: appsv1.DeploymentAvailable, Status: s}
+	}
+	cases := []struct {
+		name                         string
+		gen, observed                int64
+		replicas, updated, available int32
+		conds                        []appsv1.DeploymentCondition
+		done, failed                 bool
+		reason                       string
+	}{
+		{name: "complete", gen: 2, observed: 2, replicas: 1, updated: 1, available: 1, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue)}, done: true},
+		{name: "not observed", gen: 3, observed: 2, replicas: 1, updated: 1, available: 1, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue)}, reason: "not yet observed"},
+		{name: "surge, new pod not ready", gen: 2, observed: 2, replicas: 2, updated: 1, available: 1, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue)}, reason: "old replica"},
+		{name: "updated but unavailable", gen: 2, observed: 2, replicas: 1, updated: 1, available: 0, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue)}, reason: "updated replicas available"},
+		{name: "not updated", gen: 2, observed: 2, replicas: 1, updated: 0, available: 1, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue)}, reason: "replicas updated"},
+		{name: "not available", gen: 2, observed: 2, replicas: 1, updated: 1, available: 0, conds: []appsv1.DeploymentCondition{avail(corev1.ConditionFalse)}, reason: "Available=False"},
+		{
+			name: "progress deadline exceeded", gen: 2, observed: 2, replicas: 2, updated: 1, available: 1,
+			conds: []appsv1.DeploymentCondition{avail(corev1.ConditionTrue), {
+				Type: appsv1.DeploymentProgressing, Status: corev1.ConditionFalse, Reason: "ProgressDeadlineExceeded", Message: "ReplicaSet has timed out progressing.",
+			}},
+			failed: true, reason: "progress deadline",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := managerDeployment("fathom-system", nil, true)
+			d.Generation = tc.gen
+			d.Status = appsv1.DeploymentStatus{ObservedGeneration: tc.observed, Replicas: tc.replicas,
+				UpdatedReplicas: tc.updated, AvailableReplicas: tc.available, Conditions: tc.conds}
+			done, reason, failed := rolloutComplete(d)
+			if done != tc.done || failed != tc.failed || !strings.Contains(reason, tc.reason) {
+				t.Errorf("rolloutComplete = (%v, %q, %v), want (%v, ~%q, %v)", done, reason, failed, tc.done, tc.reason, tc.failed)
+			}
+		})
+	}
+}
+
 func TestWaitManagerAvailableSucceeds(t *testing.T) {
 	env := newLifecycleEnv(t)
 	env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.6.0"}, true)

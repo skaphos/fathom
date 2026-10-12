@@ -91,7 +91,10 @@ type fakeReleaseClient struct {
 	releases map[string]*helmRelease
 
 	operatorReady bool
-	listErr       error
+	// surgeStuck models a rolling update whose new pod never becomes ready
+	// while the old one keeps the Deployment Available.
+	surgeStuck bool
+	listErr    error
 }
 
 func newFakeReleaseClient(t *testing.T, c client.Client, log *eventLog) *fakeReleaseClient {
@@ -250,9 +253,20 @@ func (r *fakeReleaseClient) writeManager(ctx context.Context, rel *helmRelease, 
 	if ready {
 		status = corev1.ConditionTrue
 	}
+	available, replicas := int32(0), int32(1)
+	if ready {
+		available = 1
+	}
+	if r.surgeStuck {
+		// Old pod still serving (Available), new pod not ready.
+		available, replicas = 1, 2
+		status = corev1.ConditionTrue
+	}
 	d.Status = appsv1.DeploymentStatus{
 		ObservedGeneration: d.Generation,
+		Replicas:           replicas,
 		UpdatedReplicas:    1,
+		AvailableReplicas:  available,
 		Conditions: []appsv1.DeploymentCondition{{
 			Type: appsv1.DeploymentAvailable, Status: status,
 			Reason: "MinimumReplicasUnavailable", Message: "Deployment does not have minimum availability.",

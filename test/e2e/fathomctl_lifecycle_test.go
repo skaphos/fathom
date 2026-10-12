@@ -58,13 +58,25 @@ func (c lifecycleCLI) run(args ...string) (string, error) {
 }
 
 // lifecycleVersions are the two versions the Taskfile tagged and loaded the
-// images under (E2E_LIFECYCLE_VERSIONS).
+// images under (E2E_LIFECYCLE_VERSIONS), by default pre-releases of the
+// chart's appVersion so a release bump never makes the chart look newer
+// than the CLI.
 func lifecycleVersions() (string, string) {
-	v := strings.Fields(os.Getenv("E2E_LIFECYCLE_VERSIONS"))
-	if len(v) != 2 {
-		v = []string{"0.5.99-e2e.1", "0.5.99-e2e.2"}
+	if v := strings.Fields(os.Getenv("E2E_LIFECYCLE_VERSIONS")); len(v) == 2 {
+		return v[0], v[1]
 	}
-	return v[0], v[1]
+	root, err := utils.GetProjectDir()
+	Expect(err).NotTo(HaveOccurred())
+	raw, err := os.ReadFile(filepath.Join(root, "deploy", "helm", "fathom-operator", "Chart.yaml"))
+	Expect(err).NotTo(HaveOccurred())
+	var app string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(line, "appVersion:"); ok {
+			app = strings.Trim(strings.Fields(rest)[0], `"`)
+		}
+	}
+	Expect(app).NotTo(BeEmpty(), "Chart.yaml has no appVersion")
+	return app + "-e2e.1", app + "-e2e.2"
 }
 
 func buildLifecycleCLI(dir, version string) lifecycleCLI {
@@ -245,13 +257,21 @@ var _ = Describe("fathomctl lifecycle", Ordered, Label(utils.LifecycleLabel), fu
 
 	It("interoperates with helm in both directions (SC-007)", func() {
 		root, _ := utils.GetProjectDir()
-		_, err := utils.Run(exec.Command("helm", "upgrade", lifecycleRelease, filepath.Join(root, "deploy", "helm", "fathom-operator"),
+		// Package the chart at the CLI's version, as the release workflow does,
+		// so the release stays at the version the loaded images carry.
+		_, err := utils.Run(exec.Command("helm", "package", filepath.Join(root, "deploy", "helm", "fathom-operator"),
+			"--version", v2.version, "--app-version", v2.version, "-d", tmp))
+		Expect(err).NotTo(HaveOccurred())
+		pkg := filepath.Join(tmp, "fathom-operator-"+v2.version+".tgz")
+		_, err = utils.Run(exec.Command("helm", "upgrade", lifecycleRelease, pkg,
 			"-n", lifecycleNS, "--reuse-values", "--wait", "--timeout", "5m"))
 		Expect(err).NotTo(HaveOccurred(), "helm could not upgrade a fathomctl-made release")
-		status, _ := v2.run("status")
+		status, err := v2.run("status")
+		Expect(err).NotTo(HaveOccurred())
 		Expect(status).To(ContainSubstring("helm release " + lifecycleRelease))
 
-		_, err = v2.run("upgrade", "--timeout", "5m")
+		// A value change makes this a real fathomctl revision on top of helm's.
+		_, err = v2.run("upgrade", "--set", "leaderElect=true", "--timeout", "5m")
 		Expect(err).NotTo(HaveOccurred(), "fathomctl could not upgrade a helm-upgraded release")
 		history, err := utils.Run(exec.Command("helm", "history", lifecycleRelease, "-n", lifecycleNS, "-o", "json"))
 		Expect(err).NotTo(HaveOccurred())

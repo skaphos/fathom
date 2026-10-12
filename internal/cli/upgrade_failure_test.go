@@ -64,6 +64,35 @@ func TestUpgradeRollbackOnFailure(t *testing.T) {
 	}
 }
 
+// A new pod that never becomes ready fails the upgrade even though the old
+// pod keeps the Deployment Available, and --rollback-on-failure fires
+// (adversarial review F2).
+func TestUpgradeDetectsAStuckSurge(t *testing.T) {
+	withVersion(t, "v0.6.0", true)
+	env := upgradeEnv(t, "0.5.1", "0.5.1", nil, nil)
+	env.rc.surgeStuck = true
+	_, _, err := execVerb(env.f, "upgrade", "--timeout", "30ms", "--rollback-on-failure")
+	if err == nil || !strings.Contains(err.Error(), "old replica") || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("err = %v, want a stuck-surge failure that rolled back", err)
+	}
+	if env.log.index("release:rollback") < 0 {
+		t.Error("no rollback for a stuck surge")
+	}
+}
+
+// A first install left failed has no revision to roll back to; the refusal
+// points at uninstall instead (adversarial review F6).
+func TestPendingRefusalForAFailedFirstInstall(t *testing.T) {
+	r := pendingRefusal(&install{Release: "fathom", Namespace: "fathom-system", Revision: 1, ReleaseStatus: "failed"})
+	if strings.Contains(r.Next, "rollback") || !strings.Contains(r.Next, "fathomctl uninstall -n fathom-system") {
+		t.Errorf("next = %q, want uninstall then reinstall", r.Next)
+	}
+	r = pendingRefusal(&install{Release: "fathom", Namespace: "fathom-system", Revision: 4, ReleaseStatus: "pending-upgrade"})
+	if !strings.Contains(r.Next, "helm rollback fathom -n fathom-system") {
+		t.Errorf("next = %q, want a rollback for a later revision", r.Next)
+	}
+}
+
 // --rollback-on-failure is refused before any change when the plan applies an
 // incompatible CRD change, sanctioned or not (FR-029).
 func TestUpgradeRollbackOnFailureRefusedWithIncompatibleChanges(t *testing.T) {

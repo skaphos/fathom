@@ -84,7 +84,8 @@ deployed with kustomize, so their end-to-end specs
 without one. With `E2E_ADDONS=lifecycle`, `e2e:cluster:fathom` still builds
 the three images but, instead of deploying, tags and loads them as
 `ghcr.io/skaphos/<image>:v<version>` for each version in
-`E2E_LIFECYCLE_VERSIONS` (default `0.5.99-e2e.1 0.5.99-e2e.2`) — the names
+`E2E_LIFECYCLE_VERSIONS` (default `<appVersion>-e2e.1 <appVersion>-e2e.2`,
+from the chart's `Chart.yaml`) — the names
 `fathomctl` installs. The spec builds one `fathomctl` per version and runs
 install → status → re-install → upgrade across the older-schema fixture in
 `lifecycle/older-crds/` → uninstall → reinstall → Helm interop → purge with

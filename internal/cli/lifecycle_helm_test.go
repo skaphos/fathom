@@ -14,9 +14,13 @@ import (
 	"time"
 
 	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 	kubefake "helm.sh/helm/v4/pkg/kube/fake"
 	"helm.sh/helm/v4/pkg/storage"
 	"helm.sh/helm/v4/pkg/storage/driver"
+
+	helmchart "github.com/skaphos/fathom/deploy/helm"
 )
 
 // memoryHelm is the production helmReleaseClient over Helm's in-memory
@@ -86,6 +90,39 @@ func TestHelmReleaseClientRoundTrip(t *testing.T) {
 	// Uninstalling what is already gone is not an error.
 	if err := h.Uninstall(ctx, "fathom", "fathom-system", time.Second); err != nil {
 		t.Errorf("second Uninstall: %v", err)
+	}
+}
+
+// A newer chart that adds a default its templates read must upgrade a release
+// made from the older chart: the new defaults are kept and the release's own
+// values laid over them (adversarial review F1; Helm's ReuseValues would
+// substitute the old chart's defaults and fail the render).
+func TestHelmReleaseClientUpgradeKeepsTheNewChartsDefaults(t *testing.T) {
+	ctx := context.Background()
+	h := memoryHelm(t)
+	if _, err := h.Install(ctx, releaseRequest{Name: "fathom", Namespace: "fathom-system", Version: "0.5.1",
+		Values: mergeValues(map[string]any{"leaderElect": false}, imageValues("0.5.1"))}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	h.loadChart = func(version string) (*chart.Chart, error) {
+		c, err := helmchart.Load(version)
+		if err != nil {
+			return nil, err
+		}
+		c.Values["newFeature"] = map[string]any{"enabled": false}
+		c.Templates = append(c.Templates, &common.File{
+			Name: "templates/new-feature.yaml",
+			Data: []byte("{{- if .Values.newFeature.enabled }}\nkind: ConfigMap\n{{- end }}\n"),
+		})
+		return c, nil
+	}
+	rel, err := h.Upgrade(ctx, releaseRequest{Name: "fathom", Namespace: "fathom-system", Version: "0.6.0",
+		Values: imageValues("0.6.0"), ReuseValues: true})
+	if err != nil {
+		t.Fatalf("upgrade to a chart with a new default: %v", err)
+	}
+	if rel.Config["leaderElect"] != false {
+		t.Errorf("the release's own value was lost: leaderElect = %v", rel.Config["leaderElect"])
 	}
 }
 

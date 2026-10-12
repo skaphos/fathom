@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -188,6 +189,20 @@ func TestUninstallProceedsOnAPendingRelease(t *testing.T) {
 	}
 }
 
+// An interrupted `helm uninstall` is still a Helm install that uninstall
+// can finish, not an unmanaged operator (adversarial review F8).
+func TestUninstallFinishesAnInterruptedHelmUninstall(t *testing.T) {
+	env := newLifecycleEnv(t, namespaceObj("fathom-system"))
+	env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.6.0", Status: "uninstalling"}, true)
+	out, _, err := execVerb(env.f, "uninstall")
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if !strings.Contains(out, "is uninstalling; uninstalling it anyway") {
+		t.Errorf("output = %s", out)
+	}
+}
+
 // The Lease name follows the release's leaderElectionID value.
 func TestUninstallRemovesTheConfiguredLease(t *testing.T) {
 	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "custom-lease", Namespace: "fathom-system"}}
@@ -198,6 +213,62 @@ func TestUninstallRemovesTheConfiguredLease(t *testing.T) {
 	}
 	if exists(t, env.c, lease) {
 		t.Error("the configured Lease survived")
+	}
+}
+
+// Cleanup waits for the old manager to stop; a manager pod that lingers is
+// reported, and nothing else is removed (adversarial review F3).
+func TestWaitManagerGone(t *testing.T) {
+	lingering := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "fathom-fathom-operator-abc", Namespace: "fathom-system",
+		Labels: map[string]string{instanceLabel: "fathom"}}}
+	env := newLifecycleEnv(t, lingering)
+	err := waitManagerGone(context.Background(), env.f, env.c, "fathom-system", "fathom", 20*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "Pod fathom-system/fathom-fathom-operator-abc") {
+		t.Errorf("err = %v, want the lingering pod named", err)
+	}
+	if err := env.c.Delete(context.Background(), lingering); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitManagerGone(context.Background(), env.f, env.c, "fathom-system", "fathom", time.Second); err != nil {
+		t.Errorf("waitManagerGone with no manager: %v", err)
+	}
+}
+
+func TestUninstallStopsBeforeCleanupWhileTheManagerRuns(t *testing.T) {
+	lingering := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "fathom-fathom-operator-abc", Namespace: "fathom-system",
+		Labels: map[string]string{instanceLabel: "fathom"}}}
+	env := installedEnv(t, lingering)
+	_, _, err := execVerb(env.f, "uninstall", "--timeout", "30ms")
+	if err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Fatalf("err = %v, want the running manager reported", err)
+	}
+	for _, obj := range operatorCreated() {
+		if !exists(t, env.c, obj) {
+			t.Errorf("%s was removed while the manager still ran", describeObject(obj))
+		}
+	}
+}
+
+// A rerun after an uninstall that stopped part-way finishes the cleanup
+// instead of reporting nothing to remove (adversarial re-review N1).
+func TestUninstallRerunCleansUpLeftovers(t *testing.T) {
+	leftovers := operatorCreated()
+	env := newLifecycleEnv(t, append(leftovers, namespaceObj("team-a"), namespaceObj("kube-system"))...)
+	out, _, err := execVerb(env.f, "uninstall")
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if !strings.Contains(out, "remain from an earlier uninstall") {
+		t.Errorf("output = %s", out)
+	}
+	for _, obj := range operatorCreated() {
+		// The Lease lives in the release namespace, unknown without a release.
+		if _, isLease := obj.(*coordinationv1.Lease); isLease {
+			continue
+		}
+		if exists(t, env.c, obj) {
+			t.Errorf("%s survived the rerun", describeObject(obj))
+		}
 	}
 }
 
