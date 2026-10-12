@@ -467,7 +467,9 @@ they are not garbage-collected with them.
 
 `--delete-namespace` lists every object in the namespace before anything is
 removed and names those Fathom did not create. Objects Kubernetes creates in
-every namespace are reported, not treated as someone else's. If the identity
+every namespace are reported, not treated as someone else's. An object owned
+by another object in the namespace (a Pod of a ReplicaSet, say) is reported
+through its owner; one whose owner is not there is listed itself. If the identity
 cannot list a kind in the namespace, the verb refuses with
 `missing-permissions`, naming the kind, before anything changes: it would
 otherwise delete objects it never showed. For the same reason, an API group

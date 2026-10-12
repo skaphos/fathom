@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -116,6 +117,59 @@ func TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery(t *testing.T) {
 	}
 	if kinds, err := discoverNamespacedKinds(f); err == nil {
 		t.Fatalf("discovery with an unavailable group returned %v and no error", kinds)
+	}
+}
+
+// A dependent is reported through its owner only when that owner is in the
+// namespace; one whose owner is gone is listed, so it is not deleted unseen.
+func TestDeleteNamespaceListsDependentsWithoutAListedOwner(t *testing.T) {
+	root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "team-root", Namespace: "fathom-system", UID: "root-uid"}}
+	child := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "team-child", Namespace: "fathom-system", UID: "child-uid",
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: "team-root", UID: "root-uid"}}}}
+	orphan := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "team-orphan", Namespace: "fathom-system", UID: "orphan-uid",
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: "gone", UID: "gone-uid"}}}}
+	env := nsEnv(t, root, child, orphan)
+	_, _, err := execVerb(env.f, "uninstall", "--delete-namespace")
+	if err == nil {
+		t.Fatal("uninstall --delete-namespace succeeded without confirming foreign objects")
+	}
+	msg := err.Error()
+	for _, want := range []string{"ConfigMap team-root", "ConfigMap team-orphan"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("confirmation does not list %q:\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "team-child") {
+		t.Errorf("a dependent of a listed owner was listed separately:\n%s", msg)
+	}
+}
+
+// The documented retry after a timed-out rollout reaches the same-version
+// branch; it must not report success while the operator is unavailable.
+func TestUpgradeSameVersionWaitsForTheRollout(t *testing.T) {
+	withVersion(t, "v0.6.0", true)
+	env := newLifecycleEnv(t, append(liveCRDs(t, "0.6.0", nil), namespaceObj("fathom-system"))...)
+	env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.6.0"}, false)
+	out, _, err := execVerb(env.f, "upgrade", "--timeout", "50ms")
+	if err == nil || !strings.Contains(err.Error(), "not Available") {
+		t.Fatalf("err = %v, want the unavailable operator reported\n%s", err, out)
+	}
+	if strings.Contains(out, "nothing to do") {
+		t.Errorf("reported success while the operator is unavailable:\n%s", out)
+	}
+}
+
+func TestUpgradeSameVersionStructuredOutput(t *testing.T) {
+	withVersion(t, "v0.6.0", true)
+	env := newLifecycleEnv(t, append(liveCRDs(t, "0.6.0", nil), namespaceObj("fathom-system"))...)
+	env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.6.0"}, true)
+	out, _, err := execVerb(env.f, "upgrade", "-o", "json")
+	if err != nil {
+		t.Fatalf("upgrade -o json: %v", err)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatalf("no-op upgrade -o json is not JSON: %v\n%s", err, out)
 	}
 }
 

@@ -340,6 +340,14 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	// Same version and current CRDs is a no-op only when the user asked for no
 	// value changes; -f/--set at the same version still upgrades (FR-025).
 	if plan.From == plan.To && allUnchanged(plan) && len(env.userValues) == 0 {
+		// The documented retry after a timed-out rollout lands here, so the
+		// operator must be Available before this reports success.
+		if err := waitManagerAvailable(ctx, f, env.c, in.Namespace, in.Release, opts.timeout); err != nil {
+			return fmt.Errorf("%w\n%s", err, upgradeRecovery(ctx, env.c, in, opts))
+		}
+		if f.opts.output.structured() {
+			return encode(out, f.opts.output, plan)
+		}
 		_, _ = fmt.Fprintf(out, "Fathom is already at v%s; nothing to do.\n", version)
 		return nil
 	}

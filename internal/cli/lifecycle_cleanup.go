@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -394,6 +395,14 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 	inv := &namespaceInventory{}
 	seen := map[namespaceEntry]bool{}
 	var unlistable []string
+	// Every object is gathered before any is classified, so a dependent can
+	// be matched against the owners actually in the namespace.
+	type listed struct {
+		kind string
+		obj  *unstructured.Unstructured
+	}
+	var items []listed
+	uids := map[types.UID]bool{}
 	for _, gvk := range gvks {
 		if derivedKinds[gvk.Kind] {
 			continue
@@ -413,17 +422,20 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 			return nil, fmt.Errorf("list %s in %s: %w", gvk.Kind, ns, err)
 		}
 		for i := range list.Items {
-			item := &list.Items[i]
-			entry := namespaceEntry{Kind: gvk.Kind, Name: item.GetName()}
-			if seen[entry] || fathomOwned(item, in) {
-				continue
-			}
-			seen[entry] = true
-			if automaticObjects[entry] {
-				inv.Automatic = append(inv.Automatic, entry)
-			} else {
-				inv.Foreign = append(inv.Foreign, entry)
-			}
+			items = append(items, listed{kind: gvk.Kind, obj: &list.Items[i]})
+			uids[list.Items[i].GetUID()] = true
+		}
+	}
+	for _, it := range items {
+		entry := namespaceEntry{Kind: it.kind, Name: it.obj.GetName()}
+		if seen[entry] || fathomOwned(it.obj, in) || ownerListed(it.obj, uids) {
+			continue
+		}
+		seen[entry] = true
+		if automaticObjects[entry] {
+			inv.Automatic = append(inv.Automatic, entry)
+		} else {
+			inv.Foreign = append(inv.Foreign, entry)
 		}
 	}
 	if len(unlistable) > 0 {
@@ -439,13 +451,22 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 	return inv, nil
 }
 
-// fathomOwned reports objects Fathom put in its namespace: the release's
-// own objects and records, operator-created objects, the leader Lease, and
-// anything owned by another object (garbage-collected with it).
-func fathomOwned(obj *unstructured.Unstructured, in *install) bool {
-	if len(obj.GetOwnerReferences()) > 0 {
-		return true
+// ownerListed reports a dependent whose owner is itself in the inventory: it
+// is reported through that owner (Fathom's, or listed as foreign) and
+// garbage-collected with it. A dependent whose owner is elsewhere or gone is
+// listed in its own right, so nothing is deleted unseen.
+func ownerListed(obj *unstructured.Unstructured, uids map[types.UID]bool) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if uids[ref.UID] {
+			return true
+		}
 	}
+	return false
+}
+
+// fathomOwned reports objects Fathom put in its namespace: the release's
+// own objects and records, operator-created objects and the leader Lease.
+func fathomOwned(obj *unstructured.Unstructured, in *install) bool {
 	labels, annotations := obj.GetLabels(), obj.GetAnnotations()
 	if labels[nodecert.LabelManagedBy] == nodecert.ManagedByValue {
 		return true

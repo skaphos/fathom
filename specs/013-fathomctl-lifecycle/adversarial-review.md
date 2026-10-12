@@ -88,6 +88,8 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | C8 | P2 | PR review: partial discovery results were accepted, hiding an unavailable group's objects from the `--delete-namespace` inventory. | Fixed — any discovery error fails closed; `TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery` (fails on the old code). |
 | C9 | P3 | PR review: a secret-looking key with a structured value was recursed into and printed. | Fixed — the key decides, whatever the value's shape; `TestRedactValuesRedactsStructuredSecrets`. N6 (lists) stands. |
 | C10 | P2 | PR review: the C7 guard checked only the kind; a known kind a newer release stops serving at `v1alpha1` would list as absent and be purged unseen. | Fixed — a CRD must also serve `v1alpha1` or the purge refuses with `unknown-kinds`; `TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1`. |
+| C11 | P2 | PR review: the namespace inventory treated any object with an owner reference as Fathom's, so a foreign dependent with a dangling or out-of-namespace owner could be deleted unseen. | Fixed — objects are gathered first; a dependent is suppressed only when its owner is itself in the namespace, otherwise it is listed; `TestDeleteNamespaceListsDependentsWithoutAListedOwner`. |
+| C12 | P2 | PR review: a same-version upgrade (the documented retry after a timed-out rollout) reported "nothing to do" without checking the operator, and printed text under `-o json\|yaml`. | Fixed — it waits for the rollout like any upgrade and encodes the plan when structured; `TestUpgradeSameVersionWaitsForTheRollout`, `TestUpgradeSameVersionStructuredOutput`. |
 
 ## Re-review history
 
@@ -102,5 +104,5 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
 5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
-   CI and locally. PR review then raised C1–C10, fixed with unit regression
+   CI and locally. PR review then raised C1–C12, fixed with unit regression
    tests. Like E1, these postdate the independent review.
