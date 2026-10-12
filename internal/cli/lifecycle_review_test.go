@@ -84,6 +84,21 @@ func TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1(t *testing.T) {
 	}
 }
 
+// "No such kind" from a stale mapping is not believed while the kind's CRD
+// is live: the purge stops rather than delete resources it never counted.
+func TestPurgeFailsClosedWhenALiveKindCannotBeListed(t *testing.T) {
+	env := newLifecycleEnv(t, append(liveCRDs(t, "0.6.0", nil), addonCheck("team-a", "coredns"))...)
+	env.listNoMatch["AddonCheckList"] = true
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "uninstall", "--purge-crds", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "list AddonCheck") {
+		t.Fatalf("err = %v, want the AddonCheck list failure", err)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("purge went ahead without counting AddonChecks: %v", w)
+	}
+}
+
 // Any discovery error fails closed: partial results would hide an
 // unavailable group's objects from the --delete-namespace inventory.
 func TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery(t *testing.T) {

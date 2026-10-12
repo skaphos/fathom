@@ -204,7 +204,8 @@ func fathomResources(ctx context.Context, c client.Client) (map[string][]unstruc
 	// The purge deletes every CRD in the group, but can only count and
 	// export the kinds this binary knows; a newer release's kind would lose
 	// its resources unseen.
-	if err := refuseUnknownKinds(ctx, c); err != nil {
+	live, err := refuseUnknownKinds(ctx, c)
+	if err != nil {
 		return nil, err
 	}
 	out := map[string][]unstructured.Unstructured{}
@@ -212,7 +213,9 @@ func fathomResources(ctx context.Context, c client.Client) (map[string][]unstruc
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(fathomv1alpha1.GroupVersion.WithKind(kind + "List"))
 		if err := c.List(ctx, list); err != nil {
-			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			// "No such kind" is believed only when its CRD is really gone; a
+			// stale mapping for a live CRD would purge its resources unseen.
+			if (apierrors.IsNotFound(err) || meta.IsNoMatchError(err)) && !live[kind] {
 				continue
 			}
 			return nil, fmt.Errorf("list %s: %w", kind, err)
@@ -303,28 +306,31 @@ func purgeResources(ctx context.Context, f *factory, c client.Client, resources 
 
 // refuseUnknownKinds refuses when the group holds a CRD this binary cannot
 // enumerate — a kind not in purgeKinds, or one no longer served at the
-// version it lists — naming each one.
-func refuseUnknownKinds(ctx context.Context, c client.Client) error {
+// version it lists — naming each one. Otherwise it returns the kinds whose
+// CRDs are live.
+func refuseUnknownKinds(ctx context.Context, c client.Client) (map[string]bool, error) {
 	crds, err := fathomCRDs(ctx, c)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	known := map[string]bool{}
 	for _, k := range purgeKinds {
 		known[k] = true
 	}
+	live := map[string]bool{}
 	var unknown []string
 	for _, obj := range crds {
 		crd := obj.(*apiextensionsv1.CustomResourceDefinition)
 		if !known[crd.Spec.Names.Kind] || !servesVersion(crd, fathomv1alpha1.GroupVersion.Version) {
 			unknown = append(unknown, crd.Name)
 		}
+		live[crd.Spec.Names.Kind] = true
 	}
 	if len(unknown) == 0 {
-		return nil
+		return live, nil
 	}
 	sort.Strings(unknown)
-	return refusal{
+	return nil, refusal{
 		Reason: reasonUnknownKinds,
 		Detail: "--purge-crds would delete CRDs this fathomctl cannot enumerate (" + strings.Join(unknown, ", ") + ") without counting or exporting their resources; they come from a newer Fathom release",
 		Next:   "run the uninstall with the fathomctl from the installed release",

@@ -90,7 +90,8 @@ Tag creation triggers `.github/workflows/release.yml`, which:
    fathomctl release archives" step passes the digests of the operator, probe
    and node-agent images pushed in steps 1–3 as `FATHOM_OPERATOR_DIGEST`,
    `FATHOM_PROBE_DIGEST` and `FATHOM_NODE_AGENT_DIGEST`; the script rejects a
-   value that is not a `sha256:` digest and links all three into the binary,
+   value that is not a `sha256:` digest, and rejects one or two digests (all
+   three or none, so a release never ships tag-pinned by accident), and links all three into the binary,
    so `fathomctl install` and `upgrade` deploy this release's images by
    digest. A binary built without them is a development build that installs
    by tag.

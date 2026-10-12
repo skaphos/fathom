@@ -141,6 +141,21 @@ func TestFathomctlDistRequiresVersion(t *testing.T) {
 	}
 }
 
+// A partial digest set would ship a CLI that silently pins by tag.
+func TestFathomctlDistRejectsPartialDigests(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	cmd := exec.Command("bash", "fathomctl-dist.sh")
+	cmd.Env = append(os.Environ(), "VERSION=0.0.0-test", "OUT="+t.TempDir(),
+		"FATHOM_OPERATOR_DIGEST="+digest, "FATHOM_PROBE_DIGEST="+digest, "FATHOM_NODE_AGENT_DIGEST=")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected failure with two of three digests:\n%s", output)
+	}
+	if !strings.Contains(string(output), "all three") {
+		t.Fatalf("expected an all-or-none diagnostic, got:\n%s", output)
+	}
+}
+
 func fileSHA256(t *testing.T, path string) string {
 	t.Helper()
 	f, err := os.Open(path)

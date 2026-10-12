@@ -39,6 +39,18 @@ out="${OUT:-dist/fathomctl}"
 platforms="${FATHOMCTL_PLATFORMS:-linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64}"
 revision="$(git rev-parse HEAD)"
 ldflags="-s -w -buildid= -X github.com/skaphos/fathom/internal/cli.Version=v${version} -X github.com/skaphos/fathom/internal/cli.BuildRevision=${revision}"
+# Digests are all-or-nothing: fathomctl pins by digest only when it has all
+# three, so a release build missing one would silently ship tag-pinned.
+digests=0
+for envVar in FATHOM_OPERATOR_DIGEST FATHOM_PROBE_DIGEST FATHOM_NODE_AGENT_DIGEST; do
+  if [[ -n "${!envVar:-}" ]]; then
+    digests=$((digests + 1))
+  fi
+done
+if [[ "$digests" -ne 0 && "$digests" -ne 3 ]]; then
+  echo "fathomctl-dist: set all three of FATHOM_OPERATOR_DIGEST, FATHOM_PROBE_DIGEST and FATHOM_NODE_AGENT_DIGEST, or none (got $digests)" >&2
+  exit 1
+fi
 for pair in operatorDigest:FATHOM_OPERATOR_DIGEST probeDigest:FATHOM_PROBE_DIGEST nodeAgentDigest:FATHOM_NODE_AGENT_DIGEST; do
   goVar="${pair%%:*}"
   envVar="${pair#*:}"
