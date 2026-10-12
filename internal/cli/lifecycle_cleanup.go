@@ -300,8 +300,9 @@ func purgeResources(ctx context.Context, f *factory, c client.Client, resources 
 	return nil
 }
 
-// refuseUnknownKinds refuses when the group holds a CRD whose kind is not in
-// purgeKinds, naming each one.
+// refuseUnknownKinds refuses when the group holds a CRD this binary cannot
+// enumerate — a kind not in purgeKinds, or one no longer served at the
+// version it lists — naming each one.
 func refuseUnknownKinds(ctx context.Context, c client.Client) error {
 	crds, err := fathomCRDs(ctx, c)
 	if err != nil {
@@ -314,7 +315,7 @@ func refuseUnknownKinds(ctx context.Context, c client.Client) error {
 	var unknown []string
 	for _, obj := range crds {
 		crd := obj.(*apiextensionsv1.CustomResourceDefinition)
-		if !known[crd.Spec.Names.Kind] {
+		if !known[crd.Spec.Names.Kind] || !servesVersion(crd, fathomv1alpha1.GroupVersion.Version) {
 			unknown = append(unknown, crd.Name)
 		}
 	}
@@ -324,9 +325,18 @@ func refuseUnknownKinds(ctx context.Context, c client.Client) error {
 	sort.Strings(unknown)
 	return refusal{
 		Reason: reasonUnknownKinds,
-		Detail: "--purge-crds would delete CRDs this fathomctl does not know (" + strings.Join(unknown, ", ") + ") without counting or exporting their resources; they come from a newer Fathom release",
+		Detail: "--purge-crds would delete CRDs this fathomctl cannot enumerate (" + strings.Join(unknown, ", ") + ") without counting or exporting their resources; they come from a newer Fathom release",
 		Next:   "run the uninstall with the fathomctl from the installed release",
 	}
+}
+
+func servesVersion(crd *apiextensionsv1.CustomResourceDefinition, version string) bool {
+	for _, v := range crd.Spec.Versions {
+		if v.Name == version && v.Served {
+			return true
+		}
+	}
+	return false
 }
 
 // fathomCRDs lists every CRD in the fathom.skaphos.io group, shipped by this

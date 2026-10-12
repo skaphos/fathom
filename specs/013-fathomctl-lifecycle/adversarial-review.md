@@ -87,6 +87,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | C7 | P2 | PR review: `--purge-crds` deletes every CRD in the group but counts and exports only the kinds this binary knows, so an older CLI could drop a newer kind's data unseen. | Fixed — refuses with `unknown-kinds`, naming the CRDs; `TestPurgeRefusesUnknownKinds`. |
 | C8 | P2 | PR review: partial discovery results were accepted, hiding an unavailable group's objects from the `--delete-namespace` inventory. | Fixed — any discovery error fails closed; `TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery` (fails on the old code). |
 | C9 | P3 | PR review: a secret-looking key with a structured value was recursed into and printed. | Fixed — the key decides, whatever the value's shape; `TestRedactValuesRedactsStructuredSecrets`. N6 (lists) stands. |
+| C10 | P2 | PR review: the C7 guard checked only the kind; a known kind a newer release stops serving at `v1alpha1` would list as absent and be purged unseen. | Fixed — a CRD must also serve `v1alpha1` or the purge refuses with `unknown-kinds`; `TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1`. |
 
 ## Re-review history
 
@@ -101,5 +102,5 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
 5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
-   CI and locally. PR review then raised C1–C9, fixed with unit regression
+   CI and locally. PR review then raised C1–C10, fixed with unit regression
    tests. Like E1, these postdate the independent review.

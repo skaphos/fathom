@@ -549,7 +549,7 @@ the release is pending or failed, or more than one Fathom release exists.
 | `unsanctioned-incompatible` | install, upgrade | An incompatible CRD change no release sanctions. |
 | `acknowledgement-required` | install, upgrade | Sanctioned incompatible changes need `--accept-incompatible-crds`. |
 | `rollback-refused` | upgrade | `--rollback-on-failure` with an incompatible CRD change in the plan. |
-| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` does not know (from a newer release), so it could not count or export its resources. Use the `fathomctl` from the installed release. |
+| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` cannot enumerate — a kind it does not know, or one no longer served at `v1alpha1` (both from a newer release) — so it could not count or export its resources. Use the `fathomctl` from the installed release. |
 | `confirmation-required` | uninstall | A destructive uninstall without a terminal and without `--yes`. |
 
 Supplying image values is a usage error rather than a refusal reason; it also

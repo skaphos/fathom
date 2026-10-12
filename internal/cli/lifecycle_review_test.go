@@ -59,6 +59,30 @@ func TestPurgeRefusesUnknownKinds(t *testing.T) {
 	}
 }
 
+// A known kind no longer served at the version this binary lists would list
+// as absent and be purged unseen, so it refuses too.
+func TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1(t *testing.T) {
+	crds := liveCRDs(t, "0.6.0", func(c *apiextensionsv1.CustomResourceDefinition) {
+		if c.Name != dnsCRD {
+			return
+		}
+		next := *c.Spec.Versions[0].DeepCopy()
+		next.Name = "v1"
+		c.Spec.Versions[0].Served, c.Spec.Versions[0].Storage = false, false
+		c.Spec.Versions = append(c.Spec.Versions, next)
+	})
+	env := newLifecycleEnv(t, crds...)
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "uninstall", "--purge-crds", "--yes")
+	var r refusal
+	if !errors.As(err, &r) || r.Reason != reasonUnknownKinds || !strings.Contains(r.Detail, dnsCRD) {
+		t.Fatalf("err = %v, want a %s refusal naming %s", err, reasonUnknownKinds, dnsCRD)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("refused purge changed the cluster: %v", w)
+	}
+}
+
 // Any discovery error fails closed: partial results would hide an
 // unavailable group's objects from the --delete-namespace inventory.
 func TestDiscoverNamespacedKindsFailsClosedOnPartialDiscovery(t *testing.T) {
