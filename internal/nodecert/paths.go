@@ -13,7 +13,7 @@ import (
 
 // defaultCertPaths is the distribution-agnostic default scan set. It spans the
 // common control-plane and node certificate locations across kubeadm, k3s,
-// RKE2, and standalone etcd. Paths that do not exist on a node — or that the
+// RKE2, AKS, and standalone etcd. Paths that do not exist on a node — or that the
 // hardened, non-root agent cannot read (e.g. root-only kubeconfigs and the
 // kubelet PKI dir) — are reported Skipped, never Error, so listing a
 // cross-distribution superset is safe and a healthy node still aggregates to
@@ -28,6 +28,10 @@ var defaultCertPaths = []string{
 	"/etc/kubernetes/scheduler.conf",
 	"/etc/kubernetes/super-admin.conf",
 	"/etc/kubernetes/kubelet.conf",
+	// AKS node certificates (apiserver.crt, ca.crt, client.crt,
+	// kubeletserver.crt). AKS keeps them here rather than under pki/; the
+	// kubeconfigs above already mount /etc/kubernetes, so this widens nothing.
+	"/etc/kubernetes/certs",
 	// kubelet client/serving certificates.
 	"/var/lib/kubelet/pki",
 	// standalone etcd.

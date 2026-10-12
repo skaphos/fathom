@@ -76,7 +76,7 @@ node-certificates   Pass     3           3         2m
 
 When `spec.paths` is empty, the agent uses a **distribution-agnostic default
 set** covering the common control-plane and node certificate locations across
-kubeadm, k3s, RKE2, standalone etcd, and the kubelet:
+kubeadm, k3s, RKE2, AKS, standalone etcd, and the kubelet:
 
 ```
 /etc/kubernetes/pki              # apiserver, kubelet-client, front-proxy, ca, etcd/
@@ -85,6 +85,7 @@ kubeadm, k3s, RKE2, standalone etcd, and the kubelet:
 /etc/kubernetes/scheduler.conf
 /etc/kubernetes/super-admin.conf
 /etc/kubernetes/kubelet.conf
+/etc/kubernetes/certs            # AKS node certs (apiserver, ca, client, kubeletserver)
 /var/lib/kubelet/pki             # kubelet client/serving certs
 /etc/etcd/pki                    # standalone etcd
 /var/lib/rancher/k3s/server/tls  # k3s server TLS
@@ -104,6 +105,42 @@ How paths are interpreted:
   reports on the paths it actually has. For explicitly configured directories,
   Kubernetes may create an empty hostPath on the node; narrow `paths` on
   immutable-OS distributions where that side effect matters.
+
+### Platform coverage and root-only certificates
+
+The agent runs as a non-root user (UID 65532) with every capability dropped, so
+it reads only files that are readable by any user. **Root-only material is out of
+scope by design.** The agent is not granted `CAP_DAC_READ_SEARCH` or root to
+reach it, because that would turn a read-only scanner into a reader of every
+private key on the node. The kubelet PKI directory is the main case: it holds
+the kubelet's private keys, so distributions make it root-only. For kubelet
+certificate health, use the kubelet's own client-certificate rotation
+(`rotateCertificates`, which kubeadm and most managed platforms enable) and its
+metrics, such as
+`kubelet_certificate_manager_client_ttl_seconds`.
+
+What the default scan set reaches on each platform:
+
+| Platform | Default paths present on nodes | Expected readability for the non-root agent |
+| --- | --- | --- |
+| kubeadm (incl. kind) | `/etc/kubernetes/pki`, the `*.conf` kubeconfigs (control-plane nodes); `/var/lib/kubelet/pki` | `pki/*.crt` are usually world-readable and are scanned. The kubeconfigs and the kubelet PKI are root-only and report `Skipped`. |
+| k3s | `/var/lib/rancher/k3s/server/tls` (server nodes); `/var/lib/kubelet/pki` if present | Depends on the k3s version's directory modes. If the TLS directory is root-only, the check reports `NoReadableCertificates` (below). |
+| RKE2 | `/var/lib/rancher/rke2/server/tls` (server nodes) | As for k3s. |
+| AKS | `/etc/kubernetes/certs`; `/var/lib/kubelet/pki` | The kubelet PKI is root-only (observed on AKS 1.36 / Ubuntu 24.04). Whether `/etc/kubernetes/certs` is world-readable is **not yet verified**. If it is not, an AKS default install reports `NoReadableCertificates`. |
+| EKS | `/etc/kubernetes/pki/ca.crt` (EKS AMIs); `/var/lib/kubelet/pki` | The managed control plane is not on your nodes. The cluster CA is usually readable; the kubelet PKI is root-only. |
+| GKE | `/var/lib/kubelet/pki` | The managed control plane is not on your nodes, and the kubelet PKI is root-only, so the default set observes nothing. Expect `NoReadableCertificates`. |
+
+When a full roll-up observes no certificates at all, `Ready` stays `True` (the
+agents are reporting) but its reason tells you why the `Skipped` verdict is
+empty:
+
+- `NoReadableCertificates` — certificates were found, but every one was
+  unreadable by the non-root agent.
+- `NoCertificatesFound` — none of the configured paths held a certificate.
+
+In both cases the check is not watching anything. Point `spec.paths` at
+world-readable certificates under the allowlist, or rely on your platform's
+own certificate monitoring.
 
 To pin an explicit set instead of the defaults:
 
@@ -128,7 +165,7 @@ absolute path (no `..`, never the host root `/`) under one of these prefixes:
 
 | Allowed prefix | Covers |
 | --- | --- |
-| `/etc/kubernetes` | kubeadm PKI (`pki/`) and the embedded-cert kubeconfigs (`*.conf`) |
+| `/etc/kubernetes` | kubeadm PKI (`pki/`), AKS node certificates (`certs/`), and the embedded-cert kubeconfigs (`*.conf`) |
 | `/var/lib/kubelet` | kubelet client/serving certificates |
 | `/etc/etcd` | standalone etcd PKI |
 | `/var/lib/etcd` | etcd data-dir PKI on some distributions |

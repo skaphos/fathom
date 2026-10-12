@@ -7,6 +7,7 @@ package nodecert
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,8 @@ func TestPathAllowed(t *testing.T) {
 		{"etcd pki", "/etc/etcd/pki", true},
 		{"var lib etcd", "/var/lib/etcd", true},
 		{"rancher k3s tls", "/var/lib/rancher/k3s/server/tls", true},
+		{"aks node certs", "/etc/kubernetes/certs", true},
+		{"aks kubelet serving cert", "/etc/kubernetes/certs/kubeletserver.crt", true},
 		{"trailing slash still under prefix", "/etc/kubernetes/", true},
 
 		{"host root rejected", "/", false},
@@ -59,6 +62,36 @@ func TestDefaultCertPathsAreAllowed(t *testing.T) {
 		if !PathAllowed(p) {
 			t.Errorf("default cert path %q is not under an allowed prefix %v", p, AllowedPathPrefixes())
 		}
+	}
+}
+
+// TestDefaultCertPathsCoverPlatforms pins one known certificate location per
+// supported platform in the default scan set, so dropping one is a deliberate,
+// test-visible change rather than a silent loss of coverage (#334: AKS).
+func TestDefaultCertPathsCoverPlatforms(t *testing.T) {
+	want := map[string]string{
+		"kubeadm": "/etc/kubernetes/pki",
+		"AKS":     "/etc/kubernetes/certs",
+		"kubelet": "/var/lib/kubelet/pki",
+		"etcd":    "/etc/etcd/pki",
+		"k3s":     "/var/lib/rancher/k3s/server/tls",
+		"RKE2":    "/var/lib/rancher/rke2/server/tls",
+	}
+	defaults := DefaultCertPaths()
+	for platform, p := range want {
+		if !slices.Contains(defaults, p) {
+			t.Errorf("%s path %q missing from DefaultCertPaths() %v", platform, p, defaults)
+		}
+	}
+}
+
+// TestDefaultCertPathsMountSurface guards that adding AKS's /etc/kubernetes/certs
+// did not widen the agent's hostPath surface: it collapses into the
+// /etc/kubernetes mount the kubeadm kubeconfigs already require.
+func TestDefaultCertPathsMountSurface(t *testing.T) {
+	want := []string{"/etc/etcd/pki", "/etc/kubernetes", "/var/lib/kubelet/pki", "/var/lib/rancher/k3s/server/tls", "/var/lib/rancher/rke2/server/tls"}
+	if got := MinimalMountDirs(DefaultCertPaths()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("MinimalMountDirs(DefaultCertPaths()) = %v, want %v", got, want)
 	}
 }
 

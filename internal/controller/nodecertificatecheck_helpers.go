@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -154,6 +155,50 @@ func aggregateNodeReports(reports []nodecert.NodeReport) fathomv1alpha1.HealthRe
 		}
 	}
 	return fathomv1alpha1.WorstResult(results, false)
+}
+
+// Ready reasons for a complete roll-up. Reporting means at least one path
+// produced a verdict (Pass/Warn/Fail/Error); the other two separate an
+// all-Skipped verdict that observed nothing from a healthy one, which
+// lastResult alone cannot (#334).
+const (
+	nodeCertReasonReporting              = "Reporting"
+	nodeCertReasonNoReadableCertificates = "NoReadableCertificates"
+	nodeCertReasonNoCertificatesFound    = "NoCertificatesFound"
+)
+
+// nodeCertReportingReason picks the Ready=True reason and message for a complete
+// roll-up of reports. Ready stays True in every case: the agents are reporting
+// and the Skipped-not-Error contract holds; only the explanation changes.
+//
+// Today the agent emits Skipped only for permission-denied paths (absent paths
+// are omitted), so any Skipped result is unreadable. A Skipped that is not
+// (from a future agent) falls through to NoCertificatesFound rather than being
+// misreported as a permission problem.
+func nodeCertReportingReason(reports []nodecert.NodeReport) (reason, message string) {
+	paths := map[string]struct{}{}
+	nodes := map[string]struct{}{}
+	allUnreadable := true
+	for _, rep := range reports {
+		for _, c := range rep.Certs {
+			if c.Outcome != nodecert.OutcomeSkipped {
+				return nodeCertReasonReporting, "Node-agents are reporting and a HealthReport was rolled up."
+			}
+			if !nodecert.IsUnreadable(c) {
+				allUnreadable = false
+			}
+			paths[c.Path] = struct{}{}
+			nodes[rep.Node] = struct{}{}
+		}
+	}
+	if len(paths) > 0 && allUnreadable {
+		// Counts are distinct paths and nodes, not node×path results, so the
+		// message reads the same however many nodes share a root-only path.
+		return nodeCertReasonNoReadableCertificates, fmt.Sprintf(
+			"Node-agents are reporting, but all %d certificate path(s) found on %d node(s) were unreadable by the non-root agent, so the Skipped verdict observed nothing. "+
+				"Root-only material such as the kubelet PKI is out of scope; point spec.paths at world-readable certificates.", len(paths), len(nodes))
+	}
+	return nodeCertReasonNoCertificatesFound, "Node-agents are reporting, but no certificates were found at the configured paths, so the Skipped verdict observed nothing."
 }
 
 // healthReportForNodeCert builds the rolled-up HealthReport: one check per

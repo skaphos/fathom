@@ -373,7 +373,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		consumeNodeCertRunTrigger(&check, before, ds, expected, reports, token, time.Now())
 	}
 
-	r.setReadyFromState(&check, ds, expected, reported)
+	r.setReadyFromState(&check, ds, expected, reported, reports)
 	return r.finish(ctx, log, before, &check, interval)
 }
 
@@ -1309,7 +1309,7 @@ func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.Nod
 	})
 }
 
-func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}) {
+func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, reports []nodecert.NodeReport) {
 	switch {
 	case ds.Status.DesiredNumberScheduled == 0:
 		r.setReady(check, metav1.ConditionFalse, "NoMatchingNodes", "No nodes match the node-agent DaemonSet.")
@@ -1324,7 +1324,8 @@ func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1
 		// flagged as a mismatch.
 		r.setReady(check, metav1.ConditionFalse, "AgentRollingOut", "Node-agent DaemonSet is still rolling out.")
 	default:
-		r.setReady(check, metav1.ConditionTrue, "Reporting", "Node-agents are reporting and a HealthReport was rolled up.")
+		reason, message := nodeCertReportingReason(reports)
+		r.setReady(check, metav1.ConditionTrue, reason, message)
 	}
 }
 

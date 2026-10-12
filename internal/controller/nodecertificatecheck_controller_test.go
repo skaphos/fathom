@@ -494,6 +494,42 @@ var _ = Describe("NodeCertificateCheck Controller", func() {
 		Expect(metav1.IsControlledBy(cm, updated)).To(BeTrue())
 	})
 
+	It("explains an all-unreadable roll-up as NoReadableCertificates rather than Reporting", func() {
+		// Regression for #334: on AKS every default path the non-root agent finds
+		// is root-only, so the fleet aggregates to Skipped having observed nothing.
+		// Ready stays True (the agents are reporting) but must say so.
+		name := types.NamespacedName{Name: "nc-unreadable", Namespace: "default"}
+		check := &fathomv1alpha1.NodeCertificateCheck{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+		}
+		Expect(k8sClient.Create(ctx, check)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
+
+		r := newNodeCertReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		setNodeAgentDaemonSetStatus(ctx, check, 2, 2)
+
+		denied := "permission denied: the non-root node-agent cannot read this path"
+		for _, node := range []string{"node-a", "node-b"} {
+			writeNodeReport(ctx, check, node, []nodecert.CertResult{
+				{Path: "/var/lib/kubelet/pki", Source: "dir", Outcome: nodecert.OutcomeSkipped, Summary: denied},
+			})
+		}
+
+		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultSkipped)))
+		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(ready.Reason).To(Equal(nodeCertReasonNoReadableCertificates))
+		Expect(ready.Message).To(ContainSubstring("all 1 certificate path(s) found on 2 node(s)"))
+	})
+
 	It("refreshes liveness without a new HealthReport when the aggregate is unchanged across an interval", func() {
 		// Regression for #157: a healthy cluster re-scanning every interval used to
 		// mint a fresh identical HealthReport each time — the deterministic name

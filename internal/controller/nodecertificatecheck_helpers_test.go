@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +47,59 @@ func TestAggregateNodeReports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := aggregateNodeReports(tt.reports); got != tt.want {
 				t.Errorf("aggregateNodeReports = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNodeCertReportingReason pins the #334 Ready=True explanation: an
+// all-Skipped roll-up that observed nothing must not read as "Reporting", and
+// all-unreadable is told apart from nothing-found.
+func TestNodeCertReportingReason(t *testing.T) {
+	const denied = "permission denied: the non-root node-agent cannot read this path"
+	const kubeletPKI, aksCerts = "/var/lib/kubelet/pki", "/etc/kubernetes/certs"
+	cert := func(path string, o nodecert.Outcome, summary string) nodecert.CertResult {
+		return nodecert.CertResult{Path: path, Outcome: o, Summary: summary}
+	}
+	report := func(node string, certs ...nodecert.CertResult) nodecert.NodeReport {
+		return nodecert.NodeReport{Node: node, Certs: certs}
+	}
+
+	tests := []struct {
+		name        string
+		reports     []nodecert.NodeReport
+		wantReason  string
+		wantMessage string
+	}{
+		{"pass observed", []nodecert.NodeReport{report("a", cert(aksCerts, nodecert.OutcomePass, ""))}, nodeCertReasonReporting, "rolled up"},
+		{"pass beside unreadable", []nodecert.NodeReport{report("a", cert(kubeletPKI, nodecert.OutcomeSkipped, denied)), report("b", cert(aksCerts, nodecert.OutcomePass, ""))}, nodeCertReasonReporting, "rolled up"},
+		{"fail observed", []nodecert.NodeReport{report("a", cert(aksCerts, nodecert.OutcomeFail, ""))}, nodeCertReasonReporting, "rolled up"},
+		// Error is a verdict about the path, not an absence of one, so it reads as Reporting.
+		{"all error", []nodecert.NodeReport{report("a", cert(aksCerts, nodecert.OutcomeError, "cannot read"))}, nodeCertReasonReporting, "rolled up"},
+		{"one root-only path on three nodes (AKS default)", []nodecert.NodeReport{
+			report("a", cert(kubeletPKI, nodecert.OutcomeSkipped, denied)),
+			report("b", cert(kubeletPKI, nodecert.OutcomeSkipped, denied)),
+			report("c", cert(kubeletPKI, nodecert.OutcomeSkipped, denied)),
+		}, nodeCertReasonNoReadableCertificates, "all 1 certificate path(s) found on 3 node(s)"},
+		{"two root-only paths on two nodes", []nodecert.NodeReport{
+			report("a", cert(kubeletPKI, nodecert.OutcomeSkipped, denied), cert(aksCerts, nodecert.OutcomeSkipped, denied)),
+			report("b", cert(kubeletPKI, nodecert.OutcomeSkipped, denied)),
+		}, nodeCertReasonNoReadableCertificates, "all 2 certificate path(s) found on 2 node(s)"},
+		{"no certs at all", []nodecert.NodeReport{report("a"), report("b")}, nodeCertReasonNoCertificatesFound, "no certificates were found"},
+		{"no reports", nil, nodeCertReasonNoCertificatesFound, "no certificates were found"},
+		// No current agent emits a non-permission Skipped; a future one must not
+		// be misreported as a permission problem.
+		{"future non-permission skipped", []nodecert.NodeReport{report("a", cert(aksCerts, nodecert.OutcomeSkipped, "something else"), cert(kubeletPKI, nodecert.OutcomeSkipped, denied))}, nodeCertReasonNoCertificatesFound, "no certificates were found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reason, message := nodeCertReportingReason(tt.reports)
+			if reason != tt.wantReason {
+				t.Errorf("reason = %q, want %q", reason, tt.wantReason)
+			}
+			if !strings.Contains(message, tt.wantMessage) {
+				t.Errorf("message = %q, want it to contain %q", message, tt.wantMessage)
 			}
 		})
 	}
