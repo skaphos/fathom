@@ -310,11 +310,24 @@ func daysFromDuration(d time.Duration) int {
 	return int(math.Ceil(days))
 }
 
+// permissionDeniedPrefix starts every permission-denied summary. IsUnreadable
+// matches on it rather than the full text so the operator still classifies
+// reports from an older agent whose summary wording differed.
+const permissionDeniedPrefix = "permission denied:"
+
 // permissionDeniedSummary describes a path the hardened, non-root node-agent
 // cannot read. Such paths are reported Skipped (not Error) so a root-only
 // certificate set — common on kubeadm nodes — never makes a healthy node's
-// aggregate report Error.
-const permissionDeniedSummary = "permission denied: the non-root node-agent cannot read this path (run the agent with elevated read access to scan root-only certificates)"
+// aggregate report Error. Root-only material is out of scope for the non-root
+// agent by design (#334), so the summary says so instead of naming a remedy
+// the agent does not offer.
+const permissionDeniedSummary = permissionDeniedPrefix + " the non-root node-agent cannot read this path; root-only certificates (such as the kubelet PKI) are out of scope for the agent"
+
+// IsUnreadable reports whether r is a path the non-root node-agent was denied
+// read access to, as opposed to one that held no certificates.
+func IsUnreadable(r CertResult) bool {
+	return r.Outcome == OutcomeSkipped && strings.HasPrefix(r.Summary, permissionDeniedPrefix)
+}
 
 func errorResult(p, source, summary string) CertResult {
 	return CertResult{Path: p, Source: source, Outcome: OutcomeError, Summary: summary}

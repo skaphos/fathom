@@ -7,6 +7,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -154,6 +155,43 @@ func aggregateNodeReports(reports []nodecert.NodeReport) fathomv1alpha1.HealthRe
 		}
 	}
 	return fathomv1alpha1.WorstResult(results, false)
+}
+
+// Ready reasons for a complete roll-up. Reporting means at least one certificate
+// was actually read; the other two separate an all-Skipped verdict that observed
+// nothing from a healthy one, which lastResult alone cannot (#334).
+const (
+	nodeCertReasonReporting              = "Reporting"
+	nodeCertReasonNoReadableCertificates = "NoReadableCertificates"
+	nodeCertReasonNoCertificatesFound    = "NoCertificatesFound"
+)
+
+// nodeCertReportingReason picks the Ready=True reason and message for a complete
+// roll-up of reports. Ready stays True in every case: the agents are reporting
+// and the Skipped-not-Error contract holds; only the explanation changes.
+func nodeCertReportingReason(reports []nodecert.NodeReport) (reason, message string) {
+	var total, unreadable int
+	for _, rep := range reports {
+		for _, c := range rep.Certs {
+			if c.Outcome != nodecert.OutcomeSkipped {
+				return nodeCertReasonReporting, "Node-agents are reporting and a HealthReport was rolled up."
+			}
+			total++
+			if nodecert.IsUnreadable(c) {
+				unreadable++
+			}
+		}
+	}
+	if total > 0 && unreadable == total {
+		return nodeCertReasonNoReadableCertificates, fmt.Sprintf(
+			"Node-agents are reporting, but all %d certificate path(s) they found were unreadable by the non-root agent, so the Skipped verdict observed nothing. "+
+				"Root-only material such as the kubelet PKI is out of scope; point spec.paths at world-readable certificates.", total)
+	}
+	message = "Node-agents are reporting, but no certificates were found at the configured paths, so the Skipped verdict observed nothing."
+	if unreadable > 0 {
+		message = fmt.Sprintf("Node-agents are reporting, but no readable certificates were found at the configured paths (%d of %d path(s) were unreadable by the non-root agent), so the Skipped verdict observed nothing.", unreadable, total)
+	}
+	return nodeCertReasonNoCertificatesFound, message
 }
 
 // healthReportForNodeCert builds the rolled-up HealthReport: one check per

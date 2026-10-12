@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +47,49 @@ func TestAggregateNodeReports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := aggregateNodeReports(tt.reports); got != tt.want {
 				t.Errorf("aggregateNodeReports = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNodeCertReportingReason pins the #334 Ready=True explanation: an
+// all-Skipped roll-up that observed nothing must not read as "Reporting", and
+// all-unreadable is told apart from nothing-found.
+func TestNodeCertReportingReason(t *testing.T) {
+	const denied = "permission denied: the non-root node-agent cannot read this path"
+	cert := func(o nodecert.Outcome, summary string) nodecert.CertResult {
+		return nodecert.CertResult{Outcome: o, Summary: summary}
+	}
+	report := func(node string, certs ...nodecert.CertResult) nodecert.NodeReport {
+		return nodecert.NodeReport{Node: node, Certs: certs}
+	}
+
+	tests := []struct {
+		name        string
+		reports     []nodecert.NodeReport
+		wantReason  string
+		wantMessage string
+	}{
+		{"pass observed", []nodecert.NodeReport{report("a", cert(nodecert.OutcomePass, ""))}, nodeCertReasonReporting, "rolled up"},
+		{"pass beside unreadable", []nodecert.NodeReport{report("a", cert(nodecert.OutcomeSkipped, denied)), report("b", cert(nodecert.OutcomePass, ""))}, nodeCertReasonReporting, "rolled up"},
+		{"fail observed", []nodecert.NodeReport{report("a", cert(nodecert.OutcomeFail, ""))}, nodeCertReasonReporting, "rolled up"},
+		{"all unreadable across nodes (AKS default)", []nodecert.NodeReport{
+			report("a", cert(nodecert.OutcomeSkipped, denied), cert(nodecert.OutcomeSkipped, denied)),
+			report("b", cert(nodecert.OutcomeSkipped, denied)),
+		}, nodeCertReasonNoReadableCertificates, "all 3 certificate path(s)"},
+		{"no certs at all", []nodecert.NodeReport{report("a"), report("b")}, nodeCertReasonNoCertificatesFound, "no certificates were found"},
+		{"no reports", nil, nodeCertReasonNoCertificatesFound, "no certificates were found"},
+		{"empty plus unreadable", []nodecert.NodeReport{report("a", cert(nodecert.OutcomeSkipped, "no certificates found"), cert(nodecert.OutcomeSkipped, denied))}, nodeCertReasonNoCertificatesFound, "1 of 2 path(s) were unreadable"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reason, message := nodeCertReportingReason(tt.reports)
+			if reason != tt.wantReason {
+				t.Errorf("reason = %q, want %q", reason, tt.wantReason)
+			}
+			if !strings.Contains(message, tt.wantMessage) {
+				t.Errorf("message = %q, want it to contain %q", message, tt.wantMessage)
 			}
 		})
 	}

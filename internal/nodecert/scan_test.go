@@ -216,7 +216,7 @@ func TestScanPermissionDeniedIsSkippedNotError(t *testing.T) {
 	if err := os.Chmod(file, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	if got := Scan(ScanOptions{Paths: []string{file}, Now: fixedNow}); len(got) != 1 || got[0].Outcome != OutcomeSkipped {
+	if got := Scan(ScanOptions{Paths: []string{file}, Now: fixedNow}); len(got) != 1 || !IsUnreadable(got[0]) {
 		t.Fatalf("unreadable file: want 1 Skipped, got %+v", got)
 	}
 
@@ -227,7 +227,7 @@ func TestScanPermissionDeniedIsSkippedNotError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) }) // let TempDir cleanup recurse
-	if got := Scan(ScanOptions{Paths: []string{sub}, Now: fixedNow}); len(got) != 1 || got[0].Outcome != OutcomeSkipped {
+	if got := Scan(ScanOptions{Paths: []string{sub}, Now: fixedNow}); len(got) != 1 || !IsUnreadable(got[0]) {
 		t.Fatalf("unreadable dir: want 1 Skipped, got %+v", got)
 	}
 
@@ -240,8 +240,32 @@ func TestScanPermissionDeniedIsSkippedNotError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(noexec, 0o755) })
-	if got := Scan(ScanOptions{Paths: []string{inner}, Now: fixedNow}); len(got) != 1 || got[0].Outcome != OutcomeSkipped {
+	if got := Scan(ScanOptions{Paths: []string{inner}, Now: fixedNow}); len(got) != 1 || !IsUnreadable(got[0]) {
 		t.Fatalf("unstattable file (non-searchable parent): want 1 Skipped, got %+v", got)
+	}
+}
+
+// TestIsUnreadable pins the operator-side classification of permission-denied
+// results (#334), including the summary an older agent wrote, so an all-Skipped
+// roll-up during an upgrade is still explained correctly.
+func TestIsUnreadable(t *testing.T) {
+	tests := []struct {
+		name string
+		r    CertResult
+		want bool
+	}{
+		{"current summary", skippedResult("/var/lib/kubelet/pki", "dir", permissionDeniedSummary), true},
+		{"pre-#334 summary", skippedResult("/var/lib/kubelet/pki", "dir", "permission denied: the non-root node-agent cannot read this path (run the agent with elevated read access to scan root-only certificates)"), true},
+		{"empty directory", skippedResult("/etc/kubernetes/certs", "dir", "no certificates found"), false},
+		{"error with permission text is not a skip", errorResult("/etc/kubernetes/pki", "file", permissionDeniedSummary), false},
+		{"pass", CertResult{Outcome: OutcomePass}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsUnreadable(tc.r); got != tc.want {
+				t.Fatalf("IsUnreadable(%+v) = %v, want %v", tc.r, got, tc.want)
+			}
+		})
 	}
 }
 
