@@ -348,6 +348,7 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 	}
 	inv := &namespaceInventory{}
 	seen := map[namespaceEntry]bool{}
+	var unlistable []string
 	for _, gvk := range gvks {
 		if derivedKinds[gvk.Kind] {
 			continue
@@ -355,7 +356,13 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(gvk.GroupVersion().WithKind(gvk.Kind + "List"))
 		if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-			if apierrors.IsNotFound(err) || apierrors.IsMethodNotSupported(err) || apierrors.IsForbidden(err) || meta.IsNoMatchError(err) {
+			// A kind the user cannot list hides objects the namespace
+			// deletion would still remove, so it stops the uninstall.
+			if apierrors.IsForbidden(err) {
+				unlistable = append(unlistable, gvk.Kind)
+				continue
+			}
+			if apierrors.IsNotFound(err) || apierrors.IsMethodNotSupported(err) || meta.IsNoMatchError(err) {
 				continue
 			}
 			return nil, fmt.Errorf("list %s in %s: %w", gvk.Kind, ns, err)
@@ -372,6 +379,14 @@ func inventoryNamespace(ctx context.Context, f *factory, c client.Client, ns str
 			} else {
 				inv.Foreign = append(inv.Foreign, entry)
 			}
+		}
+	}
+	if len(unlistable) > 0 {
+		sort.Strings(unlistable)
+		return nil, refusal{
+			Reason: reasonMissingPermissions,
+			Detail: fmt.Sprintf("--delete-namespace cannot list %s in %s, so it cannot show what deleting the namespace would remove", strings.Join(unlistable, ", "), ns),
+			Next:   "grant list on those kinds in " + ns + ", or rerun without --delete-namespace",
 		}
 	}
 	sortEntries(inv.Foreign)

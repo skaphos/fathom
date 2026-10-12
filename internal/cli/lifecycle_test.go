@@ -291,3 +291,28 @@ func TestCLIChartVersionRefusesDevBuilds(t *testing.T) {
 		t.Errorf("cliChartVersion = %q, %v", v, err)
 	}
 }
+
+// An operator the Helm release does not own is a second install; the
+// release must not be treated as the only one (uninstall would sweep both).
+func TestDetectInstallRefusesAReleaseBesideAnotherOperator(t *testing.T) {
+	cases := map[string]client.Object{
+		"kustomize elsewhere":        managerDeployment("fathom-kustomize", map[string]string{managedByKey: "kustomize"}, true),
+		"olm elsewhere":              managerDeployment("operators", map[string]string{"olm.owner": "fathom.v0.5.1"}, true),
+		"another release":            managerDeployment("fathom-system", map[string]string{instanceLabel: "other"}, true),
+		"unlabelled, same namespace": managerDeployment("fathom-system", map[string]string{managedByKey: "kustomize"}, true),
+	}
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			env := newLifecycleEnv(t, extra)
+			env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-system", ChartVersion: "0.5.1"}, true)
+			_, err := detectInstall(context.Background(), env.c, env.rc)
+			var r refusal
+			if !errors.As(err, &r) || r.Reason != reasonMultipleInstalls {
+				t.Fatalf("err = %v, want refusal %s", err, reasonMultipleInstalls)
+			}
+			if !strings.Contains(r.Detail, "fathom-system/fathom") {
+				t.Errorf("refusal does not name the release: %s", r.Detail)
+			}
+		})
+	}
+}

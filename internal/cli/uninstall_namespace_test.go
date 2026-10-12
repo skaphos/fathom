@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -119,5 +120,24 @@ func TestPurgeAndDeleteNamespaceAskOnce(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "--purge-crds deletes") || !strings.Contains(errOut, "ConfigMap team-settings") {
 		t.Errorf("the single prompt does not cover both:\n%s", errOut)
+	}
+}
+
+// A kind the user cannot list hides objects the namespace deletion would
+// remove, so the uninstall stops before anything changes.
+func TestDeleteNamespaceRefusesWhenAKindCannotBeListed(t *testing.T) {
+	env := nsEnv(t)
+	env.listForbidden["SecretList"] = true
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "uninstall", "--delete-namespace", "--yes")
+	var r refusal
+	if !errors.As(err, &r) || r.Reason != reasonMissingPermissions || !strings.Contains(r.Detail, "Secret") {
+		t.Fatalf("err = %v, want a %s refusal naming Secret", err, reasonMissingPermissions)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("refused uninstall changed the cluster, release included: %v", w)
+	}
+	if !exists(t, env.c, namespaceObj("fathom-system")) {
+		t.Error("namespace was deleted")
 	}
 }

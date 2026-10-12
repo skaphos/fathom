@@ -236,6 +236,17 @@ func detectInstall(ctx context.Context, c client.Client, rc releaseClient, extra
 			Next:   "helm uninstall <release> -n <namespace>  # keep exactly one",
 		}
 	case len(releases) == 1:
+		// An operator the release does not own is a second install (kustomize,
+		// OLM, another tool); treating the cluster as one Helm install would
+		// let uninstall sweep that install's objects too.
+		if stray := strayManagers(releases[0], managers); len(stray) > 0 {
+			return nil, refusal{
+				Reason: reasonMultipleInstalls,
+				Detail: fmt.Sprintf("Helm release %s/%s and Fathom operator deployment(s) it does not own (%s); one install per cluster is supported because the CRDs are shared",
+					releases[0].Namespace, releases[0].Name, strings.Join(stray, ", ")),
+				Next: "kubectl get deploy -A -l " + operatorLabelKey + "=" + operatorLabelValue + "  # keep exactly one",
+			}
+		}
 		return helmInstall(releases[0], managers), nil
 	}
 	if len(managers) == 0 {
@@ -268,7 +279,7 @@ func helmInstall(r helmRelease, managers []*appsv1.Deployment) *install {
 		in.InstalledBy = installedByCLI
 	}
 	for _, d := range managers {
-		if d.Namespace == r.Namespace && (d.Labels[instanceLabel] == r.Name || d.Labels[instanceLabel] == "") {
+		if releaseOwns(r, d) {
 			describeManager(in, d)
 			break
 		}
@@ -277,6 +288,26 @@ func helmInstall(r helmRelease, managers []*appsv1.Deployment) *install {
 		in.ReadyReason = "operator Deployment not found in namespace " + r.Namespace
 	}
 	return in
+}
+
+// releaseOwns reports whether d is the release's manager Deployment.
+func releaseOwns(r helmRelease, d *appsv1.Deployment) bool {
+	return d.Namespace == r.Namespace && (d.Labels[instanceLabel] == r.Name || d.Labels[instanceLabel] == "")
+}
+
+// strayManagers names every manager Deployment beyond the one the release
+// owns; a release has at most one.
+func strayManagers(r helmRelease, managers []*appsv1.Deployment) []string {
+	var stray []string
+	owned := false
+	for _, d := range managers {
+		if !owned && releaseOwns(r, d) {
+			owned = true
+			continue
+		}
+		stray = append(stray, d.Namespace+"/"+d.Name)
+	}
+	return stray
 }
 
 // foreignInstall classifies an operator not managed by Helm, so the refusal

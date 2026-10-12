@@ -8,6 +8,7 @@ package scripts
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,14 +104,31 @@ func TestUpgradePathReleasedEntriesAreUnchanged(t *testing.T) {
 	if err != nil {
 		t.Skipf("%s has no %s (it predates the declaration)", tag, upgradePathFile)
 	}
-	released := parseUpgradePathDoc(t, raw)
-	current := readUpgradePath(t)
+	for _, v := range releasedHistoryViolations(parseUpgradePathDoc(t, raw), readUpgradePath(t), tag, tagVersion) {
+		t.Error(v)
+	}
+}
+
+// releasedHistoryViolations compares the declaration with the copy released
+// at tag: the floor and every entry at or below the tag are fixed, and no
+// entry at or below it may be added.
+func releasedHistoryViolations(released, current upgradePathDoc, tag string, tagVersion *semver.Version) []string {
+	var out []string
 	if current.Floor != released.Floor {
-		t.Errorf("floor changed from %s (at %s) to %s; it is never changed once released", released.Floor, tag, current.Floor)
+		out = append(out, fmt.Sprintf("floor changed from %s (at %s) to %s; it is never changed once released", released.Floor, tag, current.Floor))
 	}
 	byVersion := map[string]any{}
 	for _, r := range current.Releases {
 		byVersion[r.Version] = r
+	}
+	releasedVersions := map[string]bool{}
+	for _, r := range released.Releases {
+		releasedVersions[r.Version] = true
+	}
+	for _, r := range current.Releases {
+		if !semver.MustParse(r.Version).GreaterThan(tagVersion) && !releasedVersions[r.Version] {
+			out = append(out, fmt.Sprintf("entry %s is at or below %s but was not in that release's declaration; released history is never added to", r.Version, tag))
+		}
 	}
 	for _, r := range released.Releases {
 		if semver.MustParse(r.Version).GreaterThan(tagVersion) {
@@ -118,12 +136,41 @@ func TestUpgradePathReleasedEntriesAreUnchanged(t *testing.T) {
 		}
 		got, ok := byVersion[r.Version]
 		if !ok {
-			t.Errorf("released entry %s was removed", r.Version)
+			out = append(out, fmt.Sprintf("released entry %s was removed", r.Version))
 			continue
 		}
 		if !reflect.DeepEqual(got, any(r)) {
-			t.Errorf("released entry %s was edited:\n got %+v\nwant %+v", r.Version, got, r)
+			out = append(out, fmt.Sprintf("released entry %s was edited:\n got %+v\nwant %+v", r.Version, got, r))
 		}
+	}
+	return out
+}
+
+func TestReleasedHistoryViolations(t *testing.T) {
+	parse := func(src string) upgradePathDoc { return parseUpgradePathDoc(t, []byte(src)) }
+	released := parse("floor: 0.5.0\nreleases:\n- version: 0.5.0\n- version: 0.6.0\n")
+	cases := map[string]struct {
+		current string
+		want    []string
+	}{
+		"appended after the tag": {current: "floor: 0.5.0\nreleases:\n- version: 0.5.0\n- version: 0.6.0\n- version: 0.7.0\n"},
+		"floor changed":          {current: "floor: 0.4.0\nreleases:\n- version: 0.5.0\n- version: 0.6.0\n", want: []string{"floor changed"}},
+		"released entry removed": {current: "floor: 0.5.0\nreleases:\n- version: 0.6.0\n", want: []string{"0.5.0 was removed"}},
+		"released entry edited":  {current: "floor: 0.5.0\nreleases:\n- version: 0.5.0\n- version: 0.6.0\n  stop: true\n", want: []string{"0.6.0 was edited"}},
+		"entry backdated":        {current: "floor: 0.5.0\nreleases:\n- version: 0.5.0\n- version: 0.5.5\n- version: 0.6.0\n", want: []string{"entry 0.5.5 is at or below v0.6.0"}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := releasedHistoryViolations(released, parse(tc.current), "v0.6.0", semver.MustParse("0.6.0"))
+			if len(got) != len(tc.want) {
+				t.Fatalf("violations = %q, want %d matching %q", got, len(tc.want), tc.want)
+			}
+			for i, w := range tc.want {
+				if !strings.Contains(got[i], w) {
+					t.Errorf("violation %d = %q, want it to mention %q", i, got[i], w)
+				}
+			}
+		})
 	}
 }
 

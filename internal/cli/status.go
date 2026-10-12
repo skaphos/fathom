@@ -89,7 +89,14 @@ func runStatus(ctx context.Context, cmd *cobra.Command, f *factory) error {
 	var r refusal
 	if errors.As(err, &r) && r.Reason == reasonMultipleInstalls {
 		// Reported, not refused: status describes the cluster as it is.
-		_, _ = fmt.Fprintf(out, "Fathom:     %s\n", r.Detail)
+		if f.opts.output.structured() {
+			report := &statusReport{Installed: true, CLIVersion: clientVersion(), Problems: []string{r.Detail}}
+			if err := encode(out, f.opts.output, report); err != nil {
+				return err
+			}
+		} else {
+			_, _ = fmt.Fprintf(out, "Fathom:     %s\n", r.Detail)
+		}
 		return errors.New("more than one Fathom install")
 	}
 	if err != nil {

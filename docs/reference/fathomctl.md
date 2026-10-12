@@ -467,7 +467,10 @@ they are not garbage-collected with them.
 
 `--delete-namespace` lists every object in the namespace before anything is
 removed and names those Fathom did not create. Objects Kubernetes creates in
-every namespace are reported, not treated as someone else's.
+every namespace are reported, not treated as someone else's. If the identity
+cannot list a kind in the namespace, the verb refuses with
+`missing-permissions`, naming the kind, before anything changes: it would
+otherwise delete objects it never showed.
 
 Everything that needs consent is gathered into one confirmation before
 anything changes: `--purge-crds` always needs it, and `--delete-namespace`
@@ -529,7 +532,7 @@ the release is pending or failed, or more than one Fathom release exists.
 | Reason | Verbs | Meaning |
 | --- | --- | --- |
 | `missing-permissions` | install, upgrade, uninstall | The kubeconfig identity lacks a permission the verb needs; each is named. See [Permissions](#permissions). |
-| `multiple-installs` | all four | More than one Fathom release (or operator Deployment) exists; the CRDs are shared, so one install per cluster is supported. `status` reports it and exits `1`. |
+| `multiple-installs` | all four | More than one Fathom release (or operator Deployment) exists, including a release beside an operator Deployment it does not own (for example a kustomize or OLM install); the CRDs are shared, so one install per cluster is supported. `status` reports it (in the `-o` format requested) and exits `1`. |
 | `not-helm` | install, upgrade, uninstall | The operator was installed by kustomize, OLM or an unknown tool. |
 | `release-pending` | install, upgrade | The release is pending, failed or mid-uninstall; recover with `helm history` / `helm rollback`, or — when there is no earlier revision — `fathomctl uninstall` and reinstall. |
 | `namespace-missing` | install | The namespace does not exist and `--create-namespace` was not given. |

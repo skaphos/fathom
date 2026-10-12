@@ -8,9 +8,10 @@ SPDX-License-Identifier: MIT
 **Result: PASS** — 2026-10-12T04:33:50Z
 
 No P0/P1/P2 finding remains unresolved; every P3 has a recorded disposition.
-**Condition:** the `lifecycle` e2e shard (T052) has never executed — no
-Linux/Cilium-capable environment was available locally — so the PR test plan
-must say so and rely on the `kind e2e` CI run. This record is workflow
+The review was conditional on the `lifecycle` e2e shard (T052), which had not
+run when it concluded. It has since run: its first CI run found E1 and E2
+(below), and after their fixes all 8 of its specs pass both in the `kind e2e`
+CI workflow on PR #370 and locally on kind. This record is workflow
 assistance, not a CI gate.
 
 ## Reviewer independence
@@ -76,6 +77,11 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | N6 | P3 | `redactValues` does not descend into lists. | Accepted — no chart value carries a secret inside a list today. |
 | N7 | P3 | `waitBounded` aborts on a transient API error instead of retrying. | Deferred — bounded and reported; revisit with real-cluster e2e data. |
 | E1 | P1 | Found by the first CI run of the `lifecycle` e2e shard (PR #370), after this review: Helm v4 names the server-side-apply field manager after the binary, so `fathomctl upgrade` from a differently named binary (and `helm` against a `fathomctl`-made release) conflicted on every chart object and failed after the CRDs were applied. | Fixed after the review — Helm-driven applies use field manager `helm` (`lifecycle_helm.go`), matching the `helm` CLI; unit test `TestHelmReleaseClientUsesHelmsFieldManager`; reference doc updated. Verified by re-running the CI `lifecycle` shard. |
+| E2 | P2 | Found by the same shard's rerun: the upgrade spec read CRD `managedFields` through `kubectl get -o json`, which omits them by default, so its CRDs-before-ReplicaSet check (SC-002) saw no `fathomctl` write and failed. A test defect; the CLI's ordering was correct. | Fixed — the spec passes `--show-managed-fields`. Verified by the CI and local `lifecycle` shard runs (8/8). |
+| C1 | P2 | PR review: one Helm release beside an operator Deployment it does not own (kustomize, OLM, another release) was treated as a single Helm install, so `uninstall` could sweep the other install's objects. | Fixed — `detectInstall` refuses with `multiple-installs`, naming each stray Deployment; `TestDetectInstallRefusesAReleaseBesideAnotherOperator`. |
+| C2 | P2 | PR review: the `--delete-namespace` inventory skipped kinds the user may not list, so it could delete objects it never showed. | Fixed — a `Forbidden` list refuses with `missing-permissions` before anything changes; `TestDeleteNamespaceRefusesWhenAKindCannotBeListed`. |
+| C3 | P3 | PR review: `status -o json\|yaml` with more than one install printed table text. | Fixed — a structured report whose `problems` names the installs, still exiting 1; `TestStatusStructuredOutputWithTwoReleases`. |
+| C4 | P3 | PR review: the upgrade-path append-only gate did not reject a new entry dated at or below the latest tag. | Fixed — `releasedHistoryViolations` flags it; `TestReleasedHistoryViolations`. |
 
 ## Re-review history
 
@@ -89,3 +95,6 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    passed: install, status, idempotent re-install) failed the upgrade spec on
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
+5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
+   CI and locally. PR review then raised C1–C4, fixed with unit regression
+   tests. Like E1, these postdate the independent review.

@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -299,6 +300,8 @@ type lifecycleEnv struct {
 	denied map[string]bool
 	// neverEstablish stops the fake API server marking CRDs Established.
 	neverEstablish bool
+	// listForbidden lists list kinds (e.g. "SecretList") the API refuses.
+	listForbidden map[string]bool
 }
 
 func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
@@ -307,7 +310,7 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := &lifecycleEnv{log: &eventLog{}, denied: map[string]bool{}}
+	env := &lifecycleEnv{log: &eventLog{}, denied: map[string]bool{}, listForbidden: map[string]bool{}}
 	logWrite := func(op string, obj client.Object) {
 		kind := fmt.Sprintf("%T", obj)
 		kind = kind[strings.LastIndex(kind, ".")+1:]
@@ -321,6 +324,12 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 	env.c = fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
 		WithStatusSubresource(&fathomv1alpha1.HealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if gvk := list.GetObjectKind().GroupVersionKind(); env.listForbidden[gvk.Kind] {
+					return apierrors.NewForbidden(gvk.GroupVersion().WithResource(strings.ToLower(strings.TrimSuffix(gvk.Kind, "List"))+"s").GroupResource(), "", errors.New("denied by test"))
+				}
+				return c.List(ctx, list, opts...)
+			},
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 				establish(obj)
 				logWrite("create", obj)

@@ -175,7 +175,7 @@ SPDX-License-Identifier: MIT
 - [X] T049 [P] Update `README.md` "Installation details": nine CRDs (not seven), `fathomctl` lifecycle verbs, the CRD-before-rollout behaviour
 - [X] T050 [P] Update `RELEASE.md`: digest injection into `fathomctl`, the `upgrade-path.yaml` upkeep step (add sanctioned entries, decide `stop`; `floor` is never changed), and that every release's `fathomctl` must stay published
 - [X] T051 Run the full gates: `go -C tools tool task ci`, `scripts/check-coverage.sh`, `go -C tools tool task verify-generated` (helm:sync unaffected), `go -C tools tool task crd-compat`, `reuse lint`, `helm lint deploy/helm/fathom-operator`; fix findings
-- [ ] T052 Run quickstart §1–6 against a kind cluster and the `lifecycle` e2e shard; record outcomes in the PR test plan
+- [x] T052 Run quickstart §1–6 against a kind cluster and the `lifecycle` e2e shard; record outcomes in the PR test plan
 
 ---
 

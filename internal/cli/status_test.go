@@ -180,6 +180,37 @@ func TestStatusDevelopmentBuild(t *testing.T) {
 	}
 }
 
+// Multiple installs are reported in the requested format, still exiting 1.
+func TestStatusStructuredOutputWithTwoReleases(t *testing.T) {
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			withVersion(t, "v0.6.0", true)
+			env := statusEnv(t, "0.6.0", liveCRDs(t, "0.6.0", nil), true, "")
+			env.rc.seed(helmRelease{Name: "fathom", Namespace: "fathom-b", ChartVersion: "0.6.0"}, true)
+			out, _, err := execVerb(env.f, "status", "-o", format)
+			if err == nil {
+				t.Fatalf("status exited 0:\n%s", out)
+			}
+			raw := []byte(out)
+			if format == "yaml" {
+				if raw, err = yaml.YAMLToJSON(raw); err != nil {
+					t.Fatalf("%v\n%s", err, out)
+				}
+			}
+			var report struct {
+				Installed bool     `json:"installed"`
+				Problems  []string `json:"problems"`
+			}
+			if err := json.Unmarshal(raw, &report); err != nil {
+				t.Fatalf("decode: %v\n%s", err, out)
+			}
+			if !report.Installed || len(report.Problems) != 1 || !strings.Contains(report.Problems[0], "fathom-b/fathom") {
+				t.Errorf("report = %+v", report)
+			}
+		})
+	}
+}
+
 func TestStatusStructuredOutput(t *testing.T) {
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
