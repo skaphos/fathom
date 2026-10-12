@@ -46,6 +46,9 @@ helm install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
 ```
 
 Replace `X.Y.Z` with a released chart version (plain semver, no leading `v`).
+Equivalently, `fathomctl install --create-namespace` with that release's
+[`fathomctl`](docs/guides/fathomctl.md) installs the same chart, which it
+embeds, and later handles CRD-first upgrades and a complete uninstall.
 
 > **New here?** The [Getting started guide](docs/guides/getting-started.md)
 > walks a platform team from an empty cluster to one cluster-wide verdict in
@@ -126,7 +129,7 @@ Full documentation lives in [`docs/`](docs/README.md).
   and probe-pod NetworkPolicy posture, and the `metrics: enabled` label
   contract.
 - [Code map](docs/code-map.md) — internal package tour for contributors.
-- [Architecture Decision Records](docs/adr/) — ADR-0001 … ADR-0004.
+- [Architecture Decision Records](docs/adr/) — ADR-0001 … ADR-0008.
 
 **Automating Fathom?** If you are pointing an AI agent or automation at a
 cluster to install or operate Fathom, see the prescriptive
@@ -134,13 +137,25 @@ cluster to install or operate Fathom, see the prescriptive
 
 ## Installation details
 
-The chart installs the seven `fathom.skaphos.io` CRDs from its native `crds/`
+The chart carries the nine `fathom.skaphos.io` CRDs in its native `crds/`
 directory. Helm installs CRDs on first install only and never upgrades or
-removes them, so apply new CRDs with `kubectl` before a breaking `helm upgrade`.
+removes them, so with plain Helm, apply new CRDs with `kubectl` before a
+breaking `helm upgrade`.
+
+`fathomctl install`, `upgrade`, `uninstall` and `status` manage the same chart,
+embedded in each `fathomctl` at its own version, as a Helm release that `helm`
+can read. `install` and `upgrade` apply every CRD and wait for it to be
+Established before rolling out the operator, refusing incompatible CRD changes
+the release does not sanction and upgrades that skip a required intermediate
+release. `uninstall` also removes the objects the operator created at run
+time, keeping CRDs and resources unless `--purge-crds` is given. See
+[Install, upgrade and remove Fathom](docs/guides/fathomctl.md#install-upgrade-and-remove-fathom).
 
 The probe is not a separate Deployment; the operator launches it as short-lived
-pods. Point at a specific probe build with `--set probeImage.tag=vX.Y.Z`
-(defaults to the chart's appVersion). Metrics are served over HTTPS on `:8443`
+pods. With Helm, point at a specific probe build with
+`--set probeImage.tag=vX.Y.Z` (defaults to the chart's appVersion);
+`fathomctl` sets every image value from its own release and refuses
+overrides. Metrics are served over HTTPS on `:8443`
 using controller-runtime's built-in authn/authz filter; see
 `deploy/helm/fathom-operator/values.yaml` for the full value reference.
 
@@ -372,6 +387,9 @@ fathomctl ls -A                                  # every kind, every verdict
 fathomctl describe dnscheck/cluster-dns          # why it has that verdict
 fathomctl reports addoncheck/coredns --since 24h # what changed, when
 fathomctl run healthcheck/coredns --wait         # check again now; exit 1 on Fail
+fathomctl install --create-namespace             # install this release into fathom-system
+fathomctl upgrade --dry-run                      # plan an upgrade to this release; change nothing
+fathomctl status                                 # installed version, readiness, CRD currency
 ```
 
 Each release attaches signed, attested archives for Linux, macOS, and Windows

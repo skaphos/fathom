@@ -38,6 +38,14 @@ const (
 	// NodeCertificateCheck, NodeHealthCheck, refresh-on-change) plus the specs
 	// of the core-tier addons. It doubles as the E2E_ADDONS keyword that selects that tier.
 	CoreLabel = "core"
+
+	// LifecycleLabel marks the fathomctl lifecycle specs (skaphos/fathom#330).
+	// They install, upgrade and uninstall Fathom themselves, so they run only
+	// in their own shard, on a cluster where the kustomize deploy was skipped
+	// — the verbs deliberately refuse a kustomize-managed operator. As an
+	// E2E_ADDONS value it must stand alone, and every other selection
+	// (including the full stack) excludes these specs.
+	LifecycleLabel = "lifecycle"
 )
 
 // coreAddons are the addons whose charts carry the `tier: core` label in
@@ -65,7 +73,13 @@ func OptInAddons() []string { return append([]string(nil), optInAddons...) }
 type AddonSelection struct {
 	// addons holds the normalized selection; nil means the full stack.
 	addons []string
+	// lifecycle selects the fathomctl lifecycle shard (LifecycleLabel).
+	lifecycle bool
 }
+
+// Lifecycle reports the fathomctl lifecycle shard: Fathom must not be
+// pre-deployed, because its specs install it themselves.
+func (s AddonSelection) Lifecycle() bool { return s.lifecycle }
 
 // ParseAddonSelection parses an E2E_ADDONS value. Accepted forms:
 //
@@ -82,6 +96,12 @@ func ParseAddonSelection(spec string) (AddonSelection, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" || spec == "all" {
 		return AddonSelection{}, nil
+	}
+	if spec == LifecycleLabel {
+		return AddonSelection{addons: []string{LifecycleLabel}, lifecycle: true}, nil
+	}
+	if strings.Contains(","+strings.ReplaceAll(spec, " ", "")+",", ","+LifecycleLabel+",") {
+		return AddonSelection{}, fmt.Errorf("%s=%q: %s must stand alone; its cluster has no pre-deployed operator", EnvAddons, spec, LifecycleLabel)
 	}
 	known := map[string]bool{CoreLabel: true}
 	for _, a := range append(CoreAddons(), OptInAddons()...) {
@@ -134,10 +154,14 @@ func (s AddonSelection) HelmfileSelectors() []string {
 }
 
 // LabelFilter returns the Ginkgo label-filter expression that runs exactly the
-// selected specs, or "" (no filter) for the full stack. Addon names double as
-// spec labels, and "core" selects the operator-infrastructure specs plus the
-// core-tier addon specs.
+// selected specs. Addon names double as spec labels, and "core" selects the
+// operator-infrastructure specs plus the core-tier addon specs. The full
+// stack runs everything except the lifecycle specs, which need a cluster
+// without the pre-deployed operator.
 func (s AddonSelection) LabelFilter() string {
+	if s.addons == nil {
+		return "!" + LifecycleLabel
+	}
 	return strings.Join(s.addons, " || ")
 }
 

@@ -32,9 +32,16 @@ set -euo pipefail
 
 OPT_IN_SHARDS="external-dns metrics-server envoy-gateway istio argocd node-local-dns azure-workload-identity kube-state-metrics"
 
+# STANDALONE_SHARDS are shards that are not addons. `lifecycle` installs,
+# upgrades and uninstalls Fathom with fathomctl on a cluster where the
+# kustomize deploy is skipped (skaphos/fathom#330; see
+# test/e2e/fixtures/README.md); it runs with the full matrix and when its own
+# spec or fixtures change.
+STANDALONE_SHARDS="lifecycle"
+
 emit_all() {
   printf '["core"'
-  for shard in $OPT_IN_SHARDS; do printf ',"%s"' "$shard"; done
+  for shard in $OPT_IN_SHARDS $STANDALONE_SHARDS; do printf ',"%s"' "$shard"; done
   printf ']\n'
 }
 
@@ -81,6 +88,11 @@ shard_for_file() {
     test/e2e/azureworkloadidentity_test.go) echo azure-workload-identity ;;
     config/samples/*_azure_workload_identity.yaml) echo azure-workload-identity ;;
     config/rbac/addons/addon-azure-workload-identity.yaml) echo azure-workload-identity ;;
+
+    # --- The fathomctl lifecycle shard: its own spec and fixtures. The verbs
+    # themselves (internal/cli, deploy/helm) are shared surface below.
+    test/e2e/fathomctl_lifecycle_test.go) echo lifecycle ;;
+    test/e2e/fixtures/lifecycle/*) echo lifecycle ;;
 
     # --- Core-tier addons: their specs run in the core shard.
     internal/adapter/certmanager/*) echo core ;;
@@ -175,7 +187,7 @@ if [ "$want_core" = false ]; then
 fi
 
 printf '["core"'
-for shard in $OPT_IN_SHARDS; do
+for shard in $OPT_IN_SHARDS $STANDALONE_SHARDS; do
   case " $selected " in
     *" $shard "*) printf ',"%s"' "$shard" ;;
   esac

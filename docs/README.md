@@ -24,7 +24,7 @@ Task-oriented guides for installing and using Fathom live in
 | [Node certificate checks](guides/node-certificate-checks.md) | Scan on-disk X.509 certificates on every node and catch expiry before an outage. *(Newer kind — included in recent builds; not in older ones.)* |
 | [Node health checks](guides/node-health-checks.md) | Filesystem headroom, node conditions, kubelet and container-runtime liveness on every node, with an explicit privilege posture per check type. *(Ships from v0.6.0.)* |
 | [Monitoring & alerting](guides/monitoring.md) | Consume results via `kubectl`, Prometheus metrics, and tracing; wire alerts and gates. |
-| [fathomctl](guides/fathomctl.md) | Install the CLI, list and explain verdicts, walk report history, and trigger a check right now with `run --wait`. |
+| [fathomctl](guides/fathomctl.md) | Install the CLI, install/upgrade/uninstall Fathom itself, list and explain verdicts, walk report history, and trigger a check right now with `run --wait`. |
 | [Agent operations](guides/agent-operations.md) | Point an AI agent or automation at a cluster to install and operate Fathom safely — the prescriptive, approval-gated runbook. |
 
 ## Reference & internals
@@ -35,7 +35,7 @@ Task-oriented guides for installing and using Fathom live in
 | [code-map.md](code-map.md) | A module-by-module tour of the source tree for new contributors. |
 | [authoring-adapters.md](authoring-adapters.md) | How to add a new add-on adapter — the declarative `AddonDefinition` path, the Go escape hatch, RBAC declaration, versioning, and a ship-it checklist. |
 | [reference/configuration.md](reference/configuration.md) | Every operator option (flag / env var / config file / default) and the precedence rules. |
-| [reference/fathomctl.md](reference/fathomctl.md) | The `fathomctl` CLI: global flags, kind aliases, exit codes, `run` propagation and bulk confirmation, and the RBAC roles for CLI users. |
+| [reference/fathomctl.md](reference/fathomctl.md) | The `fathomctl` CLI: global flags, kind aliases, exit codes, `run` propagation and bulk confirmation, the lifecycle verbs (`install`, `upgrade`, `uninstall`, `status`) with their refusals and permissions, and the RBAC roles for CLI users. |
 | [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
 | [reference/status-conditions.md](reference/status-conditions.md) | Operational status and condition reference: result fields, reasons, freshness, and troubleshooting actions. |
 | [reference/rbac.md](reference/rbac.md) | Generated per-adapter RBAC matrix and least-privilege impersonation model. |
@@ -51,6 +51,10 @@ The architecturally significant decisions are recorded as ADRs:
 - [ADR-0002 — HealthReport as a first-class CRD](adr/0002-healthreport-as-first-class-crd.md)
 - [ADR-0003 — Probe-pod model for active in-cluster checks](adr/0003-probe-pod-model.md)
 - [ADR-0004 — HealthCheck as a thin wrapper](adr/0004-healthcheck-as-wrapper.md)
+- [ADR-0005 — ClusterHealth staleness semantics](adr/0005-clusterhealth-staleness-semantics.md)
+- [ADR-0006 — Node metrics through the operator endpoint](adr/0006-node-metrics-through-operator.md)
+- [ADR-0007 — Runtime addon-definition loading](adr/0007-runtime-addon-definition-loading.md)
+- [ADR-0008 — fathomctl lifecycle through the Helm library](adr/0008-fathomctl-lifecycle-via-helm-library.md)
 
 ## RFCs
 

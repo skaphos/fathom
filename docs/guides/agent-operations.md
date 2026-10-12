@@ -19,8 +19,11 @@ and fewer guardrails. This document is what a person would point an agent at.
 > against a live cluster.
 
 Prefer the released Helm chart, delivered through the cluster's existing GitOps
-workflow when it has one. Use the repository `deploy` task only when the user
-explicitly asks to test the current checkout.
+workflow when it has one. For a direct installation, use the `fathomctl`
+release matching the approved version: its `install`, `upgrade`, `uninstall`
+and `status` verbs drive that chart, apply CRDs before the operator, and
+refuse unsafe transitions before changing anything. Use the repository
+`deploy` task only when the user explicitly asks to test the current checkout.
 
 ## 1. Confirm the target and release
 
@@ -39,7 +42,15 @@ export FATHOM_VERSION="X.Y.Z"  # released chart version, without a leading v
 # Run only when the user has authorized live access.
 kubectl --context "${KUBE_CONTEXT}" cluster-info
 helm version --short
+
+# For a direct installation: the fathomctl of exactly that release.
+fathomctl version --client   # must print v${FATHOM_VERSION}
 ```
+
+Each `fathomctl` installs and upgrades to exactly its own version; there is no
+`--version` flag. If `fathomctl version --client` does not match the approved
+version, download the matching release's `fathomctl` (see the
+[fathomctl guide](fathomctl.md#install)) rather than using the one at hand.
 
 Stop and ask for direction if the context is not the approved target.
 
@@ -80,10 +91,40 @@ families for user confirmation before creating health checks.
 
 Follow the delivery model confirmed above. For GitOps-managed clusters, add a
 pinned Fathom chart release to the authorized repository and let its controller
-reconcile it; do not run a parallel `helm upgrade` against the cluster. When a
-direct installation is explicitly authorized, use this idempotent, pinned Helm
-command. `--atomic` removes a failed release, while Helm intentionally leaves
-installed CRDs in place.
+reconcile it; do not run a parallel `fathomctl` or `helm upgrade` against the
+cluster. When a direct installation is explicitly authorized, use the
+matching release's `fathomctl`. Start read-only:
+
+```sh
+fathomctl --context "${KUBE_CONTEXT}" status
+```
+
+`Fathom: not installed` means install; an installed older version means
+upgrade (below). An install made with kustomize or OLM is reported as not
+managed by `fathomctl`, and `install`, `upgrade` and `uninstall` refuse it:
+stop and ask the user how it should be managed. More than one Fathom release
+also exits `1`; stop and ask.
+
+```sh
+fathomctl --context "${KUBE_CONTEXT}" install -n fathom-system --create-namespace
+```
+
+`install` checks the identity's permissions before changing anything and
+refuses with `missing-permissions`, naming each missing one; if so, stop and
+ask the user for an appropriately authorized identity or GitOps workflow. It
+waits until the operator is `Available` (bounded by `--timeout`, default
+`5m`) and is idempotent: on an install at the same version it prints
+`nothing to do` and exits `0`.
+
+After either delivery path reports success, verify the live state.
+`status` exits `0` only when the operator is `Available` and every CRD
+matches its version:
+
+```sh
+fathomctl --context "${KUBE_CONTEXT}" status
+```
+
+If `fathomctl` is not in use, the equivalent Helm command and checks are:
 
 ```sh
 kubectl --context "${KUBE_CONTEXT}" auth can-i create customresourcedefinitions.apiextensions.k8s.io
@@ -95,29 +136,47 @@ helm upgrade --install fathom oci://ghcr.io/skaphos/charts/fathom-operator \
   --create-namespace \
   --kube-context "${KUBE_CONTEXT}" \
   --atomic --wait --timeout 5m
-```
 
-Direct installation requires both permission checks to return `yes`; otherwise
-stop and ask the user to use an appropriately authorized identity or GitOps
-workflow.
-
-After either delivery path reports success, verify the live rollout:
-
-```sh
 kubectl --context "${KUBE_CONTEXT}" --namespace fathom-system \
   wait --for=condition=Available deployment \
   --selector app.kubernetes.io/instance=fathom --timeout=2m
-kubectl --context "${KUBE_CONTEXT}" get crd \
-  addonchecks.fathom.skaphos.io \
-  healthchecks.fathom.skaphos.io \
-  clusterhealths.fathom.skaphos.io \
-  healthreports.fathom.skaphos.io \
-  nodecertificatechecks.fathom.skaphos.io
 ```
 
-For upgrades, read the release notes first. Helm installs CRDs only on the
-initial install and does not upgrade them automatically; follow the CRD upgrade
-notes in [Getting started](getting-started.md#1-install-the-operator).
+`--atomic` removes a failed release, while Helm intentionally leaves installed
+CRDs in place and never upgrades them; with Helm, follow the CRD notes in
+[Getting started](getting-started.md#1-install-the-operator).
+
+### Upgrade runbook
+
+Read the release notes first, then use the target release's `fathomctl`:
+
+```sh
+fathomctl --context "${KUBE_CONTEXT}" status                # current version and the path to this fathomctl
+fathomctl --context "${KUBE_CONTEXT}" upgrade --dry-run     # the plan; changes nothing
+# Show the plan to the user and get approval, then:
+fathomctl --context "${KUBE_CONTEXT}" upgrade
+fathomctl --context "${KUBE_CONTEXT}" status                # exit 0: Available, CRDs current
+```
+
+`upgrade` applies the CRDs and waits for them to be `Established` before it
+rolls out the operator; no manual CRD step is needed. Every refusal happens
+before anything changes and ends with a `next:` line. Do not work around a
+refusal:
+
+- `acknowledgement-required`: the release sanctions incompatible CRD changes,
+  listed with reason and issue. Existing resources may fail the new
+  validation. Show the list to the user; add `--accept-incompatible-crds`
+  only with their explicit approval.
+- `stop-skipped`: an intermediate release must be installed first. Run that
+  release's `fathomctl upgrade`, then this one. Never bypassable.
+- `unsanctioned-incompatible`, `scope-change`, `below-floor`: stop and report
+  the message and its `next:` line to the user.
+
+If the operator is not `Available` within `--timeout`, the new release stays
+in place and `upgrade` exits `1` with recovery commands. Report them; do not
+roll back without approval. `--rollback-on-failure` rolls back only the
+operator, never the CRDs, and is refused when the plan includes an
+incompatible CRD change.
 
 ## 4. Create a first cluster health signal
 
@@ -228,14 +287,39 @@ status; it never aggregates `HealthReport` history directly.
 
 Remove GitOps-managed resources from their source repository and allow the
 controller to prune them; do not fight reconciliation with direct deletes or a
-parallel Helm uninstall. For a direct installation, delete agent-created
-examples before uninstalling the release. Do not delete Fathom CRDs unless the
-user explicitly authorizes deleting all Fathom custom resources and their
-report history from the cluster.
+parallel uninstall. For a direct installation, delete agent-created
+examples before uninstalling the release:
 
 ```sh
 kubectl --context "${KUBE_CONTEXT}" delete clusterhealth platform
 kubectl --context "${KUBE_CONTEXT}" --namespace fathom-system \
   delete healthcheck/coredns addoncheck/coredns-system-health
-helm uninstall fathom --namespace fathom-system --kube-context "${KUBE_CONTEXT}"
+fathomctl --context "${KUBE_CONTEXT}" uninstall
 ```
+
+A plain `uninstall` removes the release and every object the operator created
+at run time (node-agent DaemonSets, probe Pods, per-check RBAC and
+NetworkPolicies, ConfigMaps, the admission policy and the leader-election
+Lease), and keeps the CRDs, every remaining Fathom resource and the
+namespace. `helm uninstall` alone leaves the operator-created objects behind.
+
+Do not delete Fathom CRDs unless the user explicitly authorizes deleting all
+Fathom custom resources and their report history from the cluster. When they
+do, run the purge once without `--yes`. Without a terminal it refuses with
+`confirmation-required` and changes nothing, and the refusal lists how many
+resources of each kind would be deleted. Show that to the user, then rerun
+with `--yes` only after their approval:
+
+```sh
+fathomctl --context "${KUBE_CONTEXT}" uninstall --purge-crds --export fathom-backup.yaml
+# After explicit approval of the listed counts:
+fathomctl --context "${KUBE_CONTEXT}" uninstall --purge-crds --export fathom-backup.yaml --yes
+```
+
+The export is written before anything is deleted; if it cannot be written,
+nothing is deleted. Re-apply it with `kubectl apply -f fathom-backup.yaml`
+after a reinstall; restored resources carry no owner references. Add
+`--delete-namespace` only when the user has authorized deleting the
+namespace. Without `--yes` it refuses, listing them, when the namespace holds
+objects Fathom did not create; when it holds only Fathom's own objects, it
+deletes the namespace without asking.

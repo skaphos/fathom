@@ -46,19 +46,32 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Operator image reference. Tag defaults to v<AppVersion> — fathom image tags
-carry a leading v, but the chart's appVersion is plain semver per Helm.
+Image reference for one of the three images. A digest wins over the tag and
+renders repository@digest (deploy-by-digest, RELEASE.md); otherwise the tag,
+defaulting to v<AppVersion> — fathom image tags carry a leading v, but the
+chart's appVersion is plain semver per Helm. Called with
+(dict "image" <values block> "appVersion" .Chart.AppVersion).
 */}}
-{{- define "fathom-operator.image" -}}
-{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default (printf "v%s" .Chart.AppVersion)) -}}
+{{- define "fathom-operator.imageRef" -}}
+{{- if .image.digest -}}
+{{- printf "%s@%s" .image.repository .image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" .image.repository (.image.tag | default (printf "v%s" .appVersion)) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
-Probe image reference passed to the operator via --probe-image. Same leading-v
-tag convention as the operator image.
+Operator image reference.
+*/}}
+{{- define "fathom-operator.image" -}}
+{{- include "fathom-operator.imageRef" (dict "image" .Values.image "appVersion" .Chart.AppVersion) -}}
+{{- end -}}
+
+{{/*
+Probe image reference passed to the operator via --probe-image.
 */}}
 {{- define "fathom-operator.probeImage" -}}
-{{- printf "%s:%s" .Values.probeImage.repository (.Values.probeImage.tag | default (printf "v%s" .Chart.AppVersion)) -}}
+{{- include "fathom-operator.imageRef" (dict "image" .Values.probeImage "appVersion" .Chart.AppVersion) -}}
 {{- end -}}
 
 {{/*
@@ -74,9 +87,9 @@ assuming the ":<port>" shorthand. Caller pipes the result through `int`.
 
 {{/*
 Node-agent image reference passed to the operator via --node-agent-image. A
-dedicated image distinct from the operator and probe images; same leading-v tag
-convention.
+dedicated image distinct from the operator and probe images; same digest and
+tag rules.
 */}}
 {{- define "fathom-operator.nodeAgentImage" -}}
-{{- printf "%s:%s" .Values.nodeAgent.image.repository (.Values.nodeAgent.image.tag | default (printf "v%s" .Chart.AppVersion)) -}}
+{{- include "fathom-operator.imageRef" (dict "image" .Values.nodeAgent.image "appVersion" .Chart.AppVersion) -}}
 {{- end -}}

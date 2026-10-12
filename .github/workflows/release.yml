@@ -213,9 +213,14 @@ jobs:
         # dist/fathomctl/. The CLI is a client tool and ships as archives only,
         # never as an image; the checksums file is signed and the archives
         # attested below, so a verifier follows the same cosign/attestation
-        # procedure as for the images (RELEASE.md).
+        # procedure as for the images (RELEASE.md). The image digests resolved
+        # above are baked into the CLI, so `fathomctl install` deploys this
+        # release's images by digest (skaphos/fathom#330).
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          FATHOM_OPERATOR_DIGEST: ${{ steps.operator.outputs.digest }}
+          FATHOM_PROBE_DIGEST: ${{ steps.probe.outputs.digest }}
+          FATHOM_NODE_AGENT_DIGEST: ${{ steps.node_agent.outputs.digest }}
         run: go -C tools tool task fathomctl-dist VERSION="${VERSION}"
 
       # --- Supply-chain hardening (SKA-296) -------------------------------

@@ -10,6 +10,7 @@
       "properties": {
         "repository": {"type": "string", "minLength": 1},
         "tag":        {"type": "string"},
+        "digest":     {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"},
         "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
       }
     },
@@ -18,7 +19,8 @@
       "required": ["repository"],
       "properties": {
         "repository": {"type": "string", "minLength": 1},
-        "tag":        {"type": "string"}
+        "tag":        {"type": "string"},
+        "digest":     {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"}
       }
     },
     "nodeAgent": {
@@ -30,7 +32,8 @@
           "required": ["repository"],
           "properties": {
             "repository": {"type": "string", "minLength": 1},
-            "tag":        {"type": "string"}
+            "tag":        {"type": "string"},
+            "digest":     {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"}
           }
         }
       }

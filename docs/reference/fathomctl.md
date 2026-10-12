@@ -7,8 +7,10 @@ SPDX-License-Identifier: MIT
 
 `fathomctl` is the command-line client for the Fathom operator. It reads the
 status the operator writes and drives the on-demand run trigger the operator
-already honours; it never bypasses the operator. For a task-oriented
-introduction see the [fathomctl guide](../guides/fathomctl.md).
+already honours; it never bypasses the operator. The
+[lifecycle verbs](#lifecycle-verbs) (`install`, `upgrade`, `uninstall`,
+`status`) install, upgrade and remove the operator itself. For a
+task-oriented introduction see the [fathomctl guide](../guides/fathomctl.md).
 
 ## Global flags
 
@@ -16,7 +18,7 @@ introduction see the [fathomctl guide](../guides/fathomctl.md).
 | --- | --- | --- |
 | `--kubeconfig <path>` | `$KUBECONFIG`, then `~/.kube/config`, then in-cluster | Same discovery as kubectl. |
 | `--context <name>` | current context | |
-| `-n, --namespace <ns>` | the context's namespace, else `default` | Usage error with `-A`. Ignored by cluster-scoped kinds. |
+| `-n, --namespace <ns>` | the context's namespace, else `default` | Usage error with `-A`. Ignored by cluster-scoped kinds. `install` defaults to `fathom-system` instead; see [install](#install). |
 | `-A, --all-namespaces` | off | |
 | `-o, --output table\|json\|yaml` | `table` | `json` and `yaml` emit the underlying resources unmodified. |
 | `--request-timeout <duration>` | `30s` | Applied to every API request. |
@@ -260,6 +262,334 @@ deployment, image, error}}`; `operator` is omitted with `--client`.
 A locally built binary reports a `git describe` version; a release archive
 reports the release tag.
 
+## Lifecycle verbs
+
+`install`, `upgrade`, `uninstall` and `status` manage the operator as a Helm
+release made from the `fathom-operator` chart embedded in the binary. Each
+`fathomctl` installs and upgrades to exactly its own version: there is no
+`--version` flag and no chart is fetched at run time, so the verbs work
+without registry access to the chart. Only the images must be pullable.
+Reaching another version means running that release's `fathomctl`.
+
+Releases are stored with Helm's Secret driver in the release namespace and
+labelled `fathom.skaphos.io/installed-by=fathomctl`, so `helm ls`,
+`helm history` and `helm rollback` see them. An install made with
+`helm install` can be upgraded or removed by `fathomctl`. The chart's objects
+are server-side applied under the field manager `helm` — the name the `helm`
+CLI itself uses — whatever the `fathomctl` binary is called, so the two tools
+can take turns on one release without apply conflicts; the release label
+`fathom.skaphos.io/installed-by=fathomctl` records which tool made it. CRDs
+are written by `fathomctl` itself, under field manager `fathomctl`. Installs made by
+kustomize (`dist/install.yaml`, `config/default`) or OLM are refused with
+`not-helm`, never taken over.
+
+The global flags apply unchanged. Exit codes are `0` on success and `1`
+otherwise. Every refusal happens before the cluster is changed and is printed
+as `<reason>: <detail>` followed by a `next:` line with the command to run
+instead.
+
+### Images and versions
+
+The CLI always sets the repository, tag and digest of the operator, probe and
+node-agent images (`image`, `probeImage`, `nodeAgent.image`) from its own
+release, replacing any image values a previous revision recorded. Setting any
+of those values with `-f`, `--set`, `--set-string` or `--set-json` is a usage
+error. `image.pullPolicy` is not affected.
+
+A release archive carries the release's image digests and installs by digest.
+A build without them (a local `go -C tools tool task fathomctl-build`) is a
+development build: it installs by tag, `v<version>`. A development build's
+version must be SemVer. A bare commit hash or `dev` is refused with
+`dev-version`; build with an explicit version:
+
+```sh
+FATHOMCTL_VERSION=0.7.0 go -C tools tool task fathomctl-build
+```
+
+### CRD handling
+
+`install` and `upgrade` apply every Fathom CRD before the operator rollout,
+then wait for each to be `Established` within `--timeout`. A CRD that already
+exists is replaced whole rather than merged, so a CRD first created by `helm`
+or `kubectl apply` reaches exactly this release's schema; labels and
+annotations other tools set are kept, except
+`kubectl.kubernetes.io/last-applied-configuration`. The CLI reads each CRD
+back and does not start the rollout unless its spec matches.
+
+Every CRD the CLI applies carries the annotation
+`fathom.skaphos.io/version: <version>`. `status` uses it to judge whether the
+CRDs match the operator, and `install` uses it as the installed version when
+only CRDs remain from an earlier `uninstall`.
+
+Before applying, the CLI compares each live CRD with the release's using
+crdify, with the same rules as the repository's `crd-compat` gate
+(`.crdify.yaml`). The chart's `upgrade-path.yaml` declares, per release,
+which incompatible changes are sanctioned and whether the release is a stop
+that must be installed on the way to a later one. Its `floor` is the oldest
+version that data covers.
+
+### Shared flags (install, upgrade)
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `-f, --values <file>` | — | Values file(s), Helm semantics. Repeatable. |
+| `--set k=v`, `--set-string k=v`, `--set-json k=json` | — | Helm-semantics overrides. Repeatable. |
+| `--timeout <duration>` | `5m` | Bound on every wait: CRDs `Established`, operator `Available`. Must be positive. |
+| `--accept-incompatible-crds` | off | Apply incompatible CRD changes the release sanctions. `--yes` never implies it. |
+
+Values are validated against the chart's schema before anything changes.
+
+### install
+
+```text
+fathomctl install [-n <ns>] [--create-namespace] [--release <name>] [shared flags]
+```
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `-n, --namespace <ns>` | `fathom-system` | Not the kubeconfig context's namespace. |
+| `--create-namespace` | off | Without it, a missing namespace is refused with `namespace-missing`. |
+| `--release <name>` | `fathom` | Helm release name. |
+
+| Situation | Outcome |
+| --- | --- |
+| Nothing installed | CRDs applied, release installed, waits for the operator to be `Available`; prints version, release, namespace, revision and image references. Exit `0`. |
+| Only Fathom CRDs remain | The upgrade checks run first, with the installed version taken from `fathom.skaphos.io/version` on the CRDs: `crd-downgrade` when a CRD records a newer release, otherwise `below-floor`, `stop-skipped`, `scope-change`, `unsanctioned-incompatible` or `acknowledgement-required` as for `upgrade`. A CRD recording no version is compared without an upgrade path, so any incompatible finding refuses. Existing resources are kept. |
+| Installed at this version | `Fathom is already installed at vX; nothing to do`, exit `0`. |
+| Installed at an older version | `use-upgrade`; `next: fathomctl upgrade -n <ns>`. |
+| Installed at a newer version | `downgrade`; names the matching `fathomctl` release. |
+| Release pending or failed | `release-pending`; `next:` `helm history` and `helm rollback`. |
+| Operator not `Available` in time | Exit `1` with the unmet condition and recovery commands (`kubectl describe deploy`, `fathomctl status`, `fathomctl uninstall`). |
+
+`-o json|yaml` prints `{release, namespace, revision, version, images,
+pinning}`.
+
+### upgrade
+
+```text
+fathomctl upgrade [--dry-run] [--rollback-on-failure] [shared flags]
+```
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--dry-run` | off | Print the plan and change nothing. Needs only read access: the write-permission preflight is skipped. |
+| `--rollback-on-failure` | off | Roll the operator back to the previous revision if it is not `Available` within `--timeout`. CRDs are never rolled back. Refused with `rollback-refused` when the plan applies an incompatible CRD change. |
+
+The release and namespace are discovered; `-n` adds a namespace to search.
+The release keeps its recorded values; `-f` and `--set*` override them, and
+the new chart's defaults apply to everything neither sets (Helm's
+`--reset-then-reuse-values`, never `--reuse-values`, which would keep the old
+chart's defaults). `upgrade` prints the plan first:
+
+```text
+Fathom upgrade plan: v0.6.0 -> v0.7.0 (release fathom in fathom-system)
+Path:      direct
+CRDs:
+  addonchecks.fathom.skaphos.io        update
+  dnschecks.fathom.skaphos.io          update      incompatible (sanctioned by v0.7.0 (<issue>)): ^.spec.targets <check>: <crdify message>
+  nodehealthchecks.fathom.skaphos.io   unchanged
+Operator:  ghcr.io/skaphos/fathom-operator@sha256:… -> ghcr.io/skaphos/fathom-operator@sha256:…
+Values:    (in effect; the chart's defaults apply to everything else)
+  image:
+    …
+```
+
+The second CRD line is illustrative. With `-o json|yaml` the plan is printed
+as `{from, to, release, namespace, path, stops, crds, refusals, operator,
+values}`; values whose keys look like credentials are redacted.
+
+| Situation | Outcome |
+| --- | --- |
+| Compatible changes | CRDs applied and `Established`, then the operator rolled out; waits until the rollout is complete (`kubectl rollout status` semantics: every replica updated and available, no old replica left — a surge whose new pod never becomes ready is a failure even while the old pod keeps the Deployment `Available`). Exit `0`. |
+| Already at this version, CRDs unchanged, no `-f`/`--set*` | `Fathom is already at vX; nothing to do`, exit `0`. With value flags the release is upgraded in place. |
+| `helm upgrade` fails after the CRDs were applied | Exit `1`; the CRDs stay on the new schema and the error names `helm history` and a retry. |
+| Sanctioned incompatible change, no `--accept-incompatible-crds` | `acknowledgement-required`; lists each change with its reason and issue; `next:` repeats the command with the flag. |
+| Incompatible change no release sanctions | `unsanctioned-incompatible`; names the CRD, path and crdify finding. |
+| CRD scope change | `scope-change`; recreating the CRD deletes every resource of that kind; `next:` `fathomctl uninstall --purge-crds --export <file>`. Never sanctionable. |
+| A declared stop between the installed version and this one | `stop-skipped`; prints the full path (`v0.7.0 -> v0.8.0 -> v0.9.0`); `next:` the first stop's `fathomctl`. `--accept-incompatible-crds` does not bypass it. |
+| Installed below the `floor` | `below-floor`; `next:` a Helm upgrade to the latest patch of the floor's minor (CRDs applied with `kubectl`), then rerun. |
+| Installed version newer than the CLI | `downgrade`; names the matching `fathomctl` release. |
+| Release pending or failed | `release-pending`; `next:` `helm rollback`, or `fathomctl uninstall` then `install` when there is no earlier revision. |
+| Nothing installed | `not-installed`; `next: fathomctl install`. |
+| Operator not `Available` in time | The new release is left in place and `upgrade` exits `1` with the unmet condition and recovery lines: `kubectl -n <ns> describe deploy/<name>`, a retry with a longer `--timeout`, and `helm rollback <release> -n <ns>` (operator only; CRDs stay). With `--rollback-on-failure` the operator is rolled back instead, then exit `1`. |
+
+### uninstall
+
+```text
+fathomctl uninstall [--purge-crds [--export <file>]] [--delete-namespace] [-y|--yes] [--timeout <duration>]
+```
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--purge-crds` | off | Also delete every Fathom custom resource and every `fathom.skaphos.io` CRD. |
+| `--export <file>` | — | With `--purge-crds` only: write every Fathom resource to this file first. |
+| `--delete-namespace` | off | Delete the release namespace after the operator is removed. |
+| `-y, --yes` | off | Skip the confirmation prompt. |
+| `--timeout <duration>` | `5m` | Bound on every wait: object deletion and CRD removal. |
+
+A plain `uninstall` removes the release, waits until the operator's
+Deployment and pods are gone (so a terminating operator cannot recreate
+anything), then removes every object the operator created at run time and
+waits until they are gone. An interrupted `helm uninstall` is finished the
+same way, and rerunning `uninstall` after one that stopped part-way (for
+example, an operator pod stuck terminating past `--timeout`) removes the
+operator-created objects left behind instead of reporting nothing to remove:
+
+- objects labelled `fathom.skaphos.io/managed-by=fathom` in any namespace:
+  node-agent DaemonSets, Pods (including unowned probe Pods in `kube-system`),
+  ServiceAccounts, Roles, RoleBindings, NetworkPolicies and ConfigMaps;
+- the cluster-scoped ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding
+  `fathom-node-report-authenticity`;
+- the leader-election Lease in the release namespace (the release's
+  `leaderElectionID` value, default `2d3dbc4f.skaphos.io`).
+
+CRDs, custom resources and the namespace are kept, so a later `install`
+picks the resources up again. `uninstall` needs no chart, so any `fathomctl`
+version can remove any install, and it proceeds on a pending or failed
+release, reporting the state it found. With nothing installed it prints
+`Fathom is not installed; nothing to remove.` and exits `0`; with only CRDs
+left, `--purge-crds` still purges them.
+
+`--purge-crds` prints a count for each of the nine kinds (AddonDefinition,
+AddonDefinitionBinding, AddonCheck, DNSCheck, NodeCertificateCheck,
+NodeHealthCheck, HealthCheck, ClusterHealth, HealthReport) and, without
+`--export`, says nothing will be saved. It then deletes every resource and
+every CRD and waits for their removal.
+
+`--export <file>` writes one multi-document YAML file atomically (a temporary
+file, then a rename) before anything is deleted. If writing fails, nothing is
+deleted and the exit code is `1`. The operator can still write (a HealthReport,
+say) until it stops, so once it has, the resources are listed again; if they
+changed, the file is rewritten from that list before the purge, and the
+deleted count comes from it. If that rewrite fails, the release is already
+removed but no resource or CRD is deleted. Each resource is stripped of `status` and of
+`uid`, `resourceVersion`, `managedFields`, `creationTimestamp`, `generation`,
+`ownerReferences`, `finalizers` and the deletion fields, so
+`kubectl apply -f <file>` recreates it after a reinstall. Restored resources
+carry no owner references: HealthReports no longer point at their checks, so
+they are not garbage-collected with them.
+
+`--delete-namespace` lists every object in the namespace before anything is
+removed and names those Fathom did not create. Objects Kubernetes creates in
+every namespace are reported, not treated as someone else's. An object owned
+by another object in the namespace (a Pod of a ReplicaSet, say) is reported
+through its owner; one whose owner is not there is listed itself. If the identity
+cannot list a kind in the namespace, the verb refuses with
+`missing-permissions`, naming the kind, before anything changes: it would
+otherwise delete objects it never showed. For the same reason, an API group
+that discovery cannot reach (for example an unavailable aggregated API) stops
+the uninstall.
+
+Everything that needs consent is gathered into one confirmation before
+anything changes: `--purge-crds` always needs it, and `--delete-namespace`
+needs it when the namespace holds objects Fathom did not create (otherwise the
+namespace is deleted without asking). On a terminal it is a `[y/N]` prompt;
+`--yes` skips it; without a terminal and without `--yes` the verb refuses with
+`confirmation-required`, printing what would have been deleted. Declining
+changes nothing.
+
+### status
+
+```text
+fathomctl status [-o table|json|yaml]
+```
+
+Read-only. Reports the managing tool, the Helm release, namespace and
+revision, the version and images (pinned by digest or by tag), the operator's
+`Available` condition, the state of each CRD and the upgrade path from the
+installed version to this `fathomctl`'s:
+
+```text
+Fathom:     installed (helm release fathom in fathom-system, revision 3, by fathomctl)
+Version:    v0.6.0 (images pinned by digest)
+  operator   ghcr.io/skaphos/fathom-operator@sha256:…
+  probe      ghcr.io/skaphos/fathom-probe@sha256:…
+  node-agent ghcr.io/skaphos/fathom-node-agent@sha256:…
+Operator:   Available
+CRDs:       9/9 current
+Upgrade to this fathomctl (v0.7.0): direct
+```
+
+CRD states, judged from the `fathom.skaphos.io/version` annotation against the
+operator's version:
+
+| State | Meaning | Fails `status` |
+| --- | --- | --- |
+| `current` | Recorded version equals the operator's. | no |
+| `outdated` | Recorded version is older than the operator's. | yes |
+| `newer` | Recorded version is newer than the operator's. | yes |
+| `missing` | The CRD does not exist. | yes |
+| `unknown` | No recorded version (applied by `helm` or `kubectl`) and this CLI is not the operator's release, so there is nothing to compare against; or the recorded version is not SemVer. | no |
+
+When a CRD records no version and this CLI is the operator's release, its
+embedded CRDs are the reference: `current` if they match, else `outdated`.
+
+An operator installed by kustomize or OLM is reported as
+`installed in <ns> by <tool>; not managed by fathomctl`.
+
+Exit `0` when Fathom is installed and healthy, or not installed. Exit `1` when
+the operator is not `Available`, a CRD is `outdated`, `newer` or `missing`,
+the release is pending or failed, or more than one Fathom release exists.
+`-o json|yaml` prints the install (`managedBy`, `release`, `namespace`,
+`revision`, `releaseStatus`, `installedBy`, `version`, `images`, `pinning`,
+`ready`, `readyReason`) plus `installed`, `crds[]`, `upgradePath`,
+`cliVersion` and `problems`.
+
+### Refusal reasons
+
+| Reason | Verbs | Meaning |
+| --- | --- | --- |
+| `missing-permissions` | install, upgrade, uninstall | The kubeconfig identity lacks a permission the verb needs; each is named. See [Permissions](#permissions). |
+| `multiple-installs` | all four | More than one Fathom release (or operator Deployment) exists, including a release beside an operator Deployment it does not own (for example a kustomize or OLM install); the CRDs are shared, so one install per cluster is supported. `status` reports it (in the `-o` format requested) and exits `1`. |
+| `not-helm` | install, upgrade, uninstall | The operator was installed by kustomize, OLM or an unknown tool. |
+| `release-pending` | install, upgrade | The release is pending, failed or mid-uninstall; recover with `helm history` / `helm rollback`, or — when there is no earlier revision — `fathomctl uninstall` and reinstall. |
+| `namespace-missing` | install | The namespace does not exist and `--create-namespace` was not given. |
+| `use-upgrade` | install | An older version is installed. |
+| `downgrade` | install, upgrade | The installed version is newer than this CLI. |
+| `not-installed` | upgrade | Nothing to upgrade. |
+| `dev-version` | install, upgrade | This CLI's version is not SemVer. |
+| `below-floor` | install, upgrade | The installed version predates the upgrade data's `floor`. |
+| `stop-skipped` | install, upgrade | A declared stop lies between the installed version and this one. |
+| `crd-downgrade` | install | Leftover CRDs record a newer release than this CLI. |
+| `scope-change` | install, upgrade | A CRD changes scope. |
+| `unsanctioned-incompatible` | install, upgrade | An incompatible CRD change no release sanctions. |
+| `acknowledgement-required` | install, upgrade | Sanctioned incompatible changes need `--accept-incompatible-crds`. |
+| `rollback-refused` | upgrade | `--rollback-on-failure` with an incompatible CRD change in the plan. |
+| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` cannot enumerate — a kind it does not know, or one no longer served at `v1alpha1` (both from a newer release) — so it could not count or export its resources. Use the `fathomctl` from the installed release. |
+| `confirmation-required` | uninstall | A destructive uninstall without a terminal and without `--yes`. |
+
+Supplying image values is a usage error rather than a refusal reason; it also
+exits `1` before anything changes.
+
+### Permissions
+
+`install`, `upgrade` and `uninstall` need cluster-admin-level rights: they
+create and replace CRDs, cluster-scoped RBAC, the admission policy, and Helm's
+release Secrets in the release namespace. They are not covered by the
+`fathomctl-viewer-role` and `fathomctl-runner-role` described
+[below](#rbac-for-fathomctl-users). Before changing anything each verb runs a
+SelfSubjectAccessReview for every permission below and refuses with
+`missing-permissions`, naming the ones the identity lacks:
+
+| Verb | Checked permissions |
+| --- | --- |
+| `install`, `upgrade` | `create`, `update`, `get` on `customresourcedefinitions`; `create` on `clusterroles` and `clusterrolebindings`; in the release namespace, `create` on `roles`, `rolebindings`, `serviceaccounts`, `configmaps` and `services`, `create` and `update` on `deployments` and `secrets`, `get` and `list` on `secrets`, and `patch` on every chart object kind (server-side apply); with `--create-namespace`, `create` on `namespaces`. `upgrade --dry-run` checks none of these. |
+| `uninstall` | in the release namespace, `delete` on `deployments`, `secrets`, `services` and `leases`; cluster-wide, `delete` on `clusterroles`, `clusterrolebindings`, `daemonsets`, `pods`, `serviceaccounts`, `configmaps`, `roles`, `rolebindings`, `networkpolicies`, `validatingadmissionpolicies` and `validatingadmissionpolicybindings`; with `--purge-crds`, `delete` on `customresourcedefinitions` and every Fathom kind; with `--delete-namespace`, `delete` on the namespace. A rerun after the release is already gone checks only the cluster-wide and `--purge-crds` permissions, since no release namespace remains |
+
+The list covers every kind each verb writes or deletes. It does not check
+Kubernetes' RBAC escalation rules: creating the chart's ClusterRoles also
+requires holding the permissions they grant (or `escalate`/`bind`), which a
+cluster-admin-level identity has.
+
+`status` is read-only and needs exactly:
+
+- `list` on `deployments` cluster-wide (to find the operator);
+- `get` and `list` on `secrets` only in the operator's namespace and the `-n`
+  namespace (Helm release records); no cluster-wide Secret access;
+- `get` and `list` on `customresourcedefinitions`.
+
+The other lifecycle verbs find the install with the same reads.
+
 ## Version skew
 
 Keep the CLI within one minor version of the operator. The read verbs only
@@ -270,6 +600,10 @@ never writes `status.lastRunTrigger`, so `run --wait` times out rather than
 failing up front. The timeout message points at `fathomctl version` for that
 reason.
 
+The lifecycle verbs do not tolerate skew: `install` and `upgrade` move the
+operator to exactly the CLI's version and refuse an install newer than the
+CLI. `status` and `uninstall` work with any version.
+
 ## RBAC for fathomctl users
 
 The operator's own role is unchanged by the CLI. Two auxiliary ClusterRoles
@@ -279,6 +613,8 @@ ship under `config/rbac/` for people and CI jobs:
 | --- | --- | --- |
 | `fathomctl-viewer-role` | `get`, `list`, `watch` on the six check kinds and `healthreports` (plus `/status`); `get`, `list` on `apps/deployments` | `ls`, `describe`, `reports`, `version` |
 | `fathomctl-runner-role` | the viewer rules plus `patch` on `addonchecks`, `dnschecks`, `nodecertificatechecks`, `nodehealthchecks` | everything, including `run` |
+
+Neither role covers the lifecycle verbs; see [Permissions](#permissions).
 
 `run` writes only the trigger annotation, but Kubernetes RBAC cannot scope
 `patch` to metadata, so the runner role also permits spec edits; bind it to

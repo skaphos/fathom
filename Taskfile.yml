@@ -52,6 +52,15 @@ vars:
   # alongside internal/app/options.go DefaultNodeAgentImage.
   E2E_NODE_AGENT_IMG: '{{.E2E_NODE_AGENT_IMG | default "ghcr.io/skaphos/fathom-node-agent:v0.5.1"}}' # x-release-please-version
   HELM_CHART_DIR: '{{.HELM_CHART_DIR | default "deploy/helm/fathom-operator"}}'
+  # The lifecycle e2e shard (E2E_ADDONS=lifecycle) installs Fathom with
+  # fathomctl itself, which deploys ghcr.io/skaphos/<image>:v<its version>.
+  # The two versions are pre-releases of the chart's own appVersion: above
+  # the upgrade-path floor (0.5.0, never changed), with no stop or sanctioned
+  # change between them, and tracking every release-please bump so the chart
+  # can never appear newer than the CLI. The spec
+  # (test/e2e/fathomctl_lifecycle_test.go) derives the same pair.
+  E2E_LIFECYCLE_VERSIONS:
+    sh: 'v="${E2E_LIFECYCLE_VERSIONS:-}"; if [ -z "$v" ]; then a="$(awk -F''"'' ''/^appVersion:/ {print $2}'' deploy/helm/fathom-operator/Chart.yaml)"; v="$a-e2e.1 $a-e2e.2"; fi; echo "$v"'
 
 tasks:
   default:
@@ -279,12 +288,16 @@ tasks:
     vars:
       # A local build identifies itself by the nearest tag; release archives
       # get the exact release version from scripts/fathomctl-dist.sh instead.
+      # The lifecycle verbs need a SemVer version: set FATHOMCTL_VERSION in the
+      # environment to build with an explicit one (e.g. the e2e lifecycle shard).
       FATHOMCTL_VERSION:
-        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+        sh: echo "${FATHOMCTL_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
       FATHOMCTL_REVISION:
         sh: git rev-parse HEAD
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}}" -o bin/fathomctl ./cmd/fathomctl
+      # Image digests are injected only when set (the release workflow, via
+      # fathomctl-dist); without them the binary installs by tag.
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/skaphos/fathom/internal/cli.Version={{.FATHOMCTL_VERSION}} -X github.com/skaphos/fathom/internal/cli.BuildRevision={{.FATHOMCTL_REVISION}} -X github.com/skaphos/fathom/internal/cli.operatorDigest=${FATHOM_OPERATOR_DIGEST:-} -X github.com/skaphos/fathom/internal/cli.probeDigest=${FATHOM_PROBE_DIGEST:-} -X github.com/skaphos/fathom/internal/cli.nodeAgentDigest=${FATHOM_NODE_AGENT_DIGEST:-}" -o bin/fathomctl ./cmd/fathomctl
 
   fathomctl-dist:
     desc: Cross-compile fathomctl release archives + checksums into FATHOMCTL_DIST_DIR (VERSION={{.VERSION}})
@@ -525,7 +538,7 @@ tasks:
         helmfile -f {{.E2E_HELMFILE}} sync "$@"
 
   e2e:cluster:fathom:
-    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom
+    desc: Build + load operator, probe, and node-agent images into kind, then deploy Fathom (E2E_ADDONS=lifecycle loads the fathomctl-tagged images and skips the deploy)
     cmds:
       - task: docker-build
         vars: {IMG: '{{.E2E_IMG}}'}
@@ -536,9 +549,25 @@ tasks:
       - kind load docker-image {{.E2E_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_PROBE_IMG}} --name {{.E2E_KIND_CLUSTER}}
       - kind load docker-image {{.E2E_NODE_AGENT_IMG}} --name {{.E2E_KIND_CLUSTER}}
+      # The lifecycle shard installs Fathom with fathomctl, which deploys
+      # ghcr.io/skaphos/<image>:v<version>: tag the freshly built images under
+      # exactly those names, and skip the kustomize deploy, which the
+      # lifecycle verbs would refuse as a non-Helm operator.
+      - cmd: |
+          set -euo pipefail
+          for v in {{.E2E_LIFECYCLE_VERSIONS}}; do
+            for pair in "{{.E2E_IMG}} fathom-operator" "{{.E2E_PROBE_IMG}} fathom-probe" "{{.E2E_NODE_AGENT_IMG}} fathom-node-agent"; do
+              set -- $pair
+              docker tag "$1" "ghcr.io/skaphos/$2:v$v"
+              kind load docker-image "ghcr.io/skaphos/$2:v$v" --name {{.E2E_KIND_CLUSTER}}
+            done
+          done
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" = lifecycle ]'
       - task: install
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" != lifecycle ]'
       - task: deploy
         vars: {IMG: '{{.E2E_IMG}}'}
+        if: 'a="{{.E2E_ADDONS}}"; [ "${a:-${E2E_ADDONS:-}}" != lifecycle ]'
 
   e2e:cluster:samples:
     desc: Apply check samples (CoreDNS, cert-manager, external-secrets, Cilium, node-certificates)
