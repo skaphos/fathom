@@ -171,6 +171,21 @@ func runUninstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *uni
 	_, _ = fmt.Fprintf(out, "Removed %d operator-created object(s).\n", n)
 
 	if opts.purgeCRDs {
+		// The operator could write (a HealthReport, say) until it stopped
+		// above, so the purge works from a fresh snapshot, and the export is
+		// rewritten if that snapshot holds anything the first one did not.
+		final, err := fathomResources(ctx, c)
+		if err != nil {
+			return err
+		}
+		if opts.export != "" && !sameResources(resources, final) {
+			n, err := exportResources(opts.export, final)
+			if err != nil {
+				return fmt.Errorf("%w; the release is removed but no Fathom resource or CRD was deleted; rerun fathomctl uninstall --purge-crds --export <file>", err)
+			}
+			_, _ = fmt.Fprintf(out, "Re-exported %d Fathom resource(s) to %s: they changed while the operator stopped.\n", n, opts.export)
+		}
+		resources = final
 		if err := purgeResources(ctx, f, c, resources, opts.timeout); err != nil {
 			return err
 		}
@@ -190,6 +205,31 @@ func runUninstall(ctx context.Context, cmd *cobra.Command, f *factory, opts *uni
 		_, _ = fmt.Fprintf(out, "Kept namespace %s (pass --delete-namespace to remove it).\n", ns)
 	}
 	return nil
+}
+
+// sameResources reports whether two snapshots hold the same objects at the
+// same resourceVersions.
+func sameResources(a, b map[string][]unstructured.Unstructured) bool {
+	versions := func(m map[string][]unstructured.Unstructured) map[string]string {
+		out := map[string]string{}
+		for kind, items := range m {
+			for i := range items {
+				key := kind + "/" + items[i].GetNamespace() + "/" + items[i].GetName() + "/" + string(items[i].GetUID())
+				out[key] = items[i].GetResourceVersion()
+			}
+		}
+		return out
+	}
+	va, vb := versions(a), versions(b)
+	if len(va) != len(vb) {
+		return false
+	}
+	for key, rv := range va {
+		if got, ok := vb[key]; !ok || got != rv {
+			return false
+		}
+	}
+	return true
 }
 
 // confirmationText describes everything this uninstall would delete that

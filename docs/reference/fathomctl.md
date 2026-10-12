@@ -458,7 +458,11 @@ every CRD and waits for their removal.
 
 `--export <file>` writes one multi-document YAML file atomically (a temporary
 file, then a rename) before anything is deleted. If writing fails, nothing is
-deleted and the exit code is `1`. Each resource is stripped of `status` and of
+deleted and the exit code is `1`. The operator can still write (a HealthReport,
+say) until it stops, so once it has, the resources are listed again; if they
+changed, the file is rewritten from that list before the purge, and the
+deleted count comes from it. If that rewrite fails, the release is already
+removed but no resource or CRD is deleted. Each resource is stripped of `status` and of
 `uid`, `resourceVersion`, `managedFields`, `creationTimestamp`, `generation`,
 `ownerReferences`, `finalizers` and the deletion fields, so
 `kubectl apply -f <file>` recreates it after a reinstall. Restored resources

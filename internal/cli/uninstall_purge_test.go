@@ -112,7 +112,7 @@ func TestPurgeExportIsWrittenFirstAndStripped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	if !strings.Contains(out, "Exported 2 Fathom resource(s)") {
+	if !strings.Contains(out, "Exported 2 Fathom resource(s)") || strings.Contains(out, "Re-exported") {
 		t.Errorf("output = %q", out)
 	}
 	// The export precedes every deletion.
@@ -149,6 +149,35 @@ func TestPurgeExportIsWrittenFirstAndStripped(t *testing.T) {
 	}
 	if matches, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".fathom-export-*")); len(matches) != 0 {
 		t.Errorf("temporary export files left behind: %v", matches)
+	}
+}
+
+// The operator can write until it stops; the export must still hold every
+// resource the purge deletes.
+func TestPurgeExportCoversResourcesWrittenDuringUninstall(t *testing.T) {
+	check := addonCheck("team-a", "coredns")
+	env := installedEnv(t, reportOwnedBy(check))
+	env.rc.onUninstall = func(ctx context.Context) {
+		late := reportOwnedBy(check)
+		late.Name = "coredns-report-2"
+		if err := env.c.Create(ctx, late); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "backup.yaml")
+	out, _, err := execVerb(env.f, "uninstall", "--purge-crds", "--export", path, "--yes")
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if !strings.Contains(out, "Re-exported 3 Fathom resource(s)") || !strings.Contains(out, "Deleted 3 Fathom resource(s)") {
+		t.Errorf("output = %q", out)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "coredns-report-2") {
+		t.Errorf("export misses the report written during the uninstall:\n%s", raw)
 	}
 }
 

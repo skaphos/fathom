@@ -91,6 +91,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | C11 | P2 | PR review: the namespace inventory treated any object with an owner reference as Fathom's, so a foreign dependent with a dangling or out-of-namespace owner could be deleted unseen. | Fixed — objects are gathered first; a dependent is suppressed only when its owner is itself in the namespace, otherwise it is listed; `TestDeleteNamespaceListsDependentsWithoutAListedOwner`. |
 | C12 | P2 | PR review: a same-version upgrade (the documented retry after a timed-out rollout) reported "nothing to do" without checking the operator, and printed text under `-o json\|yaml`. | Fixed — it waits for the rollout like any upgrade and encodes the plan when structured; `TestUpgradeSameVersionWaitsForTheRollout`, `TestUpgradeSameVersionStructuredOutput`. |
 | C13 | P2 | PR review: the upgrade-path gate let any recorded sanction act as a CRD-wide wildcard, though fathomctl honours `*` only when written, so a declaration could omit an incompatible change. | Fixed — only an explicit `path: "*"` matches the whole CRD, as in the CLI; `unrecordedSanctions` with `TestUnrecordedSanctions`. |
+| C14 | P2 | PR review: the export came from the snapshot taken before the operator stopped, so a HealthReport it wrote during the uninstall was purged without being exported or counted. | Fixed — after the operator is gone the resources are listed again; a changed set rewrites the export before the purge and supplies the count (the first export still precedes every deletion); `TestPurgeExportCoversResourcesWrittenDuringUninstall`. |
 
 ## Re-review history
 
@@ -105,5 +106,5 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    E1. The coordinator fixed E1; this change postdates the independent
    review and is verified by the CI e2e rerun rather than by the reviewer.
 5. The rerun exposed E2, a test defect; with it fixed the shard passed 8/8 in
-   CI and locally. PR review then raised C1–C13, fixed with unit regression
+   CI and locally. PR review then raised C1–C14, fixed with unit regression
    tests. Like E1, these postdate the independent review.

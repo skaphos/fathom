@@ -96,6 +96,8 @@ type fakeReleaseClient struct {
 	// while the old one keeps the Deployment Available.
 	surgeStuck bool
 	listErr    error
+	// onUninstall models the operator writing while it shuts down.
+	onUninstall func(ctx context.Context)
 }
 
 func newFakeReleaseClient(t *testing.T, c client.Client, log *eventLog) *fakeReleaseClient {
@@ -181,6 +183,9 @@ func (r *fakeReleaseClient) Upgrade(ctx context.Context, req releaseRequest) (*h
 
 func (r *fakeReleaseClient) Uninstall(ctx context.Context, name, namespace string, _ time.Duration) error {
 	r.log.add("release:uninstall %s/%s", namespace, name)
+	if r.onUninstall != nil {
+		r.onUninstall(ctx)
+	}
 	delete(r.releases, namespace+"/"+name)
 	return client.IgnoreNotFound(r.c.Delete(ctx, &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name + "-fathom-operator", Namespace: namespace}}))
 }
