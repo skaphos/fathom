@@ -51,9 +51,9 @@ windows × amd64/arm64); the chart change applies to every install path.
 
 **Project Type**: single Go module — operator plus the `fathomctl` client.
 
-**Performance Goals**: `status` answers in under 5 s on a healthy cluster;
-plan computation (CRD comparison of nine CRDs) under 2 s; waits bounded by
-`--timeout` (default 5m).
+**Performance Goals**: `status` answers in under 5 s on a healthy cluster
+(asserted in e2e); plan computation is local and covered by that bound; waits
+bounded by `--timeout` (default 5m).
 
 **Constraints**: no `--version`, no run-time chart fetch (clarification D);
 every API call bounded by `--request-timeout`; exit codes `0`/`1`;

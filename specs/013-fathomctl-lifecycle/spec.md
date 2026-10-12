@@ -78,6 +78,17 @@ tools with ordering rules.
 - Q: Should `uninstall` delete the namespace the operator was installed into? → A: Only with `--delete-namespace`. Without it the namespace is kept and the message says so. With it, the namespace is deleted after the operator is removed; if it holds objects Fathom did not create, they are listed and the same confirmation as `--purge-crds` (prompt or `--yes`) is required first.
 - Q: Can `install`/`upgrade` target a version other than the CLI's own? → A: No. Each `fathomctl` installs and upgrades to exactly its own version, from the chart embedded in it; there is no `--version` flag. Every release's `fathomctl` stays published, so another version means running that release's `fathomctl`, and a multi-step upgrade means running each intermediate release's `fathomctl` in turn.
 
+### Analysis remediation 2026-10-11
+
+`/speckit-analyze` findings resolved without changing a recorded decision:
+`install` applies the upgrade checks to CRDs it finds (FR-014) and every
+applied CRD records its release (FR-015), which `status` uses for CRD
+currency; applied CRDs must equal the target even when another field manager
+created them (FR-020); the upgrade-path file gains a floor (FR-027); exports
+drop owner references (FR-032); image values are always the CLI's own
+(FR-007); `install` defaults to `fathom-system` (FR-010); uninstall confirms
+once and handles pending releases (FR-035, FR-036).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Install Fathom with one command and know it worked (Priority: P1)
@@ -218,8 +229,9 @@ workloads remain while every check resource and CRD still exists; then run
    namespace still exists and the message says so; **Given**
    `--delete-namespace` and a namespace holding only Fathom objects, **Then**
    the namespace is deleted; **Given** `--delete-namespace` and a namespace
-   that also holds other objects, **Then** they are listed and nothing is
-   deleted without confirmation.
+   that also holds other objects, **Then** they are listed before anything is
+   removed, and declining the confirmation leaves everything — operator
+   included — in place.
 
 ---
 
@@ -255,7 +267,16 @@ the correct state and exits as specified.
 
 - **Mixed tooling**: an install started with `helm install` is upgraded with
   `fathomctl upgrade`, and the reverse; both must work and `helm history`
-  must show both revisions.
+  must show both revisions. Image references a previous revision recorded as
+  values (digests from `fathomctl`, or a tag a `helm` user set) never carry
+  into a `fathomctl` upgrade, which always sets them from its own release.
+  In the other direction, `helm upgrade` reuses the previous values when given
+  none, so it would keep `fathomctl`'s digests and run the old images under
+  the new chart; the docs tell Helm users to pass `--reset-values` (with their
+  own values) when moving a `fathomctl`-made install to a newer chart. CRDs
+  first created by `helm` or `kubectl apply` must reach exactly the target
+  schema when `fathomctl` first updates them, even though another field
+  manager owns their fields.
 - **Values preservation**: `upgrade` keeps the values the release was
   installed with (for example the monitoring and projected-label values)
   unless the user overrides them.
@@ -263,16 +284,27 @@ the correct state and exits as specified.
   in the cluster changes.
 - **Interrupted install or upgrade**: a release left in a pending or failed
   state is reported by `status`, and `install`/`upgrade` explain how to
-  recover rather than stacking a second change on top.
+  recover rather than stacking a second change on top. `uninstall` is itself a
+  recovery path and proceeds on a pending or failed release, reporting its
+  state.
 - **CRDs present without an operator**: a cluster where only the CRDs remain
   (after a plain `uninstall`) can be installed onto; existing check resources
-  are kept and picked up.
+  are kept and picked up. `install` compares those CRDs with its own exactly
+  as `upgrade` does, using the version recorded on them as the installed
+  version: it refuses CRDs from a newer release (a CRD downgrade), a skipped
+  stop, a scope change and any unacknowledged incompatible change, so an
+  install never bypasses the upgrade rules. CRDs carrying no recorded version
+  are compared without a path; any incompatible finding is refused.
 - **Version skew**: a CLI older than the installed operator refuses
   `install` and `upgrade` and names the matching `fathomctl` release; `status`
-  and `uninstall` still work, because they need no chart for another version.
+  and `uninstall` still work, because they need no chart for another version:
+  `status` judges CRD currency from the version recorded on each CRD, not by
+  comparing against its own embedded CRDs.
 - **Offline and air-gapped clusters**: every verb works without registry
   access to the chart, because the chart is embedded; only the images
-  themselves must be pullable (or mirrored by digest).
+  themselves must be pullable. Image repositories are fixed by the release
+  (FR-007), so a private mirror must be configured at the container runtime
+  (a registry mirror serving the same digests), not through chart values.
 - **Insufficient permissions**: a verb run without the cluster-admin-level
   permissions it needs fails before changing anything where the check is
   possible, and the message names the missing permission.
@@ -314,7 +346,8 @@ the correct state and exits as specified.
   references (repository, tag and digest of the operator, probe and
   node-agent images) are the one exception: they are fixed by the CLI's own
   release (FR-003, FR-011), and an override MUST be refused as a usage error
-  naming that reason.
+  naming that reason. `install` and `upgrade` MUST always set all of them from
+  the CLI's release, replacing any image values a previous revision recorded.
 - **FR-008**: Every verb except `status` MUST refuse to act when more than one
   Fathom release exists in the cluster, naming each release; `status` MUST
   report them and exit `1`.
@@ -323,6 +356,8 @@ the correct state and exits as specified.
 
 - **FR-010**: `install` MUST create every Fathom CRD, then the operator, in the
   chosen namespace, creating the namespace only with `--create-namespace`.
+  Without `-n`, `install` MUST use `fathom-system`, not the kubeconfig
+  context's namespace.
 - **FR-011**: `install` MUST install the CLI's own version and MUST reference
   the operator, probe and node-agent images by digest (release builds; a
   development build, which carries no recorded digests, references them by
@@ -333,11 +368,22 @@ the correct state and exits as specified.
   `fathomctl` release; it MUST never create a second release.
 - **FR-013**: `install` MUST wait until the operator is Available (bounded per
   FR-004).
+- **FR-014**: When Fathom CRDs already exist, `install` MUST apply the same
+  checks as `upgrade` (FR-021–FR-023, FR-027) before changing anything, taking
+  the installed version from the CRDs' recorded version (FR-015). It MUST
+  refuse when any existing CRD records a version newer than the CLI's (a CRD
+  downgrade). When an existing CRD records no version, it MUST compare without
+  a path and refuse any incompatible finding.
+- **FR-015**: Every CRD `install` or `upgrade` applies MUST carry the
+  annotation `fathom.skaphos.io/version` set to the CLI's version, so later
+  verbs know which release last applied it.
 
 **upgrade**
 
 - **FR-020**: `upgrade` MUST apply every CRD change in the target release
-  before the operator rollout begins.
+  before the operator rollout begins, and each applied CRD's spec MUST then
+  equal the target's exactly — including when another field manager (`helm`,
+  `kubectl`) created it, so no removed property or version survives.
 - **FR-021**: Before changing anything, `upgrade` MUST compare each installed
   CRD with the target's and MUST refuse an incompatible change the target
   release does not sanction, naming the CRD, the field and the manual path.
@@ -358,22 +404,26 @@ the correct state and exits as specified.
   per FR-004). If it is not Available in time, `upgrade` MUST leave the new
   release in place, exit `1`, name the unmet condition and print the recovery
   commands (inspect, retry with a longer `--timeout`, roll the operator back).
+- **FR-027**: Every release MUST declare the oldest version it can be
+  upgraded from directly, and the versions whose incompatible changes must not
+  be skipped. The declaration is a floor — the oldest version any recorded
+  upgrade data covers — plus the stops; the oldest direct version is the later
+  of the floor and the last stop below the target. `upgrade` MUST refuse a
+  transition that starts below the floor or skips a stop, before changing
+  anything, and the message MUST name the version(s) to upgrade through, in
+  order, and for the next step the `fathomctl` release to download and the
+  command to run with it (below the floor, which predates `fathomctl`'s
+  lifecycle verbs, the documented `helm` upgrade to the floor release).
+  `--accept-incompatible-crds` MUST NOT bypass this.
+- **FR-028**: `upgrade --dry-run` and `status` MUST show the upgrade path from
+  the installed version to the running CLI's version: direct, or the
+  intermediate `fathomctl` releases required, in order.
 - **FR-029**: `upgrade --rollback-on-failure` MUST, when the new operator is
   not Available in time, roll the operator back to the previous release
   revision and then exit `1`. It MUST be refused before anything changes when
   the plan applies an incompatible CRD change (sanctioned or not), because the
   previous operator may not run against the new schema. CRDs MUST never be
   rolled back.
-- **FR-027**: Every release MUST declare the oldest version it can be
-  upgraded from directly, and the versions whose incompatible changes must not
-  be skipped. `upgrade` MUST refuse a transition that starts below that
-  minimum or skips such a version, before changing anything, and the message
-  MUST name the version(s) to upgrade through, in order, and for the next step
-  the `fathomctl` release to download and the command to run with it.
-  `--accept-incompatible-crds` MUST NOT bypass this.
-- **FR-028**: `upgrade --dry-run` and `status` MUST show the upgrade path from
-  the installed version to the running CLI's version: direct, or the
-  intermediate `fathomctl` releases required, in order.
 
 **uninstall**
 
@@ -394,9 +444,11 @@ the correct state and exits as specified.
   `--yes` to skip it, refusal without either.
 - **FR-032**: `uninstall --purge-crds --export <file>` MUST write every
   Fathom custom resource to `<file>` in a form that can be re-applied, and
-  MUST delete nothing if writing the file fails. Re-applied resources carry no
-  owner references (the owners are recreated with new identities), which the
-  documentation MUST state. The confirmation prompt MUST
+  MUST delete nothing if writing the file fails. The export MUST omit every
+  `ownerReferences` entry — `HealthReport`s are owned by their checks, and a
+  restored reference to a deleted owner's UID would make the garbage
+  collector delete the restored resource — so re-applied resources carry no
+  owner references, which the documentation MUST state. The confirmation prompt MUST
   mention `--export` when it is not set; without it nothing is saved.
 - **FR-033**: After `uninstall --purge-crds` succeeds, no `fathom.skaphos.io`
   CRD, custom resource or operator-created object MUST remain.
@@ -407,17 +459,29 @@ the correct state and exits as specified.
   `--delete-namespace` it MUST delete the namespace after the operator is
   removed; if the namespace contains objects Fathom did not create, it MUST
   list them and require the same confirmation as `--purge-crds` (prompt on a
-  terminal, `--yes` to skip, refusal without either) before deleting.
+  terminal, `--yes` to skip, refusal without either) before deleting. The
+  namespace inventory MUST be taken before anything is removed, and
+  `--purge-crds` and `--delete-namespace` together MUST ask once, covering
+  both; declining (or refusing for lack of a terminal) aborts the whole
+  uninstall with nothing changed.
+- **FR-036**: `uninstall` MUST proceed on a release in a pending or failed
+  state, since it is a recovery path, and report the state it found. It MUST
+  accept `--timeout`, which bounds every wait it performs.
 
 **status**
 
 - **FR-040**: `status` MUST report whether Fathom is installed and, when it
   is: the managing tool, release name and namespace, operator version and image
   digests, the operator's readiness, and for each CRD whether it matches the
-  operator's version.
+  operator's version. A CRD's state comes from its recorded version (FR-015):
+  `current` when it equals the operator's, `outdated` when older, `newer` when
+  later, `missing` when absent. A CRD with no recorded version is `current`
+  only when the CLI's version equals the operator's and the CRD's spec equals
+  the embedded one; otherwise it is `unknown`.
 - **FR-041**: `status` MUST exit `1` when Fathom is installed but not healthy
-  or its CRDs do not match the operator, and `0` when it is installed and
-  current or not installed at all.
+  or any CRD is `outdated`, `newer` or `missing`, and `0` when it is installed
+  and current or not installed at all. `unknown` CRDs are reported, with the
+  reason, and do not by themselves fail `status`.
 - **FR-042**: `status` MUST support `-o json` and `-o yaml` with the same
   facts.
 
@@ -442,8 +506,9 @@ the correct state and exits as specified.
 - **Fathom CRD set**: the nine `fathom.skaphos.io` CustomResourceDefinitions a
   release ships; cluster-scoped and shared by every install in the cluster;
   each has a schema and a scope.
-- **Upgrade path**: what a release declares about how to reach it — the
-  oldest version it can be upgraded from directly and which incompatible
+- **Upgrade path**: what a release declares about how to reach it — a floor
+  below which no upgrade data exists, the stops (from which the oldest
+  version it can be upgraded from directly follows), and which incompatible
   changes it sanctions, with their reasons — from which the CLI derives the
   intermediate versions a longer jump must pass through.
 - **Upgrade plan**: for one transition from the installed version A to the CLI's own version B, the per-CRD
@@ -491,8 +556,11 @@ the correct state and exits as specified.
 ## Assumptions
 
 - Users have a kubeconfig with cluster-admin-level permissions for `install`,
-  `upgrade` and `uninstall`; `status` needs only read access to the release,
-  the CRDs and the operator Deployment.
+  `upgrade` and `uninstall`. `status` is read-only: it lists Deployments
+  across namespaces to find the operator, then reads Helm release Secrets
+  only in that namespace (and the `-n` namespace, to catch a release whose
+  Deployment was never created), plus the CRDs. It needs no cluster-wide
+  Secret access; the docs state these permissions exactly.
 - One Fathom install per cluster is the supported topology, because the CRDs
   are cluster-scoped and shared.
 - Downgrades are out of scope for `upgrade`; `helm rollback` remains available
@@ -500,7 +568,13 @@ the correct state and exits as specified.
 - Images are pinned by digest using the digests recorded for each release, per
   the deploy-by-digest contract in `RELEASE.md`. A development build of
   `fathomctl` (not produced by the release workflow) has no recorded digests
-  and installs by tag; `status` and the docs say so.
+  and installs by tag; `status` and the docs say so. Its version must still be
+  valid SemVer, because it becomes the chart version and is compared with the
+  installed one: `install` and `upgrade` refuse a non-SemVer version (a bare
+  commit hash or `dev`) and say how to build with an explicit one
+  (`FATHOMCTL_VERSION=<semver>`). A `git describe` version such as
+  `0.5.1-12-gabc1234` is a SemVer pre-release and sorts below `0.5.1`, as
+  SemVer requires.
 - The CRD compatibility verdict for an upgrade uses the same rules as the
   repository's `crd-compat` gate. Each release records which incompatible
   changes it sanctions and the oldest version it can be upgraded from

@@ -36,7 +36,8 @@ What `fathomctl` finds in the cluster (research R6).
 | `scope` | `Namespaced` \| `Cluster` | `clusterhealths` and `addondefinitions` are cluster-scoped. |
 | `live` | CRD or absent | From the cluster. |
 | `target` | CRD | From the embedded chart's `crds/`. |
-| `state` | `current` \| `outdated` \| `missing` \| `newer` | `status` compares live with the operator's version; `newer` means a later release applied it. |
+| `recordedVersion` | semver or absent | Annotation `fathom.skaphos.io/version`, stamped on every CRD `install`/`upgrade` applies (FR-015); absent on CRDs applied by `helm` or `kubectl`. |
+| `state` | `current` \| `outdated` \| `missing` \| `newer` \| `unknown` | `status` compares `recordedVersion` with the operator's version; `newer` means a later release applied it. Without a recorded version: `current` only when the CLI's version equals the operator's and the live spec equals the embedded one, else `unknown` (FR-040). |
 
 ## Upgrade path declaration (`upgrade-path.yaml`)
 
@@ -45,6 +46,7 @@ Shipped in the chart; append-only (research R5; schema in
 
 | Field | Type | Notes |
 |---|---|---|
+| `floor` | semver | Oldest version the recorded data covers (`0.5.0`); an install below it is refused `below-floor` (FR-027). |
 | `releases[].version` | semver | One entry per release that sanctions a change or is a stop. |
 | `releases[].stop` | bool | `true`: an upgrade must not skip this version. |
 | `releases[].sanctioned[]` | list of `{crd, path, reason, issue}` | Incompatible CRD changes this release deliberately makes; `path` uses crdify's notation, `*` for the whole CRD. |
@@ -63,7 +65,7 @@ Computed from Install + CRD set + declaration for A (installed) → B (CLI).
 | `path` | `direct` or ordered list of stop versions | Stops S with A < S < B. |
 | `crds[]` | `{name, action, findings[]}` | `action`: `add` \| `update` \| `unchanged` \| `refuse`. |
 | `crds[].findings[]` | `{check, path, message, sanctionedBy?}` | crdify findings; `sanctionedBy` names the release + issue when matched. |
-| `refusals[]` | `{reason, detail, next}` | `reason`: `stop-skipped`, `scope-change`, `unsanctioned-incompatible`, `acknowledgement-required`, `downgrade`, `not-installed`, `not-helm`, `multiple-installs`, `release-pending`, `missing-permissions`. `next` is the exact next command. |
+| `refusals[]` | `{reason, detail, next}` | `reason`: `below-floor`, `stop-skipped`, `crd-downgrade`, `dev-version`, `scope-change`, `unsanctioned-incompatible`, `acknowledgement-required`, `downgrade`, `not-installed`, `not-helm`, `multiple-installs`, `release-pending`, `missing-permissions`. `next` is the exact next command. |
 | `operator` | `{fromImages, toImages}` | Digest or tag references. |
 | `values` | map | Effective values after reuse + overrides (secrets are not printed). |
 
@@ -90,4 +92,4 @@ Removed by every `uninstall` (research R7); never written by the CLI.
 |---|---|
 | file | One multi-document YAML, written atomically before any deletion. |
 | order | `AddonDefinition`, `AddonDefinitionBinding`, `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, `NodeHealthCheck`, `HealthCheck`, `ClusterHealth`, `HealthReport`. |
-| stripped | `metadata.uid`, `resourceVersion`, `managedFields`, `creationTimestamp`, `generation`, `ownerReferences` to deleted objects; `status`. |
+| stripped | `metadata.uid`, `resourceVersion`, `managedFields`, `creationTimestamp`, `generation`, every `ownerReferences` entry (all owners are deleted by the purge; a stale owner UID would make the garbage collector delete the restored object — `HealthReport`s are owned by their checks); `status`. |

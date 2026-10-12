@@ -97,9 +97,11 @@ of the module and a survey of this repository (2026-10-11).
   and whether the release is a **stop** — a version an upgrade must not skip.
   The CLI reads it from its embedded chart: the path from installed version A
   to its own version B is every stop S with A < S < B, in order; no stops means
-  direct. A gate test fails CI when a `SANCTIONED` finding in the crd-compat
-  gate has no matching entry for the upcoming version, so the record cannot
-  fall behind the allowlist.
+  direct. A top-level `floor` (0.5.0) marks the oldest version the data
+  covers; anything older is refused rather than compared against changes that
+  were never recorded. A gate test fails CI when a `SANCTIONED` finding in the
+  crd-compat gate has no matching unreleased entry (version above the latest
+  tag), so the record cannot fall behind the allowlist.
 - **Rationale**: FR-027/FR-028 need the record in the target release, which is
   always the CLI's own (clarification D). Shipping it in the chart keeps one
   artifact. Append-only means any later CLI knows every earlier stop.
@@ -108,8 +110,12 @@ of the module and a survey of this repository (2026-10-11).
 
 ## R6. Detecting the install and its manager
 
-- **Decision**: (1) list Helm releases across namespaces with the Secrets
-  driver and select those whose chart name is `fathom-operator`; (2) if none,
+- **Decision**: (1) list Deployments cluster-wide for the manager
+  (`control-plane=controller-manager` + `isFathomOperator`) and read Helm
+  releases with the Secrets driver only in those namespaces and the `-n`
+  namespace (which catches a release whose Deployment was never created),
+  selecting those whose chart name is `fathom-operator` — so `status` needs no
+  cluster-wide Secret access; (2) if none,
   find the manager with the CLI's existing lookup
   (`control-plane=controller-manager` + `isFathomOperator`, `version.go`) and
   classify it: `olm.owner*` labels → OLM; `app.kubernetes.io/managed-by:
@@ -164,9 +170,22 @@ of the module and a survey of this repository (2026-10-11).
 6. `helm upgrade` with `SkipCRDs`, `ReuseValues` plus overrides, the injected
    digests, `WaitStrategy`, and `RollbackOnFailure` when requested.
 
-Install follows 1, 3, 5, then `helm install` with `SkipCRDs`. Applying CRDs
+Install follows the same steps, then `helm install` with `SkipCRDs`. When no
+Fathom CRDs exist, step 2 has nothing to compare. When CRDs remain (a plain
+`uninstall`), step 2 runs in full with A taken from each CRD's
+`fathom.skaphos.io/version` annotation; a newer A is `crd-downgrade`, and CRDs
+without the annotation are compared without a path (FR-014). Applying CRDs
 ourselves on install too keeps one code path and lets a later upgrade own them
 with the same field manager.
+
+Step 5 detail (FR-015, FR-020): every applied CRD gets the
+`fathom.skaphos.io/version` annotation. Server-side apply only removes fields
+the applier owned before, so a CRD whose `managedFields` show another manager
+(`helm`, `kubectl-client-side-apply`, …) is first replaced whole with an
+Update carrying its `resourceVersion` (dropping the last-applied annotation),
+after which SSA with manager `fathomctl` owns every field. After applying, the
+live `spec` is compared semantically with the target and any difference fails
+the verb before the rollout.
 
 ## R10. Export format for `--purge-crds --export`
 
@@ -174,7 +193,10 @@ with the same field manager.
   (`AddonDefinition`, `AddonDefinitionBinding`, then executable checks,
   `HealthCheck`, `ClusterHealth`, `HealthReport`), with server-populated
   metadata removed (`uid`, `resourceVersion`, `managedFields`,
-  `creationTimestamp`, `generation`) and `status` omitted, so
+  `creationTimestamp`, `generation`, every `ownerReferences` entry — check
+  controllers set controller references on `HealthReport`s, and a reference to
+  a purged owner's UID would have the garbage collector delete the restored
+  report) and `status` omitted, so
   `kubectl apply -f` re-creates the resources after a reinstall. Written to a
   temp file and renamed, before any deletion (FR-032).
 
