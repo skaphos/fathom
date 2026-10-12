@@ -16,6 +16,7 @@ import (
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart/common"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/kube"
 	kubefake "helm.sh/helm/v4/pkg/kube/fake"
 	"helm.sh/helm/v4/pkg/storage"
 	"helm.sh/helm/v4/pkg/storage/driver"
@@ -123,6 +124,22 @@ func TestHelmReleaseClientUpgradeKeepsTheNewChartsDefaults(t *testing.T) {
 	}
 	if rel.Config["leaderElect"] != false {
 		t.Errorf("the release's own value was lost: leaderElect = %v", rel.Config["leaderElect"])
+	}
+}
+
+// fathomctl applies through Helm as field manager "helm" whatever its binary
+// is called, so fathomctl and the helm CLI never conflict on a release's
+// fields (found by the lifecycle e2e: a renamed binary conflicted on every
+// object).
+func TestHelmReleaseClientUsesHelmsFieldManager(t *testing.T) {
+	old := kube.ManagedFieldsManager
+	t.Cleanup(func() { kube.ManagedFieldsManager = old })
+	kube.ManagedFieldsManager = ""
+	if _, err := newHelmReleaseClient(newFactory()); err != nil {
+		t.Fatal(err)
+	}
+	if kube.ManagedFieldsManager != "helm" {
+		t.Errorf("field manager = %q, want helm", kube.ManagedFieldsManager)
 	}
 }
 

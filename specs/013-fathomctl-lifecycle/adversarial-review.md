@@ -75,6 +75,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
 | N5 | P3 | On that path the CLI cannot wait for a manager it cannot identify. | Accepted — only reachable with a pod stuck beyond `--timeout`, which the error's force-delete hint covers. |
 | N6 | P3 | `redactValues` does not descend into lists. | Accepted — no chart value carries a secret inside a list today. |
 | N7 | P3 | `waitBounded` aborts on a transient API error instead of retrying. | Deferred — bounded and reported; revisit with real-cluster e2e data. |
+| E1 | P1 | Found by the first CI run of the `lifecycle` e2e shard (PR #370), after this review: Helm v4 names the server-side-apply field manager after the binary, so `fathomctl upgrade` from a differently named binary (and `helm` against a `fathomctl`-made release) conflicted on every chart object and failed after the CRDs were applied. | Fixed after the review — Helm-driven applies use field manager `helm` (`lifecycle_helm.go`), matching the `helm` CLI; unit test `TestHelmReleaseClientUsesHelmsFieldManager`; reference doc updated. Verified by re-running the CI `lifecycle` shard. |
 
 ## Re-review history
 
@@ -84,3 +85,7 @@ vulnerabilities), `task build`, `task verify-generated`, `task crd-compat`,
    N2 (P3) raised.
 3. Confirmation of the N1/N2 fixes: **PASS**; P3 edge cases N3–N5 recorded
    above.
+4. Post-review: the first CI run of the `lifecycle` e2e shard (3 of its specs
+   passed: install, status, idempotent re-install) failed the upgrade spec on
+   E1. The coordinator fixed E1; this change postdates the independent
+   review and is verified by the CI e2e rerun rather than by the reviewer.

@@ -55,7 +55,17 @@ func (h *helmReleaseClient) chart(version string) (*chart.Chart, error) {
 	return helmchart.Load(version)
 }
 
+// helmFieldManager is the server-side-apply field manager for everything
+// fathomctl applies through Helm. Helm otherwise derives it from the binary
+// name (os.Args[0]), so a renamed or versioned fathomctl — or plain `helm`
+// against a fathomctl-made release — would conflict on every field. Using
+// Helm's own name lets the two tools take turns on one release (SC-007);
+// which tool made it is recorded by the installed-by release label. CRDs are
+// written by the CLI itself, under fieldManager "fathomctl".
+const helmFieldManager = "helm"
+
 func newHelmReleaseClient(f *factory) (releaseClient, error) {
+	kube.ManagedFieldsManager = helmFieldManager
 	flags := genericclioptions.NewConfigFlags(false)
 	flags.KubeConfig = &f.opts.kubeconfig
 	flags.Context = &f.opts.context

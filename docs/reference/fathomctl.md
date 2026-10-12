@@ -274,7 +274,12 @@ Reaching another version means running that release's `fathomctl`.
 Releases are stored with Helm's Secret driver in the release namespace and
 labelled `fathom.skaphos.io/installed-by=fathomctl`, so `helm ls`,
 `helm history` and `helm rollback` see them. An install made with
-`helm install` can be upgraded or removed by `fathomctl`. Installs made by
+`helm install` can be upgraded or removed by `fathomctl`. The chart's objects
+are server-side applied under the field manager `helm` — the name the `helm`
+CLI itself uses — whatever the `fathomctl` binary is called, so the two tools
+can take turns on one release without apply conflicts; the release label
+`fathom.skaphos.io/installed-by=fathomctl` records which tool made it. CRDs
+are written by `fathomctl` itself, under field manager `fathomctl`. Installs made by
 kustomize (`dist/install.yaml`, `config/default`) or OLM are refused with
 `not-helm`, never taken over.
 
