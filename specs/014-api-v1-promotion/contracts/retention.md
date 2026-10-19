@@ -41,8 +41,8 @@ of that kind are deleted with reason `cap`. "Oldest" orders by
 
 ## Bounded work
 
-Each pass deletes at most a fixed budget of reports and requeues immediately
-if work remains. A pass never blocks a check's own reconcile.
+Each pass deletes at most 50 reports and requeues immediately if work
+remains. A pass never blocks a check's own reconcile.
 
 ## Observability
 
@@ -50,7 +50,7 @@ if work remains. A pass never blocks a check's own reconcile.
 |---|---|
 | `fathom_healthreports_retained` | gauge, labels `namespace`, `source_kind`: orphaned reports currently held |
 | `fathom_healthreports_pruned_total` | counter, labels `namespace`, `source_kind`, `reason` (`window`, `cap`) |
-| Event | one per namespace per pass that deleted anything; involved object the Namespace; reason `ReportsPruned`; action `Retain`; message `pruned N HealthReports (window: a, cap: b)` |
+| Event | one per namespace per pass that deleted anything; regarding the most recently pruned report (it no longer exists; Events may reference deleted objects), so the Event is in the affected namespace; reason `ReportsPruned`; action `Retain`; message `pruned N HealthReports (window: a, cap: b)` |
 
 No Event is emitted per report.
 

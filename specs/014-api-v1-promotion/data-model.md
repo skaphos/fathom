@@ -90,17 +90,19 @@ then name, matching the existing per-check prune tie-break.
 ## Retention reconciler
 
 - **Key**: namespace name.
-- **Triggers**: delete events on AddonCheck, DNSCheck, NodeCertificateCheck,
-  NodeHealthCheck, HealthCheck, ClusterHealth (cluster-scoped: no reports,
-  excluded); a periodic resync (fixed internal interval, 1h).
+- **Triggers**: delete events on the four report-writing kinds (AddonCheck,
+  DNSCheck, NodeCertificateCheck, NodeHealthCheck); HealthCheck and
+  ClusterHealth write no reports and are not watched; a periodic resync
+  (fixed internal interval, 1h).
 - **Per pass**: list reports in the namespace; group by the three labels;
   resolve each group's check by kind and name and compare UID; stamp or
-  evaluate `source-deleted-at`; enforce the per-kind cap; delete at most a
-  fixed per-pass budget and requeue immediately if any work remains.
+  evaluate `source-deleted-at`; enforce the per-kind cap; delete at most 50
+  reports per pass and requeue immediately if any work remains.
 - **Outputs**: metrics `fathom_healthreports_retained{namespace,source_kind}`
   (gauge) and `fathom_healthreports_pruned_total{namespace,source_kind,reason}`
   (counter, reason `window` | `cap`); one Event per pass that deleted anything,
-  on the Namespace, reason `ReportsPruned`, action `Retain`.
+  regarding the most recently pruned report so it lives in the affected
+  namespace, reason `ReportsPruned`, action `Retain`.
 - **RBAC**: no new verbs (healthreports already `create;get;list;watch;delete`;
   events already `create;patch`).
 
@@ -124,7 +126,7 @@ new `servedVersionRemoval` check (research R4).
 | `add` | CRD absent | nothing |
 | `unchanged` | specs equal after defaulting | nothing |
 | `update` | specs differ, every live stored version still served by target | sanction + flag for incompatible property findings (existing) |
-| `replace` (new) | target drops a version in live `status.storedVersions` | `*` sanction and `--accept-incompatible-crds`; prints the custom-resource inventory first |
+| `replace` (new) | target drops a version in live `status.storedVersions` | `*` sanction; `--accept-incompatible-crds` only when the inventory is non-empty; prints the custom-resource inventory first |
 
 ## Export verb output
 

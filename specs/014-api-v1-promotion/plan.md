@@ -27,7 +27,7 @@ longer deletes its reports: `v1` reports carry a source-UID label instead of
 an owner reference, a namespace-keyed retention reconciler stamps orphans
 with a deleted-at annotation, prunes them after a 30-day window, enforces a
 per-namespace per-kind cap of 500, and reports through two metrics and one
-Event per pass. The compat gate learns to flag served-version removal so the
+Event per pass recorded in the affected namespace. The compat gate learns to flag served-version removal so the
 swap is a sanctioned finding and `v1` has an automated backstop. Two ADRs
 record the single-version policy and the retention change.
 

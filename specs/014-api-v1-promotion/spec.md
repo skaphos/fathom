@@ -39,9 +39,10 @@ SPDX-License-Identifier: MIT
   for the adopter to commit and apply. Nothing is applied automatically, and
   the guided upgrade never recreates checks itself.
 - Q: Where does a retained report record which check it belonged to and when
-  that check was deleted? → A: In labels and annotations set on the report
-  when the check is deleted; the `v1` `HealthReport` schema gains no field
-  for retention. The plan must justify this against the constitution's
+  that check was deleted? → A: In labels set at creation (the owning check's
+  kind, name and UID) and one annotation set when the operator first finds
+  the check gone; the `v1` `HealthReport` schema gains no field for
+  retention. The plan must justify this against the constitution's
   "no health semantics in annotations" rule as lifecycle bookkeeping, not
   health semantics.
 - Q: What is the default retention window for reports kept after their
@@ -56,7 +57,8 @@ SPDX-License-Identifier: MIT
 - Q: How is report pruning made visible? → A: Metrics for retained and
   pruned report counts per namespace and kind, plus one summary Event per
   prune pass per namespace stating how many reports were removed and why
-  (window or cap). No per-report Events.
+  (window or cap), recorded regarding the most recently pruned report so it
+  lives in the affected namespace. No per-report Events.
 
 ## Context and what is already done
 
@@ -195,7 +197,10 @@ exactly as the retention decision states.
 **Acceptance Scenarios**:
 
 1. **Given** a manifest for a promoted kind that sets the former pause field,
-   **When** it is applied, **Then** it is rejected as an unknown field.
+   **When** it is applied with strict field validation (the `kubectl`
+   default), **Then** it is rejected as an unknown field; a client without
+   strict validation has the field pruned by the API server and the operator
+   never sees it.
 2. **Given** a running `NodeCertificateCheck` with an agent workload deployed,
    **When** the check is deleted, **Then** the agent workload is removed, and
    there is no other operator-driven way to remove it.
@@ -335,8 +340,10 @@ pre-conditions.
   `AddonDefinitionBinding`) must be untouched: their served version, schema,
   bindings and drain state survive the upgrade unchanged.
 - **A `v1` object whose `spec` is valid but was authored with fields that only
-  existed in alpha** (for example the pause field) is rejected, not silently
-  pruned, so that intent is never dropped without the author knowing.
+  existed in alpha** (for example the pause field) is rejected under strict
+  field validation and pruned by the API server otherwise; the export verb
+  removes the field before anything is applied, so no supported path sends
+  it.
 
 ## Requirements *(mandatory)*
 
@@ -377,8 +384,10 @@ pre-conditions.
 
 **Pause removal**
 
-- **FR-010**: No promoted kind MUST carry a pause field; a manifest that sets
-  one is rejected as an unknown field.
+- **FR-010**: No promoted kind MUST carry a pause field. A manifest that sets
+  one is rejected as an unknown field under strict field validation (the
+  `kubectl` default) and pruned by the API server for other clients; the
+  export verb never emits it and the migration guidance says so.
 - **FR-011**: The operator MUST never write a `Paused` condition, and the only
   operator action that removes a check's node-agent workload is deletion of
   the check.
@@ -391,8 +400,8 @@ pre-conditions.
   whole window, MUST NOT be counted against or mistaken for a recreated
   check's history, and MUST be pruned in bounded work per reconcile. The
   window defaults to 30 days and is configurable through the operator's
-  normal configuration model; a window of zero disables retention and
-  restores delete-removes-history. This behaviour MUST be stated in the reports
+  normal configuration model; a window of zero prunes orphaned reports on
+  the first pass that sees them. This behaviour MUST be stated in the reports
   documentation and in the delete guidance that replaces pause.
 - **FR-013b**: Retention bookkeeping (the deleted check's kind, name and
   unique identity, and the time it was deleted) MUST be recorded on the
@@ -413,8 +422,10 @@ pre-conditions.
 - **FR-013d**: Every prune pass MUST be observable: the operator exposes the
   number of retained reports and the number pruned, each by namespace, kind
   and reason (window or cap), and records one Event per namespace per prune
-  pass stating the count removed and the reason. Individual pruned reports
-  do not produce Events.
+  pass stating the count removed and the reason. The Event is recorded
+  regarding the most recently pruned report (an Event may reference an
+  object that no longer exists, as Pod events do), so it lives in the
+  affected namespace. Individual pruned reports do not produce Events.
 
 **Upgrade and migration**
 
@@ -443,8 +454,9 @@ pre-conditions.
   operator release. The epic's "all three axes align at 1.0" statement is
   revised to: the 1.0.0 operator ships CRD `v1`; the adapter contract
   versions on its own.
-- **FR-017**: Release notes and the release process document MUST carry the
-  upgrade pre-conditions, the inventory step, the export-then-recreate
+- **FR-017**: Release notes and the release process document (the migration
+  section only; FR-019 is the catalogue of every other document) MUST carry
+  the upgrade pre-conditions, the inventory step, the export-then-recreate
   procedure using the CLI export, and the
   statement that alpha resources and history do not survive, in the same terms
   the guided upgrade uses.
@@ -498,8 +510,8 @@ pre-conditions.
 ### Measurable Outcomes
 
 - **SC-001**: 100% of the shipped `v1` samples for promoted kinds are accepted
-  and reach a verdict on a fresh install, with behaviour identical to their
-  alpha equivalents on the previous release.
+  and reach a verdict on a fresh install, with the same verdict and the same
+  condition reasons their alpha equivalents produced on the previous release.
 - **SC-002**: 0 alpha-versioned resources of a promoted kind remain readable
   after a completed upgrade, on both the guided path and the plain-manifest
   path.

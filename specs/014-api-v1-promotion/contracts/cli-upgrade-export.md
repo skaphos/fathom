@@ -57,8 +57,9 @@ Chosen for a CRD when the target drops any version listed in the live CRD's
 | Condition | Result |
 |---|---|
 | no upgrade-path entry with `path: "*"` sanctions the CRD on the path | refusal `unsanctioned-incompatible` |
-| sanctioned, `--accept-incompatible-crds` absent | refusal `acknowledgement-required`; the plan output lists the inventory below so the administrator sees what the flag will remove |
-| sanctioned, flag present | the CRD is deleted, its deletion awaited, the target created and awaited `Established`; the removed object count is printed |
+| sanctioned, inventory empty (the CRD stores the old version but holds no objects) | no acknowledgement needed; the CRD is replaced and the plan prints `0 objects will be removed` |
+| sanctioned, inventory non-empty, `--accept-incompatible-crds` absent | refusal `acknowledgement-required`; the plan output lists the inventory below so the administrator sees what the flag will remove |
+| sanctioned, inventory non-empty, flag present | the CRD is deleted, its deletion awaited, the target created and awaited `Established`; the removed object count is printed |
 | the release is a `stop` on the path | existing `stop-skipped` rules apply first |
 
 Inventory printed before any change, once per CRD to be replaced:
@@ -79,6 +80,12 @@ a CRD that is gone by the time of deletion is treated as already replaced.
 
 `--rollback-on-failure` with any `replace` action is a usage refusal (as it
 already is for incompatible changes).
+
+`install` over leftover CRDs (no release present) never replaces: a leftover
+CRD that stores a version the target drops is refused as
+`leftover-stored-version` with
+`next: fathomctl export --output <file>; kubectl delete crd <names>; fathomctl install`,
+because leftover CRDs carry no recorded version to sanction against.
 
 ## `status`
 

@@ -139,8 +139,8 @@ third label, `fathom.skaphos.io/source-uid`, carrying the owning check's UID.
 The four prune functions collapse into one shared helper that filters by all
 three labels, so a recreated same-name check never prunes or counts its
 predecessor's reports (FR-013, US3 scenario 5). A new namespace-keyed
-`HealthReportRetentionReconciler` is triggered by delete events on the six
-check kinds and by a periodic resync. Per pass it lists the namespace's
+`HealthReportRetentionReconciler` is triggered by delete events on the four
+report-writing kinds and by a periodic resync. Per pass it lists the namespace's
 reports, groups by source labels, and treats a group as orphaned when no
 check with that kind, name and UID exists. First observation of an orphan
 stamps the annotation `fathom.skaphos.io/source-deleted-at` with the current
@@ -264,8 +264,11 @@ descriptor table is retyped to `v1`.
 currently held) and counter
 `fathom_healthreports_pruned_total{namespace,source_kind,reason}` with reason
 `window` or `cap`. One Event per namespace per pass that removed anything,
-reason `ReportsPruned`, action `Retain`, involved object the Namespace,
-message naming counts per reason. Both metrics get rows in
+reason `ReportsPruned`, action `Retain`, recorded regarding the most recently
+pruned report: an Event whose involved object is cluster-scoped must live in
+`default`, so the Namespace cannot be the subject, while an Event may
+reference an object that no longer exists (Pod events do), which keeps it in
+the affected namespace. Message names counts per reason. Both metrics get rows in
 `docs/guides/monitoring.md`, which `contract_doc_test.go` enforces.
 
 ## R12. Generation, docs and packaging switches
@@ -306,6 +309,16 @@ is observed inside the run.
 
 **Rationale**: FR-022 demands the real previous release; nothing else proves
 the stored-version replacement against a genuine server.
+
+**Version pinning**: the lifecycle shard builds its CLIs at
+`<appVersion>-e2e.N`, which sorts below the chart's own version, so against
+a published 0.6.0 install the upgrade would read as a downgrade and the
+0.7.0 `*` sanctions (matched by A < entry ≤ B) would never apply. The
+alpha-to-`v1` scenario therefore builds its CLI at exactly the newest
+`releases[].version` in `upgrade-path.yaml` (the stop itself, 0.7.0) and the
+Taskfile tags the locally built images under that version too. The scenario
+is specific to the 0.6.0 to `v1` replacement and is retired when 0.6.0 drops
+below the upgrade-path floor.
 
 ## R15. Decision records
 

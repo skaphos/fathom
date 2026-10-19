@@ -28,7 +28,7 @@ promises and the admission behaviour that tests assert.
 |---|---|
 | object of any promoted kind without `spec` | rejected: `spec: Required value` |
 | update replacing an object with one whose `spec` is absent | rejected (same rule), so `self == oldSelf` rules cannot be bypassed |
-| `spec.paused` on AddonCheck, HealthCheck or NodeCertificateCheck | rejected: unknown field |
+| `spec.paused` on AddonCheck, HealthCheck or NodeCertificateCheck | rejected: unknown field under strict field validation (`kubectl` default); pruned by the server otherwise |
 | `HealthCheck.spec.checkRef.apiVersion` not `fathom.skaphos.io/v1` | rejected: unsupported value, accepted value listed |
 | `HealthCheck.spec.checkRef.apiVersion` empty | accepted; the controller treats it as `fathom.skaphos.io/v1` |
 | two server-side-apply managers each own one `AddonCheck` condition type | both conditions present after each apply |
