@@ -17,7 +17,7 @@ SPDX-License-Identifier: MIT
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -35,10 +35,12 @@ SPDX-License-Identifier: MIT
 
 ## Notes
 
-- Three clarification markers are open and block `/speckit-plan`: FR-002
-  (which kinds promote), FR-013 (report history on check delete), FR-016
-  (adapter contract version alignment). They are presented to the user as
-  Q1-Q3 by `/speckit-specify`; answer them there or via `/speckit-clarify`.
+- All three clarifications were answered in the 2026-10-18 session and are
+  recorded in the spec's Clarifications section: all seven check kinds
+  promote (FR-002); reports are retained for a bounded window after check
+  deletion (FR-013/FR-013a); the adapter contract stays at 1.1.0 as an
+  independent axis (FR-016). No markers remain; the spec is ready for
+  `/speckit-plan`.
 - "No implementation details" is judged at the API-contract level: a CRD
   promotion is inherently about resource shapes and versions, so kind names,
   field names and version strings are the subject matter, not leakage.

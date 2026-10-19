@@ -14,6 +14,26 @@ SPDX-License-Identifier: MIT
 
 **Tracks**: skaphos/fathom#149 (epic), #262 (remove pause), #257 findings API-3, API-4, API-6. Milestone v0.7.0.
 
+## Clarifications
+
+### Session 2026-10-18
+
+- Q: Which kinds are promoted to `v1`? → A: All seven check kinds
+  (`AddonCheck`, `HealthCheck`, `ClusterHealth`, `HealthReport`,
+  `NodeCertificateCheck`, `DNSCheck`, `NodeHealthCheck`). One upgrade, one
+  story, no mixed-version references. Only the runtime definition kinds stay
+  alpha.
+- Q: What happens to a check's report history when the check is deleted? →
+  A: Reports are retained for a bounded window after the check is deleted and
+  pruned by the operator afterwards, so a deliberate stop does not erase
+  "was this passing before the incident?". The per-check history cap keeps
+  applying while the check lives.
+- Q: How does the adapter contract version relate to the CRD version and the
+  operator release at 1.0? → A: The contract stays at its current 1.1.0 and is
+  documented as an independent axis. The epic's "all three align at 1.0"
+  statement is revised to "operator 1.0.0 ships CRD `v1`; the adapter
+  contract versions on its own".
+
 ## Context and what is already done
 
 The epic was written on 2026-07-12. Several of the schema fixes it lists have
@@ -31,8 +51,8 @@ since shipped at `v1alpha1` during the sanctioned alpha-churn window and are
 What this feature actually changes is listed under Requirements. The kind set
 has also grown since the epic: Fathom now serves seven check kinds at
 `v1alpha1` (`AddonCheck`, `HealthCheck`, `ClusterHealth`, `HealthReport`,
-`NodeCertificateCheck`, `DNSCheck`, `NodeHealthCheck`) plus the two runtime
-definition kinds, which stay on their own alpha track.
+`NodeCertificateCheck`, `DNSCheck`, `NodeHealthCheck`). All seven are
+promoted. The two runtime definition kinds stay on their own alpha track.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -66,8 +86,8 @@ that names the supported version.
    server rejects it, and the rejection names the version that is served.
 3. **Given** the published API reference and versioning policy, **When** a
    user reads the entry for a promoted kind, **Then** it states that the kind
-   is stable, that incompatible changes are forbidden under `v1`, and which
-   kinds (if any) remain alpha.
+   is stable, that incompatible changes are forbidden under `v1`, and that
+   only the runtime definition kinds remain alpha.
 4. **Given** a `ClusterHealth` on this release, **When** its selected
    `HealthCheck` statuses change, **Then** the aggregate verdict is still
    derived only from `HealthCheck` status, never from report history.
@@ -150,12 +170,17 @@ exactly as the retention decision states.
    **When** the check is deleted, **Then** the agent workload is removed, and
    there is no other operator-driven way to remove it.
 3. **Given** a check with accumulated report history, **When** the check is
-   deleted, **Then** the history behaves as decided in FR-013 and that
-   behaviour is stated in the user documentation for reports.
+   deleted, **Then** the reports remain readable for the retention window,
+   are attributable to the deleted check, and are pruned once the window
+   elapses; the reports documentation states exactly this.
 4. **Given** the `fathomctl run` command targeting a check, **When** the check
    is not paused (the only state that now exists), **Then** no "paused"
    outcome can be produced and the command's help no longer mentions one.
 
+5. **Given** a deleted check whose reports are still retained, **When** a
+   check with the same name is recreated in the same namespace, **Then** the
+   retained reports are not mistaken for the new check's history, and the new
+   check's history cap counts only its own reports.
 ---
 
 ### User Story 4 - Immutability and merge rules that cannot be bypassed (Priority: P2)
@@ -226,8 +251,8 @@ pre-conditions.
    in historical decision records and the upgrade / migration guidance.
 3. **Given** the versioning reference, **When** read, **Then** it records the
    decision that 1.0.0 ships a stable `v1`, lists the served and storage
-   version per kind accurately, and explains how the adapter contract version
-   relates to the API version as decided in FR-016.
+   version per kind accurately, and states that the adapter contract version
+   is independent of the API version.
 
 ---
 
@@ -241,16 +266,21 @@ pre-conditions.
   apply is rejected by the API server; the rejection must be the plain
   "no matches for kind at that version" error that GitOps tooling already
   surfaces, with no operator-side masking.
-- **Mixed version references**: a `HealthCheck` at `v1` may reference a kind
-  that remains alpha (if any kind is left alpha by the Q1 decision). The
-  accepted set of `checkRef.apiVersion` values must be exactly the served
-  version of each referenced kind, and the acceptance message must list them.
+- **Stale version references**: every kind a `HealthCheck` may reference is
+  now `v1`, so `checkRef.apiVersion` accepts exactly Fathom's group at `v1`
+  and the rejection message says so.
 - **A check deleted while an adapter run is in flight**: the run completes or
   is cancelled according to existing bounded-reconcile rules; no report may be
   created for a check that no longer exists.
-- **The `HealthReport` retention decision interacts with
-  `spec.historyLimit`**: whatever FR-013 decides, the cap on retained reports
-  per check must keep applying while the check lives.
+- **Retained reports and the per-check history cap**: the cap applies while
+  the check lives; once the check is deleted the retention window governs,
+  and a retained report never counts against a recreated check's cap.
+- **Operator unavailable past the retention window**: retained reports
+  outlive the window until the operator next runs; pruning is best-effort and
+  bounded per reconcile, never a startup storm.
+- **Retention with no owner at all**: an orphaned report whose check was
+  deleted while the operator was down must still be attributable (the check
+  it belonged to, when it was deleted) and still be pruned on schedule.
 - **The compatibility gate on a wholesale version change**: diffing the new
   `v1` CRD against the release baseline that only knew `v1alpha1` must report a
   sanctioned, reviewed change per CRD rather than a wall of unrelated findings.
@@ -273,13 +303,10 @@ pre-conditions.
 - **FR-001**: The release MUST serve a stable `v1` version of each promoted
   kind as the only served and only stored version; no alpha version of a
   promoted kind is served after upgrade.
-- **FR-002**: The set of promoted kinds MUST be [NEEDS CLARIFICATION: the
-  epic named "four existing CRDs" when there were four; there are now seven
-  check kinds at alpha. Promote only the five kinds that shipped by v0.5
-  (AddonCheck, HealthCheck, ClusterHealth, HealthReport,
-  NodeCertificateCheck) and leave the v0.6.0 kinds (DNSCheck,
-  NodeHealthCheck) alpha, or promote all seven?]. Kinds not promoted keep
-  their alpha version and are documented as alpha.
+- **FR-002**: All seven check kinds (`AddonCheck`, `HealthCheck`,
+  `ClusterHealth`, `HealthReport`, `NodeCertificateCheck`, `DNSCheck`,
+  `NodeHealthCheck`) MUST be promoted in this release. No check kind remains
+  at alpha.
 - **FR-003**: `v1` MUST be authored as the complete schema with every already
   shipped alpha hardening carried forward unchanged (defaults, floors,
   immutability rules, namespace scoping, bounded list sizes). No field,
@@ -300,10 +327,9 @@ pre-conditions.
 - **FR-008**: `AddonCheck` and `HealthReport` MUST show a verdict and age in
   default list output, consistent with the sibling kinds.
 - **FR-009**: `HealthCheck.checkRef.apiVersion`, when set, MUST be validated
-  at admission to name Fathom's API group at a served version of the
-  referenced kind; any other value is rejected with a message listing the
-  accepted values. When unset it defaults to the served version of the
-  referenced kind.
+  at admission to name Fathom's API group at `v1`; any other value is
+  rejected with a message stating the accepted value. When unset it defaults
+  to Fathom's group at `v1`.
 
 **Pause removal**
 
@@ -314,13 +340,16 @@ pre-conditions.
   the check.
 - **FR-012**: The CLI MUST no longer read, display or branch on a pause state
   for any kind.
-- **FR-013**: The behaviour of a check's report history when the check is
-  deleted MUST be [NEEDS CLARIFICATION: today reports are garbage-collected
-  with their check. Keep that (delete removes history; adopters export first
-  with the reports command), or retain reports for a bounded time after
-  deletion so "was this passing before the incident?" survives a deliberate
-  stop?] and MUST be stated in the reports documentation and in the delete
-  guidance that replaces pause.
+- **FR-013**: When a check is deleted, its reports MUST be retained for a
+  bounded, documented window and then pruned by the operator. Retained
+  reports MUST remain readable and attributable to the deleted check for the
+  whole window, MUST NOT be counted against or mistaken for a recreated
+  check's history, and MUST be pruned in bounded work per reconcile. The
+  window has a built-in default and is configurable through the operator's
+  normal configuration model. This behaviour MUST be stated in the reports
+  documentation and in the delete guidance that replaces pause.
+- **FR-013a**: The per-check history cap MUST keep applying while the check
+  lives; retention after delete does not change what is kept before it.
 
 **Upgrade and migration**
 
@@ -335,14 +364,12 @@ pre-conditions.
   sanctioned, so every later CLI knows the stop, and the compatibility gate
   MUST report each promoted CRD's change as sanctioned with a reason and the
   tracking issue.
-- **FR-016**: The relationship between the operator release, the CRD version
-  and the adapter contract version at 1.0 MUST be [NEEDS CLARIFICATION: the
-  epic's 2026-07-12 decision says all three align at 1.0, but the adapter
-  contract is already at 1.1.0 since the ratio-key reservation shipped. Bump
-  the contract to 2.0.0 at this release so the three axes read 1.0.0 / v1 /
-  2.0.0 with a documented major, leave the contract at 1.1.0 and document that
-  the contract axis stays independent, or something else?] and MUST be
-  recorded in the versioning reference and the adapter authoring guide.
+- **FR-016**: The adapter contract version MUST remain at its current value
+  (1.1.0) and MUST be documented, in the versioning reference and the adapter
+  authoring guide, as an axis independent of both the CRD version and the
+  operator release. The epic's "all three axes align at 1.0" statement is
+  revised to: the 1.0.0 operator ships CRD `v1`; the adapter contract
+  versions on its own.
 - **FR-017**: Release notes and the release process document MUST carry the
   upgrade pre-conditions, the inventory step, the recreate procedure, and the
   statement that alpha resources and history do not survive, in the same terms
@@ -377,15 +404,17 @@ pre-conditions.
 - **Alpha resource**: an instance of a promoted kind stored at the alpha
   version on a cluster being upgraded. Must be inventoried and removed; it
   cannot be converted.
-- **Report history**: the `HealthReport` records owned by a check. Subject to
-  the retention decision in FR-013.
+- **Report history**: the `HealthReport` records a check produced. Owned and
+  capped while the check lives; retained for a bounded window and then pruned
+  after the check is deleted (FR-013).
 - **Upgrade stop**: a release that every later upgrade must pass through,
   recorded in append-only upgrade-path data. This release is one.
 - **Sanctioned change**: a reviewed, reasoned entry that tells the
   compatibility gate an incompatible CRD change is deliberate; one per
   promoted CRD in this release.
 - **Version axes**: operator release (SemVer), CRD version (`v1`), adapter
-  contract version. Their relationship at 1.0 is decided in FR-016.
+  contract version. The first two meet at 1.0; the third is independent
+  (FR-016).
 
 ## Success Criteria *(mandatory)*
 
@@ -428,9 +457,13 @@ pre-conditions.
 - The existing "accept incompatible CRDs" acceptance on the upgrade verb is
   the right consent mechanism for removing alpha resources; no new flag is
   introduced.
-- The existing reports command is sufficient as the "export before delete"
-  tool if FR-013 resolves to keeping garbage collection; no new export verb
-  is introduced by this feature.
+- Retained reports stay ordinary `HealthReport` resources; retention is
+  expressed through their lifecycle, not a new kind, and the existing reports
+  command reads them with no new verb.
+- The retention window default is on the order of days, chosen at plan time
+  from the existing history cap and typical incident review cadence; it is a
+  configuration option, not a per-check field, so `v1` does not grow a field
+  for it.
 - The runtime definition kinds are untouched, including their generated
   inventory and the CLI's definition verbs.
 - The e2e stack used for this feature is the existing kind-based suite
