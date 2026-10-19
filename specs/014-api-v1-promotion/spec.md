@@ -33,6 +33,30 @@ SPDX-License-Identifier: MIT
   documented as an independent axis. The epic's "all three align at 1.0"
   statement is revised to "operator 1.0.0 ships CRD `v1`; the adapter
   contract versions on its own".
+- Q: How much help does Fathom give adopters rewriting alpha manifests to
+  `v1` during the upgrade? → A: A read-only CLI export: the CLI renders the
+  live alpha checks as `v1` manifests (version rewritten, pause field dropped)
+  for the adopter to commit and apply. Nothing is applied automatically, and
+  the guided upgrade never recreates checks itself.
+- Q: Where does a retained report record which check it belonged to and when
+  that check was deleted? → A: In labels and annotations set on the report
+  when the check is deleted; the `v1` `HealthReport` schema gains no field
+  for retention. The plan must justify this against the constitution's
+  "no health semantics in annotations" rule as lifecycle bookkeeping, not
+  health semantics.
+- Q: What is the default retention window for reports kept after their
+  check is deleted? → A: 30 days, configurable through the operator's normal
+  configuration model.
+- Q: Should retained reports from deleted checks have a count cap as well as
+  the window? → A: Not as a retention-specific rule. Reports in general get a
+  per-namespace, per-kind cap (each namespace keeps at most N reports of each
+  check kind, oldest pruned first) that applies to every report whether its
+  check is alive or deleted. The retention window stays an age-only rule and
+  the two do not interact.
+- Q: How is report pruning made visible? → A: Metrics for retained and
+  pruned report counts per namespace and kind, plus one summary Event per
+  prune pass per namespace stating how many reports were removed and why
+  (window or cap). No per-report Events.
 
 ## Context and what is already done
 
@@ -113,7 +137,7 @@ at least one resource of every promoted kind plus accumulated report history,
 run the guided upgrade, and confirm that it stops with an inventory of the
 alpha resources, that it proceeds only after the resources are removed or the
 administrator explicitly accepts their loss, and that recreating the checks
-from converted manifests restores equivalent health coverage.
+from the CLI's exported `v1` manifests restores equivalent health coverage.
 
 **Acceptance Scenarios**:
 
@@ -139,6 +163,12 @@ from converted manifests restores equivalent health coverage.
    version of a promoted target kind, **When** it is recreated on `v1` without
    editing the reference, **Then** it is rejected at admission with a message
    that names the accepted versions.
+6. **Given** the previous release with alpha checks present, **When** the
+   administrator runs the CLI export before upgrading, **Then** it emits one
+   `v1` manifest per alpha check of every promoted kind with the version
+   rewritten, the pause field dropped, and `checkRef.apiVersion` rewritten
+   to `v1`, applies nothing, and the emitted manifests are accepted unchanged
+   on the upgraded cluster.
 
 ---
 
@@ -181,6 +211,11 @@ exactly as the retention decision states.
    check with the same name is recreated in the same namespace, **Then** the
    retained reports are not mistaken for the new check's history, and the new
    check's history cap counts only its own reports.
+6. **Given** retained reports past the window or a namespace over the
+   per-kind cap, **When** the operator prunes, **Then** the pruned count is
+   visible in metrics by namespace, kind and reason, and one Event in the
+   namespace states how many were removed and why.
+
 ---
 
 ### User Story 4 - Immutability and merge rules that cannot be bypassed (Priority: P2)
@@ -262,6 +297,9 @@ pre-conditions.
   was already removed by hand, or the operator was uninstalled first): the
   upgrade must still succeed, must not report the absence as an error, and the
   documentation must say that history is gone in that case.
+- **Export run after the alpha CRDs are already replaced**: there is nothing
+  to read; the export reports that plainly and exits non-zero rather than
+  emitting an empty document that looks like success.
 - **GitOps controllers still applying alpha manifests after upgrade**: the
   apply is rejected by the API server; the rejection must be the plain
   "no matches for kind at that version" error that GitOps tooling already
@@ -272,15 +310,21 @@ pre-conditions.
 - **A check deleted while an adapter run is in flight**: the run completes or
   is cancelled according to existing bounded-reconcile rules; no report may be
   created for a check that no longer exists.
-- **Retained reports and the per-check history cap**: the cap applies while
-  the check lives; once the check is deleted the retention window governs,
-  and a retained report never counts against a recreated check's cap.
+- **Retained reports and the per-check history cap**: the per-check cap
+  applies while the check lives; once the check is deleted the retention
+  window governs age, and a retained report never counts against a recreated
+  check's per-check cap. The per-namespace per-kind cap counts both.
+- **Check churn in a namespace** (a pipeline creating and deleting a check per
+  run): the per-namespace per-kind cap is what bounds the volume; the oldest
+  reports go first regardless of which check produced them, and the
+  documentation says so.
 - **Operator unavailable past the retention window**: retained reports
   outlive the window until the operator next runs; pruning is best-effort and
   bounded per reconcile, never a startup storm.
 - **Retention with no owner at all**: an orphaned report whose check was
-  deleted while the operator was down must still be attributable (the check
-  it belonged to, when it was deleted) and still be pruned on schedule.
+  deleted while the operator was down must still gain its retention labels
+  and annotations (the check it belonged to, and the best available deletion
+  time) when the operator next runs, and still be pruned on schedule.
 - **The compatibility gate on a wholesale version change**: diffing the new
   `v1` CRD against the release baseline that only knew `v1alpha1` must report a
   sanctioned, reviewed change per CRD rather than a wall of unrelated findings.
@@ -341,15 +385,36 @@ pre-conditions.
 - **FR-012**: The CLI MUST no longer read, display or branch on a pause state
   for any kind.
 - **FR-013**: When a check is deleted, its reports MUST be retained for a
-  bounded, documented window and then pruned by the operator. Retained
+  bounded, documented window (default 30 days) and then pruned by the
+  operator. Retained
   reports MUST remain readable and attributable to the deleted check for the
   whole window, MUST NOT be counted against or mistaken for a recreated
   check's history, and MUST be pruned in bounded work per reconcile. The
-  window has a built-in default and is configurable through the operator's
-  normal configuration model. This behaviour MUST be stated in the reports
+  window defaults to 30 days and is configurable through the operator's
+  normal configuration model; a window of zero disables retention and
+  restores delete-removes-history. This behaviour MUST be stated in the reports
   documentation and in the delete guidance that replaces pause.
+- **FR-013b**: Retention bookkeeping (the deleted check's kind, name and
+  unique identity, and the time it was deleted) MUST be recorded on the
+  retained report as labels and annotations with documented keys, so that
+  the reports command and plain label selectors can list a deleted check's
+  history. The `v1` `HealthReport` schema MUST NOT gain fields for retention;
+  the health content of a report (verdict, evidence, timestamps) stays in
+  spec and status only.
 - **FR-013a**: The per-check history cap MUST keep applying while the check
   lives; retention after delete does not change what is kept before it.
+- **FR-013c**: Independently of retention, the operator MUST enforce a
+  per-namespace, per-kind cap on `HealthReport` count: each namespace keeps
+  at most N reports produced by checks of each kind, pruning oldest first
+  when exceeded, counting reports of live and deleted checks alike. N has a
+  built-in default and is configurable through the operator's normal
+  configuration model. The cap and the retention window MUST NOT reference
+  each other: the window bounds age, the cap bounds count.
+- **FR-013d**: Every prune pass MUST be observable: the operator exposes the
+  number of retained reports and the number pruned, each by namespace, kind
+  and reason (window or cap), and records one Event per namespace per prune
+  pass stating the count removed and the reason. Individual pruned reports
+  do not produce Events.
 
 **Upgrade and migration**
 
@@ -359,6 +424,14 @@ pre-conditions.
   only when none remain or when the administrator passes the existing
   explicit acceptance for incompatible CRD changes, in which case it removes
   them as part of the version replacement and reports what it removed.
+- **FR-014a**: The CLI MUST provide a read-only export that renders the live
+  alpha resources of every promoted kind as `v1` manifests: the version
+  string rewritten, the pause field dropped, `checkRef.apiVersion` rewritten,
+  status omitted, and server-populated metadata stripped so the output is
+  fit to commit. It MUST apply nothing, MUST work against the previous
+  release's cluster (before the alpha CRDs are replaced), and MUST report any
+  resource it could not render rather than skipping it silently. Retained
+  report history is not exported; it is data, not intent.
 - **FR-015**: The release's entry in the upgrade-path data MUST mark this
   release as a mandatory stop with every promoted CRD's version replacement
   sanctioned, so every later CLI knows the stop, and the compatibility gate
@@ -371,7 +444,8 @@ pre-conditions.
   revised to: the 1.0.0 operator ships CRD `v1`; the adapter contract
   versions on its own.
 - **FR-017**: Release notes and the release process document MUST carry the
-  upgrade pre-conditions, the inventory step, the recreate procedure, and the
+  upgrade pre-conditions, the inventory step, the export-then-recreate
+  procedure using the CLI export, and the
   statement that alpha resources and history do not survive, in the same terms
   the guided upgrade uses.
 
@@ -406,7 +480,10 @@ pre-conditions.
   cannot be converted.
 - **Report history**: the `HealthReport` records a check produced. Owned and
   capped while the check lives; retained for a bounded window and then pruned
-  after the check is deleted (FR-013).
+  after the check is deleted (FR-013). A retained report carries its former
+  check's identity and deletion time as labels and annotations (FR-013b).
+  Total report count per namespace and kind is bounded by a separate cap
+  (FR-013c).
 - **Upgrade stop**: a release that every later upgrade must pass through,
   recorded in append-only upgrade-path data. This release is one.
 - **Sanctioned change**: a reviewed, reasoned entry that tells the
@@ -442,6 +519,10 @@ pre-conditions.
 - **SC-008**: After this release, any incompatible change to a promoted kind
   is caught by the compatibility gate as an unsanctioned finding, giving the
   stable promise an automated backstop.
+- **SC-009**: 100% of report prune passes that remove at least one report
+  leave a metric change and exactly one Event in the affected namespace
+  naming the count and reason; an operator can answer "where did my reports
+  go?" from those two signals alone.
 
 ## Assumptions
 
@@ -458,12 +539,23 @@ pre-conditions.
   the right consent mechanism for removing alpha resources; no new flag is
   introduced.
 - Retained reports stay ordinary `HealthReport` resources; retention is
-  expressed through their lifecycle, not a new kind, and the existing reports
-  command reads them with no new verb.
-- The retention window default is on the order of days, chosen at plan time
-  from the existing history cap and typical incident review cadence; it is a
-  configuration option, not a per-check field, so `v1` does not grow a field
-  for it.
+  expressed through their lifecycle and metadata, not a new kind or field,
+  and the existing reports command reads them with no new verb.
+- The per-namespace per-kind report cap default is chosen at plan time from
+  the existing per-check history limit multiplied by a reasonable number of
+  checks per namespace; it is a configuration option, not a field on any
+  kind.
+- Using labels and annotations for retention bookkeeping is a deliberate
+  deviation to be recorded in the plan's Complexity Tracking: the data is
+  lifecycle metadata about a deleted owner, not a health verdict, so the
+  constitution's rule on health semantics is read as not applying.
+- The retention window is a configuration option with a 30-day default, not
+  a per-check field, so `v1` does not grow a field for it. The e2e suite
+  verifies pruning with the window configured short, never by waiting out
+  the default.
+- The export is a new read-only CLI verb modelled on the existing offline
+  render verbs; it needs only read access to the alpha kinds and introduces
+  no write path.
 - The runtime definition kinds are untouched, including their generated
   inventory and the CLI's definition verbs.
 - The e2e stack used for this feature is the existing kind-based suite
