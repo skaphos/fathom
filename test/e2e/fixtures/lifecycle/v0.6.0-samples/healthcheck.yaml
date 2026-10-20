@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# A 0.6.0-era resource at fathom.skaphos.io/v1alpha1 for the alpha-to-v1
+# upgrade scenario in test/e2e/fathomctl_lifecycle_test.go. Derived from the
+# shipped sample with the version rewound; do not "fix" it to v1.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: HealthCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: coredns
+spec:
+  description: "Mirror the cert-manager AddonCheck status for ClusterHealth aggregation."
+  checkRef:
+    apiVersion: fathom.skaphos.io/v1alpha1
+    kind: AddonCheck
+    name: coredns-sample

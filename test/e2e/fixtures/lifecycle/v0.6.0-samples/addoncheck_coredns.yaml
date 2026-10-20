@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# A 0.6.0-era resource at fathom.skaphos.io/v1alpha1 for the alpha-to-v1
+# upgrade scenario in test/e2e/fathomctl_lifecycle_test.go. Derived from the
+# shipped sample with the version rewound; do not "fix" it to v1.
+apiVersion: fathom.skaphos.io/v1alpha1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: coredns-sample
+spec:
+  addonType: coredns
+  paused: true
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      namespaces:
+        - kube-system
+      thresholds:
+        deploymentName: "coredns"
+        serviceName: "kube-dns"
+        restartWarnCount: "3"
+        # Set this on distributions that deploy a CoreDNS node-count autoscaler,
+        # for example "rke2-coredns-autoscaler" on RKE2.
+        autoscalerName: ""
+    dns_resolution:
+      enabled: true
+      thresholds:
+        targets: "kubernetes.default.svc.cluster.local"
+        # The probe image is launched as a short-lived Pod per target so DNS
+        # resolution is observed from the AddonCheck's namespace network
+        # topology rather than the operator pod's. Keep this tag in lockstep
+        # with the operator release (x-release-please-version; see
+        # release-please-config.json and scripts/check-version-lockstep.sh) so
+        # e2e kind loads (E2E_PROBE_IMG) and this sample pin match. Override for
+        # private registries only when deliberately pinning elsewhere.
+        probeImage: "ghcr.io/skaphos/fathom-probe:v0.6.0" # x-release-please-version

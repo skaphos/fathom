@@ -90,8 +90,8 @@ because leftover CRDs carry no recorded version to sanction against.
 ## `status`
 
 Reports the served version per Fathom CRD. On a cluster where a promoted kind
-still serves `v1alpha1`, `status` prints
-`upgrade required: <crd> serves v1alpha1; run fathomctl export, then fathomctl upgrade`.
+still serves `v1alpha1`, `status` lists that CRD as `outdated` with the reason
+`serves v1alpha1; run fathomctl export, then fathomctl upgrade`.
 
 ## Exit codes
 

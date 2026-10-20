@@ -6,9 +6,12 @@
 #
 # Every entry sanctions gate findings on one CRD property path and must cite a
 # reason and a tracking issue. `crd` is the CRD's metadata.name; `path` is the
-# property path exactly as crdify reports it (e.g. ^.spec.interval), or "*" to
-# sanction every finding on the CRD (discouraged — reserve for a new API
-# version). Entries that no longer match any finding are reported as STALE:
+# property path exactly as crdify reports it (e.g. ^.spec.interval), or "*",
+# which sanctions exactly one thing: the servedVersionRemoval finding (a served
+# version replaced by a new API version). A "*" entry never covers a property
+# finding, so a later incompatible change inside the new version still needs
+# its own reviewed entry; a scope change can never be sanctioned. Entries that
+# no longer match any finding are reported as STALE:
 # prune them once a release containing the sanctioned change becomes the
 # baseline. Format restriction: a flat YAML list of flat `key: value` mappings
 # — the gate's parser deliberately understands nothing fancier.

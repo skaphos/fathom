@@ -418,9 +418,11 @@ suffices and the flag is not required. `--rollback-on-failure` is refused on
 this upgrade: the previous operator cannot run against the new schema.
 
 **Plain manifests or GitOps** (kustomize, OLM, a GitOps controller applying
-`config/`): `kubectl apply` of the new CRDs fails with
-`stored versions removed` until the alpha objects and CRDs are gone, so the
-sequence is the same by hand:
+`config/`): `kubectl apply` of the new CRDs fails with the API server's
+`status.storedVersions[0]: Invalid value: "v1alpha1": missing from
+spec.versions; v1alpha1 was previously a storage version, and must remain in
+spec.versions until a storage migration ...` until the alpha objects and CRDs
+are gone, so the sequence is the same by hand:
 
 ```sh
 fathomctl export --output fathom-v1.yaml

@@ -225,6 +225,12 @@ def served_versions(path):
 
 
 SERVED_VERSION_REMOVAL = "servedVersionRemoval"
+# The findings a "*" entry may sanction: a served (or stored) version replaced
+# by a new API version. Every other finding needs its exact property path, and
+# a scope change is never sanctionable: a flipped scope is a different resource
+# (fathomctl refuses it the same way).
+VERSION_SWAP_CHECKS = {SERVED_VERSION_REMOVAL, "storedVersionRemoval"}
+NEVER_SANCTIONED = {"scope"}
 
 allowlist = load_allowlist(allowlist_path)
 matched = [False] * len(allowlist)
@@ -248,7 +254,15 @@ for filename in names:
                 "a served version may only be removed by a sanctioned new API version "
                 '(allowlist path "*")',
             ]))
-    for section in report.values():
+    for cr in report.get("crdValidation") or []:
+        # CRD-level checks (scope, stored versions) carry no property path.
+        if cr.get("errors"):
+            findings.append(("^", cr["name"], cr["errors"]))
+        if cr.get("warnings"):
+            warnings.append(("^", cr["name"], cr["warnings"]))
+    for key, section in report.items():
+        if key == "crdValidation":
+            continue
         for version_result in section or []:
             for pc in version_result.get("propertyComparisons") or []:
                 for cr in pc.get("comparisonResults") or []:
@@ -266,7 +280,13 @@ for filename in names:
         for i, e in enumerate(allowlist):
             if e["crd"] != crd:
                 continue
-            if e["path"] == "*" or (check != SERVED_VERSION_REMOVAL and e["path"] == prop):
+            # "*" sanctions the version replacement and nothing else: a property
+            # finding inside the new version always needs its own entry, so the
+            # seven 0.7.0 entries cannot quietly cover later v1 changes.
+            if check in NEVER_SANCTIONED:
+                break
+            swap = check in VERSION_SWAP_CHECKS
+            if (e["path"] == "*") == swap and (swap or e["path"] == prop):
                 sanction, matched[i] = e, True
                 break
         if sanction:

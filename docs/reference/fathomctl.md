@@ -569,9 +569,9 @@ CRDs:       9/9 current
 Upgrade to this fathomctl (v0.7.0): direct
 ```
 
-When a check kind's CRD still serves `v1alpha1`, `status` adds
-`upgrade required: <crd> serves v1alpha1; run fathomctl export, then fathomctl upgrade`
-for each such CRD.
+When a check kind's CRD still serves `v1alpha1`, `status` lists that CRD as
+`outdated` with the reason
+`serves v1alpha1; run fathomctl export, then fathomctl upgrade`.
 
 CRD states, judged from the `fathom.skaphos.io/version` annotation against the
 operator's version:

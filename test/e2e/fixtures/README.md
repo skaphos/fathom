@@ -84,7 +84,7 @@ deployed with kustomize, so their end-to-end specs
 without one. With `E2E_ADDONS=lifecycle`, `e2e:cluster:fathom` still builds
 the three images but, instead of deploying, tags and loads them as
 `ghcr.io/skaphos/<image>:v<version>` for each version in
-`E2E_LIFECYCLE_VERSIONS` (default `<appVersion>-e2e.1 <appVersion>-e2e.2`,
+`E2E_LIFECYCLE_VERSIONS` (default `<appVersion>-e2e.1 <appVersion>-e2e.2 <stop>`, where `<stop>` is the newest release in `upgrade-path.yaml`,
 from the chart's `Chart.yaml`) — the names
 `fathomctl` installs. The spec builds one `fathomctl` per version and runs
 install → status → re-install → upgrade across the older-schema fixture in
@@ -95,6 +95,26 @@ other selection, the full stack included, skips these specs.
 ```sh
 go -C tools tool task test-e2e E2E_ADDONS=lifecycle
 ```
+
+The same shard also runs the **alpha-to-v1 upgrade** scenario
+(`fathomctl alpha-to-v1 upgrade` in the same file; spec 014): it installs the
+published 0.6.0 chart from `oci://ghcr.io/skaphos/charts/fathom-operator`
+with its published images, applies the 0.6.0-era resources in
+`lifecycle/v0.6.0-samples/` (served at `v1alpha1`; do not rewrite them to
+`v1`), waits for report history, then drives the stop release's `fathomctl`
+through `export`, the refused `upgrade`, `upgrade --accept-incompatible-crds`
+(which replaces the seven check CRDs), re-applies the export and checks the
+recreated resources reach a verdict. That CLI is built at exactly the newest
+`upgrade-path.yaml` release version, not `<appVersion>-e2e.N`, because a
+prerelease sorts below the sanctions it needs; the Taskfile tags the locally
+built images under that version too. The scenario needs registry access for
+the 0.6.0 chart and operator image and **skips with a clear message** when
+GHCR is unreachable. Note that the probe and node-agent images the shard
+pre-loads under the chart's `v<appVersion>` tag shadow the published ones of
+the same tag, so the 0.6.0 operator runs with the current probe and agent
+builds. `lifecycle/older-crds/` is the shipped `v1` DNSCheck CRD minus
+`spec.historyLimit`; it must stay at `v1`, since a CRD that still served
+`v1alpha1` could not replace a live `v1` one.
 
 ### Adding an addon to the stack
 

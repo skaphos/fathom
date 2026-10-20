@@ -142,15 +142,24 @@ func (d *upgradePathDecl) oldestDirect(to *semver.Version) string {
 // sanctionedBy returns the entry that sanctions a finding on crd at path for
 // an upgrade from A to B: one declared by a release with A < version <= B,
 // matching the CRD and the path (or "*"). A nil from means the installed
-// version is unknown, so every recorded release up to B counts. Scope
-// findings are never sanctioned.
+// version is unknown, so every recorded release up to B counts. A
+// same-version re-apply (A == B) counts B's own sanctions: `helm upgrade`
+// moves the release without its CRDs, so the CRD transition B declares is
+// still ahead of the cluster and `status` sends the user here to make it
+// (CRDs recorded by a newer release are refused before sanctions are judged,
+// so the window cannot license rewriting a newer schema). Scope findings
+// are never sanctioned.
 func (d *upgradePathDecl) sanctionedBy(crd, path, check string, from, to *semver.Version) (*sanctionedChange, string) {
 	if check == scopeCheck {
 		return nil, ""
 	}
 	for i := len(d.Releases) - 1; i >= 0; i-- {
 		e := &d.Releases[i]
-		if e.version.GreaterThan(to) || (from != nil && !e.version.GreaterThan(from)) {
+		if e.version.GreaterThan(to) {
+			continue
+		}
+		sameVersionReapply := from != nil && from.Equal(to) && e.version.Equal(to)
+		if from != nil && !e.version.GreaterThan(from) && !sameVersionReapply {
 			continue
 		}
 		for j := range e.Sanctioned {

@@ -33,10 +33,15 @@ func absPath(t *testing.T, rel string) string {
 // allowlist file (an absolute path) and returns its output and exit code.
 func runCompatGate(t *testing.T, allowlist string) (string, int) {
 	t.Helper()
+	return runCompatGateDirs(t, absPath(t, "testdata/crd-compat/old"), absPath(t, "testdata/crd-compat/new"), allowlist)
+}
+
+func runCompatGateDirs(t *testing.T, oldDir, newDir, allowlist string) (string, int) {
+	t.Helper()
 	cmd := exec.Command("bash", "check-crd-compat.sh")
 	cmd.Env = append(os.Environ(),
-		"CRD_COMPAT_OLD_DIR="+absPath(t, "testdata/crd-compat/old"),
-		"CRD_COMPAT_NEW_DIR="+absPath(t, "testdata/crd-compat/new"),
+		"CRD_COMPAT_OLD_DIR="+oldDir,
+		"CRD_COMPAT_NEW_DIR="+newDir,
 		"CRD_COMPAT_ALLOWLIST="+allowlist,
 	)
 	out, err := cmd.CombinedOutput()
@@ -174,5 +179,72 @@ func TestCompatGateRequiresStarForServedVersionRemoval(t *testing.T) {
 	}
 	if !strings.Contains(out, "STALE allowlist entry (matched nothing): widgets.example.com ^.spec") {
 		t.Errorf("the property-level entry should be reported STALE:\n%s", out)
+	}
+}
+
+// A "*" entry sanctions the served-version replacement only. Once both sides
+// serve v1, a property tightening on the same CRD must still be an
+// unsanctioned finding, or the seven 0.7.0 entries would cover every later
+// incompatible v1 change until someone remembered to prune them.
+func TestCompatGateStarDoesNotSanctionPropertyFindings(t *testing.T) {
+	gadgets, err := os.ReadFile("testdata/crd-compat/new/example.com_gadgets.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tightened := strings.Replace(string(gadgets), "                type: integer\n", "                type: integer\n                maximum: 5\n", 1)
+	if tightened == string(gadgets) {
+		t.Fatal("fixture no longer has the size property to tighten")
+	}
+	oldDir, newDir := t.TempDir(), t.TempDir()
+	for dir, body := range map[string]string{oldDir: string(gadgets), newDir: tightened} {
+		if err := os.WriteFile(filepath.Join(dir, "example.com_gadgets.yaml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	allow := filepath.Join(t.TempDir(), "allowlist.yaml")
+	if err := os.WriteFile(allow, []byte("- crd: gadgets.example.com\n  path: \"*\"\n  reason: stale swap entry\n  issue: https://example.com/issues/1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code := runCompatGateDirs(t, oldDir, newDir, allow)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (a \"*\" entry must not sanction a property finding)\n%s", code, out)
+	}
+	if !strings.Contains(out, "INCOMPATIBLE") || !strings.Contains(out, "maximum") {
+		t.Errorf("the tightened maximum should be an unsanctioned finding:\n%s", out)
+	}
+	if !strings.Contains(out, "STALE allowlist entry (matched nothing): gadgets.example.com *") {
+		t.Errorf("the \"*\" entry should be reported STALE once no version is replaced:\n%s", out)
+	}
+}
+
+// crdify reports a scope flip as a CRD-level finding with no property path;
+// the gate used to read only property comparisons and passed it as compatible.
+// A flipped scope is a different resource, so no entry, not even "*", may
+// sanction it (fathomctl refuses it the same way).
+func TestCompatGateRefusesAScopeChange(t *testing.T) {
+	gadgets, err := os.ReadFile("testdata/crd-compat/new/example.com_gadgets.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	flipped := strings.Replace(string(gadgets), "  scope: Namespaced\n", "  scope: Cluster\n", 1)
+	if flipped == string(gadgets) {
+		t.Fatal("fixture is no longer Namespaced")
+	}
+	oldDir, newDir := t.TempDir(), t.TempDir()
+	for dir, body := range map[string]string{oldDir: string(gadgets), newDir: flipped} {
+		if err := os.WriteFile(filepath.Join(dir, "example.com_gadgets.yaml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	allow := filepath.Join(t.TempDir(), "allowlist.yaml")
+	if err := os.WriteFile(allow, []byte("- crd: gadgets.example.com\n  path: \"*\"\n  reason: swap\n  issue: https://example.com/issues/1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code := runCompatGateDirs(t, oldDir, newDir, allow)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (a scope change is never sanctionable)\n%s", code, out)
+	}
+	if !strings.Contains(out, "INCOMPATIBLE ^ (scope)") {
+		t.Errorf("the scope flip should be an unsanctioned CRD-level finding:\n%s", out)
 	}
 }

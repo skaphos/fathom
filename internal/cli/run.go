@@ -200,7 +200,7 @@ func runRun(cmd *cobra.Command, f *factory, opts *runOptions, args []string) err
 }
 
 // resolveRunTargets turns the selection into de-duplicated executable
-// targets, separating out the ones that cannot run (paused, missing) so the
+// targets, separating out the ones that cannot run (missing, not runnable) so the
 // rest still proceed.
 func resolveRunTargets(ctx context.Context, c client.Client, f *factory, opts *runOptions, args []string, ns string) ([]runTarget, []runOutcome, error) {
 	var refs []sourceResolution
@@ -463,7 +463,7 @@ func printRunOutcomes(w io.Writer, format outputFormat, outcomes []runOutcome, w
 		case o.Superseded:
 			tb.row(target, "superseded", "another trigger replaced token "+o.Token+" before it was consumed")
 		case o.TimedOut:
-			tb.row(target, "timed out", "token "+o.Token+" was not consumed; check `fathomctl version` (operator older than the CLI?), whether the check is paused, or (NodeCertificateCheck/NodeHealthCheck) the node-agent rollout")
+			tb.row(target, "timed out", "token "+o.Token+" was not consumed; check `fathomctl version` (operator older than the CLI?), whether its spec is valid (`fathomctl describe`), or (NodeCertificateCheck/NodeHealthCheck) the node-agent rollout")
 		default:
 			tb.row(target, orDash(o.Verdict), truncate(o.Summary, 80))
 		}

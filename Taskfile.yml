@@ -60,7 +60,10 @@ vars:
   # can never appear newer than the CLI. The spec
   # (test/e2e/fathomctl_lifecycle_test.go) derives the same pair.
   E2E_LIFECYCLE_VERSIONS:
-    sh: 'v="${E2E_LIFECYCLE_VERSIONS:-}"; if [ -z "$v" ]; then a="$(awk -F''"'' ''/^appVersion:/ {print $2}'' deploy/helm/fathom-operator/Chart.yaml)"; v="$a-e2e.1 $a-e2e.2"; fi; echo "$v"'
+    # The third version is the newest stop in upgrade-path.yaml (the one the
+    # alpha-to-v1 scenario upgrades to); the images are tagged under it
+    # as well so that CLI build finds them (spec 014, research R14).
+    sh: 'v="${E2E_LIFECYCLE_VERSIONS:-}"; if [ -z "$v" ]; then a="$(awk -F''"'' ''/^appVersion:/ {print $2}'' deploy/helm/fathom-operator/Chart.yaml)"; s="$(awk ''/^  - version:/ {v=$3} /^    stop: true/ {s=v} END {print (s ? s : v)}'' deploy/helm/fathom-operator/upgrade-path.yaml)"; v="$a-e2e.1 $a-e2e.2 $s"; fi; echo "$v"'
 
 tasks:
   default:
