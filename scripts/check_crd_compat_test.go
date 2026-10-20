@@ -75,6 +75,38 @@ func TestCompatGateReadsServedVersionsAtAnyIndent(t *testing.T) {
 	}
 }
 
+// A baseline serving two versions must lose neither to the parser: a trailing
+// comment on `served: true` used to read as "not served", so a target that
+// dropped that version produced no finding.
+func TestCompatGateSeesEveryServedVersionOfAMultiVersionBaseline(t *testing.T) {
+	alpha := strings.TrimRight(fixtureCRD(baseProps), "\n") + "\n"
+	entry := alpha[strings.Index(alpha, "    - name: v1alpha1"):]
+	second := strings.Replace(strings.Replace(entry, "- name: v1alpha1", "- name: v1", 1), "storage: true", "storage: false", 1)
+	twoVersions := strings.Replace(alpha, "      served: true\n", "      served: true # legacy clients\n", 1) + second
+	v1Only := strings.Replace(alpha, "- name: v1alpha1", "- name: v1", 1)
+	ok, out := runCRDCompat(t, writeFixture(t, twoVersions, v1Only, ""))
+	if ok {
+		t.Fatalf("dropping the commented served version passed the gate:\n%s", out)
+	}
+	if !strings.Contains(out, "INCOMPATIBLE ^ (servedVersionRemoval)") || !strings.Contains(out, "version v1alpha1 is served at the baseline") {
+		t.Errorf("expected the v1alpha1 removal to be reported:\n%s", out)
+	}
+}
+
+// An unrecognised `served` spelling is unreadable, not false: the gate refuses
+// to judge the CRD rather than compare a partial version set.
+func TestCompatGateRefusesAnUnrecognisedServedValue(t *testing.T) {
+	alpha := fixtureCRD(baseProps)
+	odd := strings.Replace(alpha, "      served: true\n", "      served: yes\n", 1)
+	if odd == alpha {
+		t.Fatal("fixture no longer declares served: true")
+	}
+	ok, out := runCRDCompat(t, writeFixture(t, odd, odd, ""))
+	if ok || !strings.Contains(out, "cannot read the served versions") {
+		t.Fatalf("ok = %v, want a refusal naming the unreadable versions:\n%s", ok, out)
+	}
+}
+
 // A CRD whose served versions cannot be read is refused, never judged as
 // serving none: an unreadable layout must not become a silent pass.
 func TestCompatGateRefusesACRDWhoseVersionsItCannotRead(t *testing.T) {

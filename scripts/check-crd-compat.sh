@@ -210,10 +210,15 @@ def served_versions(path):
             stripped, indent = stripped[2:].strip(), entry_indent + 2
         if indent == entry_indent + 2 and ":" in stripped:
             key, _, value = stripped.partition(":")
-            value = value.strip()
+            # A trailing comment or quotes must not turn a served version
+            # into an unserved one; any other spelling is unreadable and the
+            # caller fails closed instead of comparing a partial version set.
+            value = value.split("#", 1)[0].strip().strip("'\"")
             if key == "name":
                 name = value
             elif key == "served":
+                if value not in ("true", "false"):
+                    return None
                 is_served = value == "true"
     flush()
     return served if entries and served else None
