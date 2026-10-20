@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func durp(d time.Duration) *metav1.Duration { return &metav1.Duration{Duration: d} }
@@ -83,17 +83,17 @@ func TestCadenceClampMessages(t *testing.T) {
 }
 
 func TestAddonCheckCadenceHelpersClamp(t *testing.T) {
-	sub := &fathomv1alpha1.AddonCheck{Spec: fathomv1alpha1.AddonCheckSpec{
+	sub := &fathomv1.AddonCheck{Spec: fathomv1.AddonCheckSpec{
 		Interval: durp(time.Millisecond), Timeout: durp(time.Millisecond),
 	}}
-	if got := addonCheckInterval(sub); got != fathomv1alpha1.MinCheckInterval {
-		t.Errorf("sub-floor interval = %v, want %v", got, fathomv1alpha1.MinCheckInterval)
+	if got := addonCheckInterval(sub); got != fathomv1.MinCheckInterval {
+		t.Errorf("sub-floor interval = %v, want %v", got, fathomv1.MinCheckInterval)
 	}
-	if got := addonCheckTimeout(sub); got != fathomv1alpha1.MinCheckTimeout {
-		t.Errorf("sub-floor timeout = %v, want %v", got, fathomv1alpha1.MinCheckTimeout)
+	if got := addonCheckTimeout(sub); got != fathomv1.MinCheckTimeout {
+		t.Errorf("sub-floor timeout = %v, want %v", got, fathomv1.MinCheckTimeout)
 	}
 
-	set := &fathomv1alpha1.AddonCheck{Spec: fathomv1alpha1.AddonCheckSpec{
+	set := &fathomv1.AddonCheck{Spec: fathomv1.AddonCheckSpec{
 		Interval: durp(time.Minute), Timeout: durp(30 * time.Second),
 	}}
 	if got := addonCheckInterval(set); got != time.Minute {
@@ -103,37 +103,37 @@ func TestAddonCheckCadenceHelpersClamp(t *testing.T) {
 		t.Errorf("legal timeout = %v, want 30s", got)
 	}
 
-	unset := &fathomv1alpha1.AddonCheck{}
-	if got := addonCheckInterval(unset); got != fathomv1alpha1.DefaultAddonCheckInterval {
-		t.Errorf("unset interval = %v, want default %v", got, fathomv1alpha1.DefaultAddonCheckInterval)
+	unset := &fathomv1.AddonCheck{}
+	if got := addonCheckInterval(unset); got != fathomv1.DefaultAddonCheckInterval {
+		t.Errorf("unset interval = %v, want default %v", got, fathomv1.DefaultAddonCheckInterval)
 	}
-	if got := addonCheckTimeout(unset); got != fathomv1alpha1.DefaultAddonCheckTimeout {
-		t.Errorf("unset timeout = %v, want default %v", got, fathomv1alpha1.DefaultAddonCheckTimeout)
+	if got := addonCheckTimeout(unset); got != fathomv1.DefaultAddonCheckTimeout {
+		t.Errorf("unset timeout = %v, want default %v", got, fathomv1.DefaultAddonCheckTimeout)
 	}
 }
 
 func TestNodeCertCadenceHelpersClamp(t *testing.T) {
-	sub := &fathomv1alpha1.NodeCertificateCheck{Spec: fathomv1alpha1.NodeCertificateCheckSpec{
+	sub := &fathomv1.NodeCertificateCheck{Spec: fathomv1.NodeCertificateCheckSpec{
 		Interval: durp(time.Millisecond), Timeout: durp(time.Millisecond),
 	}}
-	if got := nodeCertInterval(sub); got != fathomv1alpha1.MinCheckInterval {
-		t.Errorf("sub-floor interval = %v, want %v", got, fathomv1alpha1.MinCheckInterval)
+	if got := nodeCertInterval(sub); got != fathomv1.MinCheckInterval {
+		t.Errorf("sub-floor interval = %v, want %v", got, fathomv1.MinCheckInterval)
 	}
-	if got := nodeCertTimeout(sub); got != fathomv1alpha1.MinCheckTimeout {
-		t.Errorf("sub-floor timeout = %v, want %v", got, fathomv1alpha1.MinCheckTimeout)
+	if got := nodeCertTimeout(sub); got != fathomv1.MinCheckTimeout {
+		t.Errorf("sub-floor timeout = %v, want %v", got, fathomv1.MinCheckTimeout)
 	}
 
-	unset := &fathomv1alpha1.NodeCertificateCheck{}
-	if got := nodeCertInterval(unset); got != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
-		t.Errorf("unset interval = %v, want default %v", got, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
+	unset := &fathomv1.NodeCertificateCheck{}
+	if got := nodeCertInterval(unset); got != fathomv1.DefaultNodeCertificateCheckInterval {
+		t.Errorf("unset interval = %v, want default %v", got, fathomv1.DefaultNodeCertificateCheckInterval)
 	}
-	if got := nodeCertTimeout(unset); got != fathomv1alpha1.DefaultNodeCertificateCheckTimeout {
-		t.Errorf("unset timeout = %v, want default %v", got, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
+	if got := nodeCertTimeout(unset); got != fathomv1.DefaultNodeCertificateCheckTimeout {
+		t.Errorf("unset timeout = %v, want default %v", got, fathomv1.DefaultNodeCertificateCheckTimeout)
 	}
 }
 
 func TestSetAddonCheckAcceptedClamped(t *testing.T) {
-	check := &fathomv1alpha1.AddonCheck{Spec: fathomv1alpha1.AddonCheckSpec{
+	check := &fathomv1.AddonCheck{Spec: fathomv1.AddonCheckSpec{
 		Interval: durp(time.Millisecond),
 	}}
 
@@ -155,7 +155,7 @@ func TestSetAddonCheckAcceptedClamped(t *testing.T) {
 	}
 
 	// A clean spec stays SpecAccepted.
-	clean := &fathomv1alpha1.AddonCheck{Spec: fathomv1alpha1.AddonCheckSpec{Interval: durp(time.Minute)}}
+	clean := &fathomv1.AddonCheck{Spec: fathomv1.AddonCheckSpec{Interval: durp(time.Minute)}}
 	setAddonCheckAccepted(clean, nil)
 	cond = findCondition(t, clean.Status.Conditions, checkConditionAccepted)
 	if cond.Reason != "SpecAccepted" {

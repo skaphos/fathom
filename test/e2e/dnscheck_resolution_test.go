@@ -41,7 +41,7 @@ func ensureNamespaceActive(name string) {
 
 // applyDNSCheck writes a DNSCheck manifest, applies it, and schedules removal.
 func applyDNSCheck(name, spec string) {
-	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: %s

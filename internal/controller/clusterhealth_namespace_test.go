@@ -8,7 +8,7 @@ package controller
 import (
 	"testing"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func TestClusterHealthCoversNamespace(t *testing.T) {
@@ -50,8 +50,8 @@ func TestClusterHealthCoversNamespace(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ch := &fathomv1alpha1.ClusterHealth{
-				Spec: fathomv1alpha1.ClusterHealthSpec{
+			ch := &fathomv1.ClusterHealth{
+				Spec: fathomv1.ClusterHealthSpec{
 					Namespaces:         tc.namespaces,
 					ExcludedNamespaces: tc.excludedNamespaces,
 				},

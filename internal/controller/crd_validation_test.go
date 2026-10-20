@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // These specs exercise the CRD schema CEL validations (x-kubernetes-validations)
@@ -27,28 +27,28 @@ var _ = Describe("CRD schema validation", func() {
 	i32 := func(i int32) *int32 { return &i }
 
 	Describe("AddonCheck", func() {
-		newAddonCheck := func(spec fathomv1alpha1.AddonCheckSpec) *fathomv1alpha1.AddonCheck {
+		newAddonCheck := func(spec fathomv1.AddonCheckSpec) *fathomv1.AddonCheck {
 			spec.AddonType = "coredns"
-			return &fathomv1alpha1.AddonCheck{
+			return &fathomv1.AddonCheck{
 				ObjectMeta: metav1.ObjectMeta{GenerateName: "vac-", Namespace: "default"},
 				Spec:       spec,
 			}
 		}
 
 		It("accepts a positive timeout within the interval", func() {
-			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+			obj := newAddonCheck(fathomv1.AddonCheckSpec{
 				Interval: dur(5 * time.Minute), Timeout: dur(30 * time.Second),
 			})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		})
 
 		It("accepts a spec with no interval or timeout set", func() {
-			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{}))).To(Succeed())
+			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{}))).To(Succeed())
 		})
 
 		It("defaults an explicitly configured family to enabled", func() {
-			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-				"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}},
+			obj := newAddonCheck(fathomv1.AddonCheckSpec{Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
+				"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"restartWarnCount": "3"}},
 			}})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			Expect(obj.Spec.Policy["system_health"].Enabled).NotTo(BeNil())
@@ -56,7 +56,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("preserves an explicitly disabled family", func() {
-			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+			obj := newAddonCheck(fathomv1.AddonCheckSpec{Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 				"system_health": {Enabled: ptr.To(false)},
 			}})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
@@ -65,7 +65,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects changing addonType", func() {
-			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{})
+			obj := newAddonCheck(fathomv1.AddonCheckSpec{})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			obj.Spec.AddonType = "cert-manager"
 			err := k8sClient.Update(ctx, obj)
@@ -78,7 +78,7 @@ var _ = Describe("CRD schema validation", func() {
 		// the CRD schema and as MinCheckInterval/MinCheckTimeout in Go.
 		DescribeTable("interval floor",
 			func(interval time.Duration, wantErr bool) {
-				err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(interval)}))
+				err := k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{Interval: dur(interval)}))
 				if wantErr {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("interval must be at least 10s"))
@@ -95,7 +95,7 @@ var _ = Describe("CRD schema validation", func() {
 
 		DescribeTable("timeout floor",
 			func(timeout time.Duration, wantErr bool) {
-				err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+				err := k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{
 					Interval: dur(5 * time.Minute), Timeout: dur(timeout),
 				}))
 				if wantErr {
@@ -113,19 +113,19 @@ var _ = Describe("CRD schema validation", func() {
 		)
 
 		It("accepts both fields at their own floors together", func() {
-			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{
 				Interval: dur(10 * time.Second), Timeout: dur(time.Second),
 			}))).To(Succeed())
 		})
 
 		It("accepts timeout and interval both at the interval floor", func() {
-			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+			Expect(k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{
 				Interval: dur(10 * time.Second), Timeout: dur(10 * time.Second),
 			}))).To(Succeed())
 		})
 
 		It("rejects a sub-floor interval on update too", func() {
-			obj := newAddonCheck(fathomv1alpha1.AddonCheckSpec{Interval: dur(time.Minute)})
+			obj := newAddonCheck(fathomv1.AddonCheckSpec{Interval: dur(time.Minute)})
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			obj.Spec.Interval = dur(time.Millisecond)
 			err := k8sClient.Update(ctx, obj)
@@ -134,7 +134,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects a timeout greater than the interval", func() {
-			err := k8sClient.Create(ctx, newAddonCheck(fathomv1alpha1.AddonCheckSpec{
+			err := k8sClient.Create(ctx, newAddonCheck(fathomv1.AddonCheckSpec{
 				Interval: dur(30 * time.Second), Timeout: dur(time.Minute),
 			}))
 			Expect(err).To(HaveOccurred())
@@ -143,15 +143,15 @@ var _ = Describe("CRD schema validation", func() {
 	})
 
 	Describe("NodeCertificateCheck", func() {
-		newNCC := func(spec fathomv1alpha1.NodeCertificateCheckSpec) *fathomv1alpha1.NodeCertificateCheck {
-			return &fathomv1alpha1.NodeCertificateCheck{
+		newNCC := func(spec fathomv1.NodeCertificateCheckSpec) *fathomv1.NodeCertificateCheck {
+			return &fathomv1.NodeCertificateCheck{
 				ObjectMeta: metav1.ObjectMeta{GenerateName: "vncc-", Namespace: "default"},
 				Spec:       spec,
 			}
 		}
 
 		It("accepts warnDays >= criticalDays with absolute paths", func() {
-			obj := newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			obj := newNCC(fathomv1.NodeCertificateCheckSpec{
 				WarnDays: i32(30), CriticalDays: i32(7),
 				Paths: []string{"/etc/kubernetes/pki/apiserver.crt"},
 			})
@@ -159,7 +159,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects warnDays < criticalDays", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				WarnDays: i32(5), CriticalDays: i32(10),
 			}))
 			Expect(err).To(HaveOccurred())
@@ -167,7 +167,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects a relative path", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				Paths: []string{"etc/kubernetes/pki/apiserver.crt"},
 			}))
 			Expect(err).To(HaveOccurred())
@@ -175,7 +175,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects a path outside the allowed prefixes (confused-deputy guard)", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				Paths: []string{"/root/.ssh/id_rsa"},
 			}))
 			Expect(err).To(HaveOccurred())
@@ -183,7 +183,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects a path containing ..", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				Paths: []string{"/etc/kubernetes/../../root/.ssh"},
 			}))
 			Expect(err).To(HaveOccurred())
@@ -191,7 +191,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("rejects the host root", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				Paths: []string{"/"},
 			}))
 			Expect(err).To(HaveOccurred())
@@ -199,7 +199,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("accepts paths under each allowed prefix", func() {
-			obj := newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			obj := newNCC(fathomv1.NodeCertificateCheckSpec{
 				WarnDays: i32(30), CriticalDays: i32(7),
 				Paths: []string{
 					"/etc/kubernetes/pki",
@@ -213,7 +213,7 @@ var _ = Describe("CRD schema validation", func() {
 		})
 
 		It("accepts a positive timeout within the interval", func() {
-			obj := newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			obj := newNCC(fathomv1.NodeCertificateCheckSpec{
 				WarnDays: i32(30), CriticalDays: i32(7),
 				Interval: dur(time.Hour), Timeout: dur(30 * time.Second),
 			})
@@ -222,7 +222,7 @@ var _ = Describe("CRD schema validation", func() {
 
 		DescribeTable("interval floor",
 			func(interval time.Duration, wantErr bool) {
-				err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{Interval: dur(interval)}))
+				err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{Interval: dur(interval)}))
 				if wantErr {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("interval must be at least 10s"))
@@ -239,7 +239,7 @@ var _ = Describe("CRD schema validation", func() {
 
 		DescribeTable("timeout floor",
 			func(timeout time.Duration, wantErr bool) {
-				err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+				err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 					Interval: dur(time.Hour), Timeout: dur(timeout),
 				}))
 				if wantErr {
@@ -257,7 +257,7 @@ var _ = Describe("CRD schema validation", func() {
 		)
 
 		It("rejects a timeout greater than the interval", func() {
-			err := k8sClient.Create(ctx, newNCC(fathomv1alpha1.NodeCertificateCheckSpec{
+			err := k8sClient.Create(ctx, newNCC(fathomv1.NodeCertificateCheckSpec{
 				Interval: dur(30 * time.Second), Timeout: dur(time.Minute),
 			}))
 			Expect(err).To(HaveOccurred())
@@ -266,11 +266,11 @@ var _ = Describe("CRD schema validation", func() {
 	})
 
 	Describe("HealthCheck", func() {
-		newHealthCheck := func() *fathomv1alpha1.HealthCheck {
-			return &fathomv1alpha1.HealthCheck{
+		newHealthCheck := func() *fathomv1.HealthCheck {
+			return &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{GenerateName: "vhc-", Namespace: "default"},
-				Spec: fathomv1alpha1.HealthCheckSpec{
-					CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "target"},
+				Spec: fathomv1.HealthCheckSpec{
+					CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: "target"},
 				},
 			}
 		}
@@ -288,23 +288,22 @@ var _ = Describe("CRD schema validation", func() {
 			obj := newHealthCheck()
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 			obj.Spec.Description = "still the same target"
-			obj.Spec.Paused = true
 			Expect(k8sClient.Update(ctx, obj)).To(Succeed())
 		})
 	})
 
 	Describe("HealthReport", func() {
-		newHealthReport := func() *fathomv1alpha1.HealthReport {
-			return &fathomv1alpha1.HealthReport{
+		newHealthReport := func() *fathomv1.HealthReport {
+			return &fathomv1.HealthReport{
 				ObjectMeta: metav1.ObjectMeta{GenerateName: "vhr-", Namespace: "default"},
-				Spec: fathomv1alpha1.HealthReportSpec{
-					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: "source"},
-					Result:     fathomv1alpha1.HealthReportResultPass,
+				Spec: fathomv1.HealthReportSpec{
+					SourceRef:  fathomv1.HealthReportTargetRef{Kind: "AddonCheck", Name: "source"},
+					Result:     fathomv1.HealthReportResultPass,
 					ObservedAt: metav1.Now(),
-					Checks: []fathomv1alpha1.HealthReportCheck{{
+					Checks: []fathomv1.HealthReportCheck{{
 						Family:     "system_health",
-						Result:     fathomv1alpha1.HealthReportResultPass,
-						TargetRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "Deployment", Name: "coredns"},
+						Result:     fathomv1.HealthReportResultPass,
+						TargetRef:  fathomv1.HealthReportTargetRef{Kind: "Deployment", Name: "coredns"},
 						ObservedAt: metav1.Now(),
 					}},
 				},
@@ -314,7 +313,7 @@ var _ = Describe("CRD schema validation", func() {
 		It("rejects any spec mutation — reports are immutable history", func() {
 			obj := newHealthReport()
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-			obj.Spec.Result = fathomv1alpha1.HealthReportResultFail
+			obj.Spec.Result = fathomv1.HealthReportResultFail
 			err := k8sClient.Update(ctx, obj)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("spec is immutable"))

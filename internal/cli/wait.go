@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // waitResult classifies how a wait ended. Exactly one of err, superseded,
@@ -42,7 +42,6 @@ var blockingReasons = map[string]bool{
 	"MissingAdapter":      true,
 	"AdapterLookupFailed": true,
 	"NoMatchingNodes":     true,
-	"Paused":              true,
 }
 
 // waitForRun polls the target until the operator has consumed exactly this
@@ -141,7 +140,7 @@ func pollRun(ctx context.Context, c client.Client, t runTarget, key types.Namesp
 }
 
 func inspectRunObject(t runTarget, obj client.Object, token string, res *waitResult) (bool, error) {
-	if obj.GetAnnotations()[fathomv1alpha1.AnnotationRunNow] != token {
+	if obj.GetAnnotations()[fathomv1.AnnotationRunNow] != token {
 		res.superseded = true
 		return true, nil
 	}

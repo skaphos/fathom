@@ -57,7 +57,7 @@ embeds, and later handles CRD-first upgrades and a complete uninstall.
 A minimal `AddonCheck` that watches cert-manager's core system health:
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: cert-manager-system-health
@@ -115,8 +115,9 @@ Full documentation lives in [`docs/`](docs/README.md).
 - [Architecture](docs/architecture.md) — CRD model, the
   specialized-check → HealthCheck → ClusterHealth aggregation chain,
   reconcilers, adapter contract, probe-pod model.
-- [API reference](docs/reference/api.md) — generated CRD reference for
-  `fathom.skaphos.io/v1alpha1`.
+- [API reference](docs/reference/api.md) — generated CRD reference for the
+  stable `fathom.skaphos.io/v1` check kinds and the alpha runtime definition
+  kinds.
 - [Status and conditions](docs/reference/status-conditions.md) — operational
   meaning of status fields and condition reasons.
 - [Configuration reference](docs/reference/configuration.md) — every flag, env
@@ -221,7 +222,7 @@ existing reach, so the namespace's own NetworkPolicy governs the query and no
 separate allowlist of permitted resolver addresses is needed.
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: cluster-dns
@@ -268,7 +269,7 @@ minimum known expiry per check and node as
 endpoint. Certificate paths, subjects, and issuers are not metric labels.
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeCertificateCheck
 metadata:
   name: node-certificates
@@ -331,7 +332,7 @@ up after all checks have migrated and external RoleBindings and
 ClusterRoleBindings have been checked.
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: node-health

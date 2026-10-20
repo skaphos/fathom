@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -136,6 +137,9 @@ func newLifecycleFixture(t *testing.T, objs ...client.Object) *lifecycleFixture 
 	f := &lifecycleFixture{t: t, scheme: runtime.NewScheme()}
 	if err := corev1.AddToScheme(f.scheme); err != nil {
 		t.Fatalf("core scheme: %v", err)
+	}
+	if err := fathomv1.AddToScheme(f.scheme); err != nil {
+		t.Fatalf("fathom v1 scheme: %v", err)
 	}
 	if err := fathomv1alpha1.AddToScheme(f.scheme); err != nil {
 		t.Fatalf("fathom scheme: %v", err)

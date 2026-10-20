@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // Structural spec.policy admission (issue #152): family-key format and count,
@@ -22,20 +22,20 @@ import (
 // adapter know this family/key, label grammar, threshold ranges) stay with
 // validateAddonCheckPolicy and the Accepted condition.
 var _ = Describe("AddonCheck spec.policy admission", func() {
-	newCheck := func(policy map[string]fathomv1alpha1.AddonCheckFamilyPolicy) *fathomv1alpha1.AddonCheck {
-		return &fathomv1alpha1.AddonCheck{
+	newCheck := func(policy map[string]fathomv1.AddonCheckFamilyPolicy) *fathomv1.AddonCheck {
+		return &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{GenerateName: "vpol-", Namespace: "default"},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "coredns", Policy: policy},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "coredns", Policy: policy},
 		}
 	}
-	family := func(p fathomv1alpha1.AddonCheckFamilyPolicy) map[string]fathomv1alpha1.AddonCheckFamilyPolicy {
-		return map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": p}
+	family := func(p fathomv1.AddonCheckFamilyPolicy) map[string]fathomv1.AddonCheckFamilyPolicy {
+		return map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": p}
 	}
 
 	Describe("family keys", func() {
 		DescribeTable("format",
 			func(key string, wantErr bool) {
-				err := k8sClient.Create(ctx, newCheck(map[string]fathomv1alpha1.AddonCheckFamilyPolicy{key: {}}))
+				err := k8sClient.Create(ctx, newCheck(map[string]fathomv1.AddonCheckFamilyPolicy{key: {}}))
 				if wantErr {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("policy keys must be"))
@@ -53,9 +53,9 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 		)
 
 		It("rejects more than 32 families", func() {
-			policy := make(map[string]fathomv1alpha1.AddonCheckFamilyPolicy, 33)
+			policy := make(map[string]fathomv1.AddonCheckFamilyPolicy, 33)
 			for i := 0; i < 33; i++ {
-				policy[fmt.Sprintf("family_%02d", i)] = fathomv1alpha1.AddonCheckFamilyPolicy{}
+				policy[fmt.Sprintf("family_%02d", i)] = fathomv1.AddonCheckFamilyPolicy{}
 			}
 			err := k8sClient.Create(ctx, newCheck(policy))
 			Expect(err).To(HaveOccurred())
@@ -65,14 +65,14 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 
 	Describe("namespaces", func() {
 		It("accepts valid namespace names", func() {
-			Expect(k8sClient.Create(ctx, newCheck(family(fathomv1alpha1.AddonCheckFamilyPolicy{
+			Expect(k8sClient.Create(ctx, newCheck(family(fathomv1.AddonCheckFamilyPolicy{
 				Namespaces: []string{"kube-system", "default", "team-a"},
 			})))).To(Succeed())
 		})
 
 		DescribeTable("rejects invalid entries",
 			func(ns string) {
-				err := k8sClient.Create(ctx, newCheck(family(fathomv1alpha1.AddonCheckFamilyPolicy{
+				err := k8sClient.Create(ctx, newCheck(family(fathomv1.AddonCheckFamilyPolicy{
 					Namespaces: []string{ns},
 				})))
 				Expect(err).To(HaveOccurred())
@@ -87,19 +87,19 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 			for i := range entries {
 				entries[i] = fmt.Sprintf("ns-%02d", i)
 			}
-			err := k8sClient.Create(ctx, newCheck(family(fathomv1alpha1.AddonCheckFamilyPolicy{Namespaces: entries})))
+			err := k8sClient.Create(ctx, newCheck(family(fathomv1.AddonCheckFamilyPolicy{Namespaces: entries})))
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Too many"))
 		})
 	})
 
 	Describe("thresholds", func() {
-		threshold := func(kv map[string]fathomv1alpha1.ThresholdValue) map[string]fathomv1alpha1.AddonCheckFamilyPolicy {
-			return family(fathomv1alpha1.AddonCheckFamilyPolicy{Thresholds: kv})
+		threshold := func(kv map[string]fathomv1.ThresholdValue) map[string]fathomv1.AddonCheckFamilyPolicy {
+			return family(fathomv1.AddonCheckFamilyPolicy{Thresholds: kv})
 		}
 
 		DescribeTable("numeric key shapes",
-			func(kv map[string]fathomv1alpha1.ThresholdValue, wantErrSubstring string) {
+			func(kv map[string]fathomv1.ThresholdValue, wantErrSubstring string) {
 				err := k8sClient.Create(ctx, newCheck(threshold(kv)))
 				if wantErrSubstring == "" {
 					Expect(err).NotTo(HaveOccurred())
@@ -108,22 +108,22 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 					Expect(err.Error()).To(ContainSubstring(wantErrSubstring))
 				}
 			},
-			Entry("accepts a whole-number warnDays", map[string]fathomv1alpha1.ThresholdValue{"warnDays": "30"}, ""),
-			Entry("accepts a whole-number failDays", map[string]fathomv1alpha1.ThresholdValue{"failDays": "7"}, ""),
-			Entry("rejects warnDays: banana", map[string]fathomv1alpha1.ThresholdValue{"warnDays": "banana"}, "warnDays and failDays must be whole numbers"),
-			Entry("rejects a negative failDays", map[string]fathomv1alpha1.ThresholdValue{"failDays": "-1"}, "warnDays and failDays must be whole numbers"),
-			Entry("rejects a fractional warnDays", map[string]fathomv1alpha1.ThresholdValue{"warnDays": "1.5"}, "warnDays and failDays must be whole numbers"),
-			Entry("accepts a percentage warnRatio", map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "99.5"}, ""),
-			Entry("accepts a percent-suffixed failRatio", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "80%"}, ""),
-			Entry("accepts a small-percentage ratio", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "1.5"}, ""),
-			Entry("rejects failRatio: banana", map[string]fathomv1alpha1.ThresholdValue{"failRatio": "banana"}, "warnRatio and failRatio must be percentage values"),
-			Entry("rejects a four-digit ratio", map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "1000"}, "warnRatio and failRatio must be percentage values"),
-			Entry("accepts unknown keys with any value (adapter-judged)", map[string]fathomv1alpha1.ThresholdValue{"customKnob": "anything goes here"}, ""),
-			Entry("accepts camelCase keys (live convention)", map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}, ""),
+			Entry("accepts a whole-number warnDays", map[string]fathomv1.ThresholdValue{"warnDays": "30"}, ""),
+			Entry("accepts a whole-number failDays", map[string]fathomv1.ThresholdValue{"failDays": "7"}, ""),
+			Entry("rejects warnDays: banana", map[string]fathomv1.ThresholdValue{"warnDays": "banana"}, "warnDays and failDays must be whole numbers"),
+			Entry("rejects a negative failDays", map[string]fathomv1.ThresholdValue{"failDays": "-1"}, "warnDays and failDays must be whole numbers"),
+			Entry("rejects a fractional warnDays", map[string]fathomv1.ThresholdValue{"warnDays": "1.5"}, "warnDays and failDays must be whole numbers"),
+			Entry("accepts a percentage warnRatio", map[string]fathomv1.ThresholdValue{"warnRatio": "99.5"}, ""),
+			Entry("accepts a percent-suffixed failRatio", map[string]fathomv1.ThresholdValue{"failRatio": "80%"}, ""),
+			Entry("accepts a small-percentage ratio", map[string]fathomv1.ThresholdValue{"failRatio": "1.5"}, ""),
+			Entry("rejects failRatio: banana", map[string]fathomv1.ThresholdValue{"failRatio": "banana"}, "warnRatio and failRatio must be percentage values"),
+			Entry("rejects a four-digit ratio", map[string]fathomv1.ThresholdValue{"warnRatio": "1000"}, "warnRatio and failRatio must be percentage values"),
+			Entry("accepts unknown keys with any value (adapter-judged)", map[string]fathomv1.ThresholdValue{"customKnob": "anything goes here"}, ""),
+			Entry("accepts camelCase keys (live convention)", map[string]fathomv1.ThresholdValue{"restartWarnCount": "3"}, ""),
 		)
 
 		It("rejects more than 16 keys", func() {
-			kv := make(map[string]fathomv1alpha1.ThresholdValue, 17)
+			kv := make(map[string]fathomv1.ThresholdValue, 17)
 			for i := 0; i < 17; i++ {
 				kv[fmt.Sprintf("knob%02d", i)] = "1"
 			}
@@ -134,8 +134,8 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 	})
 
 	Describe("labelSelector", func() {
-		selector := func(sel *metav1.LabelSelector) map[string]fathomv1alpha1.AddonCheckFamilyPolicy {
-			return family(fathomv1alpha1.AddonCheckFamilyPolicy{LabelSelector: sel})
+		selector := func(sel *metav1.LabelSelector) map[string]fathomv1.AddonCheckFamilyPolicy {
+			return family(fathomv1.AddonCheckFamilyPolicy{LabelSelector: sel})
 		}
 
 		It("accepts a valid selector", func() {
@@ -167,6 +167,6 @@ var _ = Describe("AddonCheck spec.policy admission", func() {
 	})
 
 	It("accepts an empty policy map", func() {
-		Expect(k8sClient.Create(ctx, newCheck(map[string]fathomv1alpha1.AddonCheckFamilyPolicy{}))).To(Succeed())
+		Expect(k8sClient.Create(ctx, newCheck(map[string]fathomv1.AddonCheckFamilyPolicy{}))).To(Succeed())
 	})
 })

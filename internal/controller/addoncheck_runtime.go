@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
@@ -161,10 +162,10 @@ type RuntimeExecutionSession interface {
 	Admit(key string) (context.Context, func(), error)
 	// Epoch is the leadership epoch observed live by this session, or nil
 	// before one has been observed.
-	Epoch() *fathomv1alpha1.DefinitionLeaderEpoch
+	Epoch() *fathomv1.DefinitionLeaderEpoch
 	// EpochValid reports whether an epoch still belongs to this session's
 	// observed leadership. Equality uses all four epoch fields.
-	EpochValid(*fathomv1alpha1.DefinitionLeaderEpoch) bool
+	EpochValid(*fathomv1.DefinitionLeaderEpoch) bool
 }
 
 // RuntimeDispatchResolver is the registry's dispatch surface. The registry is
@@ -238,7 +239,7 @@ type RuntimeFence struct {
 	// interchangeable evidence.
 	CheckPolicy string
 	// Epoch is the leadership epoch observed when the run was admitted.
-	Epoch *fathomv1alpha1.DefinitionLeaderEpoch
+	Epoch *fathomv1.DefinitionLeaderEpoch
 }
 
 // RuntimeAttempt is one runtime AddonCheck attempt. Completed means the
@@ -252,11 +253,11 @@ type RuntimeAttempt struct {
 	// publication is the exact status object accepted by the API server and
 	// the evidence it replaced. The report path must not reconstruct either
 	// from the manager cache, which can lag behind this publication.
-	publication      *fathomv1alpha1.AddonCheck
-	previousEvidence *fathomv1alpha1.AddonCheckEvidence
+	publication      *fathomv1.AddonCheck
+	previousEvidence *fathomv1.AddonCheckEvidence
 	// recordBase is the uncached, fenced AddonCheck whose resourceVersion and
 	// generation an early refusal describes. Nil uses the caller's check.
-	recordBase *fathomv1alpha1.AddonCheck
+	recordBase *fathomv1.AddonCheck
 	// policyValidated asks record to publish policy acceptance through the same
 	// epoch-checked status CAS: false with policyErrs for InvalidPolicy, or true
 	// with no errors when execution failed after validation succeeded.
@@ -330,7 +331,7 @@ type AddonCheckRuntimeRunner struct {
 // Ready=False/AccessDenied and freshness=Unavailable row silently unwritten,
 // and the omission would look exactly like a healthy check that simply has not
 // run yet.
-func (r *AddonCheckRuntimeRunner) Run(ctx context.Context, check *fathomv1alpha1.AddonCheck) (RuntimeAttempt, error) {
+func (r *AddonCheckRuntimeRunner) Run(ctx context.Context, check *fathomv1.AddonCheck) (RuntimeAttempt, error) {
 	attempt, err := r.execute(ctx, check)
 	if err != nil {
 		return attempt, err
@@ -351,7 +352,7 @@ func (r *AddonCheckRuntimeRunner) Run(ctx context.Context, check *fathomv1alpha1
 }
 
 // execute is the run itself: resolve, admit, fence, evaluate, fence, publish.
-func (r *AddonCheckRuntimeRunner) execute(ctx context.Context, check *fathomv1alpha1.AddonCheck) (RuntimeAttempt, error) {
+func (r *AddonCheckRuntimeRunner) execute(ctx context.Context, check *fathomv1.AddonCheck) (RuntimeAttempt, error) {
 	if r == nil || r.Client == nil || r.Registry == nil || r.Session == nil || r.Clients == nil ||
 		r.OperatorNamespace == "" || r.ManagerServiceAccount == "" {
 		return RuntimeAttempt{}, errRuntimeRunnerUnwired
@@ -494,8 +495,8 @@ func (r *AddonCheckRuntimeRunner) execute(ctx context.Context, check *fathomv1al
 // cache cannot be trusted to have seen the revocation that matters.
 func (r *AddonCheckRuntimeRunner) preRunFence(
 	budget *execution.Budget, clients RuntimeRunClients, resolution registry.Resolution,
-	addonType string, check *fathomv1alpha1.AddonCheck,
-) (RuntimeFence, *fathomv1alpha1.AddonCheck, client.Client, error) {
+	addonType string, check *fathomv1.AddonCheck,
+) (RuntimeFence, *fathomv1.AddonCheck, client.Client, error) {
 	epoch := r.Session.Epoch()
 	if epoch == nil || !r.Session.EpochValid(epoch) {
 		return RuntimeFence{}, nil, nil, &authorityFailure{
@@ -522,7 +523,7 @@ func (r *AddonCheckRuntimeRunner) preRunFence(
 		}
 	}
 
-	var fenced fathomv1alpha1.AddonCheck
+	var fenced fathomv1.AddonCheck
 	key := client.ObjectKeyFromObject(check)
 	if err := clients.Control.Get(budget.Context(), key, &fenced); err != nil {
 		return RuntimeFence{}, nil, nil, readFailure(err, fmt.Sprintf("AddonCheck %s", key))
@@ -681,7 +682,7 @@ func (r *AddonCheckRuntimeRunner) finalFence(
 		})
 	}
 
-	var fenced *fathomv1alpha1.AddonCheck
+	var fenced *fathomv1.AddonCheck
 	if budget.Err() == nil {
 		var read []publicationCandidate
 		read, fenced = r.rereadFence(budget, clients, fence, addonType, checkKey)
@@ -734,7 +735,7 @@ func (r *AddonCheckRuntimeRunner) finalFence(
 func (r *AddonCheckRuntimeRunner) rereadFence(
 	budget *execution.Budget, clients RuntimeRunClients, fence RuntimeFence,
 	addonType string, checkKey types.NamespacedName,
-) ([]publicationCandidate, *fathomv1alpha1.AddonCheck) {
+) ([]publicationCandidate, *fathomv1.AddonCheck) {
 	var candidates []publicationCandidate
 	deny := func(reason, format string, args ...any) {
 		candidates = append(candidates, publicationCandidate{
@@ -819,7 +820,7 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 		}
 	}
 
-	var check fathomv1alpha1.AddonCheck
+	var check fathomv1.AddonCheck
 	switch err := clients.Control.Get(budget.Context(), checkKey, &check); {
 	case apierrors.IsNotFound(err):
 		deny(reasonSuperseded, "AddonCheck %s was deleted while the run was executing", checkKey)
@@ -846,7 +847,7 @@ func (r *AddonCheckRuntimeRunner) rereadFence(
 // status written after the fence read it always wins and this run publishes
 // nothing rather than clobbering it.
 func (r *AddonCheckRuntimeRunner) publish(
-	ctx context.Context, fenced *fathomv1alpha1.AddonCheck, fence RuntimeFence, message string,
+	ctx context.Context, fenced *fathomv1.AddonCheck, fence RuntimeFence, message string,
 	result adapter.Result,
 ) (RuntimeAttempt, error) {
 	key := client.ObjectKeyFromObject(fenced)
@@ -873,13 +874,13 @@ func (r *AddonCheckRuntimeRunner) publish(
 	published.Status.LatestAttemptAt = &metav1.Time{Time: now}
 
 	if verdict, ok := addonCheckCompletedVerdict(aggregate); ok {
-		published.Status.LatestAttemptOutcome = fathomv1alpha1.AddonCheckAttemptCompleted
+		published.Status.LatestAttemptOutcome = fathomv1.AddonCheckAttemptCompleted
 		published.Status.LatestAttemptReason = reasonRunCompleted
 		published.Status.LatestAttemptMessage = boundedText(message, addonCheckStatusTextLimit)
 		// A completed run REPLACES current evidence, and its observedAt is its
 		// own — including the all-Skipped case, whose "observedAt/revision/
 		// context advances after successful publication fences".
-		published.Status.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
+		published.Status.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
 			Verdict:    verdict,
 			Coverage:   coverage,
 			Message:    boundedText(coverageMessage, addonCheckStatusTextLimit),
@@ -902,7 +903,7 @@ func (r *AddonCheckRuntimeRunner) publish(
 		// would be rejected by the API server outright, turning a health
 		// observation into a controller error, and the narrowing that prevents
 		// it is pinned directly by TestCompletedEvidenceFoldAndNarrowing.
-		published.Status.LatestAttemptOutcome = fathomv1alpha1.AddonCheckAttemptError
+		published.Status.LatestAttemptOutcome = fathomv1.AddonCheckAttemptError
 		published.Status.LatestAttemptReason = reasonIncompleteEvaluation
 		published.Status.LatestAttemptMessage = boundedText(fmt.Sprintf(
 			"the run completed but aggregated to %s, which is not completed evidence; the previous observation is preserved",
@@ -958,7 +959,7 @@ func (r *AddonCheckRuntimeRunner) publish(
 // already described this check, and an attempt record is worth strictly less
 // than whatever won.
 func (r *AddonCheckRuntimeRunner) record(
-	ctx context.Context, check *fathomv1alpha1.AddonCheck, attempt RuntimeAttempt,
+	ctx context.Context, check *fathomv1.AddonCheck, attempt RuntimeAttempt,
 ) error {
 	// A condition needs a reason: an empty one is rejected by the API server,
 	// so an unattributed outcome is not worth a write. The serialization
@@ -987,7 +988,7 @@ func (r *AddonCheckRuntimeRunner) record(
 	now := r.now()
 	recorded := check.DeepCopy()
 	recorded.Status.LatestAttemptAt = &metav1.Time{Time: now}
-	recorded.Status.LatestAttemptOutcome = fathomv1alpha1.AddonCheckAttemptError
+	recorded.Status.LatestAttemptOutcome = fathomv1.AddonCheckAttemptError
 	recorded.Status.LatestAttemptReason = boundedText(attempt.Reason, addonCheckStatusReasonLimit)
 	recorded.Status.LatestAttemptMessage = boundedText(attempt.Message, addonCheckStatusTextLimit)
 	setAddonCheckFreshness(recorded, attempt.Reason, now)
@@ -1024,19 +1025,19 @@ func (r *AddonCheckRuntimeRunner) record(
 // the message "no checks evaluated", and data-model.md that "Zero enabled
 // checks follows the engine's explicit Skipped sentinel" — so an empty run and
 // an all-Skipped run are the same row.
-func addonCheckEvidenceOutcome(check *fathomv1alpha1.AddonCheck, result adapter.Result) (
-	fathomv1alpha1.HealthReportResult, fathomv1alpha1.AddonCheckEvidenceCoverage, string,
+func addonCheckEvidenceOutcome(check *fathomv1.AddonCheck, result adapter.Result) (
+	fathomv1.HealthReportResult, fathomv1.AddonCheckEvidenceCoverage, string,
 ) {
 	if addonCheckEvaluatedNothing(result.Checks) {
-		return fathomv1alpha1.HealthReportResultSkipped,
-			fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated,
-			fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage
+		return fathomv1.HealthReportResultSkipped,
+			fathomv1.AddonCheckCoverageNoChecksEvaluated,
+			fathomv1.AddonCheckNoChecksEvaluatedMessage
 	}
 	// The existing family-aware aggregate, unchanged: "Mixed results use
 	// existing aggregate semantics" and "Ratio aggregation cannot average a
 	// failed family into Pass."
 	aggregate, _ := aggregateWithRatioRollups(result.Checks, ratioThresholdsByFamily(check))
-	return aggregate, fathomv1alpha1.AddonCheckCoverageChecksEvaluated,
+	return aggregate, fathomv1.AddonCheckCoverageChecksEvaluated,
 		fmt.Sprintf("%d checks evaluated", len(result.Checks))
 }
 
@@ -1056,18 +1057,18 @@ func addonCheckEvaluatedNothing(checks []adapter.CheckResult) bool {
 // determine health and the second that nothing was observed, and presenting
 // either as a stored verdict is how a partial result becomes a healthy-looking
 // one.
-func addonCheckCompletedVerdict(aggregate fathomv1alpha1.HealthReportResult) (
-	fathomv1alpha1.AddonCheckEvidenceVerdict, bool,
+func addonCheckCompletedVerdict(aggregate fathomv1.HealthReportResult) (
+	fathomv1.AddonCheckEvidenceVerdict, bool,
 ) {
 	switch aggregate {
-	case fathomv1alpha1.HealthReportResultPass:
-		return fathomv1alpha1.AddonCheckEvidenceVerdictPass, true
-	case fathomv1alpha1.HealthReportResultWarn:
-		return fathomv1alpha1.AddonCheckEvidenceVerdictWarn, true
-	case fathomv1alpha1.HealthReportResultFail:
-		return fathomv1alpha1.AddonCheckEvidenceVerdictFail, true
-	case fathomv1alpha1.HealthReportResultSkipped:
-		return fathomv1alpha1.AddonCheckEvidenceVerdictSkipped, true
+	case fathomv1.HealthReportResultPass:
+		return fathomv1.AddonCheckEvidenceVerdictPass, true
+	case fathomv1.HealthReportResultWarn:
+		return fathomv1.AddonCheckEvidenceVerdictWarn, true
+	case fathomv1.HealthReportResultFail:
+		return fathomv1.AddonCheckEvidenceVerdictFail, true
+	case fathomv1.HealthReportResultSkipped:
+		return fathomv1.AddonCheckEvidenceVerdictSkipped, true
 	default:
 		return "", false
 	}
@@ -1075,8 +1076,8 @@ func addonCheckCompletedVerdict(aggregate fathomv1alpha1.HealthReportResult) (
 
 // addonCheckEvidenceRevision copies the fenced revision and publication
 // provenance onto the evidence, bounded to the schema.
-func addonCheckEvidenceRevision(fence RuntimeFence) fathomv1alpha1.AddonCheckEvidenceRevision {
-	return fathomv1alpha1.AddonCheckEvidenceRevision{
+func addonCheckEvidenceRevision(fence RuntimeFence) fathomv1.AddonCheckEvidenceRevision {
+	return fathomv1.AddonCheckEvidenceRevision{
 		DefinitionUID:        boundedText(string(fence.Revision.DefinitionUID), addonCheckStatusIdentifierLimit),
 		DefinitionGeneration: fence.Revision.Generation,
 		SchemaVersion:        boundedText(fence.Revision.SchemaVersion, addonCheckStatusVersionLimit),
@@ -1088,8 +1089,8 @@ func addonCheckEvidenceRevision(fence RuntimeFence) fathomv1alpha1.AddonCheckEvi
 
 // addonCheckEvidenceAuthority copies the fenced authority and policy context
 // onto the evidence, bounded to the schema.
-func addonCheckEvidenceAuthority(fence RuntimeFence) fathomv1alpha1.AddonCheckEvidenceAuthority {
-	return fathomv1alpha1.AddonCheckEvidenceAuthority{
+func addonCheckEvidenceAuthority(fence RuntimeFence) fathomv1.AddonCheckEvidenceAuthority {
+	return fathomv1.AddonCheckEvidenceAuthority{
 		BindingUID:        boundedText(string(fence.BindingUID), addonCheckStatusIdentifierLimit),
 		BindingGeneration: fence.BindingSpecGeneration,
 		ServiceAccountUID: boundedText(string(fence.ServiceAccountUID), addonCheckStatusIdentifierLimit),
@@ -1109,7 +1110,7 @@ func addonCheckEvidenceAuthority(fence RuntimeFence) fathomv1alpha1.AddonCheckEv
 // one defaults, exactly as the run itself is paced, so the window always
 // describes the schedule the check actually runs on. Two intervals means one
 // missed run is tolerated; the timeout covers a run that is still in flight.
-func AddonCheckEvidenceWindow(check *fathomv1alpha1.AddonCheck) time.Duration {
+func AddonCheckEvidenceWindow(check *fathomv1.AddonCheck) time.Duration {
 	return 2*addonCheckInterval(check) + addonCheckTimeout(check)
 }
 
@@ -1123,7 +1124,7 @@ func AddonCheckEvidenceWindow(check *fathomv1alpha1.AddonCheck) time.Duration {
 // old". It is exported so the HealthCheck mirror can re-derive staleness at
 // read time rather than trusting a stored value that only advances when a
 // reconcile happens to run.
-func AddonCheckEvidenceAged(check *fathomv1alpha1.AddonCheck, now time.Time) bool {
+func AddonCheckEvidenceAged(check *fathomv1.AddonCheck, now time.Time) bool {
 	evidence := check.Status.LastSuccessfulEvaluation
 	if evidence == nil {
 		return false
@@ -1142,30 +1143,30 @@ func AddonCheckEvidenceAged(check *fathomv1alpha1.AddonCheck, now time.Time) boo
 // says nothing about the definition or binding, which are both still there. A
 // run that cannot complete does not make its inputs ineligible; it just fails
 // to refresh the observation, and the age test then tells the truth on its own.
-func addonCheckEvidenceEligibility(reason string) fathomv1alpha1.AddonCheckEvidenceFreshness {
+func addonCheckEvidenceEligibility(reason string) fathomv1.AddonCheckEvidenceFreshness {
 	switch reason {
 	case reasonUnknownAddonType, registry.ReasonBuiltinCollision,
 		registry.ReasonRuntimeCollision, registry.ReasonAdmissionClosed:
 		// No dispatchable snapshot claims this identity at all — the matrix's
 		// "Missing definition" and "New built-in collides" rows.
-		return fathomv1alpha1.AddonCheckEvidenceUnavailable
+		return fathomv1.AddonCheckEvidenceUnavailable
 	}
 	switch publicationRankOf(reason) {
 	case rankAuthority, rankInvalidInput:
 		// "Old evidence retained with original time/revision/context;
 		// freshness=Unavailable" — the revoked, denied, deleted and
 		// invalid-edit rows.
-		return fathomv1alpha1.AddonCheckEvidenceUnavailable
+		return fathomv1.AddonCheckEvidenceUnavailable
 	case rankSuperseded:
-		return fathomv1alpha1.AddonCheckEvidenceSuperseded
+		return fathomv1.AddonCheckEvidenceSuperseded
 	default:
-		return fathomv1alpha1.AddonCheckEvidenceCurrent
+		return fathomv1.AddonCheckEvidenceCurrent
 	}
 }
 
 // setAddonCheckFreshness derives and stores the freshness of whatever evidence
 // check currently carries. It reads the evidence and never writes it.
-func setAddonCheckFreshness(check *fathomv1alpha1.AddonCheck, reason string, now time.Time) {
+func setAddonCheckFreshness(check *fathomv1.AddonCheck, reason string, now time.Time) {
 	freshness, explanation := addonCheckFreshness(check, reason, now)
 	check.Status.EvidenceFreshness = freshness
 	check.Status.EvidenceFreshnessReason = boundedText(explanation, addonCheckStatusTextLimit)
@@ -1178,32 +1179,32 @@ func setAddonCheckFreshness(check *fathomv1alpha1.AddonCheck, reason string, now
 // Freshness is derived, never authority, and it never implies health:
 // "Freshness denotes recency ... neither means Pass", so a Stale Pass and a
 // Current Fail are both ordinary.
-func addonCheckFreshness(check *fathomv1alpha1.AddonCheck, reason string, now time.Time) (
-	fathomv1alpha1.AddonCheckEvidenceFreshness, string,
+func addonCheckFreshness(check *fathomv1.AddonCheck, reason string, now time.Time) (
+	fathomv1.AddonCheckEvidenceFreshness, string,
 ) {
 	evidence := check.Status.LastSuccessfulEvaluation
 	if evidence == nil {
 		// "Unknown applies when no evidence exists": there is nothing to be
 		// fresh, and no verdict is invented for it.
-		return fathomv1alpha1.AddonCheckEvidenceUnavailable,
+		return fathomv1.AddonCheckEvidenceUnavailable,
 			"no completed evaluation has been recorded for this check"
 	}
 	switch eligibility := addonCheckEvidenceEligibility(reason); eligibility {
-	case fathomv1alpha1.AddonCheckEvidenceUnavailable:
+	case fathomv1.AddonCheckEvidenceUnavailable:
 		return eligibility, fmt.Sprintf(
 			"the inputs this evidence was produced from are no longer eligible (%s); it is retained with its original observation time %s",
 			reason, evidence.ObservedAt.UTC().Format(time.RFC3339))
-	case fathomv1alpha1.AddonCheckEvidenceSuperseded:
+	case fathomv1.AddonCheckEvidenceSuperseded:
 		return eligibility, fmt.Sprintf(
 			"the revision or context this evidence was produced under has been replaced (%s); it is retained with its original observation time %s",
 			reason, evidence.ObservedAt.UTC().Format(time.RFC3339))
 	}
 	if AddonCheckEvidenceAged(check, now) {
-		return fathomv1alpha1.AddonCheckEvidenceStale, fmt.Sprintf(
+		return fathomv1.AddonCheckEvidenceStale, fmt.Sprintf(
 			"observed at %s, more than two intervals plus one timeout (%s) ago; the stored verdict is not current coverage",
 			evidence.ObservedAt.UTC().Format(time.RFC3339), AddonCheckEvidenceWindow(check))
 	}
-	return fathomv1alpha1.AddonCheckEvidenceCurrent, ""
+	return fathomv1.AddonCheckEvidenceCurrent, ""
 }
 
 // boundedText bounds a status string to a schema limit in BOTH units the
@@ -1362,7 +1363,7 @@ func reasonPrefix(message string) (string, bool) {
 // interchangeable with evidence produced under another even at the same
 // generation. A digest is used rather than the policy itself so the fence stays
 // a small comparable value whatever the policy's size.
-func addonCheckPolicyFingerprint(check *fathomv1alpha1.AddonCheck) string {
+func addonCheckPolicyFingerprint(check *fathomv1.AddonCheck) string {
 	if check == nil || len(check.Spec.Policy) == 0 {
 		return ""
 	}

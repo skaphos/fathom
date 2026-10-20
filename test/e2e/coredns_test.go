@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	corednsSamplePath = "config/samples/fathom_v1alpha1_addoncheck_coredns.yaml"
+	corednsSamplePath = "config/samples/fathom_v1_addoncheck_coredns.yaml"
 	corednsSampleName = "coredns-sample"
 	corednsNamespace  = "default"
 	// dnsResolutionTarget is the well-known in-cluster Service the CoreDNS

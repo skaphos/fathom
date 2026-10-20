@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
@@ -39,7 +39,7 @@ func newProvisioningScheme(t *testing.T) *runtime.Scheme {
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatalf("add client-go scheme: %v", err)
 	}
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add fathom scheme: %v", err)
 	}
 	return scheme
@@ -60,14 +60,14 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 				t.Parallel()
 
 				now := time.Now().Truncate(time.Second)
-				check := &fathomv1alpha1.NodeCertificateCheck{
+				check := &fathomv1.NodeCertificateCheck{
 					ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-unavailable", Namespace: "default", UID: "check-uid", Generation: 2},
 				}
 				objects := []client.Object{check}
 				if previouslyHealthy {
 					lastRun := metav1.NewTime(now.Add(-time.Minute))
-					check.Status = fathomv1alpha1.NodeCertificateCheckStatus{
-						LastRunTime: &lastRun, LastResult: string(fathomv1alpha1.HealthReportResultPass),
+					check.Status = fathomv1.NodeCertificateCheckStatus{
+						LastRunTime: &lastRun, LastResult: string(fathomv1.HealthReportResultPass),
 						LastReportName: "historical-report", DesiredNodes: 1, ReportingNodes: 1,
 						Conditions: []metav1.Condition{
 							{Type: nodeCertConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1},
@@ -80,12 +80,12 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 					objects = append(objects,
 						&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
 							Name: agentResourceName(check), Namespace: check.Namespace,
-							OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller}},
+							OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller}},
 						}},
 						&rbacv1.Role{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
-								OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+								OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
 							},
 							Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{nodecert.NodeReportConfigMapName(check.Name, "node-a")}, Verbs: []string{"get", "update"}}},
 						},
@@ -120,7 +120,7 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 				}
 				objects = append(objects, cm)
 				cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
-					WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+					WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).
 					WithInterceptorFuncs(interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 						policyUnavailable := false
 						switch obj.(type) {
@@ -141,7 +141,7 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 					t.Fatalf("Reconcile error = %v, want errReportAuthenticityUnavailable", err)
 				}
 
-				got := &fathomv1alpha1.NodeCertificateCheck{}
+				got := &fathomv1.NodeCertificateCheck{}
 				if err := cl.Get(context.Background(), key, got); err != nil {
 					t.Fatal(err)
 				}
@@ -156,7 +156,7 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 					t.Errorf("ReportsAuthentic = %+v, want Unknown/%s", authentic, reasonAuthenticityUnavailable)
 				}
 				if previouslyHealthy {
-					if got.Status.LastResult != string(fathomv1alpha1.HealthReportResultPass) || got.Status.LastReportName != "historical-report" || got.Status.LastRunTime == nil || !got.Status.LastRunTime.Equal(&metav1.Time{Time: now.Add(-time.Minute)}) {
+					if got.Status.LastResult != string(fathomv1.HealthReportResultPass) || got.Status.LastReportName != "historical-report" || got.Status.LastRunTime == nil || !got.Status.LastRunTime.Equal(&metav1.Time{Time: now.Add(-time.Minute)}) {
 						t.Errorf("historical verdict changed: %+v", got.Status)
 					}
 				} else if got.Status.LastResult != "" || got.Status.LastReportName != "" || got.Status.LastRunTime != nil {
@@ -183,7 +183,7 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 				} else if !apierrors.IsNotFound(roleErr) {
 					t.Errorf("new check unexpectedly provisioned scoped report Role: %v", roleErr)
 				}
-				var reports fathomv1alpha1.HealthReportList
+				var reports fathomv1.HealthReportList
 				if err := cl.List(context.Background(), &reports, client.InNamespace(check.Namespace)); err != nil {
 					t.Fatal(err)
 				}
@@ -198,10 +198,10 @@ func TestNodeCertAuthenticityUnavailableFailsClosed(t *testing.T) {
 func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) {
 	t.Parallel()
 	lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-	check := &fathomv1alpha1.NodeCertificateCheck{
+	check := &fathomv1.NodeCertificateCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-revoke-fails", Namespace: "default", UID: "check-uid", Generation: 2},
-		Status: fathomv1alpha1.NodeCertificateCheckStatus{
-			LastRunTime: &lastRun, LastResult: string(fathomv1alpha1.HealthReportResultPass), LastReportName: "historical-report",
+		Status: fathomv1.NodeCertificateCheckStatus{
+			LastRunTime: &lastRun, LastResult: string(fathomv1.HealthReportResultPass), LastReportName: "historical-report",
 			Conditions: []metav1.Condition{
 				{Type: nodeCertConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1},
 				{Type: nodeCertConditionAgentReady, Status: metav1.ConditionTrue, Reason: "RolledOut", ObservedGeneration: 1},
@@ -214,7 +214,7 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
-			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
 		},
 		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
 	}
@@ -230,7 +230,7 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	deleteDenied := apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, agent.Name, errors.New("delete denied"))
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, binding, agent).
-		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+		WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				if _, ok := obj.(*admissionregistrationv1.ValidatingAdmissionPolicy); ok {
@@ -251,7 +251,7 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 	if !errors.Is(err, errReportAuthenticityUnavailable) || !errors.Is(err, deleteDenied) {
 		t.Fatalf("Reconcile error = %v, want joined authenticity and revocation causes", err)
 	}
-	got := &fathomv1alpha1.NodeCertificateCheck{}
+	got := &fathomv1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 	if authentic == nil || authentic.Status != metav1.ConditionUnknown || authentic.Reason != reasonAuthenticityUnavailable {
 		t.Errorf("ReportsAuthentic = %+v, want Unknown/%s", authentic, reasonAuthenticityUnavailable)
 	}
-	if got.Status.LastResult != string(fathomv1alpha1.HealthReportResultPass) || got.Status.LastReportName != "historical-report" || got.Status.LastRunTime == nil || !got.Status.LastRunTime.Equal(&lastRun) {
+	if got.Status.LastResult != string(fathomv1.HealthReportResultPass) || got.Status.LastReportName != "historical-report" || got.Status.LastRunTime == nil || !got.Status.LastRunTime.Equal(&lastRun) {
 		t.Errorf("historical verdict changed: %+v", got.Status)
 	}
 	cleared := &rbacv1.Role{}
@@ -286,15 +286,15 @@ func TestNodeCertAuthenticityUnavailablePersistsRevocationFailure(t *testing.T) 
 
 func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *testing.T) {
 	t.Parallel()
-	check := &fathomv1alpha1.NodeCertificateCheck{
+	check := &fathomv1.NodeCertificateCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc-auth-role-clear-fails", Namespace: "default", UID: "check-uid", Generation: 2},
-		Status:     fathomv1alpha1.NodeCertificateCheckStatus{LastResult: string(fathomv1alpha1.HealthReportResultPass)},
+		Status:     fathomv1.NodeCertificateCheckStatus{LastResult: string(fathomv1.HealthReportResultPass)},
 	}
 	controller := true
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace,
-			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: fathomv1.GroupVersion.String(), Kind: "NodeCertificateCheck", Name: check.Name, UID: check.UID, Controller: &controller}},
 		},
 		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{"report"}, Verbs: []string{"get", "update"}}},
 	}
@@ -310,7 +310,7 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: admissionregistrationv1.GroupName, Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
 	updateDenied := apierrors.NewForbidden(schema.GroupResource{Group: rbacv1.GroupName, Resource: "roles"}, role.Name, errors.New("update denied"))
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, role, binding, agent).
-		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+		WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				if _, ok := obj.(*admissionregistrationv1.ValidatingAdmissionPolicy); ok {
@@ -341,7 +341,7 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 	if len(clearedBinding.Subjects) != 0 {
 		t.Errorf("legacy shared RoleBinding clear was not attempted after Role update failure: %+v", clearedBinding.Subjects)
 	}
-	got := &fathomv1alpha1.NodeCertificateCheck{}
+	got := &fathomv1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {
 		t.Fatal(err)
 	}
@@ -357,13 +357,13 @@ func TestNodeCertAuthenticityUnavailableStillDeletesAgentWhenRoleClearFails(t *t
 
 func TestNodeCertLegacyAgentRoleBindingMustReferenceExpectedClusterRole(t *testing.T) {
 	t.Parallel()
-	check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-wrong-role-ref", Namespace: "default", UID: "check-uid", Generation: 1}}
+	check := &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-wrong-role-ref", Namespace: "default", UID: "check-uid", Generation: 1}}
 	controller := true
 	binding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: agentResourceName(check), Namespace: check.Namespace, CreationTimestamp: metav1.Now(),
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck, Name: check.Name, UID: check.UID, Controller: &controller,
 			}},
 		},
 		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "foreign-role"},
@@ -371,7 +371,7 @@ func TestNodeCertLegacyAgentRoleBindingMustReferenceExpectedClusterRole(t *testi
 	}
 	foreignDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(check), Namespace: check.Namespace}}
 	scheme := newProvisioningScheme(t)
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).Build()
 	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img"}
 	key := client.ObjectKeyFromObject(check)
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key}); err == nil || !strings.Contains(err.Error(), "immutable roleRef") {
@@ -386,7 +386,7 @@ func TestNodeCertLegacyAgentRoleBindingMustReferenceExpectedClusterRole(t *testi
 	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(foreignDaemonSet), &appsv1.DaemonSet{}); err != nil {
 		t.Fatalf("foreign same-name DaemonSet was deleted after RoleBinding validation failure: %v", err)
 	}
-	got := &fathomv1alpha1.NodeCertificateCheck{}
+	got := &fathomv1.NodeCertificateCheck{}
 	if err := cl.Get(context.Background(), key, got); err != nil {
 		t.Fatal(err)
 	}
@@ -410,9 +410,9 @@ func TestNodeCertRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			t.Parallel()
 			scheme := newProvisioningScheme(t)
 			lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-			check := &fathomv1alpha1.NodeCertificateCheck{
+			check := &fathomv1.NodeCertificateCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "nc-rbac-migration", Namespace: "default", UID: "check-uid", Generation: 2},
-				Status: fathomv1alpha1.NodeCertificateCheckStatus{
+				Status: fathomv1.NodeCertificateCheckStatus{
 					ObservedGeneration: 1, LastRunTime: &lastRun, LastResult: "Pass", LastReportName: "previous-report",
 					Conditions: []metav1.Condition{
 						{Type: nodeCertConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
@@ -423,7 +423,7 @@ func TestNodeCertRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			}
 			agentName := agentResourceName(check)
 			owner := metav1.OwnerReference{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodecert.KindNodeCertificateCheck,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}
 			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, UID: "ds-uid", OwnerReferences: []metav1.OwnerReference{owner}}}
@@ -443,7 +443,7 @@ func TestNodeCertRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			deleteErr := errors.New("DaemonSet delete denied")
 			var bindingUpdates, deleteAttempts int
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
-				WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+				WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
 						if _, ok := obj.(*rbacv1.RoleBinding); ok {
@@ -484,7 +484,7 @@ func TestNodeCertRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			if !tc.daemonSetExists && !apierrors.IsNotFound(dsErr) {
 				t.Fatalf("successful delete left DaemonSet behind: %v", dsErr)
 			}
-			persisted := &fathomv1alpha1.NodeCertificateCheck{}
+			persisted := &fathomv1.NodeCertificateCheck{}
 			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 				t.Fatal(err)
 			}
@@ -513,11 +513,11 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 	t.Parallel()
 
 	lastRun := metav1.NewTime(time.Now().Add(-time.Minute))
-	check := &fathomv1alpha1.NodeCertificateCheck{
+	check := &fathomv1.NodeCertificateCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc-provisioning", Namespace: "default", Generation: 1},
-		Status: fathomv1alpha1.NodeCertificateCheckStatus{
+		Status: fathomv1.NodeCertificateCheckStatus{
 			LastRunTime:    &lastRun,
-			LastResult:     string(fathomv1alpha1.HealthReportResultPass),
+			LastResult:     string(fathomv1.HealthReportResultPass),
 			LastReportName: "nc-provisioning-report",
 			Conditions: []metav1.Condition{{
 				Type:               nodeCertConditionReady,
@@ -534,7 +534,7 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(check).
-		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).
+		WithStatusSubresource(&fathomv1.NodeCertificateCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 				if _, ok := obj.(*corev1.ServiceAccount); ok {
@@ -564,7 +564,7 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 		t.Fatal("provisioning failure left obsolete certificate detail metrics")
 	}
 
-	var persisted fathomv1alpha1.NodeCertificateCheck
+	var persisted fathomv1.NodeCertificateCheck
 	if err := cl.Get(context.Background(), key, &persisted); err != nil {
 		t.Fatalf("get check: %v", err)
 	}
@@ -582,7 +582,7 @@ func TestNodeCertProvisioningFailurePersistsStatus(t *testing.T) {
 
 	// The verdict itself is frozen, not wiped: provisioning failing says nothing
 	// about what the last complete scan found (COR-3).
-	if got := persisted.Status.LastResult; got != string(fathomv1alpha1.HealthReportResultPass) {
-		t.Errorf("persisted LastResult = %q, want the frozen prior verdict %q", got, fathomv1alpha1.HealthReportResultPass)
+	if got := persisted.Status.LastResult; got != string(fathomv1.HealthReportResultPass) {
+		t.Errorf("persisted LastResult = %q, want the frozen prior verdict %q", got, fathomv1.HealthReportResultPass)
 	}
 }

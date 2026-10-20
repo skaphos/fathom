@@ -53,7 +53,7 @@ var _ = Describe("DNSCheck under restricted Pod Security", Ordered, Label(utils.
 	})
 
 	It("admits the probe Pod and resolves normally", func() {
-		manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+		manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: restricted

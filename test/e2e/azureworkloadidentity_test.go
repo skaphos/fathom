@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	azureWISamplePath = "config/samples/fathom_v1alpha1_addoncheck_azure_workload_identity.yaml"
+	azureWISamplePath = "config/samples/fathom_v1_addoncheck_azure_workload_identity.yaml"
 	azureWISampleName = "azure-workload-identity-sample"
 	azureWISampleNS   = "default"
 	azureWIAddonNS    = "azure-workload-identity-system"

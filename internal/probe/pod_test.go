@@ -52,7 +52,7 @@ func TestPodBuildsHardenedDNSProbe(t *testing.T) {
 func TestPodStampsOwnerReferences(t *testing.T) {
 	controller := true
 	owner := metav1.OwnerReference{
-		APIVersion: "fathom.skaphos.io/v1alpha1",
+		APIVersion: "fathom.skaphos.io/v1",
 		Kind:       "DNSCheck",
 		Name:       "internal-names",
 		UID:        types.UID("6f3a1c2e-0000-4000-8000-000000000001"),

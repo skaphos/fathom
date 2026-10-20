@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	externalSecretsSamplePath = "config/samples/fathom_v1alpha1_addoncheck_external_secrets.yaml"
+	externalSecretsSamplePath = "config/samples/fathom_v1_addoncheck_external_secrets.yaml"
 	externalSecretsSampleName = "external-secrets-sample"
 	externalSecretsSampleNS   = "default"
 	externalSecretsAddonNS    = "external-secrets"

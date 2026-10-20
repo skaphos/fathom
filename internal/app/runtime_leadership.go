@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
@@ -61,7 +61,7 @@ type RuntimeLeadership struct {
 	terminated bool
 	cancel     context.CancelFunc
 	sessionCtx context.Context
-	epoch      *fathomv1alpha1.DefinitionLeaderEpoch
+	epoch      *fathomv1.DefinitionLeaderEpoch
 	work       map[string]map[uint64]context.CancelFunc
 	revoked    map[string]bool
 	nextWork   uint64
@@ -115,7 +115,7 @@ var osHostname = os.Hostname
 // with: the epoch observed live by this leader, plus the limitation that epoch
 // evidence carries. Callers must still verify the binding itself.
 type DrainAcknowledgement struct {
-	Epoch      fathomv1alpha1.DefinitionLeaderEpoch
+	Epoch      fathomv1.DefinitionLeaderEpoch
 	Limitation string
 }
 
@@ -419,7 +419,7 @@ func (l *RuntimeLeadership) AcknowledgeDrain(key string) (DrainAcknowledgement, 
 // leadership evidence. Callers read it through the uncached APIReader; renewal
 // is expected to change renewTime and resourceVersion, neither of which is part
 // of the epoch.
-func (l *RuntimeLeadership) AdoptLease(lease *coordinationv1.Lease) (*fathomv1alpha1.DefinitionLeaderEpoch, error) {
+func (l *RuntimeLeadership) AdoptLease(lease *coordinationv1.Lease) (*fathomv1.DefinitionLeaderEpoch, error) {
 	if lease == nil {
 		return nil, errors.New("no Lease to adopt")
 	}
@@ -439,7 +439,7 @@ func (l *RuntimeLeadership) AdoptLease(lease *coordinationv1.Lease) (*fathomv1al
 		return nil, errors.New("lease lacks live leadership evidence")
 	}
 
-	epoch := fathomv1alpha1.DefinitionLeaderEpoch{
+	epoch := fathomv1.DefinitionLeaderEpoch{
 		LeaseUID:         string(lease.UID),
 		HolderIdentity:   *spec.HolderIdentity,
 		AcquireTime:      *spec.AcquireTime,
@@ -459,7 +459,7 @@ func (l *RuntimeLeadership) AdoptLease(lease *coordinationv1.Lease) (*fathomv1al
 }
 
 // Epoch returns the observed leader epoch, or nil before one is observed.
-func (l *RuntimeLeadership) Epoch() *fathomv1alpha1.DefinitionLeaderEpoch {
+func (l *RuntimeLeadership) Epoch() *fathomv1.DefinitionLeaderEpoch {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.epoch == nil {
@@ -480,7 +480,7 @@ func (l *RuntimeLeadership) Epoch() *fathomv1alpha1.DefinitionLeaderEpoch {
 // admissibility this session demands of runtime work, so nothing carried over
 // from a prior runtime lifetime is trusted until the caches have synchronized
 // and the monotonic takeover grace covering that lifetime has fully elapsed.
-func (l *RuntimeLeadership) EpochValid(persisted *fathomv1alpha1.DefinitionLeaderEpoch) bool {
+func (l *RuntimeLeadership) EpochValid(persisted *fathomv1.DefinitionLeaderEpoch) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if persisted == nil || l.epoch == nil || l.admissibleLocked() != nil {

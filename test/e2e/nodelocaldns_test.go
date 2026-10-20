@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	nodeLocalDNSSamplePath = "config/samples/fathom_v1alpha1_addoncheck_node_local_dns.yaml"
+	nodeLocalDNSSamplePath = "config/samples/fathom_v1_addoncheck_node_local_dns.yaml"
 	nodeLocalDNSSampleName = "node-local-dns-sample"
 	nodeLocalDNSNamespace  = "default"
 	// nodeLocalDNSResolutionTarget is the in-cluster Service the sample probes

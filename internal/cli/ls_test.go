@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // execVerb runs `fathomctl <verb> <args>` and returns stdout, stderr, error.
@@ -36,20 +36,20 @@ func lsFixtures() []client.Object {
 	last := metav1.NewTime(time.Now().Add(-3 * time.Minute))
 	ac := addonCheck("team-a", "coredns")
 	ac.Labels = map[string]string{"tier": "core"}
-	ac.Status = fathomv1alpha1.AddonCheckStatus{
+	ac.Status = fathomv1.AddonCheckStatus{
 		LastResult: "Pass", LastRunTime: &last,
 		Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, Message: "3 of 3 checks passed"}},
 	}
-	dns := &fathomv1alpha1.DNSCheck{
+	dns := &fathomv1.DNSCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "cluster-dns", Namespace: "team-a"},
-		Status:     fathomv1alpha1.DNSCheckStatus{LastResult: "Fail", Summary: "1 of 2 pairs failed", LastRunTime: &last},
+		Status:     fathomv1.DNSCheckStatus{LastResult: "Fail", Summary: "1 of 2 pairs failed", LastRunTime: &last},
 	}
-	ncc := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "node-certs", Namespace: "team-b"}}
+	ncc := &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "node-certs", Namespace: "team-b"}}
 	hc := healthCheckFor("team-b", "web", "AddonCheck", "coredns")
-	hc.Status = fathomv1alpha1.HealthCheckStatus{Result: "Warn", Summary: "mirrored", SourceObservedAt: &last}
-	ch := &fathomv1alpha1.ClusterHealth{
+	hc.Status = fathomv1.HealthCheckStatus{Result: "Warn", Summary: "mirrored", SourceObservedAt: &last}
+	ch := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod"},
-		Status:     fathomv1alpha1.ClusterHealthStatus{Result: "Fail", MatchedCount: 2, ObservedAt: &last},
+		Status:     fathomv1.ClusterHealthStatus{Result: "Fail", MatchedCount: 2, ObservedAt: &last},
 	}
 	return []client.Object{ac, dns, ncc, hc, ch}
 }
@@ -181,7 +181,7 @@ func TestLs_StructuredOutputIsUnmodifiedList(t *testing.T) {
 		t.Fatalf("expected a List of 5, got %s with %d items", list.Kind, len(list.Items))
 	}
 	for _, it := range list.Items {
-		if it.APIVersion != "fathom.skaphos.io/v1alpha1" || it.Kind == "" {
+		if it.APIVersion != "fathom.skaphos.io/v1" || it.Kind == "" {
 			t.Errorf("item %s lacks GVK: %+v", it.Metadata.Name, it)
 		}
 	}
@@ -205,10 +205,10 @@ func TestLs_HundredChecksIsFast(t *testing.T) {
 	for i := range 100 {
 		objs = append(objs,
 			addonCheck("team-a", fmt.Sprintf("ac-%03d", i)),
-			&fathomv1alpha1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("dns-%03d", i), Namespace: "team-a"}},
-			&fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ncc-%03d", i), Namespace: "team-a"}},
+			&fathomv1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("dns-%03d", i), Namespace: "team-a"}},
+			&fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ncc-%03d", i), Namespace: "team-a"}},
 			healthCheckFor("team-a", fmt.Sprintf("hc-%03d", i), "AddonCheck", "x"),
-			&fathomv1alpha1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ch-%03d", i)}},
+			&fathomv1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ch-%03d", i)}},
 		)
 	}
 	f, _ := fakeFactory(t, objs...)

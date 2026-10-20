@@ -33,7 +33,7 @@ const (
 // system_health thresholds at a Deployment that does not exist, which makes
 // the adapter report Fail — the induced-failure path for Warning events.
 func observabilityCheckManifest(name, controllerName string) string {
-	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: %s

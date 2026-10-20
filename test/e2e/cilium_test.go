@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ciliumSamplePath = "config/samples/fathom_v1alpha1_addoncheck_cilium.yaml"
+	ciliumSamplePath = "config/samples/fathom_v1_addoncheck_cilium.yaml"
 	ciliumSampleName = "cilium-sample"
 	ciliumSampleNS   = "default"
 	ciliumAddonNS    = "kube-system"

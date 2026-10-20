@@ -8,7 +8,7 @@
 # The kind node is a control-plane node, so includeControlPlaneNodes must be set
 # for the agent to schedule there — control-plane scheduling is an explicit
 # opt-in (see #155). The paths are under the /etc/kubernetes allowlist prefix.
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeCertificateCheck
 metadata:
   name: nodecert-e2e

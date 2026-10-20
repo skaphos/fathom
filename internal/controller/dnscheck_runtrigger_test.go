@@ -9,14 +9,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 var _ = Describe("DNSCheck run-now trigger", func() {
 	It("records a due token once and never clears it", func() {
 		ns := newDNSNamespace(ctx)
-		check := createDNSCheck(ctx, ns, "runnow", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "runnow", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
 
@@ -26,7 +26,7 @@ var _ = Describe("DNSCheck run-now trigger", func() {
 		// A new token: the annotation write itself reconciles and runs; the
 		// controller's job is to record the token as consumed.
 		current := reloadDNSCheck(ctx, check)
-		current.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+		current.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 		Expect(k8sClient.Update(ctx, current)).To(Succeed())
 		reconcileDNSCheck(ctx, r, check)
 		Expect(reloadDNSCheck(ctx, check).Status.LastRunTrigger).To(Equal("tok-1"))

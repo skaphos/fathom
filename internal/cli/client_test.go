@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // stubClientConfig is a clientcmd.ClientConfig that never touches disk.
@@ -88,11 +88,11 @@ func TestFactory_ClientUsesFathomScheme(t *testing.T) {
 		t.Fatal("client.Options.Scheme was nil")
 	}
 	for _, gvk := range []struct{ group, version, kind string }{
-		{fathomv1alpha1.GroupVersion.Group, fathomv1alpha1.GroupVersion.Version, "HealthCheck"},
-		{fathomv1alpha1.GroupVersion.Group, fathomv1alpha1.GroupVersion.Version, "DNSCheck"},
+		{fathomv1.GroupVersion.Group, fathomv1.GroupVersion.Version, "HealthCheck"},
+		{fathomv1.GroupVersion.Group, fathomv1.GroupVersion.Version, "DNSCheck"},
 		{corev1.SchemeGroupVersion.Group, corev1.SchemeGroupVersion.Version, "Pod"},
 	} {
-		if !captured.Scheme.Recognizes(fathomv1alpha1.GroupVersion.WithKind(gvk.kind)) &&
+		if !captured.Scheme.Recognizes(fathomv1.GroupVersion.WithKind(gvk.kind)) &&
 			!captured.Scheme.Recognizes(corev1.SchemeGroupVersion.WithKind(gvk.kind)) {
 			t.Errorf("scheme does not recognise %s/%s %s", gvk.group, gvk.version, gvk.kind)
 		}
@@ -215,7 +215,7 @@ func TestNewScheme(t *testing.T) {
 		t.Fatalf("newScheme: %v", err)
 	}
 	for _, kind := range []string{"AddonCheck", "DNSCheck", "NodeCertificateCheck", "NodeHealthCheck", "HealthCheck", "ClusterHealth", "HealthReport"} {
-		if !s.Recognizes(fathomv1alpha1.GroupVersion.WithKind(kind)) {
+		if !s.Recognizes(fathomv1.GroupVersion.WithKind(kind)) {
 			t.Errorf("scheme missing %s", kind)
 		}
 	}

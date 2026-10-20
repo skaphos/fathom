@@ -39,6 +39,7 @@ import (
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/certmanager"
 	"github.com/skaphos/fathom/internal/adapter/coredns"
@@ -84,6 +85,9 @@ func NewScheme() (*runtime.Scheme, error) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("add client-go scheme: %w", err)
+	}
+	if err := fathomv1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("add fathom v1 scheme: %w", err)
 	}
 	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("add fathom v1alpha1 scheme: %w", err)

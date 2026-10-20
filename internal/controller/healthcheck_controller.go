@@ -31,13 +31,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 )
 
 const (
 	healthCheckConditionAccepted = "Accepted"
-	healthCheckConditionPaused   = "Paused"
 	healthCheckConditionReady    = "Ready"
 
 	healthCheckTargetKindAddonCheck           = "AddonCheck"
@@ -62,10 +61,10 @@ type healthCheckTargetIdentity struct {
 	Name       string
 }
 
-func normalizeHealthCheckTarget(hc *fathomv1alpha1.HealthCheck) healthCheckTargetIdentity {
+func normalizeHealthCheckTarget(hc *fathomv1.HealthCheck) healthCheckTargetIdentity {
 	apiVersion := hc.Spec.CheckRef.APIVersion
 	if apiVersion == "" {
-		apiVersion = fathomv1alpha1.GroupVersion.String()
+		apiVersion = fathomv1.GroupVersion.String()
 	}
 	namespace := hc.Spec.CheckRef.Namespace
 	if namespace == "" {
@@ -80,7 +79,7 @@ func normalizeHealthCheckTarget(hc *fathomv1alpha1.HealthCheck) healthCheckTarge
 }
 
 type healthCheckTargetSnapshot struct {
-	Result           fathomv1alpha1.HealthReportResult
+	Result           fathomv1.HealthReportResult
 	Summary          string
 	SourceObservedAt *metav1.Time
 	LastReportName   string
@@ -95,7 +94,7 @@ type healthCheckTargetSnapshot struct {
 	// Freshness and FreshnessReason mirror the recency and eligibility of the
 	// completed evidence behind Result. They stay empty for target kinds that
 	// publish no evidence, which is every kind but a runtime AddonCheck.
-	Freshness       fathomv1alpha1.AddonCheckEvidenceFreshness
+	Freshness       fathomv1.AddonCheckEvidenceFreshness
 	FreshnessReason string
 }
 
@@ -128,7 +127,7 @@ func readinessFromConditions(conds []metav1.Condition) (*bool, string) {
 // it at the mirror boundary instead — making every cadence-relative staleness
 // rule downstream read preserved evidence as current. Without evidence (every
 // built-in check) it is lastRunTime, exactly as before.
-func addonCheckMirroredObservation(target *fathomv1alpha1.AddonCheck) *metav1.Time {
+func addonCheckMirroredObservation(target *fathomv1.AddonCheck) *metav1.Time {
 	if evidence := target.Status.LastSuccessfulEvaluation; evidence != nil {
 		observed := evidence.ObservedAt
 		return &observed
@@ -145,8 +144,8 @@ func addonCheckMirroredObservation(target *fathomv1alpha1.AddonCheck) *metav1.Ti
 // reconciles — and evidence ageing out is precisely the case where nothing
 // reconciles it. A stored Unavailable or Superseded is left alone: both are
 // stronger statements than "old", and neither becomes truer with time.
-func addonCheckMirroredFreshness(target *fathomv1alpha1.AddonCheck, now time.Time) (
-	fathomv1alpha1.AddonCheckEvidenceFreshness, string,
+func addonCheckMirroredFreshness(target *fathomv1.AddonCheck, now time.Time) (
+	fathomv1.AddonCheckEvidenceFreshness, string,
 ) {
 	stored := target.Status.EvidenceFreshness
 	if stored == "" {
@@ -155,8 +154,8 @@ func addonCheckMirroredFreshness(target *fathomv1alpha1.AddonCheck, now time.Tim
 		// check has unusable evidence.
 		return "", ""
 	}
-	if stored == fathomv1alpha1.AddonCheckEvidenceCurrent && AddonCheckEvidenceAged(target, now) {
-		return fathomv1alpha1.AddonCheckEvidenceStale, fmt.Sprintf(
+	if stored == fathomv1.AddonCheckEvidenceCurrent && AddonCheckEvidenceAged(target, now) {
+		return fathomv1.AddonCheckEvidenceStale, fmt.Sprintf(
 			"the completed evaluation is older than two intervals plus one timeout (%s); the stored verdict is not current coverage",
 			AddonCheckEvidenceWindow(target))
 	}
@@ -183,27 +182,27 @@ type healthCheckTargetRegistry struct {
 func newHealthCheckTargetRegistry() healthCheckTargetRegistry {
 	return healthCheckTargetRegistry{handlers: []healthCheckTargetHandler{
 		{
-			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			APIVersion: fathomv1.GroupVersion.String(),
 			Kind:       healthCheckTargetKindAddonCheck,
-			Object:     &fathomv1alpha1.AddonCheck{},
+			Object:     &fathomv1.AddonCheck{},
 			read:       readAddonCheckTarget,
 		},
 		{
-			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			APIVersion: fathomv1.GroupVersion.String(),
 			Kind:       healthCheckTargetKindDNSCheck,
-			Object:     &fathomv1alpha1.DNSCheck{},
+			Object:     &fathomv1.DNSCheck{},
 			read:       readDNSCheckTarget,
 		},
 		{
-			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			APIVersion: fathomv1.GroupVersion.String(),
 			Kind:       healthCheckTargetKindNodeCertificateCheck,
-			Object:     &fathomv1alpha1.NodeCertificateCheck{},
+			Object:     &fathomv1.NodeCertificateCheck{},
 			read:       readNodeCertificateCheckTarget,
 		},
 		{
-			APIVersion: fathomv1alpha1.GroupVersion.String(),
+			APIVersion: fathomv1.GroupVersion.String(),
 			Kind:       healthCheckTargetKindNodeHealthCheck,
-			Object:     &fathomv1alpha1.NodeHealthCheck{},
+			Object:     &fathomv1.NodeHealthCheck{},
 			read:       readNodeHealthCheckTarget,
 		},
 	}}
@@ -223,14 +222,14 @@ func readAddonCheckTarget(
 	cl client.Client,
 	key types.NamespacedName,
 ) (healthCheckTargetSnapshot, error) {
-	var target fathomv1alpha1.AddonCheck
+	var target fathomv1.AddonCheck
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
 	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	freshness, freshnessReason := addonCheckMirroredFreshness(&target, time.Now())
 	return healthCheckTargetSnapshot{
-		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Result:           fathomv1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
 		SourceObservedAt: addonCheckMirroredObservation(&target),
 		LastReportName:   target.Status.LastReportName,
@@ -247,13 +246,13 @@ func readDNSCheckTarget(
 	cl client.Client,
 	key types.NamespacedName,
 ) (healthCheckTargetSnapshot, error) {
-	var target fathomv1alpha1.DNSCheck
+	var target fathomv1.DNSCheck
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
 	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
-		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Result:           fathomv1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
@@ -268,13 +267,13 @@ func readNodeCertificateCheckTarget(
 	cl client.Client,
 	key types.NamespacedName,
 ) (healthCheckTargetSnapshot, error) {
-	var target fathomv1alpha1.NodeCertificateCheck
+	var target fathomv1.NodeCertificateCheck
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
 	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
-		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Result:           fathomv1.HealthReportResult(target.Status.LastResult),
 		Summary:          summarizeFromConditions(target.Status.Conditions),
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
@@ -289,7 +288,7 @@ func readNodeHealthCheckTarget(
 	cl client.Client,
 	key types.NamespacedName,
 ) (healthCheckTargetSnapshot, error) {
-	var target fathomv1alpha1.NodeHealthCheck
+	var target fathomv1.NodeHealthCheck
 	if err := cl.Get(ctx, key, &target); err != nil {
 		return healthCheckTargetSnapshot{}, err
 	}
@@ -302,7 +301,7 @@ func readNodeHealthCheckTarget(
 	}
 	ready, readyReason := readinessFromConditions(target.Status.Conditions)
 	return healthCheckTargetSnapshot{
-		Result:           fathomv1alpha1.HealthReportResult(target.Status.LastResult),
+		Result:           fathomv1.HealthReportResult(target.Status.LastResult),
 		Summary:          summary,
 		SourceObservedAt: target.Status.LastRunTime,
 		LastReportName:   target.Status.LastReportName,
@@ -317,7 +316,7 @@ func readNodeHealthCheckTarget(
 	}, nil
 }
 
-func applyHealthCheckTargetSnapshot(hc *fathomv1alpha1.HealthCheck, snapshot healthCheckTargetSnapshot) {
+func applyHealthCheckTargetSnapshot(hc *fathomv1.HealthCheck, snapshot healthCheckTargetSnapshot) {
 	hc.Status.Result = snapshot.Result
 	hc.Status.Summary = snapshot.Summary
 	hc.Status.SourceObservedAt = snapshot.SourceObservedAt
@@ -377,7 +376,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
-	var hc fathomv1alpha1.HealthCheck
+	var hc fathomv1.HealthCheck
 	if err := r.Get(ctx, req.NamespacedName, &hc); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries("HealthCheck", req.Namespace, req.Name)
@@ -423,37 +422,9 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Message:            "HealthCheck specification has been accepted for reconciliation.",
 	})
 
-	pausedStatus := metav1.ConditionFalse
-	pausedReason := "RunEnabled"
-	pausedMessage := "HealthCheck is mirroring its referenced check."
-	if hc.Spec.Paused {
-		pausedStatus = metav1.ConditionTrue
-		pausedReason = "Paused"
-		pausedMessage = "HealthCheck is paused; the last mirrored Status snapshot is preserved."
-	}
-	apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:               healthCheckConditionPaused,
-		Status:             pausedStatus,
-		ObservedGeneration: hc.Generation,
-		Reason:             pausedReason,
-		Message:            pausedMessage,
-	})
-
-	var mirrorErr error
-	if hc.Spec.Paused {
-		apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               healthCheckConditionReady,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: hc.Generation,
-			Reason:             "Paused",
-			Message:            "HealthCheck is paused; status mirroring is suspended.",
-		})
-	} else {
-		var resolvedInterval time.Duration
-		resolvedInterval, mirrorErr = r.mirrorTarget(ctx, &hc)
-		if mirrorErr == nil || resolvedInterval > 0 {
-			targetInterval = resolvedInterval
-		}
+	resolvedInterval, mirrorErr := r.mirrorTarget(ctx, &hc)
+	if mirrorErr == nil || resolvedInterval > 0 {
+		targetInterval = resolvedInterval
 	}
 
 	if !equality.Semantic.DeepEqual(before, &hc.Status) {
@@ -478,14 +449,14 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // function already fetched so it costs no extra API read. Zero means no cadence
 // could be resolved — an unsupported kind, a missing target, or a lookup
 // failure — which leaves the cadence series unset rather than asserting zero.
-func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1alpha1.HealthCheck) (time.Duration, error) {
+func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1.HealthCheck) (time.Duration, error) {
 	identity := normalizeHealthCheckTarget(hc)
-	if identity.APIVersion != fathomv1alpha1.GroupVersion.String() {
+	if identity.APIVersion != fathomv1.GroupVersion.String() {
 		clearMirroredHealthCheckStatus(hc)
 		setHealthCheckTargetFailure(
 			hc,
 			"UnsupportedAPIVersion",
-			"checkRef.apiVersion "+identity.APIVersion+" is not supported; use "+fathomv1alpha1.GroupVersion.String()+" or omit apiVersion to select the current version.",
+			"checkRef.apiVersion "+identity.APIVersion+" is not supported; use "+fathomv1.GroupVersion.String()+" or omit apiVersion to select the current version.",
 		)
 		return 0, nil
 	}
@@ -529,7 +500,7 @@ func (r *HealthCheckReconciler) mirrorTarget(ctx context.Context, hc *fathomv1al
 	return snapshot.Interval, nil
 }
 
-func setHealthCheckTargetFailure(hc *fathomv1alpha1.HealthCheck, reason, message string) {
+func setHealthCheckTargetFailure(hc *fathomv1.HealthCheck, reason, message string) {
 	apiMeta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
 		Type:               healthCheckConditionReady,
 		Status:             metav1.ConditionFalse,
@@ -539,7 +510,7 @@ func setHealthCheckTargetFailure(hc *fathomv1alpha1.HealthCheck, reason, message
 	})
 }
 
-func clearMirroredHealthCheckStatus(hc *fathomv1alpha1.HealthCheck) {
+func clearMirroredHealthCheckStatus(hc *fathomv1.HealthCheck) {
 	hc.Status.Result = ""
 	hc.Status.SourceInterval = nil
 	hc.Status.SourceObservedAt = nil
@@ -598,7 +569,7 @@ func truncateToRuneLimit(s string, limit int) string {
 // re-enqueue the HealthChecks that wrap the exact source identity.
 func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
-		For(&fathomv1alpha1.HealthCheck{}).
+		For(&fathomv1.HealthCheck{}).
 		Named("healthcheck")
 	for _, targetHandler := range newHealthCheckTargetRegistry().handlers {
 		controllerBuilder = controllerBuilder.Watches(
@@ -616,7 +587,7 @@ func (r *HealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // that references the given AddonCheck. Called from the watch map function.
 func (r *HealthCheckReconciler) healthChecksForAddonCheck(ctx context.Context, obj client.Object) []reconcile.Request {
 	targetHandler, ok := newHealthCheckTargetRegistry().lookup(
-		fathomv1alpha1.GroupVersion.String(),
+		fathomv1.GroupVersion.String(),
 		healthCheckTargetKindAddonCheck,
 	)
 	if !ok {
@@ -633,7 +604,7 @@ func (r *HealthCheckReconciler) healthChecksForTarget(
 	if reflect.TypeOf(obj) != reflect.TypeOf(targetHandler.Object) {
 		return nil
 	}
-	var list fathomv1alpha1.HealthCheckList
+	var list fathomv1.HealthCheckList
 	if err := r.List(ctx, &list); err != nil {
 		return nil
 	}

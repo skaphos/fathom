@@ -31,7 +31,7 @@ contributor briefing — this file is the short version for Copilot.
 - `cmd/main.go`: thin entrypoint.
 - `internal/app/`: cobra/viper plumbing, manager construction, controller registration.
 - `internal/controller/`: reconciler implementations.
-- `api/v1alpha1/`: CRD type definitions.
+- `api/v1/`: stable CRD type definitions (the seven check kinds); `api/v1alpha1/`: the alpha runtime definition kinds.
 - `config/`: kustomize overlays, RBAC, CRDs, OLM scaffolding.
 - `test/e2e/`: Ginkgo suite that runs against a Kind cluster.
 - `tools/`: pinned tooling launched via `go -C tools tool task ...`.

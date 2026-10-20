@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	envoyGatewaySamplePath = "config/samples/fathom_v1alpha1_addoncheck_envoy_gateway.yaml"
+	envoyGatewaySamplePath = "config/samples/fathom_v1_addoncheck_envoy_gateway.yaml"
 	envoyGatewaySampleName = "envoy-gateway-sample"
 	envoyGatewaySampleNS   = "default"
 	envoyGatewayAddonNS    = "envoy-gateway-system"

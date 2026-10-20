@@ -26,7 +26,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: |-
@@ -54,23 +54,9 @@ spec:
             type: object
           spec:
             description: |-
-              ClusterHealthSpec defines the desired state of ClusterHealth. ClusterHealth
-              is an aggregator: it rolls up the Status of selected HealthCheck resources
-              into a single worst-case Result for cluster-wide consumers (dashboards,
-              alerting, gates).
-
-              Namespace scope uses allowlist-then-denylist precedence:
-
-               1. If Namespaces is non-empty, only those namespaces are included
-                  (allowlist is definitive; ExcludedNamespaces is ignored).
-               2. Else if ExcludedNamespaces is non-empty, every namespace except those
-                  listed is included (denylist).
-               3. Else every namespace is in scope (open).
-
-              Cross-namespace HealthCheck.checkRef.namespace remains intentional: a
-              HealthCheck may mirror an AddonCheck in another namespace. Tenancy is
-              enforced by who can create those objects plus this aggregate's namespace
-              filter — not by forbidding cross-namespace refs.
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               description:
                 description: Description is a human-readable purpose for this aggregate.
@@ -322,6 +308,8 @@ spec:
                 - Unknown
                 type: string
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

@@ -27,7 +27,7 @@ var _ = Describe("CRD validation hardening", Ordered, Label(utils.CoreLabel), fu
 	}
 
 	It("rejects a sub-floor interval at admission", func() {
-		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: crd-validation-floor-e2e
@@ -41,7 +41,7 @@ spec:
 	})
 
 	It("rejects a sub-floor timeout at admission", func() {
-		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1
 kind: NodeCertificateCheck
 metadata:
   name: crd-validation-timeout-e2e
@@ -53,7 +53,7 @@ spec:
 	})
 
 	It("rejects a NodeHealthCheck item whose fields do not match its type at admission", func() {
-		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: crd-validation-union-e2e
@@ -68,7 +68,7 @@ spec:
 	})
 
 	It("rejects a NodeHealthCheck headroom path outside the allowlist at admission", func() {
-		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: crd-validation-path-e2e
@@ -83,7 +83,7 @@ spec:
 	})
 
 	It("rejects a non-numeric warnDays threshold at admission", func() {
-		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1alpha1
+		out, err := applyManifest(`apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: crd-validation-policy-e2e

@@ -26,7 +26,7 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	"github.com/skaphos/fathom/internal/metrics"
@@ -219,12 +219,12 @@ func (versionReportingAdapter) Run(_ context.Context, _ adapter.Request) (adapte
 // healthReportCount returns how many HealthReports the given AddonCheck has
 // produced, matched via the source-kind/name labels.
 func healthReportCount(ctx context.Context, source types.NamespacedName) int {
-	var reports fathomv1alpha1.HealthReportList
+	var reports fathomv1.HealthReportList
 	ExpectWithOffset(1, k8sClient.List(ctx, &reports,
 		client.InNamespace(source.Namespace),
 		client.MatchingLabels{
-			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-			fathomv1alpha1.LabelHealthReportSourceName: source.Name,
+			fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+			fathomv1.LabelHealthReportSourceName: source.Name,
 		},
 	)).To(Succeed())
 	return len(reports.Items)
@@ -256,19 +256,18 @@ func (w countingStatusWriter) Update(ctx context.Context, obj client.Object, opt
 var _ = Describe("AddonCheck Controller", func() {
 	ctx := context.Background()
 
-	It("records accepted and paused status conditions", func() {
+	It("records the accepted status condition", func() {
 		typeNamespacedName := types.NamespacedName{
 			Name:      "addoncheck-paused",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "cert-manager",
-				Paused:    true,
 			},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -284,7 +283,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 		Expect(updated.Status.ObservedGeneration).To(Equal(updated.Generation))
 
@@ -293,29 +292,25 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(accepted.Status).To(Equal(metav1.ConditionTrue))
 		Expect(accepted.Reason).To(Equal("SpecAccepted"))
 
-		paused := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionPaused)
-		Expect(paused).NotTo(BeNil())
-		Expect(paused.Status).To(Equal(metav1.ConditionTrue))
-		Expect(paused.Reason).To(Equal("Paused"))
 	})
 
 	It("records reconcile and adapter execution metrics (SKA-290)", func() {
-		// A paused check or one with no adapter never reaches runAddonCheck,
-		// so adapter metrics are exercised here with a non-paused check, a
+		// A check with no adapter never reaches runAddonCheck, so adapter
+		// metrics are exercised here with a check that has a
 		// registered adapter, and a policy with an enabled family — the only
 		// path on which RecordAdapterRun fires (once per enabled family).
 		typeNamespacedName := types.NamespacedName{
 			Name:      "addoncheck-metrics",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "cert-manager",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					"system_health": {Enabled: ptr.To(true)},
 				},
 			},
@@ -370,53 +365,17 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(familyLabelImproved).To(BeTrue(), "expected family label to be something other than the old 'overall' placeholder")
 	})
 
-	It("sets Ready false when paused", func() {
-		typeNamespacedName := types.NamespacedName{
-			Name:      "addoncheck-paused",
-			Namespace: "default",
-		}
-		resource := &fathomv1alpha1.AddonCheck{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      typeNamespacedName.Name,
-				Namespace: typeNamespacedName.Namespace,
-			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
-				AddonType: "cert-manager",
-				Paused:    true,
-			},
-		}
-		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-		DeferCleanup(func() {
-			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed())
-		})
-
-		controllerReconciler := &AddonCheckReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
-		}
-
-		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
-		Expect(err).NotTo(HaveOccurred())
-
-		updated := &fathomv1alpha1.AddonCheck{}
-		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
-		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionReady)
-		Expect(ready).NotTo(BeNil())
-		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-		Expect(ready.Reason).To(Equal("Paused"))
-	})
-
 	It("sets Ready false when no adapter is registered", func() {
 		typeNamespacedName := types.NamespacedName{
 			Name:      "addoncheck-missing-adapter",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec: fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() {
@@ -432,7 +391,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionReady)
 		Expect(ready).NotTo(BeNil())
@@ -446,15 +405,15 @@ var _ = Describe("AddonCheck Controller", func() {
 			Name:      "addoncheck-report",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "cert-manager",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-					"system_health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnDays": "14"}},
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
+					"system_health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1.ThresholdValue{"warnDays": "14"}},
 				},
 			},
 		}
@@ -474,21 +433,21 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
-		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1.HealthReportResultPass)))
 		Expect(updated.Status.LastRunTime).NotTo(BeNil())
 		Expect(updated.Status.LastReportName).NotTo(BeEmpty())
 
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: updated.Status.LastReportName, Namespace: typeNamespacedName.Namespace}, report)).To(Succeed())
 		Expect(report.Spec.SourceRef.Name).To(Equal(typeNamespacedName.Name))
 		Expect(report.Spec.AddonType).To(Equal("cert-manager"))
 		Expect(report.Spec.AdapterName).To(Equal("fake-cert-manager"))
-		Expect(report.Spec.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(report.Spec.Result).To(Equal(fathomv1.HealthReportResultPass))
 		Expect(report.Spec.Checks).To(HaveLen(1))
 		Expect(report.Spec.Checks[0].Family).To(Equal("system_health"))
-		Expect(report.Spec.Checks[0].Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+		Expect(report.Spec.Checks[0].Result).To(Equal(fathomv1.HealthReportResultPass))
 
 		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionReady)
 		Expect(ready).NotTo(BeNil())
@@ -498,9 +457,9 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("reuses a HealthReport after a status update conflict", func() {
 		name := types.NamespacedName{Name: "addoncheck-status-conflict", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -523,7 +482,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(healthReportCount(ctx, name)).To(Equal(1))
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastReportName).NotTo(BeEmpty())
 	})
@@ -533,14 +492,14 @@ var _ = Describe("AddonCheck Controller", func() {
 			Name:      "addoncheck-absent",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "absent-addon",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					"system_health": {Enabled: ptr.To(true)},
 				},
 			},
@@ -561,7 +520,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 		// Two of the four checks carry the absent marker (required-absent Fail +
 		// optional-absent Skip); the present-but-unhealthy Fail and the Pass do not.
@@ -573,12 +532,12 @@ var _ = Describe("AddonCheck Controller", func() {
 			Name:      "addoncheck-version",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "version-addon"},
+			Spec: fathomv1.AddonCheckSpec{AddonType: "version-addon"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() {
@@ -592,11 +551,11 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 		Expect(updated.Status.DetectedVersion).To(Equal("1.15.6"))
 
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: updated.Status.LastReportName, Namespace: typeNamespacedName.Namespace}, report)).To(Succeed())
 		Expect(report.Spec.DetectedVersion).To(Equal("1.15.6"))
 	})
@@ -606,14 +565,14 @@ var _ = Describe("AddonCheck Controller", func() {
 			Name:      "addoncheck-invalid-policy",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "cert-manager",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					// fakeAddonAdapter advertises only "system_health".
 					"bogus_family": {Enabled: ptr.To(true)},
 				},
@@ -637,7 +596,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		// An invalid policy waits for a spec change to clear, so no interval requeue.
 		Expect(result.RequeueAfter).To(BeZero())
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 
 		accepted := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionAccepted)
@@ -661,14 +620,14 @@ var _ = Describe("AddonCheck Controller", func() {
 			Name:      "addoncheck-invalid-policy-converge",
 			Namespace: "default",
 		}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      typeNamespacedName.Name,
 				Namespace: typeNamespacedName.Namespace,
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "cert-manager",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					"bogus_family": {Enabled: ptr.To(true)},
 				},
 			},
@@ -711,14 +670,14 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("rejects engine ratio keys for a legacy 1.0 adapter before Run", func() {
 		name := types.NamespacedName{Name: "addoncheck-legacy-ratio", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "legacy-addon",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					"system_health": {
 						Enabled:    ptr.To(false),
-						Thresholds: map[string]fathomv1alpha1.ThresholdValue{adapter.ThresholdKeyFailRatio: "100"},
+						Thresholds: map[string]fathomv1.ThresholdValue{adapter.ThresholdKeyFailRatio: "100"},
 					},
 				},
 			},
@@ -736,7 +695,7 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		runs, _ := legacy.state()
 		Expect(runs).To(BeZero(), "a rejected policy must never reach the legacy adapter")
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		accepted := apiMeta.FindStatusCondition(updated.Status.Conditions, addonCheckConditionAccepted)
 		Expect(accepted).NotTo(BeNil())
@@ -750,13 +709,13 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("continues to run a legacy 1.0 adapter with an ordinary private threshold", func() {
 		name := types.NamespacedName{Name: "addoncheck-legacy-private-threshold", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec: fathomv1alpha1.AddonCheckSpec{
+			Spec: fathomv1.AddonCheckSpec{
 				AddonType: "legacy-addon",
-				Policy: map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+				Policy: map[string]fathomv1.AddonCheckFamilyPolicy{
 					"system_health": {
-						Thresholds: map[string]fathomv1alpha1.ThresholdValue{"legacyLimit": "7"},
+						Thresholds: map[string]fathomv1.ThresholdValue{"legacyLimit": "7"},
 					},
 				},
 			},
@@ -777,9 +736,9 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("requeues a ready AddonCheck after Spec.Interval so it re-runs", func() {
 		name := types.NamespacedName{Name: "addoncheck-requeue", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: 2 * time.Minute}},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: 2 * time.Minute}},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -792,16 +751,16 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(Equal(2 * time.Minute))
 
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTime).NotTo(BeNil())
 	})
 
 	It("requeues after the default interval when Spec.Interval is unset", func() {
 		name := types.NamespacedName{Name: "addoncheck-default-interval", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -811,31 +770,14 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
 			Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
-	})
-
-	It("does not requeue a paused AddonCheck", func() {
-		name := types.NamespacedName{Name: "addoncheck-paused-norequeue", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
-			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Paused: true},
-		}
-		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
-
-		adapters := registry.New(logr.Discard())
-		Expect(adapters.Register(fakeAddonAdapter{})).To(Succeed())
-		result, err := (&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Adapters: adapters}).
-			Reconcile(ctx, reconcile.Request{NamespacedName: name})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(BeZero())
+		Expect(result.RequeueAfter).To(Equal(fathomv1.DefaultAddonCheckInterval))
 	})
 
 	It("re-runs once the interval has elapsed, refreshing liveness without a duplicate report", func() {
 		name := types.NamespacedName{Name: "addoncheck-interval-elapsed", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -851,7 +793,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(healthReportCount(ctx, name)).To(Equal(1))
 
 		// Backdate the last run beyond the interval to simulate elapsed time.
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		past := metav1.NewTime(time.Now().Add(-time.Hour))
 		updated.Status.LastRunTime = &past
@@ -867,9 +809,9 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("does not re-run within the interval but keeps requeuing", func() {
 		name := types.NamespacedName{Name: "addoncheck-within-interval", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -889,14 +831,14 @@ var _ = Describe("AddonCheck Controller", func() {
 		result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.runCount()).To(Equal(1))
-		Expect(result.RequeueAfter).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval))
+		Expect(result.RequeueAfter).To(Equal(fathomv1.DefaultAddonCheckInterval))
 	})
 
 	It("runs immediately when the run-now annotation changes, once per value", func() {
 		name := types.NamespacedName{Name: "addoncheck-runnow", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -912,9 +854,9 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(prog.runCount()).To(Equal(1))
 
 		// A new run-now value forces an out-of-band run.
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "token-1"}
+		updated.Annotations = map[string]string{fathomv1.AnnotationRunNow: "token-1"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -932,13 +874,13 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("preserves a consumed run-now token across a periodic re-run", func() {
 		name := types.NamespacedName{Name: "addoncheck-runnow-preserve", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        name.Name,
 				Namespace:   name.Namespace,
-				Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"},
+				Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok"},
 			},
-			Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
+			Spec: fathomv1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -952,7 +894,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.runCount()).To(Equal(1))
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.LastRunTrigger).To(Equal("tok"))
 
@@ -974,7 +916,7 @@ var _ = Describe("AddonCheck Controller", func() {
 
 		// Re-applying the same, already-consumed token must NOT re-trigger, and
 		// we are within the interval, so no new run happens.
-		updated.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok"}
+		updated.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok"}
 		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -983,9 +925,9 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("refreshes the result and records a transition report when addon state changes", func() {
 		name := types.NamespacedName{Name: "addoncheck-refresh", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager", Interval: &metav1.Duration{Duration: time.Minute}},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, resource))).To(Succeed()) })
@@ -998,9 +940,9 @@ var _ = Describe("AddonCheck Controller", func() {
 		// Healthy: first run -> Pass, one report.
 		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		updated := &fathomv1alpha1.AddonCheck{}
+		updated := &fathomv1.AddonCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1.HealthReportResultPass)))
 		Expect(healthReportCount(ctx, name)).To(Equal(1))
 
 		// Addon degrades; a periodic re-run (no spec edit) must flip the result
@@ -1013,40 +955,40 @@ var _ = Describe("AddonCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1.HealthReportResultFail)))
 		Expect(healthReportCount(ctx, name)).To(Equal(2)) // transition recorded
 	})
 
 	DescribeTable("addonCheckDueForRun",
-		func(setup func(*fathomv1alpha1.AddonCheck), prevGen int64, triggerDue bool, interval time.Duration, want bool) {
-			check := &fathomv1alpha1.AddonCheck{}
+		func(setup func(*fathomv1.AddonCheck), prevGen int64, triggerDue bool, interval time.Duration, want bool) {
+			check := &fathomv1.AddonCheck{}
 			check.Generation = 1
 			setup(check)
 			Expect(addonCheckDueForRun(check, prevGen, triggerDue, interval)).To(Equal(want))
 		},
 		Entry("first sight (no LastRunTime) is due",
-			func(c *fathomv1alpha1.AddonCheck) {}, int64(1), false, time.Minute, true),
+			func(c *fathomv1.AddonCheck) {}, int64(1), false, time.Minute, true),
 		Entry("generation change is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), false, time.Minute, true),
+			func(c *fathomv1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(0), false, time.Minute, true),
 		Entry("a due run-now trigger is due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), true, time.Minute, true),
+			func(c *fathomv1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), true, time.Minute, true),
 		Entry("a consumed trigger within the interval is not due",
-			func(c *fathomv1alpha1.AddonCheck) {
+			func(c *fathomv1.AddonCheck) {
 				n := metav1.Now()
 				c.Status.LastRunTime = &n
 				c.Status.LastRunTrigger = "t1"
 			}, int64(1), false, time.Minute, false),
 		Entry("an elapsed interval is due",
-			func(c *fathomv1alpha1.AddonCheck) {
+			func(c *fathomv1.AddonCheck) {
 				p := metav1.NewTime(time.Now().Add(-time.Hour))
 				c.Status.LastRunTime = &p
 			}, int64(1), false, time.Minute, true),
 		Entry("within the interval with no triggers is not due",
-			func(c *fathomv1alpha1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), false, time.Minute, false),
+			func(c *fathomv1.AddonCheck) { n := metav1.Now(); c.Status.LastRunTime = &n }, int64(1), false, time.Minute, false),
 	)
 
 	DescribeTable("aggregateHealthReportResult worst-case ranking",
-		func(outcomes []adapter.Outcome, want fathomv1alpha1.HealthReportResult) {
+		func(outcomes []adapter.Outcome, want fathomv1.HealthReportResult) {
 			checks := make([]adapter.CheckResult, 0, len(outcomes))
 			for _, o := range outcomes {
 				checks = append(checks, adapter.CheckResult{Outcome: o})
@@ -1054,25 +996,25 @@ var _ = Describe("AddonCheck Controller", func() {
 			Expect(aggregateHealthReportResult(checks)).To(Equal(want))
 		},
 		Entry("empty input returns Skipped (adapter ran, produced no outcomes)",
-			[]adapter.Outcome{}, fathomv1alpha1.HealthReportResultSkipped),
+			[]adapter.Outcome{}, fathomv1.HealthReportResultSkipped),
 		Entry("all Pass aggregates to Pass",
-			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomePass}, fathomv1alpha1.HealthReportResultPass),
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomePass}, fathomv1.HealthReportResultPass),
 		Entry("Pass+Skipped aggregates to Pass (Skipped is informational, #160)",
-			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeSkipped}, fathomv1alpha1.HealthReportResultPass),
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeSkipped}, fathomv1.HealthReportResultPass),
 		Entry("Warn+Skipped aggregates to Warn (Skipped never wins over a participating result)",
-			[]adapter.Outcome{adapter.OutcomeWarn, adapter.OutcomeSkipped}, fathomv1alpha1.HealthReportResultWarn),
+			[]adapter.Outcome{adapter.OutcomeWarn, adapter.OutcomeSkipped}, fathomv1.HealthReportResultWarn),
 		Entry("Pass+Warn aggregates to Warn",
-			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeWarn}, fathomv1alpha1.HealthReportResultWarn),
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeWarn}, fathomv1.HealthReportResultWarn),
 		Entry("Pass+Fail aggregates to Fail",
-			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeFail}, fathomv1alpha1.HealthReportResultFail),
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeFail}, fathomv1.HealthReportResultFail),
 		Entry("Pass+Error aggregates to Error",
-			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeError}, fathomv1alpha1.HealthReportResultError),
+			[]adapter.Outcome{adapter.OutcomePass, adapter.OutcomeError}, fathomv1.HealthReportResultError),
 		Entry("Fail+Unknown aggregates to Fail (Fail outranks Unknown)",
-			[]adapter.Outcome{adapter.OutcomeFail, adapter.Outcome("synthetic-unknown")}, fathomv1alpha1.HealthReportResultFail),
+			[]adapter.Outcome{adapter.OutcomeFail, adapter.Outcome("synthetic-unknown")}, fathomv1.HealthReportResultFail),
 		Entry("Error wins everything",
-			[]adapter.Outcome{adapter.OutcomeFail, adapter.OutcomeError, adapter.OutcomeWarn}, fathomv1alpha1.HealthReportResultError),
+			[]adapter.Outcome{adapter.OutcomeFail, adapter.OutcomeError, adapter.OutcomeWarn}, fathomv1.HealthReportResultError),
 		Entry("All Skipped aggregates to Skipped",
-			[]adapter.Outcome{adapter.OutcomeSkipped, adapter.OutcomeSkipped}, fathomv1alpha1.HealthReportResultSkipped),
+			[]adapter.Outcome{adapter.OutcomeSkipped, adapter.OutcomeSkipped}, fathomv1.HealthReportResultSkipped),
 	)
 
 	It("ignores deleted AddonChecks", func() {
@@ -1089,9 +1031,9 @@ var _ = Describe("AddonCheck Controller", func() {
 
 	It("labels created HealthReports with their source kind and name", func() {
 		typeNamespacedName := types.NamespacedName{Name: "addoncheck-labels", Namespace: "default"}
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: typeNamespacedName.Name, Namespace: typeNamespacedName.Namespace},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() {
@@ -1104,7 +1046,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 		Expect(err).NotTo(HaveOccurred())
 
-		var reports fathomv1alpha1.HealthReportList
+		var reports fathomv1.HealthReportList
 		Expect(k8sClient.List(ctx, &reports,
 			client.InNamespace(typeNamespacedName.Namespace),
 			client.MatchingLabels{
@@ -1121,9 +1063,9 @@ var _ = Describe("AddonCheck Controller", func() {
 		name := "addoncheck-prune"
 		ns := "default"
 		limit := int32(2)
-		resource := &fathomv1alpha1.AddonCheck{
+		resource := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
 		}
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() {
@@ -1135,7 +1077,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		// retention boundary must still preserve that just-created report.
 		var seeded []string
 		for i := 0; i < 3; i++ {
-			seed := &fathomv1alpha1.HealthReport{
+			seed := &fathomv1.HealthReport{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:    ns,
 					GenerateName: name + "-seed-",
@@ -1144,9 +1086,9 @@ var _ = Describe("AddonCheck Controller", func() {
 						"fathom.skaphos.io/source-name": name,
 					},
 				},
-				Spec: fathomv1alpha1.HealthReportSpec{
-					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
-					Result:     fathomv1alpha1.HealthReportResultPass,
+				Spec: fathomv1.HealthReportSpec{
+					SourceRef:  fathomv1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
+					Result:     fathomv1.HealthReportResultPass,
 					ObservedAt: metav1.NewTime(time.Now()),
 				},
 			}
@@ -1160,7 +1102,7 @@ var _ = Describe("AddonCheck Controller", func() {
 			Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}})
 		Expect(err).NotTo(HaveOccurred())
 
-		var reports fathomv1alpha1.HealthReportList
+		var reports fathomv1.HealthReportList
 		Expect(k8sClient.List(ctx, &reports,
 			client.InNamespace(ns),
 			client.MatchingLabels{"fathom.skaphos.io/source-name": name},
@@ -1168,7 +1110,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		Expect(reports.Items).To(HaveLen(int(limit)))
 
 		// Newest survivor = the report the reconcile just created.
-		var updated fathomv1alpha1.AddonCheck
+		var updated fathomv1.AddonCheck
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &updated)).To(Succeed())
 		survivors := map[string]bool{}
 		for _, r := range reports.Items {
@@ -1190,9 +1132,9 @@ var _ = Describe("AddonCheck Controller", func() {
 		name := "addoncheck-prune-direct"
 		ns := "default"
 		limit := int32(1)
-		check := &fathomv1alpha1.AddonCheck{
+		check := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager", HistoryLimit: &limit},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() {
@@ -1200,7 +1142,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		})
 
 		for i := 0; i < 3; i++ {
-			seed := &fathomv1alpha1.HealthReport{
+			seed := &fathomv1.HealthReport{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:    ns,
 					GenerateName: name + "-seed-",
@@ -1209,9 +1151,9 @@ var _ = Describe("AddonCheck Controller", func() {
 						"fathom.skaphos.io/source-name": name,
 					},
 				},
-				Spec: fathomv1alpha1.HealthReportSpec{
-					SourceRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
-					Result:     fathomv1alpha1.HealthReportResultPass,
+				Spec: fathomv1.HealthReportSpec{
+					SourceRef:  fathomv1.HealthReportTargetRef{Kind: "AddonCheck", Name: name},
+					Result:     fathomv1.HealthReportResultPass,
 					ObservedAt: metav1.NewTime(time.Now()),
 				},
 			}
@@ -1222,7 +1164,7 @@ var _ = Describe("AddonCheck Controller", func() {
 		(&AddonCheckReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}).
 			pruneHealthReportHistory(ctx, logr.Discard(), check, "")
 
-		var reports fathomv1alpha1.HealthReportList
+		var reports fathomv1.HealthReportList
 		Expect(k8sClient.List(ctx, &reports,
 			client.InNamespace(ns),
 			client.MatchingLabels{"fathom.skaphos.io/source-name": name},
@@ -1325,19 +1267,19 @@ func countRuntimeEvaluations(f *runtimeCheckFixture) {
 func TestRuntimeBackedRouting(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		arrange func(*testing.T, *runtimeCheckFixture, *AddonCheckReconciler, *fathomv1alpha1.AddonCheck)
+		arrange func(*testing.T, *runtimeCheckFixture, *AddonCheckReconciler, *fathomv1.AddonCheck)
 		want    bool
 	}{
 		{
 			name: "runtime loading disabled leaves every check on the built-in path",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.ready()
 				r.Runtime, r.RuntimeQueue = nil, nil
 			},
 		},
 		{
 			name: "a queue without a runner is not a wired runtime",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.ready()
 				r.Runtime = nil
 			},
@@ -1347,14 +1289,14 @@ func TestRuntimeBackedRouting(t *testing.T) {
 			// reconcile worker, which is precisely what the separate runtime
 			// pool exists to prevent.
 			name: "a runner without a queue is not a wired runtime",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, r *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.ready()
 				r.RuntimeQueue = nil
 			},
 		},
 		{
 			name: "a built-in adapter keeps its own path",
-			arrange: func(t *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
+			arrange: func(t *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1.AddonCheck) {
 				f.ready()
 				if err := f.registry.Register(fakeAddonAdapter{}); err != nil {
 					t.Fatalf("register built-in: %v", err)
@@ -1363,36 +1305,29 @@ func TestRuntimeBackedRouting(t *testing.T) {
 			},
 		},
 		{
-			name: "a paused check runs nowhere",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
-				f.ready()
-				check.Spec.Paused = true
-			},
-		},
-		{
 			name: "an addon type that cannot name a definition keeps the built-in answer",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, check *fathomv1.AddonCheck) {
 				f.ready()
 				check.Spec.AddonType = "Not_A_Label"
 			},
 		},
 		{
 			name: "an admitted runtime snapshot",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.ready()
 			},
 			want: true,
 		},
 		{
 			name: "a published snapshot whose dispatch is not admitted",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.publish(1)
 			},
 			want: true,
 		},
 		{
 			name: "an identity nobody claims",
-			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1alpha1.AddonCheck) {
+			arrange: func(_ *testing.T, f *runtimeCheckFixture, _ *AddonCheckReconciler, _ *fathomv1.AddonCheck) {
 				f.admit()
 			},
 			want: true,
@@ -1456,8 +1391,8 @@ func TestReconcilePreservesRuntimeWorkerPolicyConditions(t *testing.T) {
 	f.ready()
 	invalid := f.check()
 	invalid.Generation = 2
-	invalid.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
-		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+	invalid.Spec.Policy["health"] = fathomv1.AddonCheckFamilyPolicy{
+		Thresholds: map[string]fathomv1.ThresholdValue{
 			adapter.ThresholdKeyFailRatio: "150",
 		},
 	}
@@ -1513,9 +1448,9 @@ func TestReconcileWithoutRuntimeWiringKeepsTheBuiltInAnswer(t *testing.T) {
 // Built-ins are preserved: with the runtime fully wired, a built-in identity
 // still runs inline on its own workers and never reaches the runtime queue.
 func TestBuiltInChecksStillRunInlineWhileRuntimeIsWired(t *testing.T) {
-	builtinCheck := &fathomv1alpha1.AddonCheck{
+	builtinCheck := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Namespace: runtimeCheckNamespace, Name: "builtin-check", UID: "builtin-uid", Generation: 1},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 	}
 	f := newRuntimeCheckFixture(t, lifecycleDefinition(), lifecycleBinding(), lifecycleServiceAccount(), runtimeCheckObject(), builtinCheck)
 	f.ready()
@@ -1532,7 +1467,7 @@ func TestBuiltInChecksStillRunInlineWhileRuntimeIsWired(t *testing.T) {
 	if works := queue.works(); len(works) != 0 {
 		t.Fatalf("a built-in check reached the runtime pool: %+v", works)
 	}
-	var ran fathomv1alpha1.AddonCheck
+	var ran fathomv1.AddonCheck
 	if err := f.store.Get(context.Background(), key, &ran); err != nil {
 		t.Fatalf("get built-in check: %v", err)
 	}
@@ -1541,30 +1476,10 @@ func TestBuiltInChecksStillRunInlineWhileRuntimeIsWired(t *testing.T) {
 	}
 }
 
-// A paused check must not keep a queued wake, and a deleted one must not keep
-// one either: the pool would otherwise admit a run for an object that no longer
-// wants one.
-func TestPausedAndDeletedRuntimeChecksAreForgotten(t *testing.T) {
-	t.Run("paused", func(t *testing.T) {
-		f := newRuntimeCheckFixture(t)
-		f.ready()
-		paused := f.check()
-		paused.Spec.Paused = true
-		f.update(paused)
-		queue := &fakeRuntimeQueue{}
-		r := runtimeWiredReconciler(f, queue)
-
-		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: runtimeCheckKey()}); err != nil {
-			t.Fatalf("reconcile: %v", err)
-		}
-		if works := queue.works(); len(works) != 0 {
-			t.Errorf("a paused check was enqueued: %+v", works)
-		}
-		if forgets := queue.forgets(); len(forgets) != 1 || forgets[0] != runtimeCheckKey() {
-			t.Errorf("forgotten = %+v, want the paused check withdrawn once", forgets)
-		}
-	})
-
+// A deleted check must not keep a queued wake: the pool would otherwise admit
+// a run for an object that no longer exists. (Pause used to be the other way
+// a check could stop wanting a run; deletion is now the only stop.)
+func TestDeletedRuntimeChecksAreForgotten(t *testing.T) {
 	t.Run("deleted", func(t *testing.T) {
 		f := newRuntimeCheckFixture(t)
 		f.ready()
@@ -1626,7 +1541,7 @@ func TestRunRuntimeWorkDoesNotAttributeReportsToStaleCachedStatus(t *testing.T) 
 	r := runtimeWiredReconciler(f, &fakeRuntimeQueue{})
 	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-			if check, ok := obj.(*fathomv1alpha1.AddonCheck); ok && key == runtimeCheckKey() {
+			if check, ok := obj.(*fathomv1.AddonCheck); ok && key == runtimeCheckKey() {
 				stale.DeepCopyInto(check)
 				return nil
 			}
@@ -1662,9 +1577,9 @@ func TestRunRuntimeWorkReusesReportAfterReportPointerConflict(t *testing.T) {
 	conflict.Store(true)
 	r.Client = interceptor.NewClient(f.cached, interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			check, ok := obj.(*fathomv1alpha1.AddonCheck)
+			check, ok := obj.(*fathomv1.AddonCheck)
 			if sub == "status" && ok && check.Status.LastReportName != "" && conflict.Swap(false) {
-				return apierrors.NewConflict(fathomv1alpha1.GroupVersion.WithResource("addonchecks").GroupResource(), check.Name, errors.New("synthetic concurrent status update"))
+				return apierrors.NewConflict(fathomv1.GroupVersion.WithResource("addonchecks").GroupResource(), check.Name, errors.New("synthetic concurrent status update"))
 			}
 			return c.SubResource(sub).Update(ctx, obj, opts...)
 		},
@@ -1712,7 +1627,7 @@ func TestRunRuntimeWorkBackfillsATransitionLostByAFailedReportWrite(t *testing.T
 	blocked.Store(true)
 	blocking := interceptor.NewClient(f.cached, interceptor.Funcs{
 		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-			if _, ok := obj.(*fathomv1alpha1.HealthReport); ok && blocked.Load() {
+			if _, ok := obj.(*fathomv1.HealthReport); ok && blocked.Load() {
 				return errors.New("synthetic history write failure")
 			}
 			return c.Create(ctx, obj, opts...)
@@ -1797,8 +1712,8 @@ func TestRunRuntimeWorkRefusesWhileDispatchIsNotAdmitted(t *testing.T) {
 }
 
 // The queue entry is keyed by the check, so its spec can change between the
-// enqueue and the admission. Neither a retargeted, a paused nor a deleted check
-// is this run's to execute, and none of them is a failure to retry.
+// enqueue and the admission. Neither a retargeted nor a deleted check is this
+// run's to execute, and neither is a failure to retry.
 func TestRunRuntimeWorkDeclinesWorkItsCheckNoLongerWants(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -1817,15 +1732,6 @@ func TestRunRuntimeWorkDeclinesWorkItsCheckNoLongerWants(t *testing.T) {
 			name: "retargeted check",
 			arrange: func(f *runtimeCheckFixture) execution.Work {
 				return execution.Work{Definition: "another-addon", Check: runtimeCheckKey()}
-			},
-		},
-		{
-			name: "paused check",
-			arrange: func(f *runtimeCheckFixture) execution.Work {
-				paused := f.check()
-				paused.Spec.Paused = true
-				f.update(paused)
-				return execution.Work{Definition: lifecycleAddon, Check: runtimeCheckKey()}
 			},
 		},
 	} {

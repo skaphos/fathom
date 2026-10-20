@@ -118,6 +118,23 @@ changing anything:
   and issue; `--yes` does not count);
 - a skipped stop: a release that must be installed on the way to a later one.
 
+One release needs a step before the upgrade. 0.7.0 moved the check kinds
+from `v1alpha1` to the stable `v1`, and a CRD cannot drop a version it still
+stores, so `upgrade` *replaces* those CRDs — deleting them together with
+every alpha object and its `HealthReport` history, then creating them at
+`v1`. The plan lists the objects it would remove and refuses until you
+repeat the command with `--accept-incompatible-crds` (or until none are
+left). Keep the checks by rendering them first:
+
+```sh
+fathomctl export --output fathom-v1.yaml   # every alpha check as a v1 manifest; applies nothing
+fathomctl upgrade --accept-incompatible-crds
+kubectl apply -f fathom-v1.yaml
+```
+
+The full procedure, including the plain-manifest path and rollback, is in
+[RELEASE.md → v1 API migration](../../RELEASE.md#v1-api-migration).
+
 A multi-step upgrade means running each intermediate release's `fathomctl`
 in turn. The refusal prints the whole path and the first step, for example
 with a hypothetical stop at v0.8.0:

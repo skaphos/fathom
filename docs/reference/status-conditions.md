@@ -11,7 +11,7 @@ source; this page is the operational interpretation of those fields.
 
 Implementation anchors:
 
-- API types: `api/v1alpha1/*_types.go`
+- API types: `api/v1/*_types.go` (check kinds) and `api/v1alpha1/*_types.go` (runtime definition kinds)
 - Reconcilers: `internal/controller/*_controller.go`
 - Generated CRDs: `config/crd/bases/fathom.skaphos.io_*.yaml`
 
@@ -21,7 +21,7 @@ All Fathom status conditions follow Kubernetes `metav1.Condition` conventions.
 
 | Field | How to use it |
 | --- | --- |
-| `type` | Stable category such as `Accepted`, `Paused`, `Ready`, or `AgentReady`. |
+| `type` | Stable category such as `Accepted`, `Ready`, or `AgentReady`. |
 | `status` | `True` means that condition currently applies; `False` means it currently does not. |
 | `reason` | Machine-readable cause within the condition type. Alerting and automation should key on this rather than free-form `message`. |
 | `message` | Human-readable context. Validation failures and API errors appear here. |
@@ -85,8 +85,6 @@ regardless of `spec.interval`; when that run completes it records the value in
 - A value longer than 253 characters, the bound on `status.lastRunTrigger`,
   is ignored rather than recorded: recording it would make every status
   update fail validation. No supported writer produces one.
-- A paused check does not consume the trigger. It stays pending until the
-  check is unpaused, and `run --wait` would only time out.
 - `NodeCertificateCheck` and `NodeHealthCheck` complete the trigger
   differently from the other two: the operator stamps the value onto the
   node-agent DaemonSet's pod
@@ -128,15 +126,14 @@ Status fields to start with:
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The controller accepted the spec/policy it could validate. This does not prove the add-on is healthy. | Continue to `Ready` and `lastResult`. |
 | `Accepted` | `False / InvalidPolicy` | A policy family name or label selector is invalid for the selected adapter. No adapter run occurs. | Fix `spec.policy`; the message lists deterministic validation errors. |
-| `Paused` | `False / RunEnabled` | The check is eligible to run. | None. |
-| `Paused` | `True / Paused` | `spec.paused=true`; adapter execution is disabled and the previous status snapshot is preserved. | Unset `spec.paused` to resume. |
 | `Ready` | `True / RunCompleted` | The adapter ran and status reflects the run. | Inspect `lastResult` and the referenced `HealthReport`. |
 | `Ready` | `True / AdapterResolved` | The adapter and policy are valid, but this reconcile did not need to execute a run. | Check `lastRunTime` against `spec.interval` if freshness is in question. |
 | `Ready` | `False / InvalidPolicy` | Policy validation failed. Also see `Accepted=False`. | Fix `spec.policy`. |
 | `Ready` | `False / MissingAdapter` | No registry is configured or `spec.addonType` does not match a built-in adapter. | Check `spec.addonType`; valid values are listed in [Add-on checks](../guides/addon-checks.md). |
 | `Ready` | `False / AdapterLookupFailed` | Adapter lookup failed for a reason other than "not found". | Inspect operator logs; this points to startup/registry wiring. |
 | `Ready` | `False / AdapterRunFailed` | The adapter could not complete the run. The check result is `Error`. | Read the condition message and operator logs; verify adapter RBAC in [rbac.md](rbac.md). |
-| `Ready` | `False / Paused` | The check is paused. | Unset `spec.paused`. |
+There is no `Paused` condition and no `spec.paused`: stopping a check means
+deleting it (#262).
 
 Force an immediate run:
 
@@ -164,14 +161,13 @@ Status fields to start with:
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The wrapper spec was accepted for reconciliation. | Continue to `Ready`. |
-| `Paused` | `False / RunEnabled` | Mirroring is enabled. | None. |
-| `Paused` | `True / Paused` | `spec.paused=true`; mirroring is suspended and the previous mirrored snapshot is preserved. | Unset `spec.paused` to resume. |
 | `Ready` | `True / TargetMirrored` | The referenced specialized check was read and mirrored. | Check `status.result` and `sourceObservedAt`. |
-| `Ready` | `False / UnsupportedAPIVersion` | A nonempty `spec.checkRef.apiVersion` is not the current `fathom.skaphos.io/v1alpha1` contract. Mirrored fields are cleared without reading a target. | Replace the immutable wrapper with the current API version, or omit `apiVersion` to use the current default. |
+| `Ready` | `False / UnsupportedAPIVersion` | A nonempty `spec.checkRef.apiVersion` is not the current `fathom.skaphos.io/v1` contract. Mirrored fields are cleared without reading a target. | Replace the immutable wrapper with the current API version, or omit `apiVersion` to use the current default. |
 | `Ready` | `False / UnsupportedKind` | `spec.checkRef.kind` is not `AddonCheck`, `DNSCheck`, `NodeCertificateCheck`, or `NodeHealthCheck`. Mirrored fields are cleared. | Replace the immutable wrapper with one of the supported kinds. |
 | `Ready` | `False / TargetNotFound` | The referenced target does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the immutable reference is wrong. |
 | `Ready` | `False / TargetLookupFailed` | Reading a supported target failed with a transient API error. The last readable mirrored snapshot is preserved and the controller returns the error for retry. | Check controller logs, API-server availability, and RBAC; do not treat the retained snapshot as new evidence. |
-| `Ready` | `False / Paused` | The wrapper is paused. | Unset `spec.paused`. |
+There is no `Paused` condition and no `spec.paused`: stopping a check means
+deleting it (#262).
 
 Namespace contract: `ClusterHealth` is cluster-scoped and selects `HealthCheck`
 wrappers under the allowlist / denylist / open filter (`spec.namespaces`,
@@ -276,12 +272,9 @@ Freshness and coverage rules:
 | Condition | Status / reason | Meaning | Operator action |
 | --- | --- | --- | --- |
 | `Accepted` | `True / SpecAccepted` | The spec was accepted. Structural invalid specs are normally rejected by the API server from CRD validation before reconciliation. | Continue to `AgentReady` and `Ready`. |
-| `Paused` | `False / RunEnabled` | The node-agent is eligible to run. | None. |
-| `Paused` | `True / Paused` | `spec.paused=true`; the operator clears the scoped report Role, deletes the agent DaemonSet, and preserves the last status snapshot. Both cleanup operations are attempted independently. | Unset `spec.paused` to recreate the DaemonSet. |
 | `AgentReady` | `True / RolledOut` | The DaemonSet has fully converged: the current generation is observed and every desired pod is updated and ready. | Continue to `Ready`. |
 | `AgentReady` | `False / RollingOut` | The DaemonSet exists but has not fully converged: the current generation is not yet observed, or not every desired pod is updated and ready. | Inspect DaemonSet pods, scheduling, image pulls, and tolerations. |
 | `AgentReady` | `False / NoMatchingNodes` | The DaemonSet selects zero nodes. | Check `spec.nodeSelector` and cluster labels. |
-| `AgentReady` | `False / Paused` | The node-agent is intentionally stopped. | Unset `spec.paused` to resume. |
 | `Ready` | `True / Reporting` | Complete, fresh reports were rolled up into a `HealthReport`, and at least one path produced a verdict (`Pass`, `Warn`, `Fail` or `Error`). | Read `lastResult` and the referenced `HealthReport`. |
 | `Ready` | `True / NoReadableCertificates` | Complete, fresh reports were rolled up, but every certificate path the agents found was unreadable by the non-root agent. The `Skipped` verdict observed nothing, which is typical on GKE, and on AKS if `/etc/kubernetes/certs` is root-only. | Root-only material, such as the kubelet PKI, is out of scope. Point `spec.paths` at world-readable certificates; see [Platform coverage](../guides/node-certificate-checks.md#platform-coverage-and-root-only-certificates). |
 | `Ready` | `True / NoCertificatesFound` | Complete, fresh reports were rolled up, but no configured path held a certificate. The `Skipped` verdict observed nothing. | Check `spec.paths` against where your platform keeps its certificates. |
@@ -297,12 +290,12 @@ Freshness and coverage rules:
 | `ReportsAuthentic` | `Unknown / EnforcementUnavailable` | The report-authenticity `ValidatingAdmissionPolicy` or binding could not be used. Reconciliation stops before provisioning agents, consuming reports, or rolling up a verdict. | Restore the admissionregistration API/RBAC and retry. |
 | `ReportsAuthentic` | `False / ForgedReportRejected` | One or more reports failed a binding only a writer passing off another node's report can fail — a payload disagreeing with the node-name annotation, or a report at a non-canonical ConfigMap name. The message names the ConfigMaps (up to five) and the reason. The rejected reports are excluded from the aggregate. | Investigate: some principal with ConfigMap write in the namespace is attempting to steer a node's verdict. Check who holds `configmaps` write there, and confirm the report-authenticity `ValidatingAdmissionPolicy` is enforced. |
 | `Ready` | `False / RBACProvisioningFailed` | Per-check ServiceAccount or namespaced report Role/RoleBinding provisioning failed. The Role grants the agent `create` on ConfigMaps plus `get`/`update` only on the names of its current node reports; a legacy owner-referenced binding is drained during migration. The historical verdict is retained. When the failure is during legacy RBAC migration, successful cleanup uses this reason; cleanup failure uses `AgentRevocationFailed`. | Check operator RBAC and admission failures. |
-| `Ready` | `False / RBACRevocationFailed` | While pausing, the scoped Role or legacy binding could not be cleared, or the owned DaemonSet could not be deleted. Both revocation steps are attempted independently, so the agent may still be running or may have been removed; agent state and coverage are unknown. | Restore Role/RoleBinding update and DaemonSet delete access, then retry the pause. |
 | `Ready` | `False / AgentRevocationFailed` | Admission enforcement or RBAC provisioning failed and cleanup also failed while revoking the previous agent. The message joins the original provisioning error with the cleanup error; the historical verdict is retained and agent state and coverage are unknown. | Restore Role/RoleBinding update and DaemonSet delete access, then retry. Remove the DaemonSet manually if urgent. |
 | `Ready` | `False / DaemonSetProvisioningFailed` | Creating/updating the node-agent DaemonSet failed. | Check admission policies, security policies, and image settings. |
 | `Ready` | `False / AdmissionPolicyProvisioningFailed` | Creating/updating the report-authenticity `ValidatingAdmissionPolicy` or its binding failed. | Check operator RBAC on `admissionregistration.k8s.io` and cluster API support. |
 | `Ready` | `False / NetworkPolicyProvisioningFailed` | Creating/updating the per-check node-agent `NetworkPolicy` failed. | Check operator RBAC on `networking.k8s.io` and admission policies. |
-| `Ready` | `False / Paused` | The check is paused. | Unset `spec.paused`. |
+There is no `Paused` condition and no `spec.paused`: stopping a check means
+deleting it (#262); the agent DaemonSet, RBAC and NetworkPolicy are removed with it.
 
 Useful report inspection:
 

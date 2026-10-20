@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // Test digests for a "release build" of fathomctl.
@@ -330,7 +330,7 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 		}
 	}
 	env.c = fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithStatusSubresource(&fathomv1alpha1.HealthCheck{}).
+		WithStatusSubresource(&fathomv1.HealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				if gvk := list.GetObjectKind().GroupVersionKind(); env.listForbidden[gvk.Kind] {
@@ -399,7 +399,9 @@ func liveCRDs(t *testing.T, version string, mutate func(*apiextensionsv1.CustomR
 		if version != "" {
 			live.Annotations = withAnnotation(live.Annotations, crdVersionAnnotation, version)
 		}
-		live.Status.StoredVersions = []string{"v1alpha1"}
+		// A live CRD at the same schema stores the version it serves; the
+		// alpha-to-v1 replacement scenario builds its own fixtures.
+		live.Status.StoredVersions = []string{live.Spec.Versions[0].Name}
 		live.Status.Conditions = []apiextensionsv1.CustomResourceDefinitionCondition{{Type: apiextensionsv1.Established, Status: apiextensionsv1.ConditionTrue}}
 		if mutate != nil {
 			mutate(live)

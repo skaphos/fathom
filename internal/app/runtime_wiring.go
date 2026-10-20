@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
@@ -455,7 +456,7 @@ func (g *runtimeDispatchGate) Start(ctx context.Context) error {
 // adoptLease reads the configured Lease directly until the session adopts it or
 // the session ends. AdoptLease refuses a Lease this process does not hold, so a
 // stale or foreign Lease can never become this session's epoch.
-func (g *runtimeDispatchGate) adoptLease(ctx context.Context) (*fathomv1alpha1.DefinitionLeaderEpoch, error) {
+func (g *runtimeDispatchGate) adoptLease(ctx context.Context) (*fathomv1.DefinitionLeaderEpoch, error) {
 	retry := g.retry
 	if retry <= 0 {
 		retry = runtimeLeaseAdoptRetry

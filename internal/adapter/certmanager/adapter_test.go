@@ -47,7 +47,7 @@ func TestRun_SystemHealthPassesByDefault(t *testing.T) {
 	result, err := New().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, healthyObjects(false)...),
 		Logger: logr.Discard(),
-		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cert-manager"},
+		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1", Kind: "AddonCheck", Namespace: "default", Name: "cert-manager"},
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -86,7 +86,7 @@ func TestRun_SystemHealthDisabledSkips(t *testing.T) {
 	result, err := New().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t),
 		Logger: logr.Discard(),
-		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cert-manager"},
+		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1", Kind: "AddonCheck", Namespace: "default", Name: "cert-manager"},
 		Policy: map[adapter.Family]adapter.FamilyPolicy{
 			FamilySystemHealth: {Enabled: false},
 		},

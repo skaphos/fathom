@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func TestDescribe_PerKind(t *testing.T) {
@@ -25,43 +25,43 @@ func TestDescribe_PerKind(t *testing.T) {
 
 	ac := addonCheck("team-a", "coredns")
 	ac.Spec.Interval = &metav1.Duration{Duration: 10 * time.Minute}
-	ac.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+	ac.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{
 		"system_health":  {Enabled: ptr.To(true), Namespaces: []string{"kube-system"}},
 		"dns_resolution": {Enabled: ptr.To(false)},
 	}
-	ac.Status = fathomv1alpha1.AddonCheckStatus{LastResult: "Pass", LastRunTime: &last, Conditions: ready, LastReportName: "coredns-abc", LastRunTrigger: "tok-1", DetectedVersion: "1.11.3", Absent: 1}
+	ac.Status = fathomv1.AddonCheckStatus{LastResult: "Pass", LastRunTime: &last, Conditions: ready, LastReportName: "coredns-abc", LastRunTrigger: "tok-1", DetectedVersion: "1.11.3", Absent: 1}
 
-	dns := &fathomv1alpha1.DNSCheck{
+	dns := &fathomv1.DNSCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "cluster-dns", Namespace: "team-a"},
-		Spec: fathomv1alpha1.DNSCheckSpec{
-			Targets:   []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: "A", ExpectedAnswers: []string{"10.0.0.1"}}, {Name: "gone.example.com", RecordType: "A", Absent: true, Resolver: "upstream"}},
-			Resolvers: []fathomv1alpha1.DNSResolver{{Name: "upstream", From: "Explicit", Address: "10.1.1.1:53"}},
+		Spec: fathomv1.DNSCheckSpec{
+			Targets:   []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: "A", ExpectedAnswers: []string{"10.0.0.1"}}, {Name: "gone.example.com", RecordType: "A", Absent: true, Resolver: "upstream"}},
+			Resolvers: []fathomv1.DNSResolver{{Name: "upstream", From: "Explicit", Address: "10.1.1.1:53"}},
 		},
-		Status: fathomv1alpha1.DNSCheckStatus{
+		Status: fathomv1.DNSCheckStatus{
 			LastResult: "Fail", Summary: "1 of 2 pairs failed", LastRunTime: &last, ObservedTargets: 2, LastReportName: "dns-1",
-			TargetResults: []fathomv1alpha1.DNSTargetResult{
+			TargetResults: []fathomv1.DNSTargetResult{
 				{Name: "a.example.com", RecordType: "A", Resolver: "cluster", Result: "Pass", Answers: []string{"10.0.0.1"}, LatencyMillis: 12},
 				{Name: "gone.example.com", RecordType: "A", Resolver: "upstream", Result: "Fail", Message: "record still resolves"},
 			},
 		},
 	}
 
-	ncc := &fathomv1alpha1.NodeCertificateCheck{
+	ncc := &fathomv1.NodeCertificateCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-certs", Namespace: "team-a"},
-		Spec:       fathomv1alpha1.NodeCertificateCheckSpec{Paths: []string{"/etc/kubernetes/pki"}, IncludeControlPlaneNodes: ptr.To(true), NodeSelector: map[string]string{"role": "worker"}},
-		Status:     fathomv1alpha1.NodeCertificateCheckStatus{LastResult: "Warn", LastRunTime: &last, Conditions: ready, DesiredNodes: 3, ReportingNodes: 3, LastReportName: "ncc-1", LastRunTrigger: "tok-2"},
+		Spec:       fathomv1.NodeCertificateCheckSpec{Paths: []string{"/etc/kubernetes/pki"}, IncludeControlPlaneNodes: ptr.To(true), NodeSelector: map[string]string{"role": "worker"}},
+		Status:     fathomv1.NodeCertificateCheckStatus{LastResult: "Warn", LastRunTime: &last, Conditions: ready, DesiredNodes: 3, ReportingNodes: 3, LastReportName: "ncc-1", LastRunTrigger: "tok-2"},
 	}
 
 	hc := healthCheckFor("team-a", "web", "AddonCheck", "coredns")
 	hc.Spec.Description = "front door"
-	hc.Status = fathomv1alpha1.HealthCheckStatus{Result: "Pass", Summary: "mirrored", SourceObservedAt: &last, SourceInterval: &metav1.Duration{Duration: time.Minute}, LastReportName: "coredns-abc"}
+	hc.Status = fathomv1.HealthCheckStatus{Result: "Pass", Summary: "mirrored", SourceObservedAt: &last, SourceInterval: &metav1.Duration{Duration: time.Minute}, LastReportName: "coredns-abc"}
 
-	ch := &fathomv1alpha1.ClusterHealth{
+	ch := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod"},
-		Spec:       fathomv1alpha1.ClusterHealthSpec{Namespaces: []string{"team-a"}, Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "core"}}},
-		Status: fathomv1alpha1.ClusterHealthStatus{
+		Spec:       fathomv1.ClusterHealthSpec{Namespaces: []string{"team-a"}, Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "core"}}},
+		Status: fathomv1.ClusterHealthStatus{
 			Result: "Fail", MatchedCount: 3, ObservedAt: &last,
-			Children: []fathomv1alpha1.ClusterHealthChildSummary{
+			Children: []fathomv1.ClusterHealthChildSummary{
 				{Namespace: "team-a", Name: "web", Result: "Pass", Summary: "ok", ObservedAt: &last},
 				{Namespace: "team-a", Name: "dns", Result: "Warn", Summary: "slow", ObservedAt: &last},
 				{Namespace: "team-a", Name: "certs", Result: "Fail", Summary: "expiring", ObservedAt: &last},
@@ -70,11 +70,11 @@ func TestDescribe_PerKind(t *testing.T) {
 	}
 
 	day := metav1.Duration{Duration: 24 * time.Hour}
-	nhcLong := &fathomv1alpha1.NodeHealthCheck{
+	nhcLong := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-health", Namespace: "team-a"},
-		Spec: fathomv1alpha1.NodeHealthCheckSpec{
+		Spec: fathomv1.NodeHealthCheckSpec{
 			Interval: &day, Timeout: &day,
-			Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}},
+			Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}},
 		},
 	}
 
@@ -155,23 +155,23 @@ func TestDescribe_StructuredIsUnmodified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got fathomv1alpha1.AddonCheck
+	var got fathomv1.AddonCheck
 	if err := yaml.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("yaml: %v\n%s", err, out)
 	}
-	if got.Kind != "AddonCheck" || got.APIVersion != "fathom.skaphos.io/v1alpha1" || got.Name != "coredns" || got.Status.LastResult != "Pass" || got.Spec.AddonType != "coredns" {
+	if got.Kind != "AddonCheck" || got.APIVersion != "fathom.skaphos.io/v1" || got.Name != "coredns" || got.Status.LastResult != "Pass" || got.Spec.AddonType != "coredns" {
 		t.Fatalf("object not emitted unmodified: %+v", got)
 	}
 }
 
 func TestCadenceRendering(t *testing.T) {
-	if got := cadence(nil, fathomv1alpha1.MinCheckInterval, 5*time.Minute); got != "5m0s (default)" {
+	if got := cadence(nil, fathomv1.MinCheckInterval, 5*time.Minute); got != "5m0s (default)" {
 		t.Errorf("nil = %q", got)
 	}
-	if got := cadence(&metav1.Duration{Duration: time.Second}, fathomv1alpha1.MinCheckInterval, 5*time.Minute); !strings.Contains(got, "clamped") {
+	if got := cadence(&metav1.Duration{Duration: time.Second}, fathomv1.MinCheckInterval, 5*time.Minute); !strings.Contains(got, "clamped") {
 		t.Errorf("sub-floor = %q", got)
 	}
-	if got := cadence(&metav1.Duration{Duration: time.Minute}, fathomv1alpha1.MinCheckInterval, 5*time.Minute); got != "1m0s" {
+	if got := cadence(&metav1.Duration{Duration: time.Minute}, fathomv1.MinCheckInterval, 5*time.Minute); got != "1m0s" {
 		t.Errorf("declared = %q", got)
 	}
 }

@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // fakeFactory returns a factory bound to one shared fake client (so tests can
@@ -37,8 +37,8 @@ func fakeFactory(t *testing.T, objs ...client.Object) (*factory, client.Client) 
 	fc := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objs...).
-		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}, &fathomv1alpha1.DNSCheck{}, &fathomv1alpha1.NodeCertificateCheck{},
-			&fathomv1alpha1.NodeHealthCheck{}, &fathomv1alpha1.HealthCheck{}, &fathomv1alpha1.ClusterHealth{}).
+		WithStatusSubresource(&fathomv1.AddonCheck{}, &fathomv1.DNSCheck{}, &fathomv1.NodeCertificateCheck{},
+			&fathomv1.NodeHealthCheck{}, &fathomv1.HealthCheck{}, &fathomv1.ClusterHealth{}).
 		Build()
 	f := newFactory()
 	f.clientConfig = func(*globalOptions) clientcmd.ClientConfig {
@@ -51,10 +51,10 @@ func fakeFactory(t *testing.T, objs ...client.Object) (*factory, client.Client) 
 	return f, fc
 }
 
-func addonCheck(ns, name string) *fathomv1alpha1.AddonCheck {
-	return &fathomv1alpha1.AddonCheck{
+func addonCheck(ns, name string) *fathomv1.AddonCheck {
+	return &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "coredns"},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "coredns"},
 	}
 }
 
@@ -69,9 +69,9 @@ func completeRun(t *testing.T, fc client.Client, key types.NamespacedName, verdi
 	go func() {
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			ac := &fathomv1alpha1.AddonCheck{}
+			ac := &fathomv1.AddonCheck{}
 			if err := fc.Get(context.Background(), key, ac); err == nil {
-				if tok := ac.Annotations[fathomv1alpha1.AnnotationRunNow]; tok != "" {
+				if tok := ac.Annotations[fathomv1.AnnotationRunNow]; tok != "" {
 					now := metav1.Now()
 					ac.Status.LastRunTrigger = tok
 					ac.Status.LastResult = verdict
@@ -88,7 +88,7 @@ func completeRun(t *testing.T, fc client.Client, key types.NamespacedName, verdi
 
 func TestWaitForRun_CompletesOnConsumedToken(t *testing.T) {
 	ac := addonCheck("team-a", "coredns")
-	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	ac.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 	f, fc := fakeFactory(t, ac)
 	completeRun(t, fc, types.NamespacedName{Namespace: "team-a", Name: "coredns"}, "Warn")
 
@@ -103,7 +103,7 @@ func TestWaitForRun_CompletesOnConsumedToken(t *testing.T) {
 
 func TestWaitForRun_Superseded(t *testing.T) {
 	ac := addonCheck("team-a", "coredns")
-	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-other"}
+	ac.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-other"}
 	f, fc := fakeFactory(t, ac)
 
 	res := f.waitForRun(context.Background(), fc, addonTarget("team-a", "coredns", ac), "tok-1", time.Second)
@@ -114,7 +114,7 @@ func TestWaitForRun_Superseded(t *testing.T) {
 
 func TestWaitForRun_TimesOut(t *testing.T) {
 	ac := addonCheck("team-a", "coredns")
-	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	ac.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 	f, fc := fakeFactory(t, ac)
 
 	start := time.Now()
@@ -130,9 +130,9 @@ func TestWaitForRun_TimesOut(t *testing.T) {
 func TestWaitForRun_GrowsImplicitNodeHealthDeadlineFromObservedFleet(t *testing.T) {
 	for _, staleNodes := range []int32{0, 1} {
 		t.Run(fmt.Sprintf("stale-%d", staleNodes), func(t *testing.T) {
-			nhc := &fathomv1alpha1.NodeHealthCheck{
-				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Generation: 2, Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
-				Status: fathomv1alpha1.NodeHealthCheckStatus{
+			nhc := &fathomv1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Generation: 2, Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok-1"}},
+				Status: fathomv1.NodeHealthCheckStatus{
 					DesiredNodes: staleNodes,
 					Conditions:   []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "NoMatchingNodes", ObservedGeneration: 1}},
 				},
@@ -144,13 +144,13 @@ func TestWaitForRun_GrowsImplicitNodeHealthDeadlineFromObservedFleet(t *testing.
 			getCalls := 0
 			scheme, _ := newScheme()
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
-				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 						if err := c.Get(ctx, key, obj, opts...); err != nil {
 							return err
 						}
-						current := obj.(*fathomv1alpha1.NodeHealthCheck)
+						current := obj.(*fathomv1.NodeHealthCheck)
 						current.Status.DesiredNodes = 500
 						getCalls++
 						if getCalls > 1 {
@@ -172,19 +172,19 @@ func TestWaitForRun_GrowsImplicitNodeHealthDeadlineFromObservedFleet(t *testing.
 }
 
 func TestWaitForRun_ExplicitDeadlineDoesNotGrow(t *testing.T) {
-	nhc := &fathomv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+	nhc := &fathomv1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok-1"}},
 	}
 	target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
 	scheme, _ := newScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
-		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				if err := c.Get(ctx, key, obj, opts...); err != nil {
 					return err
 				}
-				current := obj.(*fathomv1alpha1.NodeHealthCheck)
+				current := obj.(*fathomv1.NodeHealthCheck)
 				current.Status.DesiredNodes = 500
 				return nil
 			},
@@ -200,13 +200,13 @@ func TestWaitForRun_ExplicitDeadlineDoesNotGrow(t *testing.T) {
 func TestWaitForRun_DeadlineCancelsBlockedRead(t *testing.T) {
 	for _, dynamic := range []bool{false, true} {
 		t.Run(fmt.Sprintf("dynamic-%t", dynamic), func(t *testing.T) {
-			nhc := &fathomv1alpha1.NodeHealthCheck{
-				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+			nhc := &fathomv1.NodeHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok-1"}},
 			}
 			target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
 			scheme, _ := newScheme()
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
-				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
 						<-ctx.Done()
@@ -227,21 +227,21 @@ func TestWaitForRun_DeadlineCancelsBlockedRead(t *testing.T) {
 }
 
 func TestWaitForRun_UnchangedFleetDoesNotResetDeadline(t *testing.T) {
-	nhc := &fathomv1alpha1.NodeHealthCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}},
+	nhc := &fathomv1.NodeHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok-1"}},
 	}
 	target := runTarget{ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"}, obj: nhc}
 	started := time.Now()
 	var calls atomic.Int32
 	scheme, _ := newScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(nhc).
-		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				if err := c.Get(ctx, key, obj, opts...); err != nil {
 					return err
 				}
-				obj.(*fathomv1alpha1.NodeHealthCheck).Status.DesiredNodes = 2
+				obj.(*fathomv1.NodeHealthCheck).Status.DesiredNodes = 2
 				calls.Add(1)
 				return nil
 			},
@@ -257,8 +257,8 @@ func TestWaitForRun_UnchangedFleetDoesNotResetDeadline(t *testing.T) {
 }
 
 func TestWaitForRun_CancellationStillStopsDynamicWait(t *testing.T) {
-	nhc := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{
-		Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"},
+	nhc := &fathomv1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{
+		Name: "nodes", Namespace: "team-a", Annotations: map[string]string{fathomv1.AnnotationRunNow: "tok-1"},
 	}}
 	f, fc := fakeFactory(t, nhc)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -283,11 +283,11 @@ func TestWaitForRun_ReadErrorIsReported(t *testing.T) {
 // succeeds.
 func TestWaitForRun_RetriesTransientErrors(t *testing.T) {
 	ac := addonCheck("team-a", "coredns")
-	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	ac.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 	scheme, _ := newScheme()
 	var calls atomic.Int32
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ac).
-		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}).
+		WithStatusSubresource(&fathomv1.AddonCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				if calls.Add(1) <= 2 {
@@ -314,7 +314,7 @@ func TestWaitForRun_RetriesTransientErrors(t *testing.T) {
 // forever, so --wait reports the operator's own reason instead of timing out.
 func TestWaitForRun_FailsFastWhenOperatorCannotRun(t *testing.T) {
 	ac := addonCheck("team-a", "broken")
-	ac.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+	ac.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 	ac.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "InvalidPolicy", Message: "unknown family nope"}}
 	f, fc := fakeFactory(t, ac)
 
@@ -328,7 +328,7 @@ func TestWaitForRun_FailsFastWhenOperatorCannotRun(t *testing.T) {
 	}
 	// A transient Ready=False (e.g. AdapterRunFailed) is not blocking.
 	ac2 := addonCheck("team-a", "flaky")
-	ac2.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-2"}
+	ac2.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-2"}
 	ac2.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse, Reason: "AdapterRunFailed", Message: "timeout"}}
 	f2, fc2 := fakeFactory(t, ac2)
 	res = f2.waitForRun(context.Background(), fc2, addonTarget("team-a", "flaky", ac2), "tok-2", 30*time.Millisecond)

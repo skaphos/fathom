@@ -64,12 +64,14 @@ func TestPurgeRefusesUnknownKinds(t *testing.T) {
 // the version this binary was compiled against: the storage version when it
 // is served, else the first served one. Only a CRD serving nothing refuses.
 func TestRefuseUnknownKindsReportsTheServedVersion(t *testing.T) {
-	crds := liveCRDs(t, "0.6.0", func(c *apiextensionsv1.CustomResourceDefinition) {
+	crds := liveCRDs(t, "0.7.0", func(c *apiextensionsv1.CustomResourceDefinition) {
 		if c.Name != dnsCRD {
 			return
 		}
+		// A future release that moved DNSCheck on to v2: the compiled-in
+		// version is unserved, the live one is what gets enumerated.
 		next := *c.Spec.Versions[0].DeepCopy()
-		next.Name = "v1"
+		next.Name = "v2"
 		c.Spec.Versions[0].Served, c.Spec.Versions[0].Storage = false, false
 		c.Spec.Versions = append(c.Spec.Versions, next)
 	})
@@ -78,11 +80,14 @@ func TestRefuseUnknownKindsReportsTheServedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("refuseUnknownKinds: %v", err)
 	}
-	if live["DNSCheck"] != "v1" {
-		t.Errorf("DNSCheck served version = %q, want v1", live["DNSCheck"])
+	if live["DNSCheck"] != "v2" {
+		t.Errorf("DNSCheck served version = %q, want v2", live["DNSCheck"])
 	}
-	if live["AddonCheck"] != "v1alpha1" {
-		t.Errorf("AddonCheck served version = %q, want v1alpha1", live["AddonCheck"])
+	if live["AddonCheck"] != "v1" {
+		t.Errorf("AddonCheck served version = %q, want v1", live["AddonCheck"])
+	}
+	if live["AddonDefinition"] != "v1alpha1" {
+		t.Errorf("AddonDefinition served version = %q, want v1alpha1", live["AddonDefinition"])
 	}
 	if _, ok := live["Widget"]; ok {
 		t.Errorf("a kind with no CRD must not be reported live: %v", live)

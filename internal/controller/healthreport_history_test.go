@@ -17,18 +17,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 var pruneTestLabels = map[string]string{
-	fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-	fathomv1alpha1.LabelHealthReportSourceName: "check",
+	fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+	fathomv1.LabelHealthReportSourceName: "check",
 }
 
 func pruneTestClient(t *testing.T, reports ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(reports...).Build()
@@ -36,7 +36,7 @@ func pruneTestClient(t *testing.T, reports ...client.Object) client.Client {
 
 func remainingPruneTestReports(t *testing.T, c client.Client) []string {
 	t.Helper()
-	var list fathomv1alpha1.HealthReportList
+	var list fathomv1.HealthReportList
 	if err := c.List(context.Background(), &list, client.InNamespace("default")); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func remainingPruneTestReports(t *testing.T, c client.Client) []string {
 	return names
 }
 
-func observedPruneTestReport(name string, created, observed metav1.Time) *fathomv1alpha1.HealthReport {
+func observedPruneTestReport(name string, created, observed metav1.Time) *fathomv1.HealthReport {
 	r := healthReportForPruneTest(name, created)
 	r.Spec.ObservedAt = observed
 	return r
@@ -142,7 +142,7 @@ func TestPruneHealthReportsHonoursTheLabelSelector(t *testing.T) {
 	t.Parallel()
 	created := metav1.NewTime(time.Unix(1_700_000_000, 0))
 	other := healthReportForPruneTest("other-check", created)
-	other.Labels[fathomv1alpha1.LabelHealthReportSourceName] = "other"
+	other.Labels[fathomv1.LabelHealthReportSourceName] = "other"
 	c := pruneTestClient(t,
 		healthReportForPruneTest("a", created),
 		healthReportForPruneTest("b", created),

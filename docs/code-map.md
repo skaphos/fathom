@@ -14,7 +14,8 @@ for and the key entrypoints to start reading from. For the design rationale see
 | Path | Responsibility |
 | --- | --- |
 | `cmd/` | Binary entrypoints (`main.go` operator, `probe/` probe binary, `node-agent/` node-scoped agent for `NodeCertificateCheck` and `NodeHealthCheck`, `fathomctl/` CLI). |
-| `api/v1alpha1/` | CRD Go types and generated deepcopy. |
+| `api/v1/` | The stable check-kind CRD Go types and generated deepcopy. |
+| `api/v1alpha1/` | The alpha runtime definition CRD Go types and generated deepcopy. |
 | `internal/app/` | cobra/viper wiring, options, scheme, manager construction. |
 | `internal/cli/` | The `fathomctl` command tree, client factory, kind table, and verdict normalisation. |
 | `internal/controller/` | The six reconcilers. |
@@ -47,9 +48,10 @@ for and the key entrypoints to start reading from. For the design rationale see
   convention). All real logic is in `internal/cli`. Ships as per-platform
   archives (`scripts/fathomctl-dist.sh`), not as an image.
 
-## `api/v1alpha1/` — CRD types
+## `api/v1/` and `api/v1alpha1/` — CRD types
 
-Defines the nine kinds in group `fathom.skaphos.io/v1alpha1`. One file per kind
+`api/v1` defines the seven stable check kinds at `fathom.skaphos.io/v1`;
+`api/v1alpha1` defines the two runtime definition kinds. One file per kind
 (`addoncheck_types.go`, `dnscheck_types.go`, `healthcheck_types.go`,
 `clusterhealth_types.go`, `healthreport_types.go`,
 `nodecertificatecheck_types.go`, `nodehealthcheck_types.go`,
@@ -77,7 +79,7 @@ API, deliberately free of `internal/app`, `internal/adapter`, and
   the injectable seams (loader, client constructor, stdin, terminal check,
   poll interval) the tests use instead of a cluster.
 - `kinds.go` — the descriptor table: every kind's spellings and CLI alias,
-  scope, whether it runs itself, `Paused`, `Snapshot`, `DefaultTimeout`, and
+  scope, whether it runs itself, `Snapshot`, `DefaultTimeout`, and
   `Sources` (how a derived kind resolves to executable checks).
 - `snapshot.go` — one verdict normalisation per kind, shared by `ls`,
   `describe`, and `run --wait`.
@@ -98,7 +100,7 @@ The unit-testable seam between `cmd/main.go` and controller-runtime.
   `DefaultProbeImage`, `DefaultNodeAgentImage`, and `DefaultConfigPath` live
   here. See
   [reference/configuration.md](reference/configuration.md).
-- `run.go` — `NewScheme` (registers client-go, fathom v1alpha1, and
+- `run.go` — `NewScheme` (registers client-go, fathom v1 and v1alpha1, and
   apiextensions/v1), `BuildManagerOptions` (Options → `ctrl.Options` + cert
   watchers), `DefaultControllers` (constructs the six reconcilers),
   `BuildAdapterRegistry` / `builtInAdapters` (registry assembly), and `Run`
@@ -162,7 +164,7 @@ binary stays small.
 - `types.go` — the wire contract: `Item` (a resolved check the agent
   evaluates), `CheckResult`, `NodeReport`, the `Type*` string constants
   mirroring the API enum, and `WorstOutcome` (Skipped is informational, matching
-  `api/v1alpha1.WorstResult`).
+  `api/v1.WorstResult`).
 - `wire.go` — kind-qualified report ConfigMap names (`nodehealth-<check>-…`,
   so a `NodeHealthCheck` and a `NodeCertificateCheck` sharing a name never
   collide), JSON encoding for reports and items, and `VerifyReportBinding`,
@@ -214,7 +216,7 @@ All workflows are wrapped as tasks (`go -C tools tool task --list`). The ones
 that touch this documentation:
 
 - `task docs:api-ref` — regenerates [reference/api.md](reference/api.md) from the
-  `api/v1alpha1` doc comments via `crd-ref-docs` (config in
+  `api/` doc comments (both group versions) via `crd-ref-docs` (config in
   `docs/.crd-ref-docs.yaml`).
 - `task verify-generated` — re-runs all generators (manifests, deepcopy,
   helm:sync, docs:api-ref) and fails if anything drifted from what's committed.

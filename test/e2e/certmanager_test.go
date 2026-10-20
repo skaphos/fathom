@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	certManagerSamplePath = "config/samples/fathom_v1alpha1_addoncheck.yaml"
+	certManagerSamplePath = "config/samples/fathom_v1_addoncheck.yaml"
 	certManagerSampleName = "addoncheck-sample"
 	certManagerSampleNS   = "default"
 	certManagerAddonNS    = "cert-manager"

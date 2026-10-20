@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 const defaultReportsLimit = 10
@@ -87,7 +87,7 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 	out := cmd.OutOrStdout()
 
 	if opts.report != "" {
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		if err := c.Get(ctx, types.NamespacedName{Namespace: source.Namespace, Name: opts.report}, report); err != nil {
 			if apierrors.IsNotFound(err) {
 				return fmt.Errorf("HealthReport %q not found in namespace %s", opts.report, source.Namespace)
@@ -96,7 +96,7 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 		}
 		// The name is global within the namespace; make sure the report is the
 		// target's before printing it under the target's banner.
-		if kind, name := report.Labels[fathomv1alpha1.LabelHealthReportSourceKind], report.Labels[fathomv1alpha1.LabelHealthReportSourceName]; kind != source.Kind.Kind || name != source.Name {
+		if kind, name := report.Labels[fathomv1.LabelHealthReportSourceKind], report.Labels[fathomv1.LabelHealthReportSourceName]; kind != source.Kind.Kind || name != source.Name {
 			return fmt.Errorf("HealthReport %q belongs to %s/%s, not %s", opts.report, strings.ToLower(kind), name, source)
 		}
 		if f.opts.output.structured() {
@@ -109,14 +109,14 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 		return nil
 	}
 
-	list := &fathomv1alpha1.HealthReportList{}
+	list := &fathomv1.HealthReportList{}
 	if err := c.List(ctx, list, client.InNamespace(source.Namespace), client.MatchingLabels{
-		fathomv1alpha1.LabelHealthReportSourceKind: source.Kind.Kind,
-		fathomv1alpha1.LabelHealthReportSourceName: source.Name,
+		fathomv1.LabelHealthReportSourceKind: source.Kind.Kind,
+		fathomv1.LabelHealthReportSourceName: source.Name,
 	}); err != nil {
 		return fmt.Errorf("list HealthReports for %s: %w", source, err)
 	}
-	reports := make([]*fathomv1alpha1.HealthReport, 0, len(list.Items))
+	reports := make([]*fathomv1.HealthReport, 0, len(list.Items))
 	for i := range list.Items {
 		reports = append(reports, &list.Items[i])
 	}
@@ -126,7 +126,7 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 	// computed over the full history before --since and --limit trim the view.
 	changes := make(map[string]string, len(reports))
 	for i, r := range reports {
-		var older *fathomv1alpha1.HealthReport
+		var older *fathomv1.HealthReport
 		if i+1 < len(reports) {
 			older = reports[i+1]
 		}
@@ -204,7 +204,7 @@ func reportSource(ctx context.Context, c client.Client, ref checkRef) (checkRef,
 	return checkRef{}, fmt.Errorf("%s has no reports of its own; query one of its sources: %s", ref, strings.Join(names, ", "))
 }
 
-func sortReportsNewestFirst(reports []*fathomv1alpha1.HealthReport) {
+func sortReportsNewestFirst(reports []*fathomv1.HealthReport) {
 	sort.SliceStable(reports, func(i, j int) bool {
 		a, b := reports[i].Spec.ObservedAt.Time, reports[j].Spec.ObservedAt.Time
 		if !a.Equal(b) {
@@ -216,7 +216,7 @@ func sortReportsNewestFirst(reports []*fathomv1alpha1.HealthReport) {
 
 // reportChange describes what a report changed relative to the next-older
 // one: the verdict, some per-check results, or nothing.
-func reportChange(newer, older *fathomv1alpha1.HealthReport) string {
+func reportChange(newer, older *fathomv1.HealthReport) string {
 	if older == nil {
 		return "first"
 	}
@@ -236,13 +236,13 @@ func reportChange(newer, older *fathomv1alpha1.HealthReport) string {
 // the discriminating details — type and path — are part of the key. Without
 // them the last item per node overwrote the rest and a changed DiskHeadroom
 // beside an unchanged final item read as "unchanged".
-func checkKey(c fathomv1alpha1.HealthReportCheck) string {
+func checkKey(c fathomv1.HealthReportCheck) string {
 	return c.Family + "|" + c.TargetRef.Kind + "/" + c.TargetRef.Namespace + "/" + c.TargetRef.Name +
 		"|" + c.Details["type"] + "|" + c.Details["path"]
 }
 
-func changedCheckCount(newer, older *fathomv1alpha1.HealthReport) int {
-	prev := make(map[string]fathomv1alpha1.HealthReportResult, len(older.Spec.Checks))
+func changedCheckCount(newer, older *fathomv1.HealthReport) int {
+	prev := make(map[string]fathomv1.HealthReportResult, len(older.Spec.Checks))
 	for _, c := range older.Spec.Checks {
 		prev[checkKey(c)] = c.Result
 	}
@@ -265,9 +265,9 @@ func changedCheckCount(newer, older *fathomv1alpha1.HealthReport) int {
 
 // reportSummary derives a one-line summary: the report itself carries none,
 // so the first check that shares the report's verdict explains it.
-func reportSummary(r *fathomv1alpha1.HealthReport) string {
+func reportSummary(r *fathomv1.HealthReport) string {
 	n := len(r.Spec.Checks)
-	if r.Spec.Result == fathomv1alpha1.HealthReportResultPass || n == 0 {
+	if r.Spec.Result == fathomv1.HealthReportResultPass || n == 0 {
 		return fmt.Sprintf("%d check(s) %s", n, orDash(string(r.Spec.Result)))
 	}
 	for _, c := range r.Spec.Checks {
@@ -281,7 +281,7 @@ func reportSummary(r *fathomv1alpha1.HealthReport) string {
 	return fmt.Sprintf("%d check(s), worst %s", n, r.Spec.Result)
 }
 
-func renderReport(w io.Writer, r *fathomv1alpha1.HealthReport, now time.Time) {
+func renderReport(w io.Writer, r *fathomv1.HealthReport, now time.Time) {
 	d := &describer{w: w, now: now}
 	d.line("Name", r.Name)
 	d.line("Namespace", r.Namespace)

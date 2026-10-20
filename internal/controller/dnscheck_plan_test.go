@@ -13,7 +13,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func dur(d time.Duration) *metav1.Duration { return &metav1.Duration{Duration: d} }
@@ -35,16 +35,16 @@ func pairKeys(pairs []dnsPair) []string {
 func TestExpandDNSPairs(t *testing.T) {
 	cases := []struct {
 		name string
-		spec fathomv1alpha1.DNSCheckSpec
+		spec fathomv1.DNSCheckSpec
 		want []string
 	}{
 		{
 			// FR-007 / FR-038: no declared vantage point still means one — the
 			// implicit "cluster" one — not zero.
 			name: "no resolvers yields one implicit cluster pair per target",
-			spec: fathomv1alpha1.DNSCheckSpec{Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			spec: fathomv1.DNSCheckSpec{Targets: []fathomv1.DNSTarget{
+				{Name: "a.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "b.example.com", RecordType: fathomv1.DNSRecordA},
 			}},
 			want: []string{"a.example.com|A|cluster", "b.example.com|A|cluster"},
 		},
@@ -52,18 +52,18 @@ func TestExpandDNSPairs(t *testing.T) {
 			// FR-035: a target naming nothing fans out across every declared
 			// vantage point.
 			name: "target without an override fans out across all vantage points",
-			spec: fathomv1alpha1.DNSCheckSpec{
-				Targets:   []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
-				Resolvers: []fathomv1alpha1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1alpha1.DNSResolverNode}},
+			spec: fathomv1.DNSCheckSpec{
+				Targets:   []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
+				Resolvers: []fathomv1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1.DNSResolverNode}},
 			},
 			want: []string{"a.example.com|A|up", "a.example.com|A|node"},
 		},
 		{
 			// FR-035: naming one means exactly one, not one-plus-the-fan-out.
 			name: "target naming a vantage point yields exactly one pair",
-			spec: fathomv1alpha1.DNSCheckSpec{
-				Targets:   []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA, Resolver: "node"}},
-				Resolvers: []fathomv1alpha1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1alpha1.DNSResolverNode}},
+			spec: fathomv1.DNSCheckSpec{
+				Targets:   []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA, Resolver: "node"}},
+				Resolvers: []fathomv1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1.DNSResolverNode}},
 			},
 			want: []string{"a.example.com|A|node"},
 		},
@@ -71,25 +71,25 @@ func TestExpandDNSPairs(t *testing.T) {
 			// Admission permits "cluster" unconditionally, so it must resolve to
 			// the implicit vantage point even when the check declares its own.
 			name: "reserved cluster name resolves even alongside declared resolvers",
-			spec: fathomv1alpha1.DNSCheckSpec{
-				Targets:   []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA, Resolver: "cluster"}},
-				Resolvers: []fathomv1alpha1.DNSResolver{{Name: "up"}},
+			spec: fathomv1.DNSCheckSpec{
+				Targets:   []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA, Resolver: "cluster"}},
+				Resolvers: []fathomv1.DNSResolver{{Name: "up"}},
 			},
 			want: []string{"a.example.com|A|cluster"},
 		},
 		{
 			name: "record type defaults to Host",
-			spec: fathomv1alpha1.DNSCheckSpec{Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com"}}},
+			spec: fathomv1.DNSCheckSpec{Targets: []fathomv1.DNSTarget{{Name: "a.example.com"}}},
 			want: []string{"a.example.com|Host|cluster"},
 		},
 		{
 			name: "mixed overrides preserve declaration order",
-			spec: fathomv1alpha1.DNSCheckSpec{
-				Targets: []fathomv1alpha1.DNSTarget{
-					{Name: "fan.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-					{Name: "pin.example.com", RecordType: fathomv1alpha1.DNSRecordA, Resolver: "up"},
+			spec: fathomv1.DNSCheckSpec{
+				Targets: []fathomv1.DNSTarget{
+					{Name: "fan.example.com", RecordType: fathomv1.DNSRecordA},
+					{Name: "pin.example.com", RecordType: fathomv1.DNSRecordA, Resolver: "up"},
 				},
-				Resolvers: []fathomv1alpha1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1alpha1.DNSResolverNode}},
+				Resolvers: []fathomv1.DNSResolver{{Name: "up"}, {Name: "node", From: fathomv1.DNSResolverNode}},
 			},
 			want: []string{"fan.example.com|A|up", "fan.example.com|A|node", "pin.example.com|A|up"},
 		},
@@ -98,9 +98,9 @@ func TestExpandDNSPairs(t *testing.T) {
 			// that predates the rule. A reported pair explains itself; a silently
 			// missing one does not.
 			name: "unknown resolver still yields a pair rather than vanishing",
-			spec: fathomv1alpha1.DNSCheckSpec{
-				Targets:   []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA, Resolver: "ghost"}},
-				Resolvers: []fathomv1alpha1.DNSResolver{{Name: "up"}},
+			spec: fathomv1.DNSCheckSpec{
+				Targets:   []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA, Resolver: "ghost"}},
+				Resolvers: []fathomv1.DNSResolver{{Name: "up"}},
 			},
 			want: []string{"a.example.com|A|ghost"},
 		},
@@ -120,14 +120,14 @@ func TestExpandDNSPairs(t *testing.T) {
 // is computed from. If a schema cap moves, this fails — deliberately, because
 // the ceiling is part of the published contract.
 func TestExpandDNSPairsAtSchemaMaximum(t *testing.T) {
-	spec := fathomv1alpha1.DNSCheckSpec{}
+	spec := fathomv1.DNSCheckSpec{}
 	for i := range 16 {
-		spec.Targets = append(spec.Targets, fathomv1alpha1.DNSTarget{
-			Name: fmt.Sprintf("name-%02d.example.com", i), RecordType: fathomv1alpha1.DNSRecordA,
+		spec.Targets = append(spec.Targets, fathomv1.DNSTarget{
+			Name: fmt.Sprintf("name-%02d.example.com", i), RecordType: fathomv1.DNSRecordA,
 		})
 	}
 	for i := range 3 {
-		spec.Resolvers = append(spec.Resolvers, fathomv1alpha1.DNSResolver{Name: fmt.Sprintf("r%d", i)})
+		spec.Resolvers = append(spec.Resolvers, fathomv1.DNSResolver{Name: fmt.Sprintf("r%d", i)})
 	}
 	if got := len(expandDNSPairs(&spec)); got != 48 {
 		t.Errorf("pairs at schema maximum: got %d, want 48", got)
@@ -154,7 +154,7 @@ func TestDNSCheckCadence(t *testing.T) {
 		{
 			name:     "sub-floor values are raised, not rejected",
 			interval: dur(time.Second), timeout: dur(100 * time.Millisecond),
-			wantInterval: fathomv1alpha1.MinCheckInterval, wantRunBound: fathomv1alpha1.MinCheckTimeout,
+			wantInterval: fathomv1.MinCheckInterval, wantRunBound: fathomv1.MinCheckTimeout,
 		},
 		{
 			// FR-104a. Admission rejects timeout > interval, so this can only be
@@ -168,7 +168,7 @@ func TestDNSCheckCadence(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			check := &fathomv1alpha1.DNSCheck{Spec: fathomv1alpha1.DNSCheckSpec{Interval: tc.interval, Timeout: tc.timeout}}
+			check := &fathomv1.DNSCheck{Spec: fathomv1.DNSCheckSpec{Interval: tc.interval, Timeout: tc.timeout}}
 			if got := dnsCheckInterval(check); got != tc.wantInterval {
 				t.Errorf("interval: got %v, want %v", got, tc.wantInterval)
 			}
@@ -279,8 +279,8 @@ func outcomes(results ...string) []dnsPairOutcome {
 	for i, r := range results {
 		name := fmt.Sprintf("n%02d.example.com", i)
 		out = append(out, dnsPairOutcome{
-			pair:   dnsPair{Name: name, RecordType: fathomv1alpha1.DNSRecordA, VantagePoint: implicitDNSVantagePoint()},
-			result: fathomv1alpha1.DNSTargetResult{Name: name, RecordType: fathomv1alpha1.DNSRecordA, Resolver: "cluster", Result: r},
+			pair:   dnsPair{Name: name, RecordType: fathomv1.DNSRecordA, VantagePoint: implicitDNSVantagePoint()},
+			result: fathomv1.DNSTargetResult{Name: name, RecordType: fathomv1.DNSRecordA, Resolver: "cluster", Result: r},
 		})
 	}
 	return out
@@ -298,28 +298,28 @@ func TestFoldDNSVerdict(t *testing.T) {
 	cases := []struct {
 		name    string
 		results []string
-		want    fathomv1alpha1.HealthReportResult
+		want    fathomv1.HealthReportResult
 	}{
-		{name: "all passing", results: []string{"Pass", "Pass"}, want: fathomv1alpha1.HealthReportResultPass},
-		{name: "one failure dominates passes", results: []string{"Pass", "Fail", "Pass"}, want: fathomv1alpha1.HealthReportResultFail},
-		{name: "error outranks failure", results: []string{"Fail", "Error"}, want: fathomv1alpha1.HealthReportResultError},
+		{name: "all passing", results: []string{"Pass", "Pass"}, want: fathomv1.HealthReportResultPass},
+		{name: "one failure dominates passes", results: []string{"Pass", "Fail", "Pass"}, want: fathomv1.HealthReportResultFail},
+		{name: "error outranks failure", results: []string{"Fail", "Error"}, want: fathomv1.HealthReportResultError},
 		{
 			// FR-106, the case that decided the clarify question. Skipped would
 			// have reported Pass here — green on one sixth of the evidence.
 			name:    "truncated run degrades to Unknown rather than reporting green",
 			results: append(repeat("Pass", 8), repeat("Unknown", 40)...),
-			want:    fathomv1alpha1.HealthReportResultUnknown,
+			want:    fathomv1.HealthReportResultUnknown,
 		},
 		{
 			// The other half of FR-106: incomplete evidence must not mask a real
 			// failure among the pairs that did run.
 			name:    "a real failure still wins against mostly-unreached",
 			results: append([]string{"Fail"}, repeat("Unknown", 47)...),
-			want:    fathomv1alpha1.HealthReportResultFail,
+			want:    fathomv1.HealthReportResultFail,
 		},
-		{name: "unknown outranks warn", results: []string{"Warn", "Unknown"}, want: fathomv1alpha1.HealthReportResultUnknown},
-		{name: "skipped never wins against a pass", results: []string{"Pass", "Skipped"}, want: fathomv1alpha1.HealthReportResultPass},
-		{name: "all skipped folds to skipped", results: []string{"Skipped", "Skipped"}, want: fathomv1alpha1.HealthReportResultSkipped},
+		{name: "unknown outranks warn", results: []string{"Warn", "Unknown"}, want: fathomv1.HealthReportResultUnknown},
+		{name: "skipped never wins against a pass", results: []string{"Pass", "Skipped"}, want: fathomv1.HealthReportResultPass},
+		{name: "all skipped folds to skipped", results: []string{"Skipped", "Skipped"}, want: fathomv1.HealthReportResultSkipped},
 	}
 
 	for _, tc := range cases {
@@ -342,7 +342,7 @@ func TestCountUnreachedDNSPairs(t *testing.T) {
 
 func TestSummarizeDNSRun(t *testing.T) {
 	t.Run("passing run states scope", func(t *testing.T) {
-		got := summarizeDNSRun(outcomes("Pass", "Pass"), fathomv1alpha1.HealthReportResultPass, 0)
+		got := summarizeDNSRun(outcomes("Pass", "Pass"), fathomv1.HealthReportResultPass, 0)
 		if !strings.Contains(got, "2") || !strings.Contains(got, "resolved as expected") {
 			t.Errorf("summary: %q", got)
 		}
@@ -353,14 +353,14 @@ func TestSummarizeDNSRun(t *testing.T) {
 	t.Run("negative assertion failure names its polarity", func(t *testing.T) {
 		out := outcomes("Fail")
 		out[0].pair.Absent = true
-		got := summarizeDNSRun(out, fathomv1alpha1.HealthReportResultFail, 0)
+		got := summarizeDNSRun(out, fathomv1.HealthReportResultFail, 0)
 		if !strings.Contains(got, "asserted absent but resolved") {
 			t.Errorf("summary must name the polarity, got %q", got)
 		}
 	})
 
 	t.Run("positive assertion failure reads as a resolution failure", func(t *testing.T) {
-		got := summarizeDNSRun(outcomes("Fail"), fathomv1alpha1.HealthReportResultFail, 0)
+		got := summarizeDNSRun(outcomes("Fail"), fathomv1.HealthReportResultFail, 0)
 		if !strings.Contains(got, "did not resolve as expected") {
 			t.Errorf("summary: %q", got)
 		}
@@ -373,7 +373,7 @@ func TestSummarizeDNSRun(t *testing.T) {
 	// an operator their run bound was too small.
 	t.Run("truncated run names the unreached count and the remedy", func(t *testing.T) {
 		got := summarizeDNSRun(outcomes(append(repeat("Pass", 2), repeat("Unknown", 3)...)...),
-			fathomv1alpha1.HealthReportResultUnknown, 3)
+			fathomv1.HealthReportResultUnknown, 3)
 		if !strings.Contains(got, "3 pair(s) not reached") {
 			t.Errorf("summary must name the unreached count, got %q", got)
 		}
@@ -383,7 +383,7 @@ func TestSummarizeDNSRun(t *testing.T) {
 	})
 
 	t.Run("empty run says so", func(t *testing.T) {
-		if got := summarizeDNSRun(nil, fathomv1alpha1.HealthReportResultSkipped, 0); got != "no targets to evaluate" {
+		if got := summarizeDNSRun(nil, fathomv1.HealthReportResultSkipped, 0); got != "no targets to evaluate" {
 			t.Errorf("got %q", got)
 		}
 	})
@@ -393,7 +393,7 @@ func TestSummarizeDNSRun(t *testing.T) {
 	t.Run("summary stays within the schema bound", func(t *testing.T) {
 		long := outcomes("Fail")
 		long[0].pair.Name = strings.Repeat("ü", 4000)
-		got := summarizeDNSRun(long, fathomv1alpha1.HealthReportResultFail, 0)
+		got := summarizeDNSRun(long, fathomv1.HealthReportResultFail, 0)
 		if n := len([]rune(got)); n > 1024 {
 			t.Errorf("summary is %d runes, exceeds the 1024 bound", n)
 		}
@@ -405,39 +405,39 @@ func TestSummarizeDNSRun(t *testing.T) {
 func TestDNSCheckShouldPersistReport(t *testing.T) {
 	cases := []struct {
 		name    string
-		before  *fathomv1alpha1.DNSCheckStatus
-		verdict fathomv1alpha1.HealthReportResult
+		before  *fathomv1.DNSCheckStatus
+		verdict fathomv1.HealthReportResult
 		want    bool
 	}{
 		{
 			name: "nil status is a first run", before: nil,
-			verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+			verdict: fathomv1.HealthReportResultPass, want: true,
 		},
 		{
 			name:   "no report yet is a first run",
-			before: &fathomv1alpha1.DNSCheckStatus{}, verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+			before: &fathomv1.DNSCheckStatus{}, verdict: fathomv1.HealthReportResultPass, want: true,
 		},
 		{
 			name:    "unchanged verdict writes nothing",
-			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
-			verdict: fathomv1alpha1.HealthReportResultPass, want: false,
+			before:  &fathomv1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
+			verdict: fathomv1.HealthReportResultPass, want: false,
 		},
 		{
 			name:    "changed verdict writes a record",
-			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
-			verdict: fathomv1alpha1.HealthReportResultFail, want: true,
+			before:  &fathomv1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Pass"},
+			verdict: fathomv1.HealthReportResultFail, want: true,
 		},
 		{
 			name:    "recovery is a change too",
-			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Fail"},
-			verdict: fathomv1alpha1.HealthReportResultPass, want: true,
+			before:  &fathomv1.DNSCheckStatus{LastReportName: "r-1", LastResult: "Fail"},
+			verdict: fathomv1.HealthReportResultPass, want: true,
 		},
 		{
 			// A report whose creation failed leaves the name empty, so the next
 			// run must retry rather than treat the transition as recorded.
 			name:    "a failed write is retried on the next run",
-			before:  &fathomv1alpha1.DNSCheckStatus{LastReportName: "", LastResult: "Fail"},
-			verdict: fathomv1alpha1.HealthReportResultFail, want: true,
+			before:  &fathomv1.DNSCheckStatus{LastReportName: "", LastResult: "Fail"},
+			verdict: fathomv1.HealthReportResultFail, want: true,
 		},
 	}
 

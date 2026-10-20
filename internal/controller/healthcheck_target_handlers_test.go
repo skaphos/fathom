@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 type failingHealthCheckTargetClient struct {
@@ -35,7 +35,7 @@ func (c failingHealthCheckTargetClient) Get(
 	opts ...client.GetOption,
 ) error {
 	switch obj.(type) {
-	case *fathomv1alpha1.AddonCheck, *fathomv1alpha1.DNSCheck, *fathomv1alpha1.NodeCertificateCheck, *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.AddonCheck, *fathomv1.DNSCheck, *fathomv1.NodeCertificateCheck, *fathomv1.NodeHealthCheck:
 		return c.err
 	default:
 		return c.Client.Get(ctx, key, obj, opts...)
@@ -46,10 +46,10 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 	t.Parallel()
 
 	runTime := metav1.NewTime(time.Now().Add(-time.Minute).UTC().Truncate(time.Second))
-	target := &fathomv1alpha1.AddonCheck{
+	target := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "source", Namespace: "wrapper-ns"},
-		Status: fathomv1alpha1.AddonCheckStatus{
-			LastResult:     string(fathomv1alpha1.HealthReportResultPass),
+		Status: fathomv1.AddonCheckStatus{
+			LastResult:     string(fathomv1.HealthReportResultPass),
 			LastRunTime:    &runTime,
 			LastReportName: "source-report",
 			Conditions: []metav1.Condition{{
@@ -60,17 +60,17 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 			}},
 		},
 	}
-	hc := &fathomv1alpha1.HealthCheck{
+	hc := &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "wrapper", Namespace: "wrapper-ns"},
-		Spec: fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{
+		Spec: fathomv1.HealthCheckSpec{CheckRef: fathomv1.CheckTargetRef{
 			Kind: healthCheckTargetKindAddonCheck,
 			Name: target.Name,
 		}},
 	}
 
 	identity := normalizeHealthCheckTarget(hc)
-	if identity.APIVersion != fathomv1alpha1.GroupVersion.String() {
-		t.Fatalf("normalized apiVersion = %q, want %q", identity.APIVersion, fathomv1alpha1.GroupVersion.String())
+	if identity.APIVersion != fathomv1.GroupVersion.String() {
+		t.Fatalf("normalized apiVersion = %q, want %q", identity.APIVersion, fathomv1.GroupVersion.String())
 	}
 	if identity.Namespace != hc.Namespace {
 		t.Fatalf("normalized namespace = %q, want %q", identity.Namespace, hc.Namespace)
@@ -86,7 +86,7 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 	}
 
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(target).Build()
@@ -97,11 +97,11 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read AddonCheck: %v", err)
 	}
-	if snapshot.Result != fathomv1alpha1.HealthReportResultPass || snapshot.Summary != "source is healthy" {
+	if snapshot.Result != fathomv1.HealthReportResultPass || snapshot.Summary != "source is healthy" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
-	if snapshot.Interval != fathomv1alpha1.DefaultAddonCheckInterval {
-		t.Fatalf("interval = %v, want %v", snapshot.Interval, fathomv1alpha1.DefaultAddonCheckInterval)
+	if snapshot.Interval != fathomv1.DefaultAddonCheckInterval {
+		t.Fatalf("interval = %v, want %v", snapshot.Interval, fathomv1.DefaultAddonCheckInterval)
 	}
 	if snapshot.SourceObservedAt == nil || !snapshot.SourceObservedAt.Equal(&runTime) {
 		t.Fatalf("observed time = %v, want %v", snapshot.SourceObservedAt, &runTime)
@@ -110,11 +110,11 @@ func TestAddonCheckTargetHandlerCompatibility(t *testing.T) {
 		t.Fatalf("report name = %q", snapshot.LastReportName)
 	}
 
-	hc.Status.Result = fathomv1alpha1.HealthReportResultFail
+	hc.Status.Result = fathomv1.HealthReportResultFail
 	hc.Status.Summary = "stale"
 	hc.Status.LastReportName = "stale-report"
 	applyHealthCheckTargetSnapshot(hc, snapshot)
-	if hc.Status.Result != fathomv1alpha1.HealthReportResultPass || hc.Status.Summary != "source is healthy" || hc.Status.LastReportName != "source-report" {
+	if hc.Status.Result != fathomv1.HealthReportResultPass || hc.Status.Summary != "source is healthy" || hc.Status.LastReportName != "source-report" {
 		t.Fatalf("snapshot did not replace status: %#v", hc.Status)
 	}
 
@@ -129,20 +129,20 @@ func TestAddonCheckTargetHandlerBoundsSummary(t *testing.T) {
 	t.Parallel()
 
 	message := strings.Repeat("界", healthCheckSummaryMaxLen+10)
-	target := &fathomv1alpha1.AddonCheck{
+	target := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "source", Namespace: "default"},
-		Status: fathomv1alpha1.AddonCheckStatus{Conditions: []metav1.Condition{{
+		Status: fathomv1.AddonCheckStatus{Conditions: []metav1.Condition{{
 			Type:    healthCheckConditionReady,
 			Status:  metav1.ConditionTrue,
 			Message: message,
 		}}},
 	}
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(target).Build()
-	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindAddonCheck)
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1.GroupVersion.String(), healthCheckTargetKindAddonCheck)
 	if !ok {
 		t.Fatal("AddonCheck handler not registered")
 	}
@@ -158,10 +158,10 @@ func TestAddonCheckTargetHandlerBoundsSummary(t *testing.T) {
 func TestNormalizeHealthCheckTargetPreservesExplicitIdentity(t *testing.T) {
 	t.Parallel()
 
-	hc := &fathomv1alpha1.HealthCheck{
+	hc := &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "wrapper-ns"},
-		Spec: fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{
-			APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Spec: fathomv1.HealthCheckSpec{CheckRef: fathomv1.CheckTargetRef{
+			APIVersion: fathomv1.GroupVersion.String(),
 			Kind:       healthCheckTargetKindAddonCheck,
 			Namespace:  "source-ns",
 			Name:       "source",
@@ -169,7 +169,7 @@ func TestNormalizeHealthCheckTargetPreservesExplicitIdentity(t *testing.T) {
 	}
 	got := normalizeHealthCheckTarget(hc)
 	want := healthCheckTargetIdentity{
-		APIVersion: fathomv1alpha1.GroupVersion.String(),
+		APIVersion: fathomv1.GroupVersion.String(),
 		Kind:       healthCheckTargetKindAddonCheck,
 		Namespace:  "source-ns",
 		Name:       "source",
@@ -183,13 +183,13 @@ func TestDNSCheckTargetHandlerProjection(t *testing.T) {
 	t.Parallel()
 
 	runTime := metav1.NewTime(time.Now().Add(-2 * time.Minute).UTC().Truncate(time.Second))
-	target := &fathomv1alpha1.DNSCheck{
+	target := &fathomv1.DNSCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "dns-source", Namespace: "source-ns"},
-		Spec: fathomv1alpha1.DNSCheckSpec{
+		Spec: fathomv1.DNSCheckSpec{
 			Interval: &metav1.Duration{Duration: 2 * time.Minute},
 		},
-		Status: fathomv1alpha1.DNSCheckStatus{
-			LastResult:     string(fathomv1alpha1.HealthReportResultFail),
+		Status: fathomv1.DNSCheckStatus{
+			LastResult:     string(fathomv1.HealthReportResultFail),
 			LastRunTime:    &runTime,
 			LastReportName: "dns-source-report",
 			Conditions: []metav1.Condition{{
@@ -201,11 +201,11 @@ func TestDNSCheckTargetHandlerProjection(t *testing.T) {
 		},
 	}
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(target).Build()
-	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindDNSCheck)
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1.GroupVersion.String(), healthCheckTargetKindDNSCheck)
 	if !ok {
 		t.Fatal("DNSCheck handler not registered")
 	}
@@ -214,7 +214,7 @@ func TestDNSCheckTargetHandlerProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read DNSCheck: %v", err)
 	}
-	if snapshot.Result != fathomv1alpha1.HealthReportResultFail || snapshot.Summary != "required DNS name did not resolve" {
+	if snapshot.Result != fathomv1.HealthReportResultFail || snapshot.Summary != "required DNS name did not resolve" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	if snapshot.Interval != 2*time.Minute {
@@ -233,13 +233,13 @@ func TestDNSCheckTargetHandlerProjection(t *testing.T) {
 		namespace  string
 	}{
 		{name: "empty apiVersion defaults", namespace: "source-ns"},
-		{name: "explicit current apiVersion", apiVersion: fathomv1alpha1.GroupVersion.String(), namespace: "source-ns"},
-		{name: "empty namespace defaults", apiVersion: fathomv1alpha1.GroupVersion.String()},
+		{name: "explicit current apiVersion", apiVersion: fathomv1.GroupVersion.String(), namespace: "source-ns"},
+		{name: "empty namespace defaults", apiVersion: fathomv1.GroupVersion.String()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			hc := &fathomv1alpha1.HealthCheck{
+			hc := &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "wrapper", Namespace: "source-ns"},
-				Spec: fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{
+				Spec: fathomv1.HealthCheckSpec{CheckRef: fathomv1.CheckTargetRef{
 					APIVersion: tc.apiVersion,
 					Kind:       healthCheckTargetKindDNSCheck,
 					Namespace:  tc.namespace,
@@ -247,7 +247,7 @@ func TestDNSCheckTargetHandlerProjection(t *testing.T) {
 				}},
 			}
 			identity := normalizeHealthCheckTarget(hc)
-			if identity.APIVersion != fathomv1alpha1.GroupVersion.String() || identity.Namespace != target.Namespace {
+			if identity.APIVersion != fathomv1.GroupVersion.String() || identity.Namespace != target.Namespace {
 				t.Fatalf("normalized identity = %#v", identity)
 			}
 		})
@@ -259,10 +259,10 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 
 	runTime := metav1.NewTime(time.Now().Add(-time.Hour).UTC().Truncate(time.Second))
 	targets := []client.Object{
-		&fathomv1alpha1.NodeCertificateCheck{
+		&fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "default-cadence", Namespace: "source-ns"},
-			Status: fathomv1alpha1.NodeCertificateCheckStatus{
-				LastResult:     string(fathomv1alpha1.HealthReportResultWarn),
+			Status: fathomv1.NodeCertificateCheckStatus{
+				LastResult:     string(fathomv1.HealthReportResultWarn),
 				LastRunTime:    &runTime,
 				LastReportName: "node-report",
 				Conditions: []metav1.Condition{{
@@ -273,22 +273,22 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 				}},
 			},
 		},
-		&fathomv1alpha1.NodeCertificateCheck{
+		&fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "clamped-cadence", Namespace: "source-ns"},
-			Spec: fathomv1alpha1.NodeCertificateCheckSpec{
+			Spec: fathomv1.NodeCertificateCheckSpec{
 				Interval: &metav1.Duration{Duration: time.Second},
 			},
 		},
-		&fathomv1alpha1.NodeCertificateCheck{
+		&fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "empty-status", Namespace: "source-ns"},
 		},
 	}
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(targets...).Build()
-	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindNodeCertificateCheck)
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1.GroupVersion.String(), healthCheckTargetKindNodeCertificateCheck)
 	if !ok {
 		t.Fatal("NodeCertificateCheck handler not registered")
 	}
@@ -297,22 +297,22 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read NodeCertificateCheck: %v", err)
 	}
-	if snapshot.Result != fathomv1alpha1.HealthReportResultWarn || snapshot.Summary != "one certificate expires soon" {
+	if snapshot.Result != fathomv1.HealthReportResultWarn || snapshot.Summary != "one certificate expires soon" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	if snapshot.SourceObservedAt == nil || !snapshot.SourceObservedAt.Equal(&runTime) || snapshot.LastReportName != "node-report" {
 		t.Fatalf("source evidence = %#v", snapshot)
 	}
-	if snapshot.Interval != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
-		t.Fatalf("default interval = %v, want %v", snapshot.Interval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
+	if snapshot.Interval != fathomv1.DefaultNodeCertificateCheckInterval {
+		t.Fatalf("default interval = %v, want %v", snapshot.Interval, fathomv1.DefaultNodeCertificateCheckInterval)
 	}
 
 	clamped, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "clamped-cadence"})
 	if err != nil {
 		t.Fatalf("read clamped NodeCertificateCheck: %v", err)
 	}
-	if clamped.Interval != fathomv1alpha1.MinCheckInterval {
-		t.Fatalf("clamped interval = %v, want %v", clamped.Interval, fathomv1alpha1.MinCheckInterval)
+	if clamped.Interval != fathomv1.MinCheckInterval {
+		t.Fatalf("clamped interval = %v, want %v", clamped.Interval, fathomv1.MinCheckInterval)
 	}
 
 	empty, err := handler.read(context.Background(), cl, types.NamespacedName{Namespace: "source-ns", Name: "empty-status"})
@@ -322,8 +322,8 @@ func TestNodeCertificateCheckTargetHandlerProjection(t *testing.T) {
 	if empty.Result != "" || empty.Summary != "" || empty.SourceObservedAt != nil || empty.LastReportName != "" {
 		t.Fatalf("empty source invented status: %#v", empty)
 	}
-	if empty.Interval != fathomv1alpha1.DefaultNodeCertificateCheckInterval {
-		t.Fatalf("empty source interval = %v, want %v", empty.Interval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
+	if empty.Interval != fathomv1.DefaultNodeCertificateCheckInterval {
+		t.Fatalf("empty source interval = %v, want %v", empty.Interval, fathomv1.DefaultNodeCertificateCheckInterval)
 	}
 }
 
@@ -337,10 +337,10 @@ func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
 
 	runTime := metav1.NewTime(time.Now().Add(-time.Hour).UTC().Truncate(time.Second))
 	targets := []client.Object{
-		&fathomv1alpha1.NodeHealthCheck{
+		&fathomv1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "rolled-up", Namespace: "source-ns"},
-			Status: fathomv1alpha1.NodeHealthCheckStatus{
-				LastResult:     string(fathomv1alpha1.HealthReportResultFail),
+			Status: fathomv1.NodeHealthCheckStatus{
+				LastResult:     string(fathomv1.HealthReportResultFail),
 				Summary:        "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 3.0% of bytes free",
 				LastRunTime:    &runTime,
 				LastReportName: "node-health-report",
@@ -350,22 +350,22 @@ func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
 				}},
 			},
 		},
-		&fathomv1alpha1.NodeHealthCheck{
+		&fathomv1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "pre-rollup", Namespace: "source-ns"},
-			Spec:       fathomv1alpha1.NodeHealthCheckSpec{Interval: &metav1.Duration{Duration: time.Second}},
-			Status: fathomv1alpha1.NodeHealthCheckStatus{Conditions: []metav1.Condition{{
+			Spec:       fathomv1.NodeHealthCheckSpec{Interval: &metav1.Duration{Duration: time.Second}},
+			Status: fathomv1.NodeHealthCheckStatus{Conditions: []metav1.Condition{{
 				Type: healthCheckConditionReady, Status: metav1.ConditionFalse, Reason: "AwaitingReports",
 				Message: "Waiting for node-agents to publish fresh evaluations.",
 			}}},
 		},
-		&fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "empty-status", Namespace: "source-ns"}},
+		&fathomv1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "empty-status", Namespace: "source-ns"}},
 	}
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(targets...).Build()
-	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
 	if !ok {
 		t.Fatal("NodeHealthCheck handler not registered")
 	}
@@ -374,10 +374,10 @@ func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got.Result != fathomv1alpha1.HealthReportResultFail || !strings.HasPrefix(got.Summary, "1 of 2 node(s) passed; worst: node-b") {
+	if got.Result != fathomv1.HealthReportResultFail || !strings.HasPrefix(got.Summary, "1 of 2 node(s) passed; worst: node-b") {
 		t.Fatalf("rolled-up snapshot = %#v (summary must be the check's own, not the Ready message)", got)
 	}
-	if got.SourceObservedAt == nil || !got.SourceObservedAt.Equal(&runTime) || got.LastReportName != "node-health-report" || got.Interval != fathomv1alpha1.DefaultNodeHealthCheckInterval {
+	if got.SourceObservedAt == nil || !got.SourceObservedAt.Equal(&runTime) || got.LastReportName != "node-health-report" || got.Interval != fathomv1.DefaultNodeHealthCheckInterval {
 		t.Fatalf("rolled-up evidence/cadence = %#v", got)
 	}
 
@@ -388,7 +388,7 @@ func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
 	if pre.Summary != "Waiting for node-agents to publish fresh evaluations." || pre.Result != "" {
 		t.Fatalf("pre-rollup must fall back to the Ready message with no verdict: %#v", pre)
 	}
-	if pre.Interval != fathomv1alpha1.MinCheckInterval {
+	if pre.Interval != fathomv1.MinCheckInterval {
 		t.Fatalf("sub-floor interval must be clamped: %v", pre.Interval)
 	}
 
@@ -396,7 +396,7 @@ func TestNodeHealthCheckTargetHandlerProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read empty: %v", err)
 	}
-	if empty.Result != "" || empty.Summary != "" || empty.SourceObservedAt != nil || empty.LastReportName != "" || empty.Interval != fathomv1alpha1.DefaultNodeHealthCheckInterval {
+	if empty.Result != "" || empty.Summary != "" || empty.SourceObservedAt != nil || empty.LastReportName != "" || empty.Interval != fathomv1.DefaultNodeHealthCheckInterval {
 		t.Fatalf("empty source invented status: %#v", empty)
 	}
 }
@@ -405,7 +405,7 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 	t.Parallel()
 
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	baseClient := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -413,7 +413,7 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		ref          fathomv1alpha1.CheckTargetRef
+		ref          fathomv1.CheckTargetRef
 		cl           client.Client
 		wantReason   string
 		wantError    bool
@@ -421,14 +421,14 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 	}{
 		{
 			name: "unsupported api version",
-			ref: fathomv1alpha1.CheckTargetRef{
+			ref: fathomv1.CheckTargetRef{
 				APIVersion: "fathom.skaphos.io/v9", Kind: healthCheckTargetKindAddonCheck, Name: "source",
 			},
 			cl: baseClient, wantReason: "UnsupportedAPIVersion",
 		},
 		{
 			name: "unsupported kind",
-			ref: fathomv1alpha1.CheckTargetRef{
+			ref: fathomv1.CheckTargetRef{
 				Kind: "ReachabilityCheck", Name: "source",
 			},
 			cl: baseClient, wantReason: "UnsupportedKind",
@@ -443,26 +443,26 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 		tests = append(tests,
 			struct {
 				name         string
-				ref          fathomv1alpha1.CheckTargetRef
+				ref          fathomv1.CheckTargetRef
 				cl           client.Client
 				wantReason   string
 				wantError    bool
 				wantPreserve bool
 			}{
 				name: "missing " + kind,
-				ref:  fathomv1alpha1.CheckTargetRef{Kind: kind, Name: "missing"},
+				ref:  fathomv1.CheckTargetRef{Kind: kind, Name: "missing"},
 				cl:   baseClient, wantReason: "TargetNotFound",
 			},
 			struct {
 				name         string
-				ref          fathomv1alpha1.CheckTargetRef
+				ref          fathomv1.CheckTargetRef
 				cl           client.Client
 				wantReason   string
 				wantError    bool
 				wantPreserve bool
 			}{
 				name: "transient " + kind,
-				ref:  fathomv1alpha1.CheckTargetRef{Kind: kind, Name: "source"},
+				ref:  fathomv1.CheckTargetRef{Kind: kind, Name: "source"},
 				cl: failingHealthCheckTargetClient{
 					Client: baseClient,
 					err:    longLookupError,
@@ -474,11 +474,11 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			hc := &fathomv1alpha1.HealthCheck{
+			hc := &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "wrapper", Namespace: "default", Generation: 3},
-				Spec:       fathomv1alpha1.HealthCheckSpec{CheckRef: tc.ref},
-				Status: fathomv1alpha1.HealthCheckStatus{
-					Result:           fathomv1alpha1.HealthReportResultPass,
+				Spec:       fathomv1.HealthCheckSpec{CheckRef: tc.ref},
+				Status: fathomv1.HealthCheckStatus{
+					Result:           fathomv1.HealthReportResultPass,
 					Summary:          "last readable summary",
 					SourceInterval:   &metav1.Duration{Duration: time.Minute},
 					SourceObservedAt: &metav1.Time{Time: time.Unix(100, 0)},
@@ -497,7 +497,7 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 				t.Fatalf("Ready message has %d runes, max %d", len([]rune(ready.Message)), healthCheckConditionMessageMaxLen)
 			}
 			if tc.wantPreserve {
-				if hc.Status.Result != fathomv1alpha1.HealthReportResultPass || hc.Status.Summary != "last readable summary" ||
+				if hc.Status.Result != fathomv1.HealthReportResultPass || hc.Status.Summary != "last readable summary" ||
 					hc.Status.SourceInterval == nil || hc.Status.SourceObservedAt == nil || hc.Status.LastReportName != "last-readable-report" {
 					t.Fatalf("transient failure did not preserve snapshot: %#v", hc.Status)
 				}
@@ -517,16 +517,16 @@ func TestHealthCheckTargetReferenceFailures(t *testing.T) {
 func TestNodeHealthCheckTargetIntervalIsTheAgentCadence(t *testing.T) {
 	t.Parallel()
 	day := metav1.Duration{Duration: 24 * time.Hour}
-	target := &fathomv1alpha1.NodeHealthCheck{
+	target := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "daily", Namespace: "source-ns"},
-		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Interval: &day},
+		Spec:       fathomv1.NodeHealthCheckSpec{Interval: &day},
 	}
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add scheme: %v", err)
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(target).Build()
-	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1alpha1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
+	handler, ok := newHealthCheckTargetRegistry().lookup(fathomv1.GroupVersion.String(), healthCheckTargetKindNodeHealthCheck)
 	if !ok {
 		t.Fatal("NodeHealthCheck handler not registered")
 	}
@@ -534,7 +534,7 @@ func TestNodeHealthCheckTargetIntervalIsTheAgentCadence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got.Interval != fathomv1alpha1.MaxNodeHealthCheckAgentInterval {
-		t.Fatalf("SourceInterval = %v, want the %v agent cadence, not the 24h roll-up interval", got.Interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+	if got.Interval != fathomv1.MaxNodeHealthCheckAgentInterval {
+		t.Fatalf("SourceInterval = %v, want the %v agent cadence, not the 24h roll-up interval", got.Interval, fathomv1.MaxNodeHealthCheckAgentInterval)
 	}
 }

@@ -15,17 +15,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
-func report(ns, source, name string, age time.Duration, result fathomv1alpha1.HealthReportResult, checks ...fathomv1alpha1.HealthReportCheck) *fathomv1alpha1.HealthReport {
-	return &fathomv1alpha1.HealthReport{
+func report(ns, source, name string, age time.Duration, result fathomv1.HealthReportResult, checks ...fathomv1.HealthReportCheck) *fathomv1.HealthReport {
+	return &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: ns,
-			Labels: map[string]string{fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck", fathomv1alpha1.LabelHealthReportSourceName: source},
+			Labels: map[string]string{fathomv1.LabelHealthReportSourceKind: "AddonCheck", fathomv1.LabelHealthReportSourceName: source},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
-			SourceRef:   fathomv1alpha1.HealthReportTargetRef{Kind: "AddonCheck", Name: source},
+		Spec: fathomv1.HealthReportSpec{
+			SourceRef:   fathomv1.HealthReportTargetRef{Kind: "AddonCheck", Name: source},
 			Result:      result,
 			ObservedAt:  metav1.NewTime(time.Now().Add(-age)),
 			Checks:      checks,
@@ -34,9 +34,9 @@ func report(ns, source, name string, age time.Duration, result fathomv1alpha1.He
 	}
 }
 
-func check(family, target string, result fathomv1alpha1.HealthReportResult, summary string) fathomv1alpha1.HealthReportCheck {
-	return fathomv1alpha1.HealthReportCheck{Family: family, Result: result, Summary: summary,
-		TargetRef: fathomv1alpha1.HealthReportTargetRef{Kind: "Deployment", Namespace: "kube-system", Name: target}}
+func check(family, target string, result fathomv1.HealthReportResult, summary string) fathomv1.HealthReportCheck {
+	return fathomv1.HealthReportCheck{Family: family, Result: result, Summary: summary,
+		TargetRef: fathomv1.HealthReportTargetRef{Kind: "Deployment", Namespace: "kube-system", Name: target}}
 }
 
 // reportFixtures is five reports for coredns in shuffled creation order, one
@@ -135,9 +135,9 @@ func TestReports_LimitSinceAndReport(t *testing.T) {
 }
 
 func TestReports_DerivedKindsAndEmpty(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{
+	ch := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod"},
-		Status:     fathomv1alpha1.ClusterHealthStatus{Children: []fathomv1alpha1.ClusterHealthChildSummary{{Namespace: "team-a", Name: "web"}}},
+		Status:     fathomv1.ClusterHealthStatus{Children: []fathomv1.ClusterHealthChildSummary{{Namespace: "team-a", Name: "web"}}},
 	}
 	orphan := healthCheckFor("team-a", "orphan", "Pod", "x")
 	f, _ := fakeFactory(t, append(reportFixtures(), addonCheck("team-a", "coredns"), addonCheck("team-a", "quiet"),
@@ -204,7 +204,7 @@ func TestReportChange(t *testing.T) {
 	c := report("ns", "s", "c", 0, "Pass", check("f", "t1", "Pass", ""))
 	d := report("ns", "s", "d", 0, "Fail", check("f", "t1", "Fail", ""))
 	tests := []struct {
-		newer, older *fathomv1alpha1.HealthReport
+		newer, older *fathomv1.HealthReport
 		want         string
 	}{
 		{a, nil, "first"}, {a, a, "unchanged"}, {b, a, "1 check(s) changed"}, {c, a, "1 check(s) changed"}, {a, c, "1 check(s) changed"}, {d, a, "Pass→Fail"},
@@ -217,7 +217,7 @@ func TestReportChange(t *testing.T) {
 	if got := reportSummary(report("ns", "s", "e", 0, "Warn", check("f", "t", "Warn", ""))); got != "f: Warn" {
 		t.Errorf("summary without check summary = %q", got)
 	}
-	if got := reportSummary(&fathomv1alpha1.HealthReport{Spec: fathomv1alpha1.HealthReportSpec{Result: "Fail"}}); got != fmt.Sprintf("0 check(s) %s", "Fail") {
+	if got := reportSummary(&fathomv1.HealthReport{Spec: fathomv1.HealthReportSpec{Result: "Fail"}}); got != fmt.Sprintf("0 check(s) %s", "Fail") {
 		t.Errorf("summary with no checks = %q", got)
 	}
 }
@@ -228,15 +228,15 @@ func TestReportChange(t *testing.T) {
 // not be masked by an unchanged second.
 func TestChangedCheckCountKeysPerItem(t *testing.T) {
 	t.Parallel()
-	node := fathomv1alpha1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: "node-a"}
-	mk := func(disk, inode fathomv1alpha1.HealthReportResult) *fathomv1alpha1.HealthReport {
-		return &fathomv1alpha1.HealthReport{Spec: fathomv1alpha1.HealthReportSpec{Checks: []fathomv1alpha1.HealthReportCheck{
+	node := fathomv1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: "node-a"}
+	mk := func(disk, inode fathomv1.HealthReportResult) *fathomv1.HealthReport {
+		return &fathomv1.HealthReport{Spec: fathomv1.HealthReportSpec{Checks: []fathomv1.HealthReportCheck{
 			{Family: "node_health", TargetRef: node, Result: disk, Details: map[string]string{"type": "DiskHeadroom", "path": "/var/lib/kubelet"}},
 			{Family: "node_health", TargetRef: node, Result: inode, Details: map[string]string{"type": "InodeHeadroom", "path": "/var/lib/kubelet"}},
 		}}}
 	}
-	older := mk(fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass)
-	newer := mk(fathomv1alpha1.HealthReportResultFail, fathomv1alpha1.HealthReportResultPass)
+	older := mk(fathomv1.HealthReportResultPass, fathomv1.HealthReportResultPass)
+	newer := mk(fathomv1.HealthReportResultFail, fathomv1.HealthReportResultPass)
 	if got := changedCheckCount(newer, older); got != 1 {
 		t.Fatalf("changed checks = %d, want 1 (DiskHeadroom changed, InodeHeadroom did not)", got)
 	}

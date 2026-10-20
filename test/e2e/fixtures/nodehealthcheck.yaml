@@ -12,7 +12,7 @@
 # socket path. The kind node is a control-plane node, so includeControlPlaneNodes
 # must be set for the agent to schedule there. A short interval keeps the spec
 # fast.
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: nodehealth-e2e

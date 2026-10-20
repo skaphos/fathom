@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
@@ -36,6 +37,9 @@ func authorityFixture(t *testing.T) (*runtime.Scheme, *api.AddonDefinition, *api
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
@@ -184,13 +184,13 @@ func TestRunAddonCheckFailsClosedWhenNamespaceEmptyInCluster(t *testing.T) {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add corev1 scheme: %v", err)
 	}
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add fathom scheme: %v", err)
 	}
 
-	check := &fathomv1alpha1.AddonCheck{
+	check := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "no-ns", Namespace: "default"},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "prog-cert-manager"},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "prog-cert-manager"},
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).Build()
 	prog := &programmableAdapter{}
@@ -230,13 +230,13 @@ func TestRunAddonCheckFailsClosedWithoutScopedClient(t *testing.T) {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add corev1 scheme: %v", err)
 	}
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add fathom scheme: %v", err)
 	}
 
-	check := &fathomv1alpha1.AddonCheck{
+	check := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "failclosed", Namespace: "default"},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "prog-cert-manager"},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "prog-cert-manager"},
 	}
 	// The fake cluster has the AddonCheck but NO addon ServiceAccount, so the
 	// scoped-client lookup fails. AddonClients is set and Namespace is non-empty,

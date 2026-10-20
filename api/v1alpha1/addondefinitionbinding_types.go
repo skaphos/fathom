@@ -5,7 +5,11 @@ SPDX-License-Identifier: MIT
 
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	fathomv1 "github.com/skaphos/fathom/api/v1"
+)
 
 // DefinitionObjectReference is a bounded runtime definition contract.
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="reference is immutable"
@@ -57,23 +61,6 @@ type AddonDefinitionBindingSpec struct {
 	TargetScope DefinitionBindingScope `json:"targetScope"`
 }
 
-// DefinitionLeaderEpoch is a bounded runtime definition contract.
-type DefinitionLeaderEpoch struct {
-	// LeaseUID is the declared leaseUID.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=128
-	LeaseUID string `json:"leaseUID"`
-	// HolderIdentity is the declared holderIdentity.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=253
-	HolderIdentity string `json:"holderIdentity"`
-	// AcquireTime is the declared acquireTime.
-	AcquireTime metav1.MicroTime `json:"acquireTime"`
-	// LeaseTransitions is the declared leaseTransitions.
-	// +kubebuilder:validation:Minimum=0
-	LeaseTransitions int32 `json:"leaseTransitions"`
-}
-
 // AddonDefinitionBindingStatus describes observation, never authorization.
 // Accepted records spec/identity validity; Ready records eligibility; Drained is
 // acknowledged only for disabled, observed-generation state with zero active
@@ -93,9 +80,14 @@ type AddonDefinitionBindingStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	LeaderIdentity string `json:"leaderIdentity,omitempty"`
+	// The type is owned by the stable v1 API, which also records it in
+	// AddonCheck evidence; its fields are unchanged from when it lived here,
+	// so this CRD's schema is not. (Kept out of the doc comment so the
+	// generated description, and therefore the alpha CRD, stay identical.)
+
 	// LeaderEpoch is the declared leaderEpoch.
 	// +optional
-	LeaderEpoch *DefinitionLeaderEpoch `json:"leaderEpoch,omitempty"`
+	LeaderEpoch *fathomv1.DefinitionLeaderEpoch `json:"leaderEpoch,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	// Conditions is the declared conditions.

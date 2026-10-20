@@ -20,16 +20,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // reportOwnedBy is a HealthReport with a controller reference to its check,
 // as the operator writes it.
-func reportOwnedBy(check *fathomv1alpha1.AddonCheck) *fathomv1alpha1.HealthReport {
-	return &fathomv1alpha1.HealthReport{ObjectMeta: metav1.ObjectMeta{
+func reportOwnedBy(check *fathomv1.AddonCheck) *fathomv1.HealthReport {
+	return &fathomv1.HealthReport{ObjectMeta: metav1.ObjectMeta{
 		Name: "coredns-report-1", Namespace: check.Namespace,
 		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "AddonCheck",
+			APIVersion: fathomv1.GroupVersion.String(), Kind: "AddonCheck",
 			Name: check.Name, UID: "11111111-2222-3333-4444-555555555555", Controller: ptr.To(true),
 		}},
 	}}
@@ -225,4 +225,4 @@ func TestPurgeWithOnlyCRDsLeftChecksPermissionsFirst(t *testing.T) {
 	}
 }
 
-var _ client.Object = (*fathomv1alpha1.HealthReport)(nil)
+var _ client.Object = (*fathomv1.HealthReport)(nil)

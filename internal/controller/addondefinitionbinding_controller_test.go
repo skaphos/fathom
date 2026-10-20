@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	definitions "github.com/skaphos/fathom/pkg/addondefinition"
@@ -74,8 +75,8 @@ const (
 
 var drainAcquired = metav1.NewMicroTime(time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC))
 
-func drainEpoch() fathomv1alpha1.DefinitionLeaderEpoch {
-	return fathomv1alpha1.DefinitionLeaderEpoch{
+func drainEpoch() fathomv1.DefinitionLeaderEpoch {
+	return fathomv1.DefinitionLeaderEpoch{
 		LeaseUID:         drainLeaseUID,
 		HolderIdentity:   drainHolder,
 		AcquireTime:      drainAcquired,
@@ -112,7 +113,7 @@ func drainLeaseObject() *coordinationv1.Lease {
 // said yes more readily than the real session would let a controller bug pass.
 type fakeLeadershipSession struct {
 	lease        types.NamespacedName
-	epoch        *fathomv1alpha1.DefinitionLeaderEpoch
+	epoch        *fathomv1.DefinitionLeaderEpoch
 	inadmissible error
 	runs         map[string]int
 	revoked      map[string]bool
@@ -122,7 +123,7 @@ type fakeLeadershipSession struct {
 	// evidenceEpoch overrides the epoch handed out with an acknowledgement, so
 	// a test can model a session whose evidence disagrees with the Lease it
 	// validates against — the one thing the published epoch must never be.
-	evidenceEpoch *fathomv1alpha1.DefinitionLeaderEpoch
+	evidenceEpoch *fathomv1.DefinitionLeaderEpoch
 	// afterAcknowledge runs in the window between the acknowledgement and the
 	// publication, where leadership can still be lost.
 	afterAcknowledge func()
@@ -148,7 +149,7 @@ func newFakeSession() *fakeLeadershipSession {
 
 func (s *fakeLeadershipSession) LeaseRef() types.NamespacedName { return s.lease }
 
-func (s *fakeLeadershipSession) EpochValid(persisted *fathomv1alpha1.DefinitionLeaderEpoch) bool {
+func (s *fakeLeadershipSession) EpochValid(persisted *fathomv1.DefinitionLeaderEpoch) bool {
 	if persisted == nil || s.epoch == nil || s.inadmissible != nil {
 		return false
 	}
@@ -230,7 +231,7 @@ func newDrainFixture(t *testing.T, objs ...client.Object) *drainFixture {
 	t.Helper()
 	f := &drainFixture{t: t, scheme: runtime.NewScheme()}
 	for _, add := range []func(*runtime.Scheme) error{
-		corev1.AddToScheme, coordinationv1.AddToScheme, fathomv1alpha1.AddToScheme,
+		corev1.AddToScheme, coordinationv1.AddToScheme, fathomv1.AddToScheme, fathomv1alpha1.AddToScheme,
 	} {
 		if err := add(f.scheme); err != nil {
 			t.Fatalf("scheme: %v", err)
@@ -435,7 +436,7 @@ func mustGVK(t *testing.T, scheme *runtime.Scheme, obj client.Object) schema.Gro
 	return gvks[0]
 }
 
-func requireEpoch(t *testing.T, got *fathomv1alpha1.DefinitionLeaderEpoch, want fathomv1alpha1.DefinitionLeaderEpoch) {
+func requireEpoch(t *testing.T, got *fathomv1.DefinitionLeaderEpoch, want fathomv1.DefinitionLeaderEpoch) {
 	t.Helper()
 	if got == nil {
 		t.Fatalf("status.leaderEpoch is absent; a drain acknowledgement without an epoch is unverifiable")
@@ -848,7 +849,7 @@ func TestDrainRefusedWhenTheSessionEvidenceDisagreesWithTheLiveLease(t *testing.
 // "On acquisition, distrust persisted acknowledgements." A Drained=True written
 // by an earlier leadership epoch is evidence about that epoch only.
 func TestPersistedDrainAcknowledgementIsDistrustedByANewLeader(t *testing.T) {
-	stale := fathomv1alpha1.DefinitionLeaderEpoch{
+	stale := fathomv1.DefinitionLeaderEpoch{
 		LeaseUID: drainOtherLeaseID, HolderIdentity: drainOtherHolder,
 		AcquireTime: metav1.NewMicroTime(drainAcquired.Add(-time.Hour)), LeaseTransitions: 2,
 	}
@@ -1308,7 +1309,7 @@ func TestResolveBindingAuthorityRefusesAuthorityItCannotTrust(t *testing.T) {
 			tc.mutate(binding, sa)
 
 			scheme := runtime.NewScheme()
-			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, fathomv1alpha1.AddToScheme} {
+			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, fathomv1.AddToScheme, fathomv1alpha1.AddToScheme} {
 				if err := add(scheme); err != nil {
 					t.Fatalf("scheme: %v", err)
 				}

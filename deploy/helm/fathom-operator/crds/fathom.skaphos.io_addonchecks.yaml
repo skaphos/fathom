@@ -16,7 +16,20 @@ spec:
     singular: addoncheck
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.lastResult
+      name: Result
+      type: string
+    - jsonPath: .spec.addonType
+      name: Addon
+      type: string
+    - jsonPath: .status.lastRunTime
+      name: Last Run
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: AddonCheck is the Schema for the addonchecks API.
@@ -39,7 +52,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: AddonCheckSpec defines the desired state of AddonCheck.
+            description: |-
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               addonType:
                 description: |-
@@ -67,10 +83,6 @@ spec:
                   (MinCheckInterval); the operator clamps stored objects that predate this
                   floor to it at runtime.
                 type: string
-              paused:
-                description: Paused prevents the controller from starting new adapter
-                  runs.
-                type: boolean
               policy:
                 additionalProperties:
                   description: AddonCheckFamilyPolicy configures one adapter-defined
@@ -220,7 +232,8 @@ spec:
               conditions:
                 description: |-
                   Conditions summarize whether the controller accepted and processed this
-                  check specification.
+                  check specification. Keyed by type so several server-side-apply managers
+                  can each own a condition, as on every sibling kind.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -276,6 +289,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               detectedVersion:
                 description: |-
                   DetectedVersion is the installed addon release version detected on the most
@@ -511,6 +527,8 @@ spec:
                 format: int64
                 type: integer
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

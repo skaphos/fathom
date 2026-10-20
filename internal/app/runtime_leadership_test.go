@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	limits "github.com/skaphos/fathom/pkg/addondefinition"
 )
 
@@ -150,8 +150,8 @@ func heldLease(session *RuntimeLeadership) *coordinationv1.Lease {
 
 // epochOf is the acknowledgement a caller persists for a Lease: exactly the four
 // fields the contract compares, so renewTime and resourceVersion stay out of it.
-func epochOf(lease *coordinationv1.Lease) *fathomv1alpha1.DefinitionLeaderEpoch {
-	return &fathomv1alpha1.DefinitionLeaderEpoch{
+func epochOf(lease *coordinationv1.Lease) *fathomv1.DefinitionLeaderEpoch {
+	return &fathomv1.DefinitionLeaderEpoch{
 		LeaseUID:         string(lease.UID),
 		HolderIdentity:   *lease.Spec.HolderIdentity,
 		AcquireTime:      *lease.Spec.AcquireTime,
@@ -390,7 +390,7 @@ func TestRuntimeLeadershipInvalidatesPersistedEpochs(t *testing.T) {
 	beginSyncedSession(t, session)
 	clock.advance(limits.MinTakeoverGrace)
 	live := heldLease(session)
-	persisted := &fathomv1alpha1.DefinitionLeaderEpoch{
+	persisted := &fathomv1.DefinitionLeaderEpoch{
 		LeaseUID:         string(live.UID),
 		HolderIdentity:   *live.Spec.HolderIdentity,
 		AcquireTime:      *live.Spec.AcquireTime,
@@ -418,12 +418,12 @@ func TestRuntimeLeadershipInvalidatesPersistedEpochs(t *testing.T) {
 	zeroDuration := int32(0)
 	for _, tc := range []struct {
 		name   string
-		mutate func(*fathomv1alpha1.DefinitionLeaderEpoch)
+		mutate func(*fathomv1.DefinitionLeaderEpoch)
 	}{
-		{name: "recreated lease uid", mutate: func(e *fathomv1alpha1.DefinitionLeaderEpoch) { e.LeaseUID = "recreated" }},
-		{name: "restarted or handed-over holder", mutate: func(e *fathomv1alpha1.DefinitionLeaderEpoch) { e.HolderIdentity = otherIdentity }},
-		{name: "changed acquire time", mutate: func(e *fathomv1alpha1.DefinitionLeaderEpoch) { e.AcquireTime = newerAcquire }},
-		{name: "changed lease transitions", mutate: func(e *fathomv1alpha1.DefinitionLeaderEpoch) { e.LeaseTransitions = moreTransitions }},
+		{name: "recreated lease uid", mutate: func(e *fathomv1.DefinitionLeaderEpoch) { e.LeaseUID = "recreated" }},
+		{name: "restarted or handed-over holder", mutate: func(e *fathomv1.DefinitionLeaderEpoch) { e.HolderIdentity = otherIdentity }},
+		{name: "changed acquire time", mutate: func(e *fathomv1.DefinitionLeaderEpoch) { e.AcquireTime = newerAcquire }},
+		{name: "changed lease transitions", mutate: func(e *fathomv1.DefinitionLeaderEpoch) { e.LeaseTransitions = moreTransitions }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stale := *persisted
@@ -1077,7 +1077,7 @@ func TestObservedEpochIsHandedOutAsACopy(t *testing.T) {
 	}
 	persisted := epochOf(live)
 
-	tamper := func(epoch *fathomv1alpha1.DefinitionLeaderEpoch) {
+	tamper := func(epoch *fathomv1.DefinitionLeaderEpoch) {
 		epoch.LeaseUID = "tampered"
 		epoch.HolderIdentity = "another-operator_42"
 		epoch.LeaseTransitions += 100
@@ -1085,7 +1085,7 @@ func TestObservedEpochIsHandedOutAsACopy(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name  string
-		epoch *fathomv1alpha1.DefinitionLeaderEpoch
+		epoch *fathomv1.DefinitionLeaderEpoch
 	}{
 		{name: "the value AdoptLease returned", epoch: adopted},
 		{name: "the value Epoch returned", epoch: session.Epoch()},

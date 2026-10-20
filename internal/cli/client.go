@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	definitions "github.com/skaphos/fathom/pkg/addondefinition"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -109,6 +110,9 @@ func newScheme() (*runtime.Scheme, error) {
 	}
 	if err := apiextensionsv1.AddToScheme(s); err != nil {
 		return nil, fmt.Errorf("add apiextensions scheme: %w", err)
+	}
+	if err := fathomv1.AddToScheme(s); err != nil {
+		return nil, fmt.Errorf("add fathom v1 scheme: %w", err)
 	}
 	if err := fathomv1alpha1.AddToScheme(s); err != nil {
 		return nil, fmt.Errorf("add fathom v1alpha1 scheme: %w", err)

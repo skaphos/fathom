@@ -36,3 +36,42 @@ releases:
         path: ^.spec.checkRef.apiVersion
         reason: checkRef.apiVersion bounded to Kubernetes' 317-character API-version limit while remaining enum-free for migration safety; sanctioned v1alpha1 validation hardening.
         issue: https://github.com/skaphos/fathom/issues/267
+  # 0.7.0 promotes the seven check kinds to the stable v1 and stops serving
+  # v1alpha1 (skaphos/fathom#149, spec 014, ADR 0009). The API server refuses
+  # to drop a version a CRD still stores, so each promoted CRD is replaced:
+  # deleted together with its alpha resources, then created at v1. That makes
+  # 0.7.0 a stop — it is the release whose fathomctl carries the alpha-aware
+  # `export` that renders the resources to recreate — and every promoted CRD a
+  # "*" sanction, which `upgrade` applies only with --accept-incompatible-crds
+  # when alpha resources exist (an empty inventory needs the sanction alone).
+  - version: 0.7.0
+    stop: true
+    sanctioned:
+      - crd: addonchecks.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha AddonChecks and their HealthReport history are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: healthchecks.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha HealthChecks are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: clusterhealths.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha ClusterHealths are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: healthreports.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha HealthReport history is deleted with the CRD and is not exported
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: nodecertificatechecks.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha NodeCertificateChecks are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: dnschecks.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha DNSChecks are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149
+      - crd: nodehealthchecks.fathom.skaphos.io
+        path: "*"
+        reason: served version replaced (v1alpha1 removed, v1 added); alpha NodeHealthChecks are deleted with the CRD — run `fathomctl export` first and recreate from the output
+        issue: https://github.com/skaphos/fathom/issues/149

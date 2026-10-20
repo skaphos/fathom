@@ -164,7 +164,7 @@ var (
 )
 
 // checkResultValues is the canonical result vocabulary, mirroring the
-// api/v1alpha1 HealthReportResult constants. It remains a literal to keep this
+// api/v1 HealthReportResult constants. It remains a literal to keep this
 // observability package independent of the Kubernetes API types. A unit test
 // asserts it stays in sync, so a new result state cannot silently miss metrics.
 var checkResultValues = []string{"Pass", "Warn", "Fail", "Error", "Skipped", "Unknown"}

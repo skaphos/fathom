@@ -14,7 +14,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // kindDescriptor is the only place kind-specific knowledge lives. Every verb
@@ -42,8 +42,6 @@ type kindDescriptor struct {
 	NewList func() client.ObjectList
 	// Items unpacks a typed list into client.Objects for kind-agnostic code.
 	Items func(client.ObjectList) []client.Object
-	// Paused reads spec.paused. Kinds without the field report false.
-	Paused func(client.Object) bool
 	// Snapshot is the kind's verdict normalisation (see snapshot.go).
 	Snapshot func(client.Object) snapshot
 	// DefaultWaitEstimate conservatively sizes `run --wait` from the work the
@@ -67,85 +65,80 @@ var kinds = []*kindDescriptor{
 	{
 		Kind: "AddonCheck", Resource: "addonchecks", Aliases: []string{"ac"},
 		Namespaced: true, Executable: true, WritesReports: true,
-		New:     func() client.Object { return &fathomv1alpha1.AddonCheck{} },
-		NewList: func() client.ObjectList { return &fathomv1alpha1.AddonCheckList{} },
+		New:     func() client.Object { return &fathomv1.AddonCheck{} },
+		NewList: func() client.ObjectList { return &fathomv1.AddonCheckList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.AddonCheckList)
+			list := l.(*fathomv1.AddonCheckList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.AddonCheck).Spec.Paused },
 		Snapshot:            addonCheckSnapshot,
 		DefaultWaitEstimate: addonCheckTimeout,
 	},
 	{
 		Kind: "DNSCheck", Resource: "dnschecks", Aliases: []string{"dns"},
 		Namespaced: true, Executable: true, WritesReports: true,
-		New:     func() client.Object { return &fathomv1alpha1.DNSCheck{} },
-		NewList: func() client.ObjectList { return &fathomv1alpha1.DNSCheckList{} },
+		New:     func() client.Object { return &fathomv1.DNSCheck{} },
+		NewList: func() client.ObjectList { return &fathomv1.DNSCheckList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.DNSCheckList)
+			list := l.(*fathomv1.DNSCheckList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(client.Object) bool { return false },
 		Snapshot:            dnsCheckSnapshot,
 		DefaultWaitEstimate: dnsCheckTimeout,
 	},
 	{
 		Kind: "NodeCertificateCheck", Resource: "nodecertificatechecks", Aliases: []string{"ncc"},
 		Namespaced: true, Executable: true, WritesReports: true,
-		New:     func() client.Object { return &fathomv1alpha1.NodeCertificateCheck{} },
-		NewList: func() client.ObjectList { return &fathomv1alpha1.NodeCertificateCheckList{} },
+		New:     func() client.Object { return &fathomv1.NodeCertificateCheck{} },
+		NewList: func() client.ObjectList { return &fathomv1.NodeCertificateCheckList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.NodeCertificateCheckList)
+			list := l.(*fathomv1.NodeCertificateCheckList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.NodeCertificateCheck).Spec.Paused },
 		Snapshot:            nodeCertificateCheckSnapshot,
 		DefaultWaitEstimate: nodeCertificateCheckTimeout,
 	},
 	{
 		Kind: "NodeHealthCheck", Resource: "nodehealthchecks", Aliases: []string{"nhc"},
 		Namespaced: true, Executable: true, WritesReports: true,
-		New:     func() client.Object { return &fathomv1alpha1.NodeHealthCheck{} },
-		NewList: func() client.ObjectList { return &fathomv1alpha1.NodeHealthCheckList{} },
+		New:     func() client.Object { return &fathomv1.NodeHealthCheck{} },
+		NewList: func() client.ObjectList { return &fathomv1.NodeHealthCheckList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.NodeHealthCheckList)
+			list := l.(*fathomv1.NodeHealthCheckList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(client.Object) bool { return false },
 		Snapshot:            nodeHealthCheckSnapshot,
 		DefaultWaitEstimate: nodeHealthCheckWaitEstimate,
 	},
 	{
 		Kind: "HealthCheck", Resource: "healthchecks", Aliases: []string{"hc"},
 		Namespaced: true,
-		New:        func() client.Object { return &fathomv1alpha1.HealthCheck{} },
-		NewList:    func() client.ObjectList { return &fathomv1alpha1.HealthCheckList{} },
+		New:        func() client.Object { return &fathomv1.HealthCheck{} },
+		NewList:    func() client.ObjectList { return &fathomv1.HealthCheckList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.HealthCheckList)
+			list := l.(*fathomv1.HealthCheckList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(o client.Object) bool { return o.(*fathomv1alpha1.HealthCheck).Spec.Paused },
 		Snapshot:            healthCheckSnapshot,
 		DefaultWaitEstimate: noWaitEstimate,
 		// Sources is wired in run.go's init: the resolvers look kinds up by
@@ -153,17 +146,16 @@ var kinds = []*kindDescriptor{
 	},
 	{
 		Kind: "ClusterHealth", Resource: "clusterhealths", Aliases: []string{"ch"},
-		New:     func() client.Object { return &fathomv1alpha1.ClusterHealth{} },
-		NewList: func() client.ObjectList { return &fathomv1alpha1.ClusterHealthList{} },
+		New:     func() client.Object { return &fathomv1.ClusterHealth{} },
+		NewList: func() client.ObjectList { return &fathomv1.ClusterHealthList{} },
 		Items: func(l client.ObjectList) []client.Object {
-			list := l.(*fathomv1alpha1.ClusterHealthList)
+			list := l.(*fathomv1.ClusterHealthList)
 			out := make([]client.Object, 0, len(list.Items))
 			for i := range list.Items {
 				out = append(out, &list.Items[i])
 			}
 			return out
 		},
-		Paused:              func(client.Object) bool { return false },
 		Snapshot:            clusterHealthSnapshot,
 		DefaultWaitEstimate: noWaitEstimate,
 	},

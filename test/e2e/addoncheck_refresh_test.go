@@ -34,7 +34,7 @@ var _ = Describe("AddonCheck periodic refresh-on-change", Ordered, Serial, Label
 
 	// A dedicated AddonCheck with a short interval so a re-run lands well inside
 	// the Eventually windows below (the shipped samples use interval: 5m).
-	manifest := `apiVersion: fathom.skaphos.io/v1alpha1
+	manifest := `apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: ` + checkName + `

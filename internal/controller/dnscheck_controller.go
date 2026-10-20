@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/probe"
 )
@@ -161,7 +161,7 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
-	var check fathomv1alpha1.DNSCheck
+	var check fathomv1.DNSCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			// The check is gone: withdraw everything it was asserting, both the
@@ -180,7 +180,7 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	before := check.Status.DeepCopy()
 	defer func() {
 		observeCheck(r.Recorder, &check, dnsCheckKind,
-			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			fathomv1.HealthReportResult(before.LastResult), fathomv1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
 			check.Status.LastRunTime, dnsCheckInterval(&check), err)
 	}()
@@ -246,17 +246,17 @@ func (r *DNSCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 // Unknown when the run ends is exactly what the run did not reach, so truncation
 // needs no separate bookkeeping (FR-106), and the result set is rebuilt from the
 // current specification every time, so a dropped pair cannot survive (FR-036).
-func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1alpha1.DNSCheck, bound time.Duration, startedAt time.Time) []dnsPairOutcome {
+func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1.DNSCheck, bound time.Duration, startedAt time.Time) []dnsPairOutcome {
 	pairs := expandDNSPairs(&check.Spec)
 	outcomes := make([]dnsPairOutcome, len(pairs))
 	for i, pair := range pairs {
 		outcomes[i] = dnsPairOutcome{
 			pair: pair,
-			result: fathomv1alpha1.DNSTargetResult{
+			result: fathomv1.DNSTargetResult{
 				Name:       pair.Name,
 				RecordType: pair.RecordType,
 				Resolver:   pair.VantagePoint.Name,
-				Result:     string(fathomv1alpha1.HealthReportResultUnknown),
+				Result:     string(fathomv1.HealthReportResultUnknown),
 			},
 		}
 	}
@@ -314,13 +314,13 @@ func (r *DNSCheckReconciler) evaluate(ctx context.Context, check *fathomv1alpha1
 // namespace (FR-031) and maps the probe's answer onto a reported result.
 func (r *DNSCheckReconciler) runPair(
 	ctx context.Context,
-	check *fathomv1alpha1.DNSCheck,
+	check *fathomv1.DNSCheck,
 	pair dnsPair,
 	budget time.Duration,
 	owner metav1.OwnerReference,
 	runID string,
-) fathomv1alpha1.DNSTargetResult {
-	out := fathomv1alpha1.DNSTargetResult{
+) fathomv1.DNSTargetResult {
+	out := fathomv1.DNSTargetResult{
 		Name:       pair.Name,
 		RecordType: pair.RecordType,
 		Resolver:   pair.VantagePoint.Name,
@@ -343,15 +343,15 @@ func (r *DNSCheckReconciler) runPair(
 		OwnerReferences: []metav1.OwnerReference{owner},
 	}
 	switch pair.VantagePoint.From {
-	case fathomv1alpha1.DNSResolverNode:
+	case fathomv1.DNSResolverNode:
 		req.DNSFrom = probe.DNSFromNode
-	case fathomv1alpha1.DNSResolverExplicit:
+	case fathomv1.DNSResolverExplicit:
 		nameserver, addrErr := dnsNameserverAddress(pair.VantagePoint.Address)
 		if addrErr != nil {
 			// Caught here rather than at pod build: probe.Pod() does not validate
 			// nameserver syntax, so this would otherwise surface as an opaque
 			// API-server rejection naming a field the check's author never wrote.
-			out.Result = string(fathomv1alpha1.HealthReportResultError)
+			out.Result = string(fathomv1.HealthReportResultError)
 			out.Message = truncateTargetMessage(addrErr.Error())
 			return out
 		}
@@ -378,14 +378,14 @@ func (r *DNSCheckReconciler) runPair(
 			// resolution failure among the pairs that did complete — the exact
 			// masking that ruled Error out as the truncation outcome in the first
 			// place. Unknown degrades the verdict and still loses to a real Fail.
-			out.Result = string(fathomv1alpha1.HealthReportResultUnknown)
+			out.Result = string(fathomv1.HealthReportResultUnknown)
 			out.Message = "not evaluated: the run bound elapsed before this pair completed"
 			return out
 		}
 		// The pair could not be *performed* — quota, admission, image pull, an
 		// unschedulable node. A fault on Fathom's side, never a resolver's
 		// answer (FR-105).
-		out.Result = string(fathomv1alpha1.HealthReportResultError)
+		out.Result = string(fathomv1.HealthReportResultError)
 		out.Message = truncateTargetMessage(fmt.Sprintf("probe execution failed: %v", err))
 		return out
 	}
@@ -415,17 +415,17 @@ func probeLatencyMillis(details map[string]string) int64 {
 // reported Error ("absence cannot be proven"), not Pass — so the controller's
 // only job is to carry that through unchanged. Re-deriving it here would be a
 // second place for the two to disagree.
-func dnsResultFromProbeOutcome(outcome probe.Outcome) fathomv1alpha1.HealthReportResult {
+func dnsResultFromProbeOutcome(outcome probe.Outcome) fathomv1.HealthReportResult {
 	switch outcome {
 	case probe.OutcomePass:
-		return fathomv1alpha1.HealthReportResultPass
+		return fathomv1.HealthReportResultPass
 	case probe.OutcomeFail:
-		return fathomv1alpha1.HealthReportResultFail
+		return fathomv1.HealthReportResultFail
 	case probe.OutcomeError:
-		return fathomv1alpha1.HealthReportResultError
+		return fathomv1.HealthReportResultError
 	default:
 		// An outcome this build does not recognise is not evidence of anything.
-		return fathomv1alpha1.HealthReportResultUnknown
+		return fathomv1.HealthReportResultUnknown
 	}
 }
 
@@ -477,11 +477,11 @@ func splitProbeAnswers(joined string) []string {
 // dnsCheckOwnerReference makes probe pods dependents of the check. Legal only
 // because FR-031 places them in the check's own namespace — a namespaced owner
 // in another namespace reads as dangling and invites immediate GC.
-func dnsCheckOwnerReference(check *fathomv1alpha1.DNSCheck) metav1.OwnerReference {
+func dnsCheckOwnerReference(check *fathomv1.DNSCheck) metav1.OwnerReference {
 	controller := true
 	blockOwnerDeletion := true
 	return metav1.OwnerReference{
-		APIVersion:         fathomv1alpha1.GroupVersion.String(),
+		APIVersion:         fathomv1.GroupVersion.String(),
 		Kind:               dnsCheckKind,
 		Name:               check.Name,
 		UID:                check.UID,
@@ -520,7 +520,7 @@ func dnsProbePodName(checkName string, pair dnsPair, runID string) string {
 // This is the actionable half of truncation (FR-106a): the verdict degrading to
 // Unknown says something is wrong, but only the count tells an operator their
 // run bound was too small for the number of pairs they declared.
-func (r *DNSCheckReconciler) setDNSCheckComplete(check *fathomv1alpha1.DNSCheck, planned, unreached int) {
+func (r *DNSCheckReconciler) setDNSCheckComplete(check *fathomv1.DNSCheck, planned, unreached int) {
 	condition := metav1.Condition{
 		Type:               dnsCheckConditionComplete,
 		Status:             metav1.ConditionTrue,
@@ -543,10 +543,10 @@ func (r *DNSCheckReconciler) setDNSCheckComplete(check *fathomv1alpha1.DNSCheck,
 // Ready is about Fathom's ability to run the check, not about what the check
 // found: a check whose every name legitimately fails to resolve is Ready=True
 // with a Fail verdict. Only pairs that could not be *performed* degrade it.
-func (r *DNSCheckReconciler) setDNSCheckReady(check *fathomv1alpha1.DNSCheck, outcomes []dnsPairOutcome) {
+func (r *DNSCheckReconciler) setDNSCheckReady(check *fathomv1.DNSCheck, outcomes []dnsPairOutcome) {
 	var errored int
 	for _, outcome := range outcomes {
-		if outcome.result.Result == string(fathomv1alpha1.HealthReportResultError) {
+		if outcome.result.Result == string(fathomv1.HealthReportResultError) {
 			errored++
 		}
 	}
@@ -571,7 +571,7 @@ func (r *DNSCheckReconciler) setDNSCheckReady(check *fathomv1alpha1.DNSCheck, ou
 // Rebuilding rather than diffing is what delivers FR-036 — a pair the
 // specification dropped is simply never re-set, so its series disappears with no
 // removal detection, and the behaviour survives an operator restart.
-func (r *DNSCheckReconciler) publishDNSTargetSeries(check *fathomv1alpha1.DNSCheck, outcomes []dnsPairOutcome) {
+func (r *DNSCheckReconciler) publishDNSTargetSeries(check *fathomv1.DNSCheck, outcomes []dnsPairOutcome) {
 	metrics.DeleteDNSCheckTargetSeries(check.Namespace, check.Name)
 	for _, outcome := range outcomes {
 		metrics.ObserveDNSTarget(check.Namespace, check.Name,
@@ -588,9 +588,9 @@ func (r *DNSCheckReconciler) publishDNSTargetSeries(check *fathomv1alpha1.DNSChe
 func (r *DNSCheckReconciler) persistDNSHealthReport(
 	ctx context.Context,
 	log logr.Logger,
-	check *fathomv1alpha1.DNSCheck,
+	check *fathomv1.DNSCheck,
 	outcomes []dnsPairOutcome,
-	verdict fathomv1alpha1.HealthReportResult,
+	verdict fathomv1.HealthReportResult,
 	observedAt metav1.Time,
 ) error {
 	report := healthReportForDNSCheck(check, outcomes, verdict, observedAt)
@@ -623,12 +623,12 @@ func (r *DNSCheckReconciler) persistDNSHealthReport(
 // healthReportForDNSCheck builds the history record: one entry per (target,
 // vantage point) pair, plus the folded verdict.
 func healthReportForDNSCheck(
-	check *fathomv1alpha1.DNSCheck,
+	check *fathomv1.DNSCheck,
 	outcomes []dnsPairOutcome,
-	verdict fathomv1alpha1.HealthReportResult,
+	verdict fathomv1.HealthReportResult,
 	observedAt metav1.Time,
-) *fathomv1alpha1.HealthReport {
-	checks := make([]fathomv1alpha1.HealthReportCheck, 0, len(outcomes))
+) *fathomv1.HealthReport {
+	checks := make([]fathomv1.HealthReportCheck, 0, len(outcomes))
 	for _, outcome := range outcomes {
 		details := map[string]string{
 			"recordType": string(outcome.result.RecordType),
@@ -648,28 +648,28 @@ func healthReportForDNSCheck(
 		if outcome.pair.Absent {
 			details["assertion"] = "absent"
 		}
-		checks = append(checks, fathomv1alpha1.HealthReportCheck{
+		checks = append(checks, fathomv1.HealthReportCheck{
 			Family:     dnsCheckReportFamily,
-			Result:     fathomv1alpha1.HealthReportResult(outcome.result.Result),
-			TargetRef:  fathomv1alpha1.HealthReportTargetRef{Kind: "DNSName", Name: outcome.result.Name},
+			Result:     fathomv1.HealthReportResult(outcome.result.Result),
+			TargetRef:  fathomv1.HealthReportTargetRef{Kind: "DNSName", Name: outcome.result.Name},
 			Summary:    outcome.result.Message,
 			Details:    details,
 			ObservedAt: observedAt,
 		})
 	}
 
-	return &fathomv1alpha1.HealthReport{
+	return &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
-				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceKind: dnsCheckKind,
+				fathomv1.LabelHealthReportSourceName: check.Name,
 			},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
-			SourceRef: fathomv1alpha1.HealthReportTargetRef{
-				APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Spec: fathomv1.HealthReportSpec{
+			SourceRef: fathomv1.HealthReportTargetRef{
+				APIVersion: fathomv1.GroupVersion.String(),
 				Kind:       dnsCheckKind,
 				Namespace:  check.Namespace,
 				Name:       check.Name,
@@ -685,10 +685,10 @@ func healthReportForDNSCheck(
 
 // pruneDNSHealthReports enforces spec.historyLimit. Failures are logged rather
 // than returned: the new report already landed, and the next run retries.
-func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.DNSCheck, protected string) {
+func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1.DNSCheck, protected string) {
 	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
-		fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
-		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+		fathomv1.LabelHealthReportSourceKind: dnsCheckKind,
+		fathomv1.LabelHealthReportSourceName: check.Name,
 	}, historyLimit(check.Spec.HistoryLimit), protected)
 }
 
@@ -700,8 +700,8 @@ func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr
 func (r *DNSCheckReconciler) finishDNSCheck(
 	ctx context.Context,
 	log logr.Logger,
-	before *fathomv1alpha1.DNSCheckStatus,
-	check *fathomv1alpha1.DNSCheck,
+	before *fathomv1.DNSCheckStatus,
+	check *fathomv1.DNSCheck,
 	interval, elapsed time.Duration,
 ) (ctrl.Result, error) {
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
@@ -749,7 +749,7 @@ func (r *DNSCheckReconciler) minPairBudget() time.Duration {
 // re-trigger a run that is already in flight.
 func (r *DNSCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&fathomv1alpha1.DNSCheck{}).
+		For(&fathomv1.DNSCheck{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: dnsCheckMaxConcurrentReconciles}).
 		Named("dnscheck").
 		Complete(r)

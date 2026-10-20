@@ -41,7 +41,7 @@ in report detail and never become metric labels.
 ## A minimal check
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeCertificateCheck
 metadata:
   name: node-certificates
@@ -214,21 +214,16 @@ spec:
 > you relied on the old default to scan kubeadm control-plane certificates, add
 > that field to your spec.
 
-## Cadence, pausing, and history
+## Cadence and history
 
 - **`interval`** (default `1h`) — unlike `AddonCheck`, `NodeCertificateCheck`
   **honors** `interval`: each agent re-scans and the operator refreshes the
   rolled-up report on this cadence, in addition to reacting to fresh per-node
   reports.
 - **`timeout`** (default `30s`) — bounds a single scan-and-publish pass.
-- **`paused`** — when set, the operator first clears the per-check Role's
-  report rules, revoking the agent's report access. It also drains any
-  owner-controlled legacy node-agent RoleBinding, then **removes the agent
-  DaemonSet** and
-  preserves the last status snapshot. If access revocation or DaemonSet
-  deletion fails, the agent may remain and
-  `Ready=False / RBACRevocationFailed` reports the error. Unset `paused` to
-  resume.
+- **No `paused`** — to stop the scan, delete the check; the agent DaemonSet,
+  its RBAC and its NetworkPolicy are owner-referenced and removed with it
+  (#262). Recreate the check to resume.
 - **`historyLimit`** (default `10`, min `1`) — `HealthReport`s retained for this
   check; older ones are pruned.
 

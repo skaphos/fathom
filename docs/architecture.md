@@ -47,21 +47,22 @@ short-lived pods (see [Probe-pod model](#probe-pod-model)).
 
 ## The CRD Model
 
-All kinds live in `api/v1alpha1` and the group `fathom.skaphos.io`. The
+The seven check kinds live in `api/v1`, the stable `fathom.skaphos.io/v1`; the
+two runtime definition kinds live in `api/v1alpha1`. Both share the group. The
 generated, field-level reference is in [reference/api.md](reference/api.md); this
 section is the conceptual overview.
 
 | Kind | File | Role | Executes checks? |
 | --- | --- | --- | --- |
-| `AddonCheck` | `api/v1alpha1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
+| `AddonCheck` | `api/v1/addoncheck_types.go` | Declares a check against one add-on; selects an adapter via `spec.addonType`. | Yes (via its adapter) |
 | `AddonDefinition` | `api/v1alpha1/addondefinition_types.go` | Cluster-scoped typed coverage for one add-on identity and ordered families/checks. | No |
 | `AddonDefinitionBinding` | `api/v1alpha1/addondefinitionbinding_types.go` | Namespaced authorization binding one definition UID to one dedicated reader ServiceAccount UID and target scope. | No |
-| `NodeCertificateCheck` | `api/v1alpha1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
-| `NodeHealthCheck` | `api/v1alpha1/nodehealthcheck_types.go` | Declares node-local health assertions (filesystem headroom, node conditions, kubelet, container runtime); the operator runs the agent-side ones via the node-agent in health mode and grades node conditions itself. | Yes (via the node-agent + operator) |
-| `DNSCheck` | `api/v1alpha1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. See [DNS checks](guides/dns-checks.md). | Yes (via probe Pods) |
-| `HealthCheck` | `api/v1alpha1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
-| `ClusterHealth` | `api/v1alpha1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
-| `HealthReport` | `api/v1alpha1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
+| `NodeCertificateCheck` | `api/v1/nodecertificatecheck_types.go` | Declares an on-disk certificate-expiry scan; the operator runs it via a node-agent DaemonSet. | Yes (via the node-agent) |
+| `NodeHealthCheck` | `api/v1/nodehealthcheck_types.go` | Declares node-local health assertions (filesystem headroom, node conditions, kubelet, container runtime); the operator runs the agent-side ones via the node-agent in health mode and grades node conditions itself. | Yes (via the node-agent + operator) |
+| `DNSCheck` | `api/v1/dnscheck_types.go` | Declares that names resolve — or deliberately do not — from one or more vantage points; the operator runs it via short-lived probe Pods in the check's own namespace. See [DNS checks](guides/dns-checks.md). | Yes (via probe Pods) |
+| `HealthCheck` | `api/v1/healthcheck_types.go` | Thin wrapper that mirrors a specialized check's status into a uniform shape. | No |
+| `ClusterHealth` | `api/v1/clusterhealth_types.go` | Aggregates selected `HealthCheck` statuses into one worst-case result. | No |
+| `HealthReport` | `api/v1/healthreport_types.go` | Immutable, first-class history record of one check run. | n/a |
 
 `AddonCheck`, `NodeCertificateCheck`, `NodeHealthCheck`, and `DNSCheck` are the
 kinds that drive work — `AddonCheck` in-process via an adapter,
@@ -103,7 +104,7 @@ cannot be owned and rely on the label-based orphan sweep instead.
 
 Every result uses the `HealthReportResult` enum (`Pass`, `Warn`, `Fail`,
 `Error`, `Skipped`, `Unknown`). Worst-case aggregation uses the ordering encoded
-in `HealthReportResult.Severity()` (`api/v1alpha1/healthreport_types.go`):
+in `HealthReportResult.Severity()` (`api/v1/healthreport_types.go`):
 
 ```
 Pass(1) < Skipped(2) < Warn(3) < Unknown(4) < Fail(5) < Error(6)
@@ -180,9 +181,9 @@ focuses on controller ownership and data flow.
   (owner-referenced to the `AddonCheck` via `controllerutil.SetControllerReference`).
 - **Watches:** `AddonCheck` only (`For(&AddonCheck{})`).
 - **Adapter dispatch:** resolves the adapter for `spec.addonType` from the
-  in-process registry. If paused, missing, or lookup fails, it records a
-  `Ready=False` condition (`Paused` / `MissingAdapter` / `AdapterLookupFailed`)
-  and does not run.
+  in-process registry. If it is missing or lookup fails, it records a
+  `Ready=False` condition (`MissingAdapter` / `AdapterLookupFailed`) and does
+  not run.
 - **Scoped client (least privilege):** the adapter's `Request.Client`
   impersonates the addon's own ServiceAccount (`fathom-addon-<addonType>`,
   resolved by the `fathom.skaphos.io/addon` label), so an adapter reads exactly
@@ -206,7 +207,7 @@ focuses on controller ownership and data flow.
   `fathom.skaphos.io/source-name=<name>`. Prune failures are logged, not
   returned — the user-facing write already succeeded and the next reconcile
   retries.
-- **Status written:** `observedGeneration`, the `Accepted` / `Paused` / `Ready`
+- **Status written:** `observedGeneration`, the `Accepted` / `Ready`
   conditions, `lastRunTime`, `lastResult`, `lastReportName`.
 
 The aggregate `HealthReport.spec.result` is the worst-case over the adapter's
@@ -227,17 +228,15 @@ adapter level is forced to `Error`.
 - **Behavior:** mirrors the referenced check's status into the uniform
   `HealthCheck.status` shape (`result`, `summary`, `sourceObservedAt`,
   `lastReportName`, `sourceInterval`). An empty `checkRef.apiVersion` defaults
-  to `fathom.skaphos.io/v1alpha1`; other nonempty versions yield
-  `Ready=False / UnsupportedAPIVersion`. Supported kinds are `AddonCheck`,
+  to `fathom.skaphos.io/v1`, the only value the CRD schema admits; the
+  controller still answers `Ready=False / UnsupportedAPIVersion` for anything
+  else as defence in depth. Supported kinds are `AddonCheck`,
   `DNSCheck`, `NodeCertificateCheck`, and `NodeHealthCheck`; any other kind yields
   `Ready=False / UnsupportedKind`. Missing targets clear the snapshot with
   `TargetNotFound`; transient lookup failures preserve it with
   `TargetLookupFailed` and return the error for retry. An omitted
   `checkRef.namespace` uses the `HealthCheck` namespace; an explicit namespace
   is honored.
-- **Paused:** when `spec.paused`, mirroring is suspended and the last snapshot
-  is preserved (`Ready=False / Paused`).
-
 ### ClusterHealthReconciler
 
 `internal/controller/clusterhealth_controller.go`
@@ -291,11 +290,9 @@ adapter level is forced to `Error`.
   in-scope reports as `fathom_node_certificate_expiry_days`, keyed by
   namespace, check, and node. The agent listener serves `/healthz`; `/metrics`
   returns 404.
-- **Paused:** when `spec.paused`, the scoped report Role is emptied before the
-  agent `DaemonSet` is removed, and the last status snapshot is preserved
-  (`Ready=False / Paused`). Revocation and DaemonSet deletion are attempted
-  independently; failure in either reports
-  `Ready=False / RBACRevocationFailed`, and the agent may remain running.
+- **No pause field** (#262): stopping the scan means deleting the check. The
+  agent `DaemonSet`, its RBAC and its `NetworkPolicy` are owner-referenced
+  and removed with it.
 
 ### NodeHealthCheckReconciler
 
@@ -343,7 +340,7 @@ adapter level is forced to `Error`.
   Reconciliation first removes only this check's detail series, then rebuilds
   them from the accepted subset. A partial fleet therefore yields partial
   detail metrics while the last complete aggregate status and history remain
-  frozen; pause, deletion, rejection, or removal withdraws obsolete series.
+  frozen; deletion, rejection, or removal withdraws obsolete series.
 - **Correctness properties** (written against the v0.5.0 review findings, not
   inherited): provisioning failures persist `Ready=False` (COR-2), an
   incomplete window freezes the verdict (COR-3), coverage is per node identity
@@ -522,8 +519,8 @@ adapter's `resolveProbeImage`) is: per-`AddonCheck` `probeImage` threshold → o
 
 The manager is constructed in `internal/app/run.go`:
 
-- **Scheme (`NewScheme`):** registers client-go's scheme, the Fathom
-  `v1alpha1` types, and `apiextensions/v1`. The last is required because the
+- **Scheme (`NewScheme`):** registers client-go's scheme, the Fathom `v1`
+  and `v1alpha1` types, and `apiextensions/v1`. The last is required because the
   cert-manager and external-secrets adapters `Get` `CustomResourceDefinition`
   objects to verify an add-on's CRDs are installed; envtest auto-registers it
   but real clusters do not (SKA-422).

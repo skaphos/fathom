@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // readyCondition is the condition every kind uses for its operational
@@ -35,7 +35,7 @@ const (
 // the three verbs can never disagree about what a check's verdict is.
 type snapshot struct {
 	// Verdict is empty when the check has never run; renderers show "-".
-	Verdict fathomv1alpha1.HealthReportResult
+	Verdict fathomv1.HealthReportResult
 	// Summary is the bounded human-readable line from status.
 	Summary string
 	// LastRun is when the check last completed (or, for derived kinds, when
@@ -79,10 +79,10 @@ func nextRun(last *metav1.Time, interval time.Duration) *time.Time {
 }
 
 func addonCheckSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.AddonCheck)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultAddonCheckInterval)
+	c := o.(*fathomv1.AddonCheck)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultAddonCheckInterval)
 	return snapshot{
-		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Verdict:         fathomv1.HealthReportResult(c.Status.LastResult),
 		Summary:         readyMessage(c.Status.Conditions),
 		LastRun:         c.Status.LastRunTime,
 		NextRun:         nextRun(c.Status.LastRunTime, interval),
@@ -92,15 +92,15 @@ func addonCheckSnapshot(o client.Object) snapshot {
 }
 
 func addonCheckTimeout(o client.Object) time.Duration {
-	c := o.(*fathomv1alpha1.AddonCheck)
-	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultAddonCheckTimeout)
+	c := o.(*fathomv1.AddonCheck)
+	return effectiveDuration(c.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultAddonCheckTimeout)
 }
 
 func dnsCheckSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.DNSCheck)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultDNSCheckInterval)
+	c := o.(*fathomv1.DNSCheck)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultDNSCheckInterval)
 	return snapshot{
-		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Verdict:         fathomv1.HealthReportResult(c.Status.LastResult),
 		Summary:         c.Status.Summary,
 		LastRun:         c.Status.LastRunTime,
 		NextRun:         nextRun(c.Status.LastRunTime, interval),
@@ -112,17 +112,17 @@ func dnsCheckSnapshot(o client.Object) snapshot {
 // dnsCheckTimeout mirrors the controller's run bound: the whole run is capped
 // at the interval so one run can never overlap the next.
 func dnsCheckTimeout(o client.Object) time.Duration {
-	c := o.(*fathomv1alpha1.DNSCheck)
-	bound := effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultDNSCheckTimeout)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultDNSCheckInterval)
+	c := o.(*fathomv1.DNSCheck)
+	bound := effectiveDuration(c.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultDNSCheckTimeout)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultDNSCheckInterval)
 	return min(bound, interval)
 }
 
 func nodeCertificateCheckSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.NodeCertificateCheck)
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeCertificateCheckInterval)
+	c := o.(*fathomv1.NodeCertificateCheck)
+	interval := effectiveDuration(c.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultNodeCertificateCheckInterval)
 	return snapshot{
-		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Verdict:         fathomv1.HealthReportResult(c.Status.LastResult),
 		Summary:         readyMessage(c.Status.Conditions),
 		LastRun:         c.Status.LastRunTime,
 		NextRun:         nextRun(c.Status.LastRunTime, interval),
@@ -132,21 +132,21 @@ func nodeCertificateCheckSnapshot(o client.Object) snapshot {
 }
 
 func nodeCertificateCheckTimeout(o client.Object) time.Duration {
-	c := o.(*fathomv1alpha1.NodeCertificateCheck)
-	return effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeCertificateCheckTimeout)
+	c := o.(*fathomv1.NodeCertificateCheck)
+	return effectiveDuration(c.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultNodeCertificateCheckTimeout)
 }
 
 // nodeHealthCheckCadence is the cadence the controller actually runs a
 // NodeHealthCheck at: spec.interval capped at the agent cadence. Status is
 // refreshed and the agent re-evaluates on it, so "next run" follows it, not
 // a 24h spec.interval.
-func nodeHealthCheckCadence(c *fathomv1alpha1.NodeHealthCheck) time.Duration {
-	interval := effectiveDuration(c.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
-	return min(interval, fathomv1alpha1.MaxNodeHealthCheckAgentInterval)
+func nodeHealthCheckCadence(c *fathomv1.NodeHealthCheck) time.Duration {
+	interval := effectiveDuration(c.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultNodeHealthCheckInterval)
+	return min(interval, fathomv1.MaxNodeHealthCheckAgentInterval)
 }
 
 func nodeHealthCheckSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	c := o.(*fathomv1.NodeHealthCheck)
 	interval := nodeHealthCheckCadence(c)
 	// NodeHealthCheck writes its own bounded summary once it has rolled up;
 	// before that the Ready message is the best one-line explanation.
@@ -155,7 +155,7 @@ func nodeHealthCheckSnapshot(o client.Object) snapshot {
 		summary = readyMessage(c.Status.Conditions)
 	}
 	return snapshot{
-		Verdict:         fathomv1alpha1.HealthReportResult(c.Status.LastResult),
+		Verdict:         fathomv1.HealthReportResult(c.Status.LastResult),
 		Summary:         summary,
 		LastRun:         c.Status.LastRunTime,
 		NextRun:         nextRun(c.Status.LastRunTime, interval),
@@ -170,8 +170,8 @@ func nodeHealthCheckSnapshot(o client.Object) snapshot {
 // spec.timeout made `run --wait` on a 24h/24h check wait a day for a pass the
 // agent stops at five minutes.
 func nodeHealthCheckTimeout(o client.Object) time.Duration {
-	c := o.(*fathomv1alpha1.NodeHealthCheck)
-	timeout := effectiveDuration(c.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+	c := o.(*fathomv1.NodeHealthCheck)
+	timeout := effectiveDuration(c.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultNodeHealthCheckTimeout)
 	return min(timeout, nodeHealthCheckCadence(c))
 }
 
@@ -189,7 +189,7 @@ func nodeHealthCheckPassTimeout(o client.Object) time.Duration {
 // complete evaluation-and-publication pass. Before status is populated, one
 // node is the least surprising estimate for a newly created check.
 func nodeHealthCheckWaitEstimate(o client.Object) time.Duration {
-	c := o.(*fathomv1alpha1.NodeHealthCheck)
+	c := o.(*fathomv1.NodeHealthCheck)
 	nodes := max(int64(c.Status.DesiredNodes), 1)
 	perNode := saturatingDurationAdd(nodeAgentPodRolloutMargin, nodeHealthCheckPassTimeout(c))
 	return saturatingDurationMultiply(perNode, nodes)
@@ -213,7 +213,7 @@ func saturatingDurationMultiply(d time.Duration, n int64) time.Duration {
 }
 
 func healthCheckSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.HealthCheck)
+	c := o.(*fathomv1.HealthCheck)
 	var interval time.Duration
 	if c.Status.SourceInterval != nil {
 		interval = c.Status.SourceInterval.Duration
@@ -228,7 +228,7 @@ func healthCheckSnapshot(o client.Object) snapshot {
 }
 
 func clusterHealthSnapshot(o client.Object) snapshot {
-	c := o.(*fathomv1alpha1.ClusterHealth)
+	c := o.(*fathomv1.ClusterHealth)
 	summary := fmt.Sprintf("%d matched", c.Status.MatchedCount)
 	if c.Status.Result != "" {
 		summary += ", worst " + string(c.Status.Result)

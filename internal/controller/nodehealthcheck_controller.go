@@ -40,7 +40,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-logr/logr"
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -175,7 +175,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}()
 
-	var check fathomv1alpha1.NodeHealthCheck
+	var check fathomv1.NodeHealthCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries(nodeHealthKind, req.Namespace, req.Name)
@@ -187,7 +187,7 @@ func (r *NodeHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	before := check.Status.DeepCopy()
 	defer func() {
 		observeCheck(r.Recorder, &check, nodeHealthKind,
-			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			fathomv1.HealthReportResult(before.LastResult), fathomv1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
 			// The staleness cadence published to monitoring (FathomCheckStale)
 			// is the capped agent cadence, not spec.interval: a frozen verdict on
@@ -395,7 +395,7 @@ func (r *NodeHealthCheckReconciler) apiReader() client.Reader {
 // nodeHealthTemplateToken is the run-now token the agent template carries: the
 // annotation when set (a new one rolls the agents), otherwise the last
 // consumed token so removing the annotation is not itself a template change.
-func nodeHealthTemplateToken(check *fathomv1alpha1.NodeHealthCheck) string {
+func nodeHealthTemplateToken(check *fathomv1.NodeHealthCheck) string {
 	if token, _ := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); token != "" {
 		return token
 	}
@@ -408,7 +408,7 @@ func nodeHealthTemplateToken(check *fathomv1alpha1.NodeHealthCheck) string {
 // trigger on a live node's behalf. LastRunTime is refreshed when the rollup did
 // not already move it, so a waiter sees a run time at or after its request
 // even when the aggregate was unchanged.
-func consumeNodeHealthRunTrigger(check *fathomv1alpha1.NodeHealthCheck, before *fathomv1alpha1.NodeHealthCheckStatus, ds *appsv1.DaemonSet, expected map[string]struct{}, reports []nodehealth.NodeReport, token string, now time.Time) {
+func consumeNodeHealthRunTrigger(check *fathomv1.NodeHealthCheck, before *fathomv1.NodeHealthCheckStatus, ds *appsv1.DaemonSet, expected map[string]struct{}, reports []nodehealth.NodeReport, token string, now time.Time) {
 	if !nodeCertReportsComplete(ds, expected, nodeHealthTriggeredNodeSet(reports, token)) {
 		return
 	}
@@ -422,7 +422,7 @@ func consumeNodeHealthRunTrigger(check *fathomv1alpha1.NodeHealthCheck, before *
 }
 
 // finish persists Status if it changed and requeues after interval.
-func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, interval time.Duration) (ctrl.Result, error) {
+func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger, before *fathomv1.NodeHealthCheckStatus, check *fathomv1.NodeHealthCheck, interval time.Duration) (ctrl.Result, error) {
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
 		if err := r.Status().Update(ctx, check); err != nil {
 			return ctrl.Result{}, err
@@ -437,7 +437,7 @@ func (r *NodeHealthCheckReconciler) finish(ctx context.Context, log logr.Logger,
 // failing for days must not keep advertising the Ready=True/Pass it last
 // succeeded with. The verdict itself is not cleared — provisioning failing says
 // nothing about what the last complete evaluation found.
-func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, reason string, cause error) (ctrl.Result, error) {
+func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1.NodeHealthCheckStatus, check *fathomv1.NodeHealthCheck, reason string, cause error) (ctrl.Result, error) {
 	authentic := apiMeta.FindStatusCondition(check.Status.Conditions, nodeHealthConditionAuthentic)
 	preserveAuthenticityFailure := reason == "AdmissionPolicyProvisioningFailed" || reason == "AgentRevocationFailed"
 	if !preserveAuthenticityFailure || authentic == nil || authentic.ObservedGeneration != check.Generation || authentic.Reason != reasonAuthenticityUnavailable {
@@ -455,7 +455,7 @@ func (r *NodeHealthCheckReconciler) failProvisioning(ctx context.Context, log lo
 
 // setReportsNotCollected prevents an earlier generation's authenticity result
 // from being advertised when reconciliation stops before report collection.
-func (r *NodeHealthCheckReconciler) setReportsNotCollected(check *fathomv1alpha1.NodeHealthCheck) {
+func (r *NodeHealthCheckReconciler) setReportsNotCollected(check *fathomv1.NodeHealthCheck) {
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeHealthConditionAuthentic,
 		Status:             metav1.ConditionUnknown,
@@ -469,7 +469,7 @@ func (r *NodeHealthCheckReconciler) setReportsNotCollected(check *fathomv1alpha1
 // retaining the last complete roll-up. AgentReady is left alone because a
 // report, pod, Node, or HealthReport API error says nothing about whether the
 // already-provisioned DaemonSet is healthy.
-func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeHealthCheckStatus, check *fathomv1alpha1.NodeHealthCheck, phase string, cause error) (ctrl.Result, error) {
+func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr.Logger, before *fathomv1.NodeHealthCheckStatus, check *fathomv1.NodeHealthCheck, phase string, cause error) (ctrl.Result, error) {
 	historical := before.DeepCopy()
 	check.Status.LastRunTime = historical.LastRunTime
 	check.Status.LastResult = historical.LastResult
@@ -502,7 +502,7 @@ func (r *NodeHealthCheckReconciler) failEvaluation(ctx context.Context, log logr
 // agent are both attempted, so failure of one does not prevent the other
 // revocation step. The owner-referenced ServiceAccount, empty bindings and
 // Role, and NetworkPolicy remain for later reconciliation.
-func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) error {
+func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fathomv1.NodeHealthCheck) error {
 	var revokeErrors []error
 	if err := clearNodeAgentAccess(ctx, r.apiReader(), r.Client, check, nodeHealthAgentResourceName(check), r.roleName()); err != nil {
 		revokeErrors = append(revokeErrors, fmt.Errorf("revoke node-agent API access: %w", err))
@@ -519,7 +519,7 @@ func (r *NodeHealthCheckReconciler) revokeAgent(ctx context.Context, check *fath
 // Ready=False next to AgentReady=True/RolledOut and CoverageComplete=True left
 // over from the previous generation, and no consumer checks a condition's
 // observedGeneration, so the stale rows read as current.
-func (r *NodeHealthCheckReconciler) invalidateAgentConditions(check *fathomv1alpha1.NodeHealthCheck, reason, message string) {
+func (r *NodeHealthCheckReconciler) invalidateAgentConditions(check *fathomv1.NodeHealthCheck, reason, message string) {
 	for _, typ := range []string{nodeHealthConditionAgentReady, nodeHealthConditionCoverage} {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type: typ, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
@@ -532,7 +532,7 @@ func (r *NodeHealthCheckReconciler) invalidateAgentConditions(check *fathomv1alp
 // owner-referenced legacy binding to the shared ClusterRole. The namespaced
 // report-access Role and RoleBinding grant the current permissions after pod
 // discovery.
-func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck) (string, error) {
+func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1.NodeHealthCheck) (string, error) {
 	name := nodeHealthAgentResourceName(check)
 	labels := nodeHealthAgentLabels(check)
 
@@ -556,7 +556,7 @@ func (r *NodeHealthCheckReconciler) ensureAgentRBAC(ctx context.Context, check *
 // unrestricted destinations. It is created unconditionally so the surface is
 // uniform; on a host-network agent it is inert, which the AgentPrivileged
 // condition says out loud.
-func (r *NodeHealthCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, items []nodehealth.Item) error {
+func (r *NodeHealthCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1.NodeHealthCheck, items []nodehealth.Item) error {
 	tcp := corev1.ProtocolTCP
 	metricsPort := intstr.FromInt32(nodeHealthMetricsPort(check, items))
 	apiServerPort := intstr.FromInt32(443)
@@ -591,7 +591,7 @@ func (r *NodeHealthCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context
 // nodeHealthMetricsPort is the legacy-named port for the liveness listener:
 // the shared container port normally, a per-check host port when the agent shares the
 // node's network namespace.
-func nodeHealthMetricsPort(check *fathomv1alpha1.NodeHealthCheck, items []nodehealth.Item) int32 {
+func nodeHealthMetricsPort(check *fathomv1.NodeHealthCheck, items []nodehealth.Item) int32 {
 	if nodeHealthNeedsHostNetwork(items) {
 		return nodeHealthHostMetricsPort(check)
 	}
@@ -603,7 +603,7 @@ func nodeHealthMetricsPort(check *fathomv1alpha1.NodeHealthCheck, items []nodehe
 // is rewritten only when the controller's own computed intent changes (the
 // stored spec hash), so server-side defaulting never reads as drift and
 // churns the agents into a perpetual rolling restart (#143 / SKA-589).
-func (r *NodeHealthCheckReconciler) ensureDaemonSet(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, saName string, items []nodehealth.Item) (*appsv1.DaemonSet, error) {
+func (r *NodeHealthCheckReconciler) ensureDaemonSet(ctx context.Context, check *fathomv1.NodeHealthCheck, saName string, items []nodehealth.Item) (*appsv1.DaemonSet, error) {
 	name := nodeHealthAgentResourceName(check)
 	desired := r.desiredDaemonSet(check, saName, items)
 	desiredHash := nodeAgentSpecHash(desired)
@@ -638,7 +638,7 @@ func (r *NodeHealthCheckReconciler) ensureDaemonSet(ctx context.Context, check *
 // mounts for the headroom paths, hostNetwork for KubeletHealthz, and the CRI
 // socket plus root for ContainerRuntime. A spec with only headroom checks
 // keeps exactly the hardened profile the certificate agent runs with.
-func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeHealthCheck, saName string, items []nodehealth.Item) *appsv1.DaemonSet {
+func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1.NodeHealthCheck, saName string, items []nodehealth.Item) *appsv1.DaemonSet {
 	labels := nodeHealthAgentLabels(check)
 	agentItems := nodeHealthAgentItems(items)
 	hostNetwork := nodeHealthNeedsHostNetwork(items)
@@ -702,12 +702,12 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 	}}
 	var templateAnnotations map[string]string
 	if token := nodeHealthTemplateToken(check); token != "" {
-		templateAnnotations = map[string]string{fathomv1alpha1.AnnotationRunNow: token}
+		templateAnnotations = map[string]string{fathomv1.AnnotationRunNow: token}
 		env = append(env, corev1.EnvVar{
 			Name: nodecert.EnvRunTrigger,
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
 				APIVersion: "v1",
-				FieldPath:  "metadata.annotations['" + fathomv1alpha1.AnnotationRunNow + "']",
+				FieldPath:  "metadata.annotations['" + fathomv1.AnnotationRunNow + "']",
 			}},
 		})
 	}
@@ -797,7 +797,7 @@ func (r *NodeHealthCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeH
 // does not carry a result for every agent-side item predates the template and
 // is not consumed). Reports are keyed by node so duplicates cannot inflate
 // coverage.
-func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, agentItems []nodehealth.Item, now time.Time, maxAge time.Duration) ([]nodehealth.NodeReport, []reportRejection, error) {
+func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1.NodeHealthCheck, agentItems []nodehealth.Item, now time.Time, maxAge time.Duration) ([]nodehealth.NodeReport, []reportRejection, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
 		client.InNamespace(check.Namespace),
@@ -868,7 +868,7 @@ func (r *NodeHealthCheckReconciler) collectNodeReports(ctx context.Context, log 
 
 // adoptReportConfigMap sets a controller owner reference on a report ConfigMap
 // so it is garbage-collected with the check. Failures are non-fatal.
-func (r *NodeHealthCheckReconciler) adoptReportConfigMap(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, cm *corev1.ConfigMap) {
+func (r *NodeHealthCheckReconciler) adoptReportConfigMap(ctx context.Context, log logr.Logger, check *fathomv1.NodeHealthCheck, cm *corev1.ConfigMap) {
 	if metav1.IsControlledBy(cm, check) {
 		return
 	}
@@ -900,7 +900,7 @@ const nodeHealthAdopterFieldManager = "fathom-report-adopter"
 // principal with pod create in the namespace could otherwise plant a labelled
 // pod naming a node that will never report and pin coverage incomplete — a
 // frozen verdict — for as long as it likes.
-func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
+func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1.NodeHealthCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
 	// Uncached on purpose — see APIReader.
 	var pods corev1.PodList
 	if err := r.apiReader().List(ctx, &pods,
@@ -930,7 +930,7 @@ func (r *NodeHealthCheckReconciler) expectedAgentNodes(ctx context.Context, chec
 // for nodes that reported, so the read surface is exactly the fleet in scope.
 // A node that cannot be read is an Error on that node's NodeCondition checks —
 // the report still counts toward coverage, because the agent did its part.
-func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, reports []nodehealth.NodeReport, expected map[string]struct{}) ([]nodeHealthEvaluation, error) {
+func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.Logger, check *fathomv1.NodeHealthCheck, reports []nodehealth.NodeReport, expected map[string]struct{}) ([]nodeHealthEvaluation, error) {
 	conditionTypes := nodeHealthConditionTypes(check)
 	evals := make([]nodeHealthEvaluation, 0, len(reports))
 	for _, report := range reports {
@@ -971,7 +971,7 @@ func (r *NodeHealthCheckReconciler) evaluateNodes(ctx context.Context, log logr.
 // changes; otherwise LastRunTime is refreshed on the interval cadence. The
 // per-node results and summary are refreshed on every complete evaluation so
 // status reflects the latest measurements even when the fold is unchanged.
-func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, evals []nodeHealthEvaluation, aggregate fathomv1alpha1.HealthReportResult, interval time.Duration) error {
+func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1.NodeHealthCheck, evals []nodeHealthEvaluation, aggregate fathomv1.HealthReportResult, interval time.Duration) error {
 	now := r.now()
 	check.Status.NodeResults = nodeHealthNodeResults(evals)
 	check.Status.Summary = nodeHealthSummary(evals, aggregate)
@@ -1024,7 +1024,7 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 // setCoverage records whether the current verdict was computed from a
 // complete evaluation of the fleet, so a frozen verdict is distinguishable
 // from a fresh one.
-func (r *NodeHealthCheckReconciler) setCoverage(check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, complete bool) {
+func (r *NodeHealthCheckReconciler) setCoverage(check *fathomv1.NodeHealthCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, complete bool) {
 	condition := metav1.Condition{
 		Type:               nodeHealthConditionCoverage,
 		Status:             metav1.ConditionTrue,
@@ -1050,7 +1050,7 @@ func (r *NodeHealthCheckReconciler) setCoverage(check *fathomv1alpha1.NodeHealth
 	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
 }
 
-func (r *NodeHealthCheckReconciler) setAgentReady(check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet) {
+func (r *NodeHealthCheckReconciler) setAgentReady(check *fathomv1.NodeHealthCheck, ds *appsv1.DaemonSet) {
 	status := metav1.ConditionFalse
 	reason := "RollingOut"
 	message := "Node-agent DaemonSet is rolling out."
@@ -1076,7 +1076,7 @@ func (r *NodeHealthCheckReconciler) setAgentReady(check *fathomv1alpha1.NodeHeal
 // True means the agent runs beyond the hardened default profile; the message
 // says exactly how and why, so the cost of a check type is auditable on the
 // object that asked for it.
-func (r *NodeHealthCheckReconciler) setAgentPrivileged(check *fathomv1alpha1.NodeHealthCheck, items []nodehealth.Item) {
+func (r *NodeHealthCheckReconciler) setAgentPrivileged(check *fathomv1.NodeHealthCheck, items []nodehealth.Item) {
 	hostNetwork := nodeHealthNeedsHostNetwork(items)
 	root := nodeHealthNeedsRoot(items)
 	condition := metav1.Condition{
@@ -1104,7 +1104,7 @@ func (r *NodeHealthCheckReconciler) setAgentPrivileged(check *fathomv1alpha1.Nod
 	apiMeta.SetStatusCondition(&check.Status.Conditions, condition)
 }
 
-func (r *NodeHealthCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeHealthCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}) {
+func (r *NodeHealthCheckReconciler) setReadyFromState(check *fathomv1.NodeHealthCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}) {
 	switch {
 	case ds.Status.DesiredNumberScheduled == 0:
 		r.setReady(check, metav1.ConditionFalse, "NoMatchingNodes", "No nodes match the node-agent DaemonSet.")
@@ -1121,7 +1121,7 @@ func (r *NodeHealthCheckReconciler) setReadyFromState(check *fathomv1alpha1.Node
 
 // setReportsAuthentic records whether any collected report failed its
 // authenticity bindings, and raises a Warning event when one did (SEC-1).
-func (r *NodeHealthCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeHealthCheck, rejections []reportRejection, enforced bool) {
+func (r *NodeHealthCheckReconciler) setReportsAuthentic(check *fathomv1.NodeHealthCheck, rejections []reportRejection, enforced bool) {
 	forged := forgeryRejections(rejections)
 	if len(forged) == 0 {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeHealthConditionAuthentic, check.Generation, enforced))
@@ -1153,7 +1153,7 @@ func (r *NodeHealthCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.No
 	}
 }
 
-func (r *NodeHealthCheckReconciler) setReady(check *fathomv1alpha1.NodeHealthCheck, status metav1.ConditionStatus, reason, message string) {
+func (r *NodeHealthCheckReconciler) setReady(check *fathomv1.NodeHealthCheck, status metav1.ConditionStatus, reason, message string) {
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeHealthConditionReady,
 		Status:             status,
@@ -1174,7 +1174,7 @@ func (r *NodeHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.APIReader = mgr.GetAPIReader()
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&fathomv1alpha1.NodeHealthCheck{}).
+		For(&fathomv1.NodeHealthCheck{}).
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).

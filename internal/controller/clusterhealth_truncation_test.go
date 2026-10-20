@@ -12,7 +12,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // Child-list truncation (skaphos/fathom#277).
@@ -27,8 +27,8 @@ import (
 // truncateChildren, and exercising it through envtest would cost hundreds of
 // API objects to prove something a slice already proves.
 
-func childAt(name string, result fathomv1alpha1.HealthReportResult, observed *metav1.Time) fathomv1alpha1.ClusterHealthChildSummary {
-	return fathomv1alpha1.ClusterHealthChildSummary{
+func childAt(name string, result fathomv1.HealthReportResult, observed *metav1.Time) fathomv1.ClusterHealthChildSummary {
+	return fathomv1.ClusterHealthChildSummary{
 		Namespace:  "default",
 		Name:       name,
 		Result:     result,
@@ -37,11 +37,11 @@ func childAt(name string, result fathomv1alpha1.HealthReportResult, observed *me
 }
 
 func TestTruncateChildrenLeavesSmallAggregatesAlone(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{}
+	ch := &fathomv1.ClusterHealth{}
 	now := metav1.Now()
 	for i := 0; i < 10; i++ {
 		ch.Status.Children = append(ch.Status.Children,
-			childAt(string(rune('a'+i)), fathomv1alpha1.HealthReportResultPass, &now))
+			childAt(string(rune('a'+i)), fathomv1.HealthReportResultPass, &now))
 	}
 
 	truncateChildren(ch)
@@ -56,19 +56,19 @@ func TestTruncateChildrenLeavesSmallAggregatesAlone(t *testing.T) {
 }
 
 func TestTruncateChildrenCapsAtTheLimit(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{}
+	ch := &fathomv1.ClusterHealth{}
 	now := metav1.Now()
-	total := fathomv1alpha1.MaxClusterHealthChildren + 50
+	total := fathomv1.MaxClusterHealthChildren + 50
 	for i := 0; i < total; i++ {
 		ch.Status.Children = append(ch.Status.Children,
-			childAt("child", fathomv1alpha1.HealthReportResultPass, &now))
+			childAt("child", fathomv1.HealthReportResultPass, &now))
 	}
 	ch.Status.MatchedCount = int32(total)
 
 	truncateChildren(ch)
 
-	if got := len(ch.Status.Children); got != fathomv1alpha1.MaxClusterHealthChildren {
-		t.Errorf("children = %d, want %d", got, fathomv1alpha1.MaxClusterHealthChildren)
+	if got := len(ch.Status.Children); got != fathomv1.MaxClusterHealthChildren {
+		t.Errorf("children = %d, want %d", got, fathomv1.MaxClusterHealthChildren)
 	}
 	// T032 — truncation must stay detectable.
 	if int(ch.Status.MatchedCount) != total {
@@ -82,26 +82,26 @@ func TestTruncateChildrenCapsAtTheLimit(t *testing.T) {
 
 // T033 — the entries an operator needs must survive the cut.
 func TestTruncateChildrenKeepsTheFailingAndFrozenChildren(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{}
+	ch := &fathomv1.ClusterHealth{}
 	now := metav1.Now()
 	frozen := metav1.NewTime(time.Now().Add(-24 * time.Hour))
 
 	// The needles are named to sort LAST alphabetically, so a naive
 	// namespace/name truncation would drop exactly them.
-	for i := 0; i < fathomv1alpha1.MaxClusterHealthChildren+40; i++ {
+	for i := 0; i < fathomv1.MaxClusterHealthChildren+40; i++ {
 		ch.Status.Children = append(ch.Status.Children,
-			childAt("aaa-healthy", fathomv1alpha1.HealthReportResultPass, &now))
+			childAt("aaa-healthy", fathomv1.HealthReportResultPass, &now))
 	}
 	ch.Status.Children = append(ch.Status.Children,
-		childAt("zzz-failing", fathomv1alpha1.HealthReportResultFail, &now),
-		childAt("zzz-frozen", fathomv1alpha1.HealthReportResultPass, &frozen),
-		childAt("zzz-never-ran", fathomv1alpha1.HealthReportResultPass, nil),
+		childAt("zzz-failing", fathomv1.HealthReportResultFail, &now),
+		childAt("zzz-frozen", fathomv1.HealthReportResultPass, &frozen),
+		childAt("zzz-never-ran", fathomv1.HealthReportResultPass, nil),
 	)
 
 	truncateChildren(ch)
 
-	if got := len(ch.Status.Children); got != fathomv1alpha1.MaxClusterHealthChildren {
-		t.Fatalf("children = %d, want %d", got, fathomv1alpha1.MaxClusterHealthChildren)
+	if got := len(ch.Status.Children); got != fathomv1.MaxClusterHealthChildren {
+		t.Fatalf("children = %d, want %d", got, fathomv1.MaxClusterHealthChildren)
 	}
 
 	kept := map[string]bool{}
@@ -133,15 +133,15 @@ func TestTruncateChildrenIsDeterministic(t *testing.T) {
 	// the comparison would fail for reasons unrelated to ordering.
 	base := metav1.NewTime(time.Unix(1_700_000_000, 0).UTC())
 
-	build := func() *fathomv1alpha1.ClusterHealth {
-		ch := &fathomv1alpha1.ClusterHealth{}
-		for i := 0; i < fathomv1alpha1.MaxClusterHealthChildren+20; i++ {
+	build := func() *fathomv1.ClusterHealth {
+		ch := &fathomv1.ClusterHealth{}
+		for i := 0; i < fathomv1.MaxClusterHealthChildren+20; i++ {
 			// A spread of verdicts and ages, so ties are actually exercised
 			// rather than every child ranking identically.
 			observed := metav1.NewTime(base.Add(time.Duration(i%7) * time.Minute))
-			result := fathomv1alpha1.HealthReportResultPass
+			result := fathomv1.HealthReportResultPass
 			if i%5 == 0 {
-				result = fathomv1alpha1.HealthReportResultWarn
+				result = fathomv1.HealthReportResultWarn
 			}
 			ch.Status.Children = append(ch.Status.Children,
 				childAt(fmt.Sprintf("child-%03d", i), result, &observed))
@@ -174,11 +174,11 @@ func TestTruncateChildrenIsDeterministic(t *testing.T) {
 // staleness signal an aggregate has. Found by adversarial review of #277; the
 // original test masked it by giving the never-observed child a Pass verdict.
 func TestTruncateChildrenKeepsTheNeverReconciledChild(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{}
+	ch := &fathomv1.ClusterHealth{}
 	now := metav1.Now()
-	for i := 0; i < fathomv1alpha1.MaxClusterHealthChildren+40; i++ {
+	for i := 0; i < fathomv1.MaxClusterHealthChildren+40; i++ {
 		ch.Status.Children = append(ch.Status.Children,
-			childAt(fmt.Sprintf("healthy-%03d", i), fathomv1alpha1.HealthReportResultPass, &now))
+			childAt(fmt.Sprintf("healthy-%03d", i), fathomv1.HealthReportResultPass, &now))
 	}
 	// The real shape of a never-reconciled child, named to sort last.
 	ch.Status.Children = append(ch.Status.Children,
@@ -197,13 +197,13 @@ func TestTruncateChildrenKeepsTheNeverReconciledChild(t *testing.T) {
 
 // An empty verdict must rank exactly where the roll-up fold already puts it.
 func TestRankSeverityCoercesEmptyToUnknown(t *testing.T) {
-	if got, want := rankSeverity(""), fathomv1alpha1.HealthReportResultUnknown.Severity(); got != want {
+	if got, want := rankSeverity(""), fathomv1.HealthReportResultUnknown.Severity(); got != want {
 		t.Errorf("rankSeverity(\"\") = %d, want %d (Unknown)", got, want)
 	}
-	if rankSeverity("") <= rankSeverity(fathomv1alpha1.HealthReportResultPass) {
+	if rankSeverity("") <= rankSeverity(fathomv1.HealthReportResultPass) {
 		t.Error("an unevaluated child must outrank a passing one for truncation")
 	}
-	if rankSeverity("") >= rankSeverity(fathomv1alpha1.HealthReportResultFail) {
+	if rankSeverity("") >= rankSeverity(fathomv1.HealthReportResultFail) {
 		t.Error("a live Fail must still outrank an unevaluated child")
 	}
 }

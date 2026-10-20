@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
@@ -211,7 +211,7 @@ func fathomResources(ctx context.Context, c client.Client) (map[string][]unstruc
 	}
 	out := map[string][]unstructured.Unstructured{}
 	for _, kind := range purgeKinds {
-		gv := fathomv1alpha1.GroupVersion
+		gv := fathomv1.GroupVersion
 		if version, ok := live[kind]; ok {
 			gv.Version = version
 		}
@@ -373,7 +373,7 @@ func fathomCRDs(ctx context.Context, c client.Client) ([]client.Object, error) {
 	}
 	var out []client.Object
 	for i := range list.Items {
-		if list.Items[i].Spec.Group == fathomv1alpha1.GroupVersion.Group {
+		if list.Items[i].Spec.Group == fathomv1.GroupVersion.Group {
 			out = append(out, &list.Items[i])
 		}
 	}

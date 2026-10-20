@@ -191,7 +191,7 @@ wrappers carrying the `platform` label.
 ```sh
 kubectl --context "${KUBE_CONTEXT}" apply -f - <<'EOF'
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: coredns-system-health
@@ -210,7 +210,7 @@ spec:
         serviceName: "kube-dns"
         restartWarnCount: "3"
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: coredns
@@ -220,11 +220,11 @@ metadata:
 spec:
   description: "Mirror CoreDNS health for cluster aggregation."
   checkRef:
-    apiVersion: fathom.skaphos.io/v1alpha1
+    apiVersion: fathom.skaphos.io/v1
     kind: AddonCheck
     name: coredns-system-health
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: platform

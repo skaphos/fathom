@@ -29,7 +29,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: NodeCertificateCheck is the Schema for the nodecertificatechecks
@@ -54,14 +54,9 @@ spec:
             type: object
           spec:
             description: |-
-              NodeCertificateCheckSpec defines the desired state of NodeCertificateCheck.
-
-              A NodeCertificateCheck scans on-disk X.509 certificates on every selected
-              node and reports time-to-expiry before an expiring certificate can take the
-              cluster down. The operator runs the scan via a hardened, read-only node-agent
-              DaemonSet (one pod per node); each agent publishes its per-node result, and
-              the operator rolls those up into a single HealthReport and mirrors the
-              aggregate into Status.
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               criticalDays:
                 default: 7
@@ -136,12 +131,6 @@ spec:
                 maxItems: 64
                 type: array
                 x-kubernetes-list-type: set
-              paused:
-                description: |-
-                  Paused stops the operator from running the agent DaemonSet and refreshing
-                  reports. The agent DaemonSet is removed while paused; the most recent
-                  Status snapshot is preserved.
-                type: boolean
               timeout:
                 description: |-
                   Timeout bounds a single node-agent scan pass. Defaults to 30s when
@@ -340,6 +329,8 @@ spec:
                 format: int32
                 type: integer
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

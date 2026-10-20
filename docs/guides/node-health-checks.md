@@ -46,7 +46,7 @@ gauges on its authenticated endpoint (see
 ## A minimal check
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: node-health # max 63 characters; the name is used in resource labels
@@ -272,7 +272,7 @@ Wrap the check in a `HealthCheck` and select it from a `ClusterHealth` exactly
 as for any other executable kind:
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: node-health
@@ -333,3 +333,9 @@ fathomctl reports nhc node-health
   `Unknown / EvaluationFailed`; the historical result, timestamp, report name,
   and node results remain frozen. `AgentReady` does not indicate an agent
   failure for this condition. Fix the API or RBAC problem and retry.
+
+## Stopping a check
+
+There is no pause. To stop a check, delete it; to resume, recreate it (from
+Git, which is where it came from). Fathom emits signal and does not own alert
+suppression: silence the alert in the alerting stack instead (#262).

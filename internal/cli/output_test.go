@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func TestOutputFormat_Set(t *testing.T) {
@@ -48,10 +48,10 @@ func TestEncode_ListEnvelopeRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hc := &fathomv1alpha1.HealthCheck{
+	hc := &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "team-a"},
-		Spec:       fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "coredns"}},
-		Status:     fathomv1alpha1.HealthCheckStatus{Result: fathomv1alpha1.HealthReportResultPass, Summary: "ok"},
+		Spec:       fathomv1.HealthCheckSpec{CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: "coredns"}},
+		Status:     fathomv1.HealthCheckStatus{Result: fathomv1.HealthReportResultPass, Summary: "ok"},
 	}
 	list, err := newObjectList(scheme, []client.Object{hc})
 	if err != nil {
@@ -83,7 +83,7 @@ func TestEncode_ListEnvelopeRoundTrips(t *testing.T) {
 		t.Fatalf("unexpected envelope: %+v", decoded)
 	}
 	it := decoded.Items[0]
-	if it.Kind != "HealthCheck" || it.APIVersion != "fathom.skaphos.io/v1alpha1" || it.Metadata.Name != "web" || it.Status.Result != "Pass" {
+	if it.Kind != "HealthCheck" || it.APIVersion != "fathom.skaphos.io/v1" || it.Metadata.Name != "web" || it.Status.Result != "Pass" {
 		t.Fatalf("item not emitted unmodified with GVK: %+v", it)
 	}
 

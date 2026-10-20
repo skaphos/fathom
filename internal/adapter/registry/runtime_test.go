@@ -60,7 +60,7 @@ func runtimeEntry(uid string, generation int64, addonTypes ...string) registry.R
 		Revision: registry.RuntimeRevision{
 			DefinitionUID:    types.UID(uid),
 			Generation:       generation,
-			SchemaVersion:    "fathom.skaphos.io/v1alpha1",
+			SchemaVersion:    "fathom.skaphos.io/v1",
 			SemanticsVersion: 1,
 		},
 		Provenance: registry.RuntimeProvenance{
@@ -324,7 +324,7 @@ func TestSetRuntimeRejectsIncompleteEntries(t *testing.T) {
 	want := registry.RuntimeRevision{
 		DefinitionUID:    "uid-a",
 		Generation:       3,
-		SchemaVersion:    "fathom.skaphos.io/v1alpha1",
+		SchemaVersion:    "fathom.skaphos.io/v1",
 		SemanticsVersion: 1,
 	}
 	if res.Revision != want {

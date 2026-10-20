@@ -12,7 +12,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -38,18 +38,18 @@ func ratioCheckMix(family adapter.Family, pass, warn, fail, errored, skipped int
 	return out
 }
 
-func ratioPolicyCheck(thresholdsByFamily map[string]map[string]string) *fathomv1alpha1.AddonCheck {
-	policy := make(map[string]fathomv1alpha1.AddonCheckFamilyPolicy, len(thresholdsByFamily))
+func ratioPolicyCheck(thresholdsByFamily map[string]map[string]string) *fathomv1.AddonCheck {
+	policy := make(map[string]fathomv1.AddonCheckFamilyPolicy, len(thresholdsByFamily))
 	for family, thresholds := range thresholdsByFamily {
-		typed := make(map[string]fathomv1alpha1.ThresholdValue, len(thresholds))
+		typed := make(map[string]fathomv1.ThresholdValue, len(thresholds))
 		for k, v := range thresholds {
-			typed[k] = fathomv1alpha1.ThresholdValue(v)
+			typed[k] = fathomv1.ThresholdValue(v)
 		}
-		policy[family] = fathomv1alpha1.AddonCheckFamilyPolicy{Thresholds: typed}
+		policy[family] = fathomv1.AddonCheckFamilyPolicy{Thresholds: typed}
 	}
-	return &fathomv1alpha1.AddonCheck{
+	return &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "ratio-check", Namespace: "default"},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "fake", Policy: policy},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "fake", Policy: policy},
 	}
 }
 
@@ -67,55 +67,55 @@ func TestAggregateWithRatioRollups(t *testing.T) {
 		name        string
 		checks      []adapter.CheckResult
 		ratios      map[adapter.Family]adapter.RatioThresholds
-		wantResult  fathomv1alpha1.HealthReportResult
+		wantResult  fathomv1.HealthReportResult
 		wantRollups int
 	}{
 		{
 			"US1: 1 of 200 fail under failRatio 5 aggregates to Pass",
 			ratioCheckMix(fam, 199, 0, 1, 0, 0), ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultPass, 1,
+			fathomv1.HealthReportResultPass, 1,
 		},
 		{
 			"US1: 15 of 200 fail over failRatio 5 aggregates to Fail",
 			ratioCheckMix(fam, 185, 0, 15, 0, 0), ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultFail, 1,
+			fathomv1.HealthReportResultFail, 1,
 		},
 		{
 			"US2: warn band aggregates to Warn",
 			ratioCheckMix(fam, 95, 5, 0, 0, 0), ratios(map[string]string{"warnRatio": "2", "failRatio": "10"}),
-			fathomv1alpha1.HealthReportResultWarn, 1,
+			fathomv1.HealthReportResultWarn, 1,
 		},
 		{
 			"nil ratios preserve worst-of (single Fail fails)",
 			ratioCheckMix(fam, 199, 0, 1, 0, 0), nil,
-			fathomv1alpha1.HealthReportResultFail, 0,
+			fathomv1.HealthReportResultFail, 0,
 		},
 		{
 			"ratio family held below Fail cannot fail the overall check",
 			append(ratioCheckMix(fam, 199, 0, 1, 0, 0), ratioCheckMix("issuers", 3, 0, 0, 0, 0)...),
 			ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultPass, 1,
+			fathomv1.HealthReportResultPass, 1,
 		},
 		{
 			"non-ratio family still fails the overall check via worst-of",
 			append(ratioCheckMix(fam, 199, 0, 1, 0, 0), ratioCheckMix("issuers", 2, 0, 1, 0, 0)...),
 			ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultFail, 1,
+			fathomv1.HealthReportResultFail, 1,
 		},
 		{
 			"error in ratio family aggregates to Error",
 			ratioCheckMix(fam, 198, 0, 1, 1, 0), ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultError, 1,
+			fathomv1.HealthReportResultError, 1,
 		},
 		{
 			"all-Skipped ratio family still folds to Skipped (no invented Pass)",
 			ratioCheckMix(fam, 0, 0, 0, 0, 3), ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultSkipped, 0,
+			fathomv1.HealthReportResultSkipped, 0,
 		},
 		{
 			"empty checks fold to Skipped even with ratios configured",
 			nil, ratios(map[string]string{"failRatio": "5"}),
-			fathomv1alpha1.HealthReportResultSkipped, 0,
+			fathomv1.HealthReportResultSkipped, 0,
 		},
 	}
 	for _, tc := range tests {
@@ -166,7 +166,7 @@ func TestHealthReportForAddonCheck_RatioRollupEntries(t *testing.T) {
 	report := healthReportForAddonCheck(check, fakePolicyAdapter{families: []adapter.Family{fam}}, result, metav1.Now(), nil)
 
 	// Overall verdict: 1/200 unhealthy (0.5%) ≤ 5, 3/200 degraded (1.5%) > 1 → Warn.
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultWarn {
+	if report.Spec.Result != fathomv1.HealthReportResultWarn {
 		t.Errorf("report result: got %s, want Warn", report.Spec.Result)
 	}
 
@@ -189,7 +189,7 @@ func TestHealthReportForAddonCheck_RatioRollupEntries(t *testing.T) {
 	if rollup.Family != fam {
 		t.Errorf("rollup family: got %q, want %q", rollup.Family, fam)
 	}
-	if rollup.Result != fathomv1alpha1.HealthReportResultWarn {
+	if rollup.Result != fathomv1.HealthReportResultWarn {
 		t.Errorf("rollup result: got %s, want Warn", rollup.Result)
 	}
 	if rollup.TargetRef.Kind != "AddonCheck" || rollup.TargetRef.Name != check.Name {
@@ -222,7 +222,7 @@ func TestHealthReportForAddonCheck_NoThresholdsNoRollups(t *testing.T) {
 
 	report := healthReportForAddonCheck(check, fakePolicyAdapter{families: []adapter.Family{fam}}, adapter.Result{Checks: checks}, metav1.Now(), nil)
 
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultFail {
+	if report.Spec.Result != fathomv1.HealthReportResultFail {
 		t.Errorf("report result: got %s, want Fail (worst-of preserved without ratio thresholds)", report.Spec.Result)
 	}
 	if got, want := len(report.Spec.Checks), len(checks); got != want {
@@ -244,7 +244,7 @@ func TestHealthReportForAddonCheck_RunErrStillError(t *testing.T) {
 
 	report := healthReportForAddonCheck(check, fakePolicyAdapter{families: []adapter.Family{fam}}, adapter.Result{Checks: checks}, metav1.Now(), errors.New("adapter blew up"))
 
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultError {
+	if report.Spec.Result != fathomv1.HealthReportResultError {
 		t.Errorf("report result: got %s, want Error", report.Spec.Result)
 	}
 }

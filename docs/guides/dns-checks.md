@@ -23,7 +23,7 @@ kind: Namespace
 metadata:
   name: platform-health
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: cluster-dns
@@ -39,7 +39,7 @@ spec:
       recordType: A
       absent: true
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: cluster-dns
@@ -48,11 +48,11 @@ metadata:
     fathom.skaphos.io/scope: platform
 spec:
   checkRef:
-    apiVersion: fathom.skaphos.io/v1alpha1
+    apiVersion: fathom.skaphos.io/v1
     kind: DNSCheck
     name: cluster-dns
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: platform
@@ -80,7 +80,7 @@ IPv4 or IPv6 answer. The `.invalid.` name is reserved for non-resolution, so
 `absent: true` is a deterministic positive assertion that the name stays gone.
 
 `checkRef.apiVersion` may be omitted to select the current
-`fathom.skaphos.io/v1alpha1` version. A nonempty value is matched exactly.
+`fathom.skaphos.io/v1` version. A nonempty value is matched exactly.
 `checkRef.namespace` may be omitted when the source and wrapper share a
 namespace, as above.
 
@@ -114,7 +114,7 @@ Targets must use fully qualified names because the probe has no cluster search
 domains on this path.
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: public-dns
@@ -281,3 +281,9 @@ Inspect its Ready reason:
 
 See [Status and conditions](../reference/status-conditions.md) for the complete
 reason contract.
+
+## Stopping a check
+
+There is no pause. To stop a check, delete it; to resume, recreate it (from
+Git, which is where it came from). Fathom emits signal and does not own alert
+suppression: silence the alert in the alerting stack instead (#262).

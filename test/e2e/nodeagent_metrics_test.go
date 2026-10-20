@@ -391,7 +391,7 @@ func metricLabels(metric *dto.Metric) map[string]string {
 
 func assertPodNetworkHealthAgentSecurity() {
 	GinkgoHelper()
-	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: NodeHealthCheck
 metadata:
   name: %s

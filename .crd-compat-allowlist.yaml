@@ -13,57 +13,44 @@
 # baseline. Format restriction: a flat YAML list of flat `key: value` mappings
 # — the gate's parser deliberately understands nothing fancier.
 #
-# All current entries sanction the pre-1.0 v1alpha1 validation hardening from
-# https://github.com/skaphos/fathom/issues/152 (plus one node-agent path bound
-# that landed after v0.4.1), which is exactly the alpha-churn window the API
-# versioning standard reserves for schema tightening.
+# All current entries sanction the one thing "*" exists for: the seven check
+# kinds leave v1alpha1 and are served only at the stable v1 from 0.7.0
+# (skaphos/fathom#149, spec 014). The gate reports each as a servedVersionRemoval
+# finding; alpha carries no support window, so the version is replaced rather
+# than deprecated and converted (docs/reference/api-versioning.md, ADR 0009).
+# Prune all seven once v0.7.0 is the baseline tag.
 
 - crd: addonchecks.fathom.skaphos.io
-  path: ^.spec
-  reason: interval/timeout CEL floors raised from >0s to >=10s / >=1s (sanctioned v1alpha1 churn)
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: addonchecks.fathom.skaphos.io
-  path: ^.spec.policy
-  reason: policy family cap (32) and family-key format rule added
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: addonchecks.fathom.skaphos.io
-  path: ^.spec.policy.additionalProperties.namespaces
-  reason: namespaces capped at 64 entries
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: addonchecks.fathom.skaphos.io
-  path: ^.spec.policy.additionalProperties.namespaces.items
-  reason: namespace entries bounded to DNS-1123 labels (maxLength 63 + pattern)
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: addonchecks.fathom.skaphos.io
-  path: ^.spec.policy.additionalProperties.thresholds
-  reason: thresholds capped at 16 keys with key-format and numeric shape rules
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: addonchecks.fathom.skaphos.io
-  path: ^.spec.policy.additionalProperties.thresholds.additionalProperties
-  reason: threshold values bounded to 64 chars (ThresholdValue type, CEL cost budget)
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: nodecertificatechecks.fathom.skaphos.io
-  path: ^.spec
-  reason: interval/timeout CEL floors raised from >0s to >=10s / >=1s (sanctioned v1alpha1 churn)
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: nodecertificatechecks.fathom.skaphos.io
-  path: ^.spec.paths.items
-  reason: path entries bounded to 512 chars in post-v0.4.1 node-agent hardening (predates this gate)
-  issue: https://github.com/skaphos/fathom/issues/152
-
-- crd: clusterhealths.fathom.skaphos.io
-  path: ^.status.children
-  reason: status.children capped at 100 items; previously unbounded, so one selector could grow the stored object without limit. The controller truncates worst-verdict-then-stalest first and computes result/observedAt across every selected check before truncating, so the cap bounds what is reported, never what is measured, and cannot fail a status write. Sanctioned v1alpha1 churn.
-  issue: https://github.com/skaphos/fathom/issues/277
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149
 
 - crd: healthchecks.fathom.skaphos.io
-  path: ^.spec.checkRef.apiVersion
-  reason: checkRef.apiVersion bounded to Kubernetes' 317-character API-version limit while remaining enum-free for migration safety; sanctioned v1alpha1 validation hardening.
-  issue: https://github.com/skaphos/fathom/issues/267
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149
+
+- crd: clusterhealths.fathom.skaphos.io
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149
+
+- crd: healthreports.fathom.skaphos.io
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha report history is deleted with the CRD
+  issue: https://github.com/skaphos/fathom/issues/149
+
+- crd: nodecertificatechecks.fathom.skaphos.io
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149
+
+- crd: dnschecks.fathom.skaphos.io
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149
+
+- crd: nodehealthchecks.fathom.skaphos.io
+  path: "*"
+  reason: served version replaced — v1alpha1 removed, v1 added; alpha resources are deleted with the CRD and recreated from `fathomctl export`
+  issue: https://github.com/skaphos/fathom/issues/149

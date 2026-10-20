@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	metricsServerSamplePath = "config/samples/fathom_v1alpha1_addoncheck_metrics_server.yaml"
+	metricsServerSamplePath = "config/samples/fathom_v1_addoncheck_metrics_server.yaml"
 	metricsServerSampleName = "metrics-server-sample"
 	metricsServerSampleNS   = "default"
 	metricsServerAddonNS    = "kube-system"

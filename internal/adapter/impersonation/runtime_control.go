@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
 	definitions "github.com/skaphos/fathom/pkg/addondefinition"
@@ -40,12 +41,12 @@ func newRuntimeControlReader(base *rest.Config, budget *execution.Budget, target
 		return RuntimeControlReader{}, err
 	}
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{api.AddToScheme, corev1.AddToScheme, coordinationv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{api.AddToScheme, fathomv1.AddToScheme, corev1.AddToScheme, coordinationv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			return RuntimeControlReader{}, err
 		}
 	}
-	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{api.GroupVersion, corev1.SchemeGroupVersion, coordinationv1.SchemeGroupVersion})
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{api.GroupVersion, fathomv1.GroupVersion, corev1.SchemeGroupVersion, coordinationv1.SchemeGroupVersion})
 	for _, mapping := range []struct {
 		gv                     schema.GroupVersion
 		kind, plural, singular string
@@ -53,7 +54,7 @@ func newRuntimeControlReader(base *rest.Config, budget *execution.Budget, target
 	}{
 		{api.GroupVersion, "AddonDefinition", "addondefinitions", "addondefinition", meta.RESTScopeRoot},
 		{api.GroupVersion, "AddonDefinitionBinding", "addondefinitionbindings", "addondefinitionbinding", meta.RESTScopeNamespace},
-		{api.GroupVersion, "AddonCheck", "addonchecks", "addoncheck", meta.RESTScopeNamespace},
+		{fathomv1.GroupVersion, "AddonCheck", "addonchecks", "addoncheck", meta.RESTScopeNamespace},
 		{corev1.SchemeGroupVersion, "ServiceAccount", "serviceaccounts", "serviceaccount", meta.RESTScopeNamespace},
 		{coordinationv1.SchemeGroupVersion, "Lease", "leases", "lease", meta.RESTScopeNamespace},
 	} {

@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // execRun runs `fathomctl run <args>` against the factory and returns stdout,
@@ -39,13 +39,13 @@ func annotationOf(t *testing.T, fc client.Client, obj client.Object, ns, name st
 	if err := fc.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: name}, obj); err != nil {
 		t.Fatalf("get %s/%s: %v", ns, name, err)
 	}
-	return obj.GetAnnotations()[fathomv1alpha1.AnnotationRunNow]
+	return obj.GetAnnotations()[fathomv1.AnnotationRunNow]
 }
 
-func healthCheckFor(ns, name, kind, target string) *fathomv1alpha1.HealthCheck {
-	return &fathomv1alpha1.HealthCheck{
+func healthCheckFor(ns, name, kind, target string) *fathomv1.HealthCheck {
+	return &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-		Spec:       fathomv1alpha1.HealthCheckSpec{CheckRef: fathomv1alpha1.CheckTargetRef{Kind: kind, Name: target}},
+		Spec:       fathomv1.HealthCheckSpec{CheckRef: fathomv1.CheckTargetRef{Kind: kind, Name: target}},
 	}
 }
 
@@ -79,7 +79,7 @@ func TestRun_TriggersExecutableDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, errOut)
 	}
-	tok := annotationOf(t, fc, &fathomv1alpha1.AddonCheck{}, "team-a", "coredns")
+	tok := annotationOf(t, fc, &fathomv1.AddonCheck{}, "team-a", "coredns")
 	if tok == "" || !strings.Contains(out, "triggered (token "+tok+")") {
 		t.Fatalf("annotation %q not reflected in output:\n%s", tok, out)
 	}
@@ -105,13 +105,13 @@ func TestRun_NotFoundAndUnexpectedArgs(t *testing.T) {
 // its source, a ClusterHealth fans out to every child's source, shared
 // sources are triggered once, and every target gets the same token.
 func TestRun_PropagatesFromDerivedKinds(t *testing.T) {
-	ch := &fathomv1alpha1.ClusterHealth{
+	ch := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod"},
-		Status: fathomv1alpha1.ClusterHealthStatus{Children: []fathomv1alpha1.ClusterHealthChildSummary{
+		Status: fathomv1.ClusterHealthStatus{Children: []fathomv1.ClusterHealthChildSummary{
 			{Namespace: "team-a", Name: "web"}, {Namespace: "team-a", Name: "dns"}, {Namespace: "team-a", Name: "web-again"},
 		}},
 	}
-	dns := &fathomv1alpha1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: "cluster-dns", Namespace: "team-a"}}
+	dns := &fathomv1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: "cluster-dns", Namespace: "team-a"}}
 	f, fc := fakeFactory(t,
 		addonCheck("team-a", "coredns"), dns, ch,
 		healthCheckFor("team-a", "web", "AddonCheck", "coredns"),
@@ -134,8 +134,8 @@ func TestRun_PropagatesFromDerivedKinds(t *testing.T) {
 	if !strings.Contains(errOut, "Triggering 2 check(s)") {
 		t.Fatalf("shared source must be de-duplicated:\n%s", errOut)
 	}
-	acTok := annotationOf(t, fc, &fathomv1alpha1.AddonCheck{}, "team-a", "coredns")
-	dnsTok := annotationOf(t, fc, &fathomv1alpha1.DNSCheck{}, "team-a", "cluster-dns")
+	acTok := annotationOf(t, fc, &fathomv1.AddonCheck{}, "team-a", "coredns")
+	dnsTok := annotationOf(t, fc, &fathomv1.DNSCheck{}, "team-a", "cluster-dns")
 	if acTok == "" || acTok != dnsTok {
 		t.Fatalf("every target must receive the same token: %q vs %q", acTok, dnsTok)
 	}
@@ -145,24 +145,19 @@ func TestRun_PropagatesFromDerivedKinds(t *testing.T) {
 }
 
 func TestRun_DerivedEdgeCases(t *testing.T) {
-	pausedHC := healthCheckFor("team-a", "paused", "AddonCheck", "coredns")
-	pausedHC.Spec.Paused = true
-	emptyCH := &fathomv1alpha1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: "empty"}}
-	partialCH := &fathomv1alpha1.ClusterHealth{
+	emptyCH := &fathomv1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: "empty"}}
+	partialCH := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "partial"},
-		Status: fathomv1alpha1.ClusterHealthStatus{Children: []fathomv1alpha1.ClusterHealthChildSummary{
-			{Namespace: "team-a", Name: "gone"}, {Namespace: "team-a", Name: "paused"}, {Namespace: "team-a", Name: "orphan"}, {Namespace: "team-a", Name: "ok"},
+		Status: fathomv1.ClusterHealthStatus{Children: []fathomv1.ClusterHealthChildSummary{
+			{Namespace: "team-a", Name: "gone"}, {Namespace: "team-a", Name: "orphan"}, {Namespace: "team-a", Name: "ok"},
 		}},
 	}
 	f, fc := fakeFactory(t,
-		addonCheck("team-a", "coredns"), pausedHC, emptyCH, partialCH,
+		addonCheck("team-a", "coredns"), emptyCH, partialCH,
 		healthCheckFor("team-a", "orphan", "AddonCheck", "missing-source"),
 		healthCheckFor("team-a", "ok", "AddonCheck", "coredns"),
 	)
 
-	if _, _, err := execRun(f, "healthcheck/paused"); err == nil || !strings.Contains(err.Error(), "is paused") {
-		t.Errorf("paused HealthCheck should be refused: %v", err)
-	}
 	if _, _, err := execRun(f, "clusterhealth/empty"); err == nil || !strings.Contains(err.Error(), "selects no HealthChecks") {
 		t.Errorf("empty ClusterHealth should be refused: %v", err)
 	}
@@ -171,41 +166,25 @@ func TestRun_DerivedEdgeCases(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "did not succeed") {
 		t.Fatalf("skipped sources must make the exit non-zero: %v", err)
 	}
-	for _, want := range []string{"HealthCheck not found", "paused HealthCheck", "not found"} {
+	for _, want := range []string{"HealthCheck not found", "not found"} {
 		if !strings.Contains(errOut+out, want) {
 			t.Errorf("expected %q in output:\n%s%s", want, errOut, out)
 		}
 	}
-	if tok := annotationOf(t, fc, &fathomv1alpha1.AddonCheck{}, "team-a", "coredns"); tok == "" {
+	if tok := annotationOf(t, fc, &fathomv1.AddonCheck{}, "team-a", "coredns"); tok == "" {
 		t.Fatalf("the reachable source must still be triggered")
 	}
 }
 
-func TestRun_PausedTargetIsNotWritten(t *testing.T) {
-	ac := addonCheck("team-a", "paused")
-	ac.Spec.Paused = true
-	f, fc := fakeFactory(t, ac)
-	_, errOut, err := execRun(f, "addoncheck/paused")
-	if err == nil || !strings.Contains(err.Error(), "no checks to run") {
-		t.Fatalf("error = %v", err)
-	}
-	if !strings.Contains(errOut, "paused") {
-		t.Fatalf("reason not printed:\n%s", errOut)
-	}
-	if tok := annotationOf(t, fc, &fathomv1alpha1.AddonCheck{}, "team-a", "paused"); tok != "" {
-		t.Fatalf("paused check must not be written, got %q", tok)
-	}
-}
-
 func TestRun_SelectorAndAll(t *testing.T) {
-	labelled := func(ns, name string) *fathomv1alpha1.AddonCheck {
+	labelled := func(ns, name string) *fathomv1.AddonCheck {
 		ac := addonCheck(ns, name)
 		ac.Labels = map[string]string{"tier": "core"}
 		return ac
 	}
 	f, _ := fakeFactory(t,
 		labelled("team-a", "a1"), labelled("team-a", "a2"), addonCheck("team-a", "a3"),
-		&fathomv1alpha1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "team-a"}},
+		&fathomv1.DNSCheck{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "team-a"}},
 		addonCheck("team-b", "b1"),
 		healthCheckFor("team-a", "hc", "AddonCheck", "a1"),
 	)
@@ -237,10 +216,10 @@ func TestRun_BulkConfirmation(t *testing.T) {
 	}
 	countTriggered := func(fc client.Client) int {
 		n := 0
-		list := &fathomv1alpha1.AddonCheckList{}
+		list := &fathomv1.AddonCheckList{}
 		_ = fc.List(context.Background(), list)
 		for _, it := range list.Items {
-			if it.Annotations[fathomv1alpha1.AnnotationRunNow] != "" {
+			if it.Annotations[fathomv1.AnnotationRunNow] != "" {
 				n++
 			}
 		}
@@ -330,9 +309,9 @@ func TestRun_WaitSupersededAndTimeout(t *testing.T) {
 		go func() {
 			deadline := time.Now().Add(5 * time.Second)
 			for time.Now().Before(deadline) {
-				ac := &fathomv1alpha1.AddonCheck{}
-				if err := fc.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "coredns"}, ac); err == nil && ac.Annotations[fathomv1alpha1.AnnotationRunNow] != "" {
-					ac.Annotations[fathomv1alpha1.AnnotationRunNow] = "someone-else"
+				ac := &fathomv1.AddonCheck{}
+				if err := fc.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "coredns"}, ac); err == nil && ac.Annotations[fathomv1.AnnotationRunNow] != "" {
+					ac.Annotations[fathomv1.AnnotationRunNow] = "someone-else"
 					_ = fc.Update(context.Background(), ac)
 					return
 				}
@@ -350,7 +329,7 @@ func TestRun_WaitSupersededAndTimeout(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "timed out") {
 			t.Fatalf("err=%v", err)
 		}
-		for _, hint := range []string{"timed out", "fathomctl version", "paused", "node-agent rollout"} {
+		for _, hint := range []string{"timed out", "fathomctl version", "node-agent rollout"} {
 			if !strings.Contains(out, hint) {
 				t.Errorf("timeout output should mention %q:\n%s", hint, out)
 			}
@@ -370,8 +349,8 @@ func TestRun_DefaultWaitTimeoutUsesLargestCheckTimeout(t *testing.T) {
 }
 
 func TestRun_WaitTimeoutPreservesExplicitOverride(t *testing.T) {
-	check := &fathomv1alpha1.NodeHealthCheck{
-		Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
+	check := &fathomv1.NodeHealthCheck{
+		Status: fathomv1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
 	}
 	targets := []runTarget{{
 		ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"},
@@ -384,8 +363,8 @@ func TestRun_WaitTimeoutPreservesExplicitOverride(t *testing.T) {
 }
 
 func TestRun_DefaultWaitTimeoutSaturatesWhenAddingMargin(t *testing.T) {
-	check := &fathomv1alpha1.NodeHealthCheck{
-		Status: fathomv1alpha1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
+	check := &fathomv1.NodeHealthCheck{
+		Status: fathomv1.NodeHealthCheckStatus{DesiredNodes: 1<<31 - 1},
 	}
 	targets := []runTarget{{
 		ref: checkRef{Kind: kindByName("NodeHealthCheck"), Namespace: "team-a", Name: "nodes"},
@@ -417,5 +396,18 @@ func TestVerdictPasses(t *testing.T) {
 		if verdictPasses(v) != want {
 			t.Errorf("verdictPasses(%q) = %v, want %v", v, !want, want)
 		}
+	}
+}
+
+// Pause is gone from every kind (spec 014): nothing in the run verb's help or
+// its outcome vocabulary may still promise a paused state.
+func TestRun_NoPauseSurfaceRemains(t *testing.T) {
+	f, _ := fakeFactory(t, addonCheck("team-a", "coredns"))
+	out, errOut, err := execRun(f, "--help")
+	if err != nil {
+		t.Fatalf("run --help: %v", err)
+	}
+	if strings.Contains(strings.ToLower(out+errOut), "paus") {
+		t.Fatalf("run help still mentions pause:\n%s%s", out, errOut)
 	}
 }

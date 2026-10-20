@@ -378,6 +378,78 @@ was raised only to fit wall-time figures, keep it.
 The run bound still has to absorb Pod start-up, which `runMillis` now shows
 directly.
 
+## v1 API migration
+
+Release 0.7.0 promotes the seven check kinds — `AddonCheck`, `HealthCheck`,
+`ClusterHealth`, `HealthReport`, `NodeCertificateCheck`, `DNSCheck`,
+`NodeHealthCheck` — to the stable `fathom.skaphos.io/v1` and stops serving
+`v1alpha1` for them (skaphos/fathom#149, ADR 0009). The two runtime definition
+kinds stay at `v1alpha1`. `spec.paused` is gone from every kind: deleting a
+check is the only way to stop it (#262). Alpha resources **do not survive the
+upgrade**: the API server refuses to drop a version a CRD still stores, so
+each promoted CRD is deleted together with its alpha objects (including their
+`HealthReport` history) and created again at `v1`. 0.7.0 is therefore an
+upgrade-path **stop**: every later upgrade from 0.6.x passes through the
+0.7.0 `fathomctl`, which is the one that knows the alpha shapes.
+
+**Before upgrading**, with the 0.7.0 `fathomctl` against the 0.6.x cluster:
+
+```sh
+fathomctl export --output fathom-v1.yaml   # renders every alpha check as a v1 manifest; applies nothing
+```
+
+The export rewrites `apiVersion`, drops `spec.paused`, rewrites
+`checkRef.apiVersion`, strips status and server metadata, and reports any
+object it could not render (exit 1). Commit the output to the repository the
+checks came from; it is the desired state from here on. `HealthReport`s are
+history, not intent, and are not exported.
+
+**Upgrade** (Helm-managed installs):
+
+```sh
+fathomctl upgrade -n fathom-system                              # stops: lists every alpha object the replace will remove
+fathomctl upgrade -n fathom-system --accept-incompatible-crds   # replaces the seven CRDs, then rolls the operator out
+kubectl apply -f fathom-v1.yaml                                 # recreates the checks on v1
+fathomctl status -n fathom-system
+```
+
+With no alpha objects left (you deleted them first), the sanction alone
+suffices and the flag is not required. `--rollback-on-failure` is refused on
+this upgrade: the previous operator cannot run against the new schema.
+
+**Plain manifests or GitOps** (kustomize, OLM, a GitOps controller applying
+`config/`): `kubectl apply` of the new CRDs fails with
+`stored versions removed` until the alpha objects and CRDs are gone, so the
+sequence is the same by hand:
+
+```sh
+fathomctl export --output fathom-v1.yaml
+kubectl delete crd addonchecks.fathom.skaphos.io healthchecks.fathom.skaphos.io \
+  clusterhealths.fathom.skaphos.io healthreports.fathom.skaphos.io \
+  nodecertificatechecks.fathom.skaphos.io dnschecks.fathom.skaphos.io \
+  nodehealthchecks.fathom.skaphos.io
+# apply the 0.7.0 manifests (CRDs first), then
+kubectl apply -f fathom-v1.yaml
+```
+
+A GitOps controller still applying `v1alpha1` manifests afterwards sees the
+API server's own `no matches for kind ... in version "fathom.skaphos.io/v1alpha1"`
+error; update the repository from the export.
+
+**`spec.paused` in old manifests**: `kubectl` rejects it under its default
+strict field validation (`unknown field "spec.paused"`); a client that does
+not validate strictly has the field silently pruned by the server. Route every
+manifest through `fathomctl export` rather than editing by hand.
+
+**Verification**: `kubectl get crd addonchecks.fathom.skaphos.io -o jsonpath='{.spec.versions[*].name}'`
+prints `v1`; `fathomctl status` shows every CRD current; the recreated checks
+reach a verdict within their intervals.
+
+**Rollback**: reinstall 0.6.x (`helm rollback` restores only the operator;
+the CRDs are at `v1`), delete the seven `v1` CRDs, apply the 0.6.x CRDs, and
+re-apply the alpha manifests from Git. Report history is not recoverable on
+either path.
+
 ## Rollback / Fix Forward
 
 - If the release workflow fails after the tag lands, fix the workflow and
@@ -474,7 +546,7 @@ This is now automated — you no longer hand-edit version tags at release time:
   - `version` and `appVersion` in `deploy/helm/fathom-operator/Chart.yaml`
   - `E2E_PROBE_IMG` / `E2E_NODE_AGENT_IMG` in `Taskfile.yml`
   - pinned `probeImage` sample override in
-    `config/samples/fathom_v1alpha1_addoncheck_coredns.yaml` (the sample sets
+    `config/samples/fathom_v1_addoncheck_coredns.yaml` (the sample sets
     `policy.dns_resolution.thresholds.probeImage`, which overrides the operator
     default; the pin must match the kind-loaded e2e probe tag)
 - **CI enforces lockstep.** The `version-lockstep` job (and

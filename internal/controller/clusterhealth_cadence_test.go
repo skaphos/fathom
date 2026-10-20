@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // Cadence publication (skaphos/fathom#277).
@@ -38,9 +38,9 @@ var _ = Describe("check cadence publication", func() {
 	// T017 — each self-scheduling kind publishes the cadence actually in force.
 	Context("a self-scheduling check", func() {
 		It("publishes its default cadence when spec.interval is unset", func() {
-			check := &fathomv1alpha1.AddonCheck{
+			check := &fathomv1.AddonCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "cadence-default", Namespace: "default"},
-				Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "coredns"},
+				Spec:       fathomv1.AddonCheckSpec{AddonType: "coredns"},
 			}
 			Expect(k8sClient.Create(ctx, check)).To(Succeed())
 			DeferCleanup(func() {
@@ -53,13 +53,13 @@ var _ = Describe("check cadence publication", func() {
 
 			value, ok := intervalGauge("AddonCheck", "cadence-default", "default")
 			Expect(ok).To(BeTrue(), "every self-scheduling check must publish a cadence")
-			Expect(value).To(Equal(fathomv1alpha1.DefaultAddonCheckInterval.Seconds()))
+			Expect(value).To(Equal(fathomv1.DefaultAddonCheckInterval.Seconds()))
 		})
 
 		It("publishes the per-resource override rather than the default", func() {
-			check := &fathomv1alpha1.AddonCheck{
+			check := &fathomv1.AddonCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "cadence-override", Namespace: "default"},
-				Spec: fathomv1alpha1.AddonCheckSpec{
+				Spec: fathomv1.AddonCheckSpec{
 					AddonType: "coredns",
 					Interval:  &metav1.Duration{Duration: 30 * time.Minute},
 				},
@@ -84,9 +84,9 @@ var _ = Describe("check cadence publication", func() {
 	// names a Fathom-native check whose cadence the operator owns.
 	Context("a HealthCheck wrapper", func() {
 		It("publishes the wrapped check's cadence", func() {
-			target := &fathomv1alpha1.AddonCheck{
+			target := &fathomv1.AddonCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "wrapped-target", Namespace: "default"},
-				Spec: fathomv1alpha1.AddonCheckSpec{
+				Spec: fathomv1.AddonCheckSpec{
 					AddonType: "coredns",
 					Interval:  &metav1.Duration{Duration: 45 * time.Minute},
 				},
@@ -96,10 +96,10 @@ var _ = Describe("check cadence publication", func() {
 				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, target))).To(Succeed())
 			})
 
-			hc := &fathomv1alpha1.HealthCheck{
+			hc := &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "wrapper-cadence", Namespace: "default"},
-				Spec: fathomv1alpha1.HealthCheckSpec{
-					CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "wrapped-target"},
+				Spec: fathomv1.HealthCheckSpec{
+					CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: "wrapped-target"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, hc)).To(Succeed())
@@ -111,7 +111,7 @@ var _ = Describe("check cadence publication", func() {
 				reconcile.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "wrapper-cadence"}})
 			Expect(err).NotTo(HaveOccurred())
 
-			var got fathomv1alpha1.HealthCheck
+			var got fathomv1.HealthCheck
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "wrapper-cadence"}, &got)).To(Succeed())
 			Expect(got.Status.SourceInterval).NotTo(BeNil(),
 				"the wrapper must surface the wrapped cadence; an aggregate can reach it no other way")
@@ -123,10 +123,10 @@ var _ = Describe("check cadence publication", func() {
 		})
 
 		It("publishes no cadence for an unresolvable kind, without failing the reconcile", func() {
-			hc := &fathomv1alpha1.HealthCheck{
+			hc := &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "wrapper-unknown-kind", Namespace: "default"},
-				Spec: fathomv1alpha1.HealthCheckSpec{
-					CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "ReachabilityCheck", Name: "not-built-yet"},
+				Spec: fathomv1.HealthCheckSpec{
+					CheckRef: fathomv1.CheckTargetRef{Kind: "ReachabilityCheck", Name: "not-built-yet"},
 				},
 			}
 			Expect(k8sClient.Create(ctx, hc)).To(Succeed())
@@ -139,7 +139,7 @@ var _ = Describe("check cadence publication", func() {
 			Expect(err).NotTo(HaveOccurred(),
 				"an unsupported checkRef kind is a status condition, never a reconcile failure")
 
-			var got fathomv1alpha1.HealthCheck
+			var got fathomv1.HealthCheck
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "wrapper-unknown-kind"}, &got)).To(Succeed())
 			Expect(got.Status.SourceInterval).To(BeNil())
 
@@ -155,9 +155,9 @@ var _ = Describe("check cadence publication", func() {
 			lbls := map[string]string{"cadence-case": "mixed"}
 
 			mk := func(name string, interval time.Duration) {
-				target := &fathomv1alpha1.AddonCheck{
+				target := &fathomv1.AddonCheck{
 					ObjectMeta: metav1.ObjectMeta{Name: name + "-target", Namespace: "default"},
-					Spec: fathomv1alpha1.AddonCheckSpec{
+					Spec: fathomv1.AddonCheckSpec{
 						AddonType: "coredns",
 						Interval:  &metav1.Duration{Duration: interval},
 					},
@@ -167,10 +167,10 @@ var _ = Describe("check cadence publication", func() {
 					Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, target))).To(Succeed())
 				})
 
-				hc := &fathomv1alpha1.HealthCheck{
+				hc := &fathomv1.HealthCheck{
 					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", Labels: lbls},
-					Spec: fathomv1alpha1.HealthCheckSpec{
-						CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: name + "-target"},
+					Spec: fathomv1.HealthCheckSpec{
+						CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: name + "-target"},
 					},
 				}
 				Expect(k8sClient.Create(ctx, hc)).To(Succeed())
@@ -179,8 +179,8 @@ var _ = Describe("check cadence publication", func() {
 				})
 
 				now := metav1.Now()
-				hc.Status = fathomv1alpha1.HealthCheckStatus{
-					Result:           fathomv1alpha1.HealthReportResultPass,
+				hc.Status = fathomv1.HealthCheckStatus{
+					Result:           fathomv1.HealthReportResultPass,
 					SourceInterval:   &metav1.Duration{Duration: interval},
 					SourceObservedAt: &now,
 				}
@@ -190,9 +190,9 @@ var _ = Describe("check cadence publication", func() {
 			mk("cadence-fast-child", 5*time.Minute)
 			mk("cadence-slow-child", time.Hour)
 
-			ch := &fathomv1alpha1.ClusterHealth{
+			ch := &fathomv1.ClusterHealth{
 				ObjectMeta: metav1.ObjectMeta{Name: "ch-mixed-cadence"},
-				Spec: fathomv1alpha1.ClusterHealthSpec{
+				Spec: fathomv1.ClusterHealthSpec{
 					Selector: &metav1.LabelSelector{MatchLabels: lbls},
 				},
 			}
@@ -211,7 +211,7 @@ var _ = Describe("check cadence publication", func() {
 				"taking the fastest child would mark every mixed-cadence aggregate permanently overdue")
 
 			By("and both children remain within their own cadence, so nothing is overdue")
-			var got fathomv1alpha1.ClusterHealth
+			var got fathomv1.ClusterHealth
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "ch-mixed-cadence"}, &got)).To(Succeed())
 			Expect(got.Status.ObservedAt).NotTo(BeNil())
 			age := time.Since(got.Status.ObservedAt.Time)

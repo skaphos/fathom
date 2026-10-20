@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -52,7 +52,7 @@ var nodeHealthPassing = []nodehealth.CheckResult{
 // nodeHealthAgentClient writes as the per-check node-health agent
 // ServiceAccount carrying the node claim for claimNode, the only identity the
 // report-authenticity policy admits (SEC-1).
-func nodeHealthAgentClient(check *fathomv1alpha1.NodeHealthCheck, claimNode string) client.Client {
+func nodeHealthAgentClient(check *fathomv1.NodeHealthCheck, claimNode string) client.Client {
 	impersonated := rest.CopyConfig(cfg)
 	impersonated.Impersonate = rest.ImpersonationConfig{
 		UserName: "system:serviceaccount:" + check.Namespace + ":" + nodeHealthAgentResourceName(check),
@@ -63,13 +63,13 @@ func nodeHealthAgentClient(check *fathomv1alpha1.NodeHealthCheck, claimNode stri
 	return c
 }
 
-func writeNodeHealthReport(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, node string, checks []nodehealth.CheckResult) {
+func writeNodeHealthReport(ctx context.Context, check *fathomv1.NodeHealthCheck, node string, checks []nodehealth.CheckResult) {
 	writeNodeHealthReportObject(ctx, check, node, node, nodehealth.NodeReport{
 		Node: node, CheckName: check.Name, ObservedAt: time.Now(), Aggregate: nodehealth.WorstOutcome(checks), Checks: checks,
 	})
 }
 
-func writeTriggeredNodeHealthReport(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, node, trigger string, checks []nodehealth.CheckResult) {
+func writeTriggeredNodeHealthReport(ctx context.Context, check *fathomv1.NodeHealthCheck, node, trigger string, checks []nodehealth.CheckResult) {
 	writeNodeHealthReportObject(ctx, check, node, node, nodehealth.NodeReport{
 		Node: node, CheckName: check.Name, ObservedAt: time.Now(), Aggregate: nodehealth.WorstOutcome(checks), Checks: checks, Trigger: trigger,
 	})
@@ -78,7 +78,7 @@ func writeTriggeredNodeHealthReport(ctx context.Context, check *fathomv1alpha1.N
 // writeNodeHealthReportObject upserts a report at the canonical name for
 // cmNode, annotated (and written by an identity claiming) annotationNode. A
 // genuine agent passes the same node for both; a forgery test separates them.
-func writeNodeHealthReportObject(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, cmNode, annotationNode string, report nodehealth.NodeReport) {
+func writeNodeHealthReportObject(ctx context.Context, check *fathomv1.NodeHealthCheck, cmNode, annotationNode string, report nodehealth.NodeReport) {
 	if report.ItemsDigest == "" {
 		// What a genuine agent started from this check's current template
 		// stamps. A test that wants a report from a previous spec sets its own.
@@ -117,7 +117,7 @@ func writeNodeHealthReportObject(ctx context.Context, check *fathomv1alpha1.Node
 // setNodeHealthDaemonSetStatus marks the DaemonSet fully rolled out and fakes
 // the agent pods the real DaemonSet controller would create (envtest runs
 // neither a DaemonSet controller nor a scheduler).
-func setNodeHealthDaemonSetStatus(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, desired, ready int32) {
+func setNodeHealthDaemonSetStatus(ctx context.Context, check *fathomv1.NodeHealthCheck, desired, ready int32) {
 	ds := &appsv1.DaemonSet{}
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeHealthAgentResourceName(check), Namespace: check.Namespace}, ds)).To(Succeed())
 	ds.Status.DesiredNumberScheduled = desired
@@ -132,7 +132,7 @@ func setNodeHealthDaemonSetStatus(ctx context.Context, check *fathomv1alpha1.Nod
 
 // scheduleNodeHealthAgentPods makes the agent pod set for check exactly nodes,
 // under this kind's three-label selector.
-func scheduleNodeHealthAgentPods(ctx context.Context, check *fathomv1alpha1.NodeHealthCheck, nodes ...string) {
+func scheduleNodeHealthAgentPods(ctx context.Context, check *fathomv1.NodeHealthCheck, nodes ...string) {
 	labels := nodeHealthAgentSelectorLabels(check)
 	keep := make(map[string]struct{}, len(nodes))
 	for _, node := range nodes {
@@ -191,30 +191,30 @@ func healthyNodeConditions() []corev1.NodeCondition {
 }
 
 func nodeHealthHealthReportCount(ctx context.Context, source types.NamespacedName) int {
-	reports := &fathomv1alpha1.HealthReportList{}
+	reports := &fathomv1.HealthReportList{}
 	Expect(k8sClient.List(ctx, reports, client.InNamespace(source.Namespace), client.MatchingLabels{
-		fathomv1alpha1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
-		fathomv1alpha1.LabelHealthReportSourceName: source.Name,
+		fathomv1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
+		fathomv1.LabelHealthReportSourceName: source.Name,
 	})).To(Succeed())
 	return len(reports.Items)
 }
 
-func newNHC(name types.NamespacedName, items ...fathomv1alpha1.NodeHealthCheckItem) *fathomv1alpha1.NodeHealthCheck {
-	return &fathomv1alpha1.NodeHealthCheck{
+func newNHC(name types.NamespacedName, items ...fathomv1.NodeHealthCheckItem) *fathomv1.NodeHealthCheck {
+	return &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
-		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: items},
+		Spec:       fathomv1.NodeHealthCheckSpec{Checks: items},
 	}
 }
 
 var _ = Describe("NodeHealthCheck Controller", func() {
 	ctx := context.Background()
-	headroom := fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}
+	headroom := fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}
 
 	It("provisions a hardened agent for a headroom-only spec: no host network, non-root, read-only mounts", func() {
 		name := types.NamespacedName{Name: "nh-provision", Namespace: "default"}
 		check := newNHC(name, headroom,
-			fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/log"},
-			fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition})
+			fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckInodeHeadroom, Path: "/var/log"},
+			fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition})
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
@@ -293,7 +293,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(ds.Spec.Selector.MatchLabels))
 		Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(metricsContainerPort))
 
-		updated := &fathomv1alpha1.NodeHealthCheck{}
+		updated := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionAccepted).Status).To(Equal(metav1.ConditionTrue))
 		privileged := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionPrivileged)
@@ -341,16 +341,16 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 		Expect(current.Status.LastReportName).NotTo(BeEmpty())
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: current.Status.LastReportName, Namespace: name.Namespace}, &fathomv1alpha1.HealthReport{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: current.Status.LastReportName, Namespace: name.Namespace}, &fathomv1.HealthReport{})).To(Succeed())
 	})
 
 	It("grants host network only for KubeletHealthz and root only for ContainerRuntime, and says so on the object", func() {
 		name := types.NamespacedName{Name: "nh-priv", Namespace: "default"}
-		check := newNHC(name, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})
+		check := newNHC(name, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckKubeletHealthz})
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
@@ -373,7 +373,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-priv-node-health-agent", Namespace: "default"}, np)).To(Succeed())
 		Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(BeEquivalentTo(hostPort), "policy follows the host port")
 
-		updated := &fathomv1alpha1.NodeHealthCheck{}
+		updated := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		privileged := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionPrivileged)
 		Expect(privileged.Status).To(Equal(metav1.ConditionTrue))
@@ -382,7 +382,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		// Add ContainerRuntime: root + the socket mounted as type Socket.
 		Expect(k8sClient.Get(ctx, name, check)).To(Succeed())
-		check.Spec.Checks = append(check.Spec.Checks, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"})
+		check.Spec.Checks = append(check.Spec.Checks, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"})
 		Expect(k8sClient.Update(ctx, check)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -405,7 +405,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 	It("is idempotent: a second reconcile and report rewrites do not churn the DaemonSet template", func() {
 		name := types.NamespacedName{Name: "nh-idem", Namespace: "default"}
-		check := newNHC(name, headroom, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})
+		check := newNHC(name, headroom, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckKubeletHealthz})
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
@@ -427,7 +427,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(ds.Generation).To(Equal(gen), "template rewritten without an intent change (#143 churn class)")
 		Expect(ds.Annotations[nodeAgentSpecHashAnnotation]).To(Equal(hash))
 
-		stable := &fathomv1alpha1.NodeHealthCheck{}
+		stable := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, stable)).To(Succeed())
 		statusVersion := stable.ResourceVersion
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -438,7 +438,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 	It("rolls up agent reports merged with operator-graded node conditions, and writes a new HealthReport only on transition", func() {
 		name := types.NamespacedName{Name: "nh-rollup", Namespace: "default"}
-		check := newNHC(name, headroom, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition})
+		check := newNHC(name, headroom, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition})
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 		ensureNode(ctx, "node-a", healthyNodeConditions()...)
@@ -453,7 +453,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 		Expect(current.Status.Summary).To(Equal("2 of 2 node(s) passed"))
@@ -466,7 +466,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(nodeHealthHealthReportCount(ctx, name)).To(Equal(1))
 		firstReport := current.Status.LastReportName
 
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: firstReport, Namespace: name.Namespace}, report)).To(Succeed())
 		// 2 nodes × (1 headroom + 4 conditions) = 10 checks, all node_health on a Node target.
 		Expect(report.Spec.Checks).To(HaveLen(10))
@@ -476,7 +476,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 			Expect(c.TargetRef.Kind).To(Equal("Node"))
 			if c.Details["type"] == nodehealth.TypeNodeCondition {
 				conditionChecks++
-				Expect(c.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
+				Expect(c.Result).To(Equal(fathomv1.HealthReportResultPass))
 			}
 		}
 		Expect(conditionChecks).To(Equal(8), "operator-graded node conditions reach the report")
@@ -520,7 +520,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		writeNodeHealthReport(ctx, check, "node-b", nodeHealthPassing)
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 		frozenRun, frozenReport, frozenResults := current.Status.LastRunTime, current.Status.LastReportName, current.Status.NodeResults
@@ -534,7 +534,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.NodeHealthCheck{}
+		updated := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.ReportingNodes).To(BeEquivalentTo(0), "aged-out reports are not consumed")
 		Expect(updated.Status.LastResult).To(Equal("Pass"), "an incomplete window must freeze the verdict, not wipe it")
@@ -578,7 +578,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		scheduleNodeHealthAgentPods(ctx, check, "node-b", "node-c")
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		updated := &fathomv1alpha1.NodeHealthCheck{}
+		updated := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.ReportingNodes).To(BeEquivalentTo(2))
 		coverage := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionCoverage)
@@ -605,7 +605,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(updated.Status.NodeResults).To(HaveLen(2), "a departed node must not appear in the roll-up")
 		Expect(updated.Status.NodeResults[0].Node).To(Equal("node-b"))
 		Expect(updated.Status.NodeResults[1].Node).To(Equal("node-c"))
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: updated.Status.LastReportName, Namespace: name.Namespace}, report)).To(Succeed())
 		for _, c := range report.Spec.Checks {
 			Expect(c.TargetRef.Name).NotTo(Equal("node-a"), "a departed node's evidence must not reach the HealthReport")
@@ -614,7 +614,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 	It("rolls up a NodeCondition-only spec from empty agent reports", func() {
 		name := types.NamespacedName{Name: "nh-condonly", Namespace: "default"}
-		check := newNHC(name, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition})
+		check := newNHC(name, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition})
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 		ensureNode(ctx, "node-a", healthyNodeConditions()...)
@@ -636,12 +636,12 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastResult).To(Equal("Pass"), "the operator-graded conditions alone decide the verdict")
 		Expect(current.Status.Summary).To(Equal("1 of 1 node(s) passed"))
 		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionReady).Status).To(Equal(metav1.ConditionTrue))
-		report := &fathomv1alpha1.HealthReport{}
+		report := &fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: current.Status.LastReportName, Namespace: name.Namespace}, report)).To(Succeed())
 		Expect(report.Spec.Checks).To(HaveLen(4), "one check per graded condition")
 	})
@@ -665,7 +665,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		updated := &fathomv1alpha1.NodeHealthCheck{}
+		updated := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		authentic := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeHealthConditionAuthentic)
 		Expect(authentic).NotTo(BeNil())
@@ -710,7 +710,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 	It("stamps the run-now token on the agent template and consumes it only once every node reports it", func() {
 		name := types.NamespacedName{Name: "nh-runnow", Namespace: "default"}
 		check := newNHC(name, headroom)
-		check.Annotations = map[string]string{fathomv1alpha1.AnnotationRunNow: "tok-1"}
+		check.Annotations = map[string]string{fathomv1.AnnotationRunNow: "tok-1"}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
@@ -721,7 +721,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		ds := &appsv1.DaemonSet{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "nh-runnow-node-health-agent", Namespace: "default"}, ds)).To(Succeed())
-		Expect(ds.Spec.Template.Annotations).To(HaveKeyWithValue(fathomv1alpha1.AnnotationRunNow, "tok-1"))
+		Expect(ds.Spec.Template.Annotations).To(HaveKeyWithValue(fathomv1.AnnotationRunNow, "tok-1"))
 		var sawEnv bool
 		for _, e := range ds.Spec.Template.Spec.Containers[0].Env {
 			if e.Name == nodecert.EnvRunTrigger {
@@ -735,7 +735,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		writeNodeHealthReport(ctx, check, "node-b", nodeHealthPassing) // no token yet
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastRunTrigger).To(BeEmpty(), "node-b has not answered with the token")
 		Expect(current.Status.LastResult).To(Equal("Pass"), "the ordinary roll-up still runs")
@@ -754,7 +754,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		nhc := newNHC(name, headroom)
 		Expect(k8sClient.Create(ctx, nhc)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, nhc))).To(Succeed()) })
-		ncc := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace}}
+		ncc := &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace}}
 		Expect(k8sClient.Create(ctx, ncc)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, ncc))).To(Succeed()) })
 
@@ -815,7 +815,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(apiMeta.FindStatusCondition(current.Status.Conditions, nodeHealthConditionCoverage).Status).To(Equal(metav1.ConditionTrue), "a pod the DaemonSet does not control must not count as a node in scope")
 		Expect(current.Status.LastResult).To(Equal("Pass"))
@@ -835,7 +835,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		})
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.ReportingNodes).To(BeEquivalentTo(0), "a malformed report must not be consumed")
 		Expect(current.Status.LastResult).To(BeEmpty(), "nothing may be graded from it")
@@ -895,13 +895,13 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 
 		// Older history the check accumulated under the higher limit.
 		for i := 0; i < 3; i++ {
-			extra := &fathomv1alpha1.HealthReport{ObjectMeta: metav1.ObjectMeta{
+			extra := &fathomv1.HealthReport{ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("nh-retain-old-%d", i), Namespace: name.Namespace,
-				Labels: map[string]string{fathomv1alpha1.LabelHealthReportSourceKind: nodeHealthKind, fathomv1alpha1.LabelHealthReportSourceName: check.Name},
-			}, Spec: fathomv1alpha1.HealthReportSpec{
-				SourceRef:   fathomv1alpha1.HealthReportTargetRef{APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind, Namespace: name.Namespace, Name: check.Name},
+				Labels: map[string]string{fathomv1.LabelHealthReportSourceKind: nodeHealthKind, fathomv1.LabelHealthReportSourceName: check.Name},
+			}, Spec: fathomv1.HealthReportSpec{
+				SourceRef:   fathomv1.HealthReportTargetRef{APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind, Namespace: name.Namespace, Name: check.Name},
 				AdapterName: "node-health-check", AdapterVersion: "0.1.0",
-				Result: fathomv1alpha1.HealthReportResultPass, ObservedAt: metav1.Now(),
+				Result: fathomv1.HealthReportResultPass, ObservedAt: metav1.Now(),
 			}}
 			Expect(k8sClient.Create(ctx, extra)).To(Succeed())
 		}
@@ -915,8 +915,8 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		r.Clock = func() time.Time { return time.Now().Add(nodeHealthRequeueAfter(check) + time.Minute) }
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		var reports fathomv1alpha1.HealthReportList
-		Expect(k8sClient.List(ctx, &reports, client.InNamespace(name.Namespace), client.MatchingLabels{fathomv1alpha1.LabelHealthReportSourceName: check.Name})).To(Succeed())
+		var reports fathomv1.HealthReportList
+		Expect(k8sClient.List(ctx, &reports, client.InNamespace(name.Namespace), client.MatchingLabels{fathomv1.LabelHealthReportSourceName: check.Name})).To(Succeed())
 		Expect(reports.Items).To(HaveLen(1), "a lowered historyLimit must be enforced without a new report")
 	})
 
@@ -932,7 +932,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		writeNodeHealthReport(ctx, check, "node-a", nodeHealthPassing)
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		current := &fathomv1alpha1.NodeHealthCheck{}
+		current := &fathomv1.NodeHealthCheck{}
 		Expect(k8sClient.Get(ctx, name, current)).To(Succeed())
 		Expect(current.Status.LastResult).To(Equal("Pass"))
 		frozenReport := current.Status.LastReportName
@@ -941,7 +941,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		// carries no result for the new item: it is a spec-change window, not
 		// evidence, so the verdict stays frozen with an honest coverage signal.
 		Expect(k8sClient.Get(ctx, name, check)).To(Succeed())
-		check.Spec.Checks = append(check.Spec.Checks, fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"})
+		check.Spec.Checks = append(check.Spec.Checks, fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"})
 		Expect(k8sClient.Update(ctx, check)).To(Succeed())
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
