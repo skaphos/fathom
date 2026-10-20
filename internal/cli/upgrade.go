@@ -115,6 +115,13 @@ func buildUpgradePlan(ctx context.Context, c client.Client, req planRequest) (*u
 	var ack []string
 	for i := range crds {
 		p := &crds[i]
+		if p.Action == crdReplace && req.perCRDFrom {
+			// Leftover CRDs carry no recorded version to judge a sanction
+			// against, and a replace deletes every object of the kind.
+			p.Action = crdRefuse
+			plan.Refusals = append(plan.Refusals, leftoverStoredVersionRefusal(p))
+			continue
+		}
 		from, judged := sanctionBase(req, p)
 		for j := range p.Findings {
 			finding := &p.Findings[j]
@@ -134,7 +141,15 @@ func buildUpgradePlan(ctx context.Context, c client.Client, req planRequest) (*u
 				continue
 			}
 			finding.SanctionedBy = fmt.Sprintf("v%s (%s)", release, s.Issue)
-			if !req.accept {
+			if req.accept {
+				continue
+			}
+			switch {
+			case p.Action == crdReplace && !p.needsAcknowledgement():
+				// Nothing would be removed: the sanction alone suffices.
+			case p.Action == crdReplace:
+				ack = append(ack, inventoryAckLine(p, s, release))
+			default:
 				ack = append(ack, fmt.Sprintf("%s %s: %s — %s (sanctioned by v%s)", p.Name, finding.Path, s.Reason, s.Issue, release))
 			}
 		}
@@ -210,6 +225,14 @@ func recordedVersionRefusals(crds []crdPlan, to *semver.Version) []refusal {
 		Detail: fmt.Sprintf("these CRDs were applied by a newer release than this fathomctl (v%s) and installing would downgrade them: %s", to, strings.Join(newer, ", ")),
 		Next:   "use the fathomctl release that matches those CRDs",
 	}}
+}
+
+func leftoverStoredVersionRefusal(p *crdPlan) refusal {
+	return refusal{
+		Reason: reasonLeftoverStoredVersion,
+		Detail: fmt.Sprintf("%s was left behind by an earlier uninstall and stores %s, which this release no longer serves; install cannot replace it because leftover CRDs record no version to sanction the change against", p.Name, strings.Join(storedVersionsDropped(p.live, p.target), ", ")),
+		Next:   "fathomctl export --output <file>; kubectl delete crd " + p.Name + "; fathomctl install",
+	}
 }
 
 func scopeRefusal(p *crdPlan) refusal {
@@ -355,6 +378,9 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	if err := applyCRDs(ctx, f, env.c, plan.CRDs, version, opts.timeout); err != nil {
 		return err
 	}
+	if !f.opts.output.structured() {
+		renderReplaced(out, plan.CRDs)
+	}
 	if _, err := env.rc.Upgrade(ctx, releaseRequest{
 		Name: in.Release, Namespace: in.Namespace, Version: version,
 		Values: mergeValues(env.userValues, imageValues(version)), ReuseValues: true, Timeout: opts.timeout,
@@ -460,6 +486,7 @@ func printPlan(w io.Writer, format outputFormat, plan *upgradePlan) error {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\n", p.Name, p.Action, detail)
 	}
 	_ = tw.Flush()
+	renderInventory(w, plan.CRDs)
 	_, _ = fmt.Fprintf(w, "Operator:  %s -> %s\n", plan.Operator.FromImages["operator"], plan.Operator.ToImages["operator"])
 	if len(plan.Values) > 0 {
 		raw, err := yaml.Marshal(plan.Values)

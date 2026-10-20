@@ -62,7 +62,9 @@ func (c lifecycleCLI) run(args ...string) (string, error) {
 // chart's appVersion so a release bump never makes the chart look newer
 // than the CLI.
 func lifecycleVersions() (string, string) {
-	if v := strings.Fields(os.Getenv("E2E_LIFECYCLE_VERSIONS")); len(v) == 2 {
+	// The Taskfile appends the upgrade stop as a third version (see
+	// upgradeStopVersion); the first two are this suite's pair.
+	if v := strings.Fields(os.Getenv("E2E_LIFECYCLE_VERSIONS")); len(v) >= 2 {
 		return v[0], v[1]
 	}
 	root, err := utils.GetProjectDir()
@@ -303,5 +305,157 @@ var _ = Describe("fathomctl lifecycle", Ordered, Label(utils.LifecycleLabel), fu
 			return len(utils.GetNonEmptyLines(out))
 		}
 		Consistently(countReports, 20*time.Second, 2*time.Second).Should(BeNumerically(">=", exportedReports))
+	})
+})
+
+// upgradeStopVersion is the newest release declared in the chart's
+// upgrade-path.yaml: the stop the alpha-to-v1 scenario upgrades to. The CLI
+// for that scenario is built at exactly this version, because a
+// `<appVersion>-e2e.N` build sorts below it and the 0.7.0 sanctions, matched
+// by A < entry <= B, would never apply (spec 014, research R14).
+func upgradeStopVersion() string {
+	root, err := utils.GetProjectDir()
+	Expect(err).NotTo(HaveOccurred())
+	raw, err := os.ReadFile(filepath.Join(root, "deploy", "helm", "fathom-operator", "upgrade-path.yaml"))
+	Expect(err).NotTo(HaveOccurred())
+	version := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "- version:"); ok {
+			version = strings.TrimSpace(rest)
+		}
+	}
+	Expect(version).NotTo(BeEmpty(), "upgrade-path.yaml declares no release")
+	return version
+}
+
+const (
+	v1UpgradeChart     = "oci://ghcr.io/skaphos/charts/fathom-operator"
+	v1UpgradeFrom      = "0.6.0"
+	v1UpgradeChecksNS  = "v1-upgrade-e2e"
+	v1UpgradeAggregate = "platform"
+)
+
+// The alpha-to-v1 upgrade (spec 014, FR-022, quickstart §3): a genuine 0.6.0
+// install from the published chart, with alpha resources and report history,
+// is exported, replaced and recreated by the stop release's fathomctl. It
+// runs in the lifecycle shard, needs GHCR for the 0.6.0 chart and images, and
+// skips with a clear message when the registry is unreachable.
+var _ = Describe("fathomctl alpha-to-v1 upgrade", Ordered, Label(utils.LifecycleLabel), func() {
+	var cli lifecycleCLI
+	var tmp, export string
+
+	v1UpgradeCRD := func(kind string) string { return strings.ToLower(kind) + "s.fathom.skaphos.io" }
+	servedVersions := func(kind string) string {
+		out, err := kubectl("get", "crd", v1UpgradeCRD(kind), "-o", "jsonpath={.spec.versions[*].name}")
+		Expect(err).NotTo(HaveOccurred())
+		return strings.TrimSpace(out)
+	}
+
+	BeforeAll(func() {
+		if _, err := utils.Run(exec.Command("helm", "show", "chart", v1UpgradeChart, "--version", v1UpgradeFrom)); err != nil {
+			Skip(fmt.Sprintf("the published %s chart %s is unreachable (no registry access?): %v", v1UpgradeFrom, v1UpgradeChart, err))
+		}
+		tmp = GinkgoT().TempDir()
+		export = filepath.Join(tmp, "fathom-v1.yaml")
+		cli = buildLifecycleCLI(tmp, upgradeStopVersion())
+		_, err := kubectl("create", "namespace", v1UpgradeChecksNS)
+		Expect(err).NotTo(HaveOccurred())
+	})
+	AfterAll(func() {
+		if cli.bin != "" {
+			_, _ = cli.run("uninstall", "--purge-crds", "--delete-namespace", "--yes", "--timeout", "3m")
+		}
+		_, _ = kubectl("delete", "namespace", v1UpgradeChecksNS, "--ignore-not-found", "--wait=false")
+	})
+
+	It("starts from the published "+v1UpgradeFrom+" release with alpha resources and history", func() {
+		_, err := utils.Run(exec.Command("helm", "install", lifecycleRelease, v1UpgradeChart, "--version", v1UpgradeFrom,
+			"-n", lifecycleNS, "--create-namespace", "--wait", "--timeout", "5m"))
+		Expect(err).NotTo(HaveOccurred(), "helm could not install the published %s chart", v1UpgradeFrom)
+		Expect(servedVersions("AddonCheck")).To(Equal("v1alpha1"), "the %s chart must serve the alpha version", v1UpgradeFrom)
+
+		root, _ := utils.GetProjectDir()
+		_, err = kubectl("apply", "-n", v1UpgradeChecksNS, "-f", filepath.Join(root, "test", "e2e", "fixtures", "lifecycle", "v0.6.0-samples"))
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() int {
+			out, _ := kubectl("get", "healthreports", "-n", v1UpgradeChecksNS, "-o", "name")
+			return len(utils.GetNonEmptyLines(out))
+		}, 5*time.Minute, 5*time.Second).Should(BeNumerically(">", 0), "the %s operator produced no report history", v1UpgradeFrom)
+	})
+
+	It("exports the alpha checks as v1 manifests without touching the cluster", func() {
+		out, err := cli.run("export", "--output", export)
+		Expect(err).NotTo(HaveOccurred(), out)
+		raw, err := os.ReadFile(export)
+		Expect(err).NotTo(HaveOccurred())
+		text := string(raw)
+		// Top-level documents only: the HealthCheck's nested checkRef.apiVersion
+		// is indented and must not be counted.
+		documents := 0
+		for _, line := range strings.Split(text, "\n") {
+			if line == "apiVersion: fathom.skaphos.io/v1" {
+				documents++
+			}
+		}
+		Expect(documents).To(Equal(5), "one v1 document per alpha check:\n%s", text)
+		Expect(text).NotTo(ContainSubstring("v1alpha1"))
+		Expect(text).NotTo(ContainSubstring("paused"))
+		Expect(text).NotTo(ContainSubstring("kind: HealthReport"))
+		Expect(text).NotTo(ContainSubstring("status:"))
+		Expect(text).NotTo(ContainSubstring("resourceVersion"))
+		Expect(servedVersions("AddonCheck")).To(Equal("v1alpha1"), "export must change nothing")
+	})
+
+	It("refuses the upgrade with the inventory until the removal is acknowledged", func() {
+		out, err := cli.run("upgrade", "-n", lifecycleNS)
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring("acknowledgement-required"))
+		Expect(out).To(ContainSubstring("replace crd/" + v1UpgradeCRD("AddonCheck") + " (v1alpha1 -> v1): 1 objects will be removed"))
+		Expect(out).To(ContainSubstring("  " + v1UpgradeChecksNS + "/coredns-sample"))
+		Expect(out).To(ContainSubstring("and their HealthReport history"))
+		Expect(servedVersions("AddonCheck")).To(Equal("v1alpha1"), "a refused upgrade must change nothing")
+	})
+
+	It("replaces the seven CRDs with the flag and rolls the new operator out", func() {
+		out, err := cli.run("upgrade", "-n", lifecycleNS, "--accept-incompatible-crds", "--timeout", "5m")
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(ContainSubstring("replaced crd/" + v1UpgradeCRD("AddonCheck") + ": removed 1 objects"))
+		for _, kind := range []string{"AddonCheck", "HealthCheck", "ClusterHealth", "HealthReport", "NodeCertificateCheck", "DNSCheck", "NodeHealthCheck"} {
+			Expect(servedVersions(kind)).To(Equal("v1"), "%s", kind)
+			stored, _ := kubectl("get", "crd", v1UpgradeCRD(kind), "-o", "jsonpath={.status.storedVersions[*]}")
+			Expect(strings.TrimSpace(stored)).To(Equal("v1"), "%s storedVersions", kind)
+		}
+		for _, kind := range []string{"AddonDefinition", "AddonDefinitionBinding"} {
+			Expect(servedVersions(kind)).To(Equal("v1alpha1"), "%s must stay alpha", kind)
+		}
+		checks, _ := kubectl("get", "dnscheck,addoncheck,healthcheck,nodecertificatecheck", "-n", v1UpgradeChecksNS, "-o", "name")
+		Expect(utils.GetNonEmptyLines(checks)).To(BeEmpty(), "alpha resources do not survive the replacement")
+		reports, _ := kubectl("get", "healthreports", "-n", v1UpgradeChecksNS, "-o", "name")
+		Expect(utils.GetNonEmptyLines(reports)).To(BeEmpty(), "alpha report history goes with its CRD")
+	})
+
+	It("recreates the checks from the export and they reach a verdict", func() {
+		_, err := kubectl("apply", "-f", export)
+		Expect(err).NotTo(HaveOccurred(), "the exported manifests must admit against v1 unchanged")
+		Eventually(func(g Gomega) {
+			out, err := kubectl("get", "dnscheck", "cluster-dns", "-n", v1UpgradeChecksNS, "-o", "jsonpath={.status.lastResult}")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+		}, 5*time.Minute, 5*time.Second).Should(Succeed(), "the recreated DNSCheck never ran")
+		Eventually(func(g Gomega) {
+			out, err := kubectl("get", "clusterhealth", v1UpgradeAggregate, "-o", "jsonpath={.status.result}")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+		}, 3*time.Minute, 5*time.Second).Should(Succeed(), "the recreated ClusterHealth never aggregated")
+	})
+
+	It("has nothing left to export and a clean status", func() {
+		out, err := cli.run("export")
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring("nothing to export"))
+		status, err := cli.run("status", "-n", lifecycleNS)
+		Expect(err).NotTo(HaveOccurred(), status)
+		Expect(status).NotTo(ContainSubstring("upgrade required"))
+		Expect(status).To(ContainSubstring(fmt.Sprintf("CRDs:       %d/%d current", lifecycleCRDs, lifecycleCRDs)))
 	})
 })

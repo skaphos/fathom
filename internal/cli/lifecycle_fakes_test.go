@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -310,6 +311,12 @@ type lifecycleEnv struct {
 	listForbidden map[string]bool
 	// listNoMatch lists list kinds a stale REST mapping does not resolve.
 	listNoMatch map[string]bool
+	// alpha serves unstructured lists at fathom.skaphos.io/v1alpha1 by list
+	// kind, the way a 0.6.x cluster answers a v1 CLI's inventory (the fake
+	// client's scheme no longer knows those kinds).
+	alpha map[string][]unstructured.Unstructured
+	// beforeDelete runs before every delete; a test can race the CLI.
+	beforeDelete func(client.Object) error
 }
 
 func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
@@ -318,7 +325,7 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := &lifecycleEnv{log: &eventLog{}, denied: map[string]bool{}, listForbidden: map[string]bool{}, listNoMatch: map[string]bool{}}
+	env := &lifecycleEnv{log: &eventLog{}, denied: map[string]bool{}, listForbidden: map[string]bool{}, listNoMatch: map[string]bool{}, alpha: map[string][]unstructured.Unstructured{}}
 	logWrite := func(op string, obj client.Object) {
 		kind := fmt.Sprintf("%T", obj)
 		kind = kind[strings.LastIndex(kind, ".")+1:]
@@ -339,6 +346,14 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 				if gvk := list.GetObjectKind().GroupVersionKind(); env.listNoMatch[gvk.Kind] {
 					return &meta.NoKindMatchError{GroupKind: gvk.GroupKind(), SearchedVersions: []string{gvk.Version}}
 				}
+				if gvk := list.GetObjectKind().GroupVersionKind(); gvk.Version == alphaVersion && gvk.Group == "fathom.skaphos.io" {
+					ul, ok := list.(*unstructured.UnstructuredList)
+					if !ok {
+						return &meta.NoKindMatchError{GroupKind: gvk.GroupKind(), SearchedVersions: []string{gvk.Version}}
+					}
+					ul.Items = append([]unstructured.Unstructured(nil), env.alpha[gvk.Kind]...)
+					return nil
+				}
 				return c.List(ctx, list, opts...)
 			},
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
@@ -352,6 +367,11 @@ func newLifecycleEnv(t *testing.T, objs ...client.Object) *lifecycleEnv {
 				return c.Update(ctx, obj, opts...)
 			},
 			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				if env.beforeDelete != nil {
+					if err := env.beforeDelete(obj); err != nil {
+						return err
+					}
+				}
 				logWrite("delete", obj)
 				return c.Delete(ctx, obj, opts...)
 			},

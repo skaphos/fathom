@@ -170,6 +170,9 @@ func crdStatuses(ctx context.Context, c client.Client, operator string) ([]crdSt
 		switch {
 		case p.Action == crdAdd:
 			s.State = crdMissing
+		case p.Action == crdReplace:
+			s.State = crdOutdated
+			s.Reason = fmt.Sprintf("serves %s; run fathomctl export, then fathomctl upgrade", p.FromVersion)
 		case p.RecordedVersion != "" && opErr == nil:
 			recV, err := semver.NewVersion(p.RecordedVersion)
 			switch {

@@ -42,6 +42,9 @@ const (
 	crdUpdate    = "update"
 	crdUnchanged = "unchanged"
 	crdRefuse    = "refuse"
+	// crdReplace: the target drops a version the live CRD stores, so the CRD
+	// is deleted (with its objects) and created again (lifecycle_replace.go).
+	crdReplace = "replace"
 )
 
 // crdFinding is one crdify incompatibility. Path is empty for CRD-level
@@ -60,6 +63,13 @@ type crdPlan struct {
 	Action          string       `json:"action"`
 	RecordedVersion string       `json:"recordedVersion,omitempty"`
 	Findings        []crdFinding `json:"findings,omitempty"`
+	// Replace only: the served versions before and after, the objects the
+	// replace removes (or why they could not be listed), and how many it did.
+	FromVersion    string      `json:"fromVersion,omitempty"`
+	ToVersion      string      `json:"toVersion,omitempty"`
+	Inventory      []objectRef `json:"inventory,omitempty"`
+	InventoryErr   string      `json:"inventoryError,omitempty"`
+	RemovedObjects int         `json:"removedObjects,omitempty"`
 
 	live   *apiextensionsv1.CustomResourceDefinition
 	target *apiextensionsv1.CustomResourceDefinition
@@ -123,9 +133,17 @@ func planCRDs(ctx context.Context, c client.Client, targets []*apiextensionsv1.C
 			return nil, err
 		}
 		p.Findings = findings
-		if crdSpecEqual(live, target) {
+		switch {
+		case len(storedVersionsDropped(live, target)) > 0:
+			p.Action = crdReplace
+			p.FromVersion, _ = servedVersion(live)
+			p.ToVersion, _ = servedVersion(target)
+			if p.Inventory, err = inventoryOf(ctx, c, live); err != nil {
+				p.InventoryErr = err.Error()
+			}
+		case crdSpecEqual(live, target):
 			p.Action = crdUnchanged
-		} else {
+		default:
 			p.Action = crdUpdate
 		}
 		plans = append(plans, p)
@@ -206,8 +224,15 @@ func crdSpecEqual(live, target *apiextensionsv1.CustomResourceDefinition) bool {
 // CRD first created by helm or kubectl would keep properties and versions the
 // target removed. A post-apply comparison proves the result.
 func applyCRDs(ctx context.Context, f *factory, c client.Client, plans []crdPlan, version string, timeout time.Duration) error {
-	for _, p := range plans {
+	for i := range plans {
+		p := &plans[i]
 		if p.Action == crdUnchanged && p.RecordedVersion == version {
+			continue
+		}
+		if p.Action == crdReplace {
+			if err := replaceCRD(ctx, f, c, p, version, timeout); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := applyCRD(ctx, c, p.target, version); err != nil {
