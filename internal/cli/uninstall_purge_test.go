@@ -226,3 +226,40 @@ func TestPurgeWithOnlyCRDsLeftChecksPermissionsFirst(t *testing.T) {
 }
 
 var _ client.Object = (*fathomv1.HealthReport)(nil)
+
+// Purge enumerates each kind at the version its live CRD serves, not the
+// compiled-in one: a 0.7.0 fathomctl purging a 0.6.0 install must still see,
+// export and delete the alpha resources (#376 review). The list seam answers
+// at v1alpha1 only, so a compiled-in v1 list would find nothing.
+func TestPurgeEnumeratesAtTheLiveServedVersion(t *testing.T) {
+	alpha := alphaAddonCheck("team-a", "coredns")
+	env := replaceEnv(t, alpha)
+	if err := env.c.Create(context.Background(), &alpha); err != nil {
+		t.Fatalf("seed the alpha AddonCheck: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "backup.yaml")
+	before := len(env.log.all())
+	out, _, err := execVerb(env.f, "uninstall", "--purge-crds", "--export", path, "--yes")
+	if err != nil {
+		t.Fatalf("uninstall --purge-crds --export: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Exported 1 Fathom resource(s)") {
+		t.Errorf("output = %q, want the alpha AddonCheck counted", out)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "name: coredns") || !strings.Contains(string(raw), "fathom.skaphos.io/"+alphaVersion) {
+		t.Errorf("export lacks the alpha AddonCheck at its served version:\n%s", raw)
+	}
+	deleted := false
+	for _, e := range env.log.all()[before:] {
+		if strings.HasPrefix(e, "delete Unstructured") && strings.Contains(e, "coredns") {
+			deleted = true
+		}
+	}
+	if !deleted {
+		t.Errorf("the alpha AddonCheck was not deleted: %v", env.log.all()[before:])
+	}
+}
