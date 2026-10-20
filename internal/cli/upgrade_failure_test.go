@@ -107,3 +107,20 @@ func TestUpgradeRollbackOnFailureRefusedWithIncompatibleChanges(t *testing.T) {
 		t.Errorf("refused upgrade wrote %v", w)
 	}
 }
+
+// After a replace no operator revision can run against the CRDs, so the
+// recovery text must not steer the admin to helm rollback.
+func TestUpgradeFailureAfterAReplaceDoesNotSuggestHelmRollback(t *testing.T) {
+	env := replaceEnv(t)
+	env.rc.operatorReady = false
+	_, _, err := execVerb(env.f, "upgrade", "--accept-incompatible-crds", "--timeout", "30ms")
+	if err == nil {
+		t.Fatal("upgrade succeeded with an unavailable operator")
+	}
+	if strings.Contains(err.Error(), "helm rollback") {
+		t.Errorf("recovery text suggests helm rollback after a replace:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), "RELEASE.md") {
+		t.Errorf("recovery text does not point at the documented rollback:\n%v", err)
+	}
+}

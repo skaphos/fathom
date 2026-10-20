@@ -84,8 +84,8 @@ func runExport(ctx context.Context, cmd *cobra.Command, f *factory, opts *export
 	}
 
 	var buf bytes.Buffer
-	_, _ = fmt.Fprintf(&buf, "# Fathom check resources exported by fathomctl export at %s, rendered at %s.\n# Review, commit, then: kubectl apply -f <this file>\n",
-		time.Now().UTC().Format(time.RFC3339), fathomv1.GroupVersion.String())
+	_, _ = fmt.Fprintf(&buf, "# Fathom check resources exported by fathomctl export from %s at %s, rendered at %s.\n# Review, commit, then: kubectl apply -f <this file>\n",
+		f.contextName(), time.Now().UTC().Format(time.RFC3339), fathomv1.GroupVersion.String())
 	var failures []string
 	rendered := 0
 	for _, kind := range exportKinds {
@@ -184,6 +184,12 @@ func renderExported(in *unstructured.Unstructured) ([]byte, error) {
 		}
 	}
 	obj.SetAPIVersion(fathomv1.GroupVersion.String())
+	if v, ok := obj.Object["spec"]; !ok || v == nil {
+		// v1 requires spec; alpha admitted an object without one. An empty spec
+		// applies cleanly for the kinds whose spec has no required field and
+		// fails loudly at apply time for the rest, instead of silently here.
+		obj.Object["spec"] = map[string]any{}
+	}
 	unstructured.RemoveNestedField(obj.Object, "spec", "paused")
 	if _, found, _ := unstructured.NestedString(obj.Object, "spec", "checkRef", "apiVersion"); found {
 		if err := unstructured.SetNestedField(obj.Object, fathomv1.GroupVersion.String(), "spec", "checkRef", "apiVersion"); err != nil {

@@ -252,3 +252,26 @@ func TestExportReportsUnrenderableObjectsAndStillWritesTheRest(t *testing.T) {
 		t.Errorf("the renderable objects must still be written:\n%s", out)
 	}
 }
+
+// An alpha object admitted without a spec (ClusterHealth needed none) must
+// render with an empty one: v1 requires spec, and a silent omission would only
+// surface at kubectl apply.
+func TestExportGivesASpeclessObjectAnEmptySpec(t *testing.T) {
+	bare := alphaObject("ClusterHealth", "", "bare", nil)
+	delete(bare.Object, "spec")
+	f, _ := exportFactory(t, alphaCRD("ClusterHealth", "clusterhealths", apiextensionsv1.ClusterScoped), bare)
+	out, errOut, err := execExport(f, "--context", "prod-east")
+	if err != nil {
+		t.Fatalf("export: %v\n%s", err, errOut)
+	}
+	docs := documents(t, out)
+	if len(docs) != 1 {
+		t.Fatalf("documents = %d, want 1", len(docs))
+	}
+	if spec, ok := docs[0]["spec"].(map[string]any); !ok || len(spec) != 0 {
+		t.Errorf("spec = %#v, want an empty map", docs[0]["spec"])
+	}
+	if !strings.Contains(out, "from context prod-east at ") {
+		t.Errorf("header does not name the source context:\n%s", out[:min(len(out), 160)])
+	}
+}

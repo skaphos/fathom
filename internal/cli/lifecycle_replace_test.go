@@ -239,3 +239,70 @@ func TestStatusNamesTheUpgradeRequiredForAlphaCRDs(t *testing.T) {
 		t.Errorf("status output lacks the upgrade-required reason:\n%s", out)
 	}
 }
+
+// Helm never touches crds/ on upgrade, so a Helm-managed install can sit at
+// 0.7.0 with CRDs that still store v1alpha1. The same-version fathomctl
+// upgrade that `status` recommends must judge the replace by 0.7.0's own
+// sanction instead of dead-ending on unsanctioned-incompatible.
+func TestUpgradeAtTheSameVersionStillSanctionsTheReplace(t *testing.T) {
+	withVersion(t, "v0.7.0", true)
+	env := upgradeEnv(t, "0.7.0", "0.6.0", alphaCheckCRDs, nil)
+	env.alpha["AddonCheckList"] = []unstructured.Unstructured{alphaAddonCheck("team-a", "coredns")}
+	_, _, err := execVerb(env.f, "upgrade")
+	if err == nil || !strings.Contains(err.Error(), reasonAckRequired) {
+		t.Fatalf("err = %v, want %s", err, reasonAckRequired)
+	}
+	out, _, err := execVerb(env.f, "upgrade", "--accept-incompatible-crds")
+	if err != nil {
+		t.Fatalf("same-version upgrade --accept-incompatible-crds: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "replaced crd/"+addonCheckCRD+": removed 1 objects") {
+		t.Errorf("output lacks the replaced line:\n%s", out)
+	}
+}
+
+// A replace deletes CRDs; the generic preflight never asked for that verb, so
+// an identity with create/update/get would have failed part-way through.
+func TestUpgradeReplaceRefusesWithoutDeleteOnCRDs(t *testing.T) {
+	env := replaceEnv(t)
+	env.denied["delete customresourcedefinitions"] = true
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "upgrade", "--accept-incompatible-crds")
+	if err == nil || !strings.Contains(err.Error(), reasonMissingPermissions) || !strings.Contains(err.Error(), "delete customresourcedefinitions") {
+		t.Fatalf("err = %v, want missing-permissions naming delete customresourcedefinitions", err)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("refused upgrade changed the cluster: %v", w)
+	}
+}
+
+// Without a sanction on the path, the refusal must name the documented manual
+// sequence rather than the generic "apply the new CRD manually" advice, which
+// the API server rejects for a stored version.
+func TestUpgradeReplaceWithoutASanctionPointsAtTheManualSequence(t *testing.T) {
+	withVersion(t, "v0.6.1", true)
+	env := upgradeEnv(t, "0.6.0", "0.6.0", alphaCheckCRDs, nil)
+	_, _, err := execVerb(env.f, "upgrade")
+	if err == nil || !strings.Contains(err.Error(), reasonUnsanctioned) {
+		t.Fatalf("err = %v, want %s", err, reasonUnsanctioned)
+	}
+	if !strings.Contains(err.Error(), "RELEASE.md") {
+		t.Errorf("refusal does not point at the documented sequence:\n%v", err)
+	}
+}
+
+// The same-version window must not let 0.7.0's "*" swap sanction rewrite
+// CRDs a later 0.7.x applied: upgrade refuses CRDs recorded by a newer
+// release before any sanction is judged, as install already did.
+func TestUpgradeRefusesCRDsRecordedByANewerRelease(t *testing.T) {
+	withVersion(t, "v0.7.0", true)
+	env := upgradeEnv(t, "0.7.0", "0.7.1", unboundClusterHealthChildren, nil)
+	before := len(env.log.all())
+	_, _, err := execVerb(env.f, "upgrade", "--accept-incompatible-crds")
+	if err == nil || !strings.Contains(err.Error(), reasonCRDDowngrade) {
+		t.Fatalf("err = %v, want %s", err, reasonCRDDowngrade)
+	}
+	if w := env.log.all()[before:]; len(w) != 0 {
+		t.Errorf("refused upgrade changed the cluster: %v", w)
+	}
+}

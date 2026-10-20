@@ -61,7 +61,8 @@ this fathomctl's.
 It is read-only and needs only: list Deployments across namespaces (to find
 the operator), get/list Secrets in the operator's namespace and the -n
 namespace (Helm release records) and get/list CRDs — no cluster-wide Secret
-access.
+access. While a check kind's CRD still serves v1alpha1 it also lists that
+kind's objects, to size the removal the upgrade will make.
 
 Exit codes: 0 when Fathom is installed and current, or not installed at all;
 1 when the operator is not Available, a CRD is outdated, newer or missing, the

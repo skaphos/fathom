@@ -388,7 +388,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	before := hc.Status.DeepCopy()
 	// SourceObservedAt carries the mirrored target's own run time, so the
 	// staleness gauge tracks the staleness of the evidence behind this wrapper:
-	// a paused or wedged target freezes it, which is exactly when the wrapper's
+	// a wedged target freezes it, which is exactly when the wrapper's
 	// verdict stops meaning anything.
 	//
 	// targetInterval is the wrapped check's cadence, resolved during mirroring
@@ -399,7 +399,7 @@ func (r *HealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// HealthChecks rather than the underlying checks (#277). It stays zero for a
 	// kind this build cannot resolve, which leaves the series unset.
 	// Start from the last-good mirrored cadence for paths that deliberately
-	// preserve the mirrored snapshot (paused and transient lookup failures).
+	// preserve the mirrored snapshot (transient lookup failures).
 	// Dropping only the interval metric while retaining a non-zero timestamp
 	// removes the wrapper from the cadence-relative staleness rule.
 	var targetInterval time.Duration

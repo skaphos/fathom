@@ -52,4 +52,4 @@ spec:
             severity: warning
           annotations:
             summary: 'Fathom check {{ $labels.kind }}/{{ $labels.name }} is stale'
-            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over three times its own interval (0 = never ran). The last recorded result can no longer be trusted: the operator may be wedged, the check paused, or its target selector matching nothing. For a ClusterHealth the interval is its slowest contributing check, and the age is its stalest contributing evidence.'
+            description: 'Check {{ $labels.name }} (namespace {{ $labels.namespace }}) has not completed an evaluation in over three times its own interval (0 = never ran). The last recorded result can no longer be trusted: the operator may be wedged, the check spec invalid, or its target selector matching nothing. For a ClusterHealth the interval is its slowest contributing check, and the age is its stalest contributing evidence.'

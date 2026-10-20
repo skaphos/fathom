@@ -109,9 +109,10 @@ func buildUpgradePlan(ctx context.Context, c client.Client, req planRequest) (*u
 	if err != nil {
 		return nil, err
 	}
-	if req.perCRDFrom {
-		plan.Refusals = append(plan.Refusals, recordedVersionRefusals(crds, to)...)
-	}
+	// CRDs a newer release applied are never rewritten to this one's schema,
+	// whatever the sanctions say: on upgrade this is the Helm-moved release
+	// case (a same-version re-apply) meeting CRDs from a later 0.x.y CLI.
+	plan.Refusals = append(plan.Refusals, recordedVersionRefusals(crds, to)...)
 	var ack []string
 	for i := range crds {
 		p := &crds[i]
@@ -222,7 +223,7 @@ func recordedVersionRefusals(crds []crdPlan, to *semver.Version) []refusal {
 	}
 	return []refusal{{
 		Reason: reasonCRDDowngrade,
-		Detail: fmt.Sprintf("these CRDs were applied by a newer release than this fathomctl (v%s) and installing would downgrade them: %s", to, strings.Join(newer, ", ")),
+		Detail: fmt.Sprintf("these CRDs were applied by a newer release than this fathomctl (v%s) and applying its CRDs would downgrade them: %s", to, strings.Join(newer, ", ")),
 		Next:   "use the fathomctl release that matches those CRDs",
 	}}
 }
@@ -248,10 +249,17 @@ func unsanctionedRefusal(p *crdPlan, f *crdFinding) refusal {
 	if f.Path != "" {
 		where += " " + f.Path
 	}
+	next := "export the affected resources, apply the new CRD manually once they are compatible (or uninstall --purge-crds --export), then rerun"
+	if p.FromVersion != "" {
+		// A replace needs a "*" sanction from a release on this CLI's upgrade
+		// path; without one the only way forward is the documented manual sequence.
+		next = "no release on this fathomctl's upgrade path sanctions replacing the stored " + p.FromVersion +
+			" version; follow RELEASE.md \"v1 API migration\" (fathomctl export, delete the CRDs, reinstall, re-apply the export)"
+	}
 	return refusal{
 		Reason: reasonUnsanctioned,
 		Detail: fmt.Sprintf("%s: incompatible change (%s) that no release sanctions: %s", where, f.Check, f.Message),
-		Next:   "export the affected resources, apply the new CRD manually once they are compatible (or uninstall --purge-crds --export), then rerun",
+		Next:   next,
 	}
 }
 
@@ -366,7 +374,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 		// The documented retry after a timed-out rollout lands here, so the
 		// operator must be Available before this reports success.
 		if err := waitManagerAvailable(ctx, f, env.c, in.Namespace, in.Release, opts.timeout); err != nil {
-			return fmt.Errorf("%w\n%s", err, upgradeRecovery(ctx, env.c, in, opts))
+			return fmt.Errorf("%w\n%s", err, upgradeRecovery(ctx, env.c, in, opts, false))
 		}
 		if f.opts.output.structured() {
 			return encode(out, f.opts.output, plan)
@@ -375,6 +383,13 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 		return nil
 	}
 
+	if planHasReplace(plan) {
+		// A replace deletes CRDs, which the generic upgrade preflight does not
+		// ask for; refuse here, before any write, rather than part-way through.
+		if err := preflightPermissions(ctx, f, env.c, []permission{{Verb: "delete", Group: "apiextensions.k8s.io", Resource: "customresourcedefinitions"}}); err != nil {
+			return err
+		}
+	}
 	if err := applyCRDs(ctx, f, env.c, plan.CRDs, version, opts.timeout); err != nil {
 		return err
 	}
@@ -387,8 +402,9 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	}); err != nil {
 		return fmt.Errorf("%w\nThe CRDs are already at v%s's schema; the operator was not upgraded. To recover:\n"+
 			"  inspect: helm history %s -n %s\n"+
-			"  if the latest revision is failed: helm rollback %s -n %s  # restores the previous operator; CRDs stay\n"+
-			"  retry:   fathomctl upgrade -n %s  # once the cause above is fixed", err, version, in.Release, in.Namespace, in.Release, in.Namespace, in.Namespace)
+			"%s"+
+			"  retry:   fathomctl upgrade -n %s  # once the cause above is fixed",
+			err, version, in.Release, in.Namespace, rollbackHint(planHasReplace(plan), "if the latest revision is failed: ", in.Release, in.Namespace), in.Namespace)
 	}
 	if err := waitManagerAvailable(ctx, f, env.c, in.Namespace, in.Release, opts.timeout); err != nil {
 		if opts.rollbackOnFailure {
@@ -397,7 +413,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 			}
 			return fmt.Errorf("%w\nthe operator was rolled back to the previous revision; the CRDs stay on v%s's schema", err, version)
 		}
-		return fmt.Errorf("%w\n%s", err, upgradeRecovery(ctx, env.c, in, opts))
+		return fmt.Errorf("%w\n%s", err, upgradeRecovery(ctx, env.c, in, opts, planHasReplace(plan)))
 	}
 	if f.opts.output.structured() {
 		return encode(out, f.opts.output, plan)
@@ -406,14 +422,35 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, f *factory, opts *upgra
 	return nil
 }
 
-func upgradeRecovery(ctx context.Context, c client.Client, in *install, opts *upgradeOptions) string {
+func upgradeRecovery(ctx context.Context, c client.Client, in *install, opts *upgradeOptions, replaced bool) string {
 	deploy := managerDeploymentName(ctx, c, in.Namespace, in.Release)
 	return strings.Join([]string{
 		"The new release was left in place. To recover:",
 		fmt.Sprintf("  inspect:   kubectl -n %s describe deploy/%s", in.Namespace, deploy),
 		fmt.Sprintf("  retry:     fathomctl upgrade -n %s --timeout %s  # a longer timeout", in.Namespace, opts.timeout*2),
-		fmt.Sprintf("  roll back: helm rollback %s -n %s  # the operator only; CRDs stay", in.Release, in.Namespace),
+		strings.TrimSuffix(rollbackHint(replaced, "roll back: ", in.Release, in.Namespace), "\n"),
 	}, "\n")
+}
+
+// rollbackHint is the roll-back line of a recovery message. Helm can restore
+// the previous operator only while the CRDs it ran against still exist; after
+// a replace no revision can run, and only the documented procedure goes back.
+func rollbackHint(replaced bool, label, release, namespace string) string {
+	if replaced {
+		// No Helm revision can run against the replaced CRDs, so the hint must
+		// not even spell the rollback command out.
+		return "  roll back: no previous revision can run against the replaced CRDs; follow RELEASE.md \"v1 API migration\" (Rollback)\n"
+	}
+	return fmt.Sprintf("  %shelm rollback %s -n %s  # the operator only; CRDs stay\n", label, release, namespace)
+}
+
+func planHasReplace(plan *upgradePlan) bool {
+	for _, p := range plan.CRDs {
+		if p.Action == crdReplace {
+			return true
+		}
+	}
+	return false
 }
 
 func planHasIncompatibleChange(plan *upgradePlan) bool {

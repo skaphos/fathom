@@ -152,6 +152,19 @@ func (f *factory) client() (client.Client, error) {
 	return c, nil
 }
 
+// contextName names the kubeconfig context a verb talks to, for output that
+// must say where it came from: the --context override, else the file's
+// current context, else a generic phrase.
+func (f *factory) contextName() string {
+	if f.opts.context != "" {
+		return "context " + f.opts.context
+	}
+	if raw, err := f.clientConfig(f.opts).RawConfig(); err == nil && raw.CurrentContext != "" {
+		return "context " + raw.CurrentContext
+	}
+	return "the current kubeconfig context"
+}
+
 // namespace resolves the namespace a namespaced verb reads from: an explicit
 // --namespace wins, --all-namespaces yields "" (every namespace), otherwise
 // the kubeconfig context's namespace, then "default".
