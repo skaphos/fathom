@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -687,40 +686,10 @@ func healthReportForDNSCheck(
 // pruneDNSHealthReports enforces spec.historyLimit. Failures are logged rather
 // than returned: the new report already landed, and the next run retries.
 func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.DNSCheck) {
-	limit := defaultHealthReportHistoryLimit
-	if check.Spec.HistoryLimit != nil {
-		limit = int(*check.Spec.HistoryLimit)
-	}
-	if limit < 1 {
-		return
-	}
-
-	var reports fathomv1alpha1.HealthReportList
-	if err := r.List(ctx, &reports,
-		client.InNamespace(check.Namespace),
-		client.MatchingLabels{
-			fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
-			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-		},
-	); err != nil {
-		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
-		return
-	}
-	if len(reports.Items) <= limit {
-		return
-	}
-
-	sort.Slice(reports.Items, func(i, j int) bool {
-		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
-	})
-	excess := len(reports.Items) - limit
-	for i := range excess {
-		victim := &reports.Items[i]
-		if err := r.Delete(ctx, victim); err != nil && !apierrors.IsNotFound(err) {
-			log.Error(err, "delete old HealthReport failed", "name", victim.Name)
-		}
-	}
-	log.V(1).Info("pruned DNSCheck HealthReport history", "deleted", excess, "limit", limit)
+	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
+		fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
+		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+	}, historyLimit(check.Spec.HistoryLimit), "")
 }
 
 // finishDNSCheck persists status when it changed and schedules the next run.

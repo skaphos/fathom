@@ -174,6 +174,13 @@ so orphans are pruned on the first pass) and `retention.report_cap_per_kind`
 binding kind (`isDuration`, `durationDef`) since none exists; the viper decode
 hook is checked to parse `time.Duration` from strings.
 
+**Verified 2026-10-20 (T002)**: Viper's default decode hooks parse duration
+strings; with the `WeaklyTypedInput` option `Load` already uses, a
+`time.Duration` field resolves from a flag (`--window=90m`), an env var
+(`FATHOM_SAMPLE_WINDOW=12h`), a config file (`window: 36h`) and the default,
+in that precedence, and `"0"` round-trips to zero
+(`internal/app/options_duration_test.go`).
+
 **Rationale**: 30 days is the clarified default. 500 per kind per namespace is
 the default history limit (10) times fifty checks, well above any shipped
 sample set and small enough that a list stays cheap. Both belong in the
@@ -283,6 +290,12 @@ the `lifecycle/older-crds` baseline, which is history; `PROJECT` entries for
 the seven kinds move to `v1`; the OLM base CSV's `owned` list is regenerated
 and gains the three kinds it is missing today. `.github/copilot-instructions.md`
 and code comments naming the alpha path are updated.
+
+**Verified 2026-10-20 (T003)**: `crd-ref-docs --source-path=<root>/api`
+recurses the tree (depth 10) and renders one `## <group>/<version>` section
+per package; over today's single package the output is byte-identical to the
+committed `docs/reference/api.md`, so switching the task's source path is a
+no-op until `api/v1` exists and then adds the second section.
 
 ## R13. The adapter contract axis
 

@@ -198,8 +198,9 @@ func describeObject(obj client.Object) string {
 	return kind + " " + obj.GetNamespace() + "/" + obj.GetName()
 }
 
-// fathomResources lists every Fathom custom resource, in purgeKinds order.
-// A kind whose CRD is already gone has no resources.
+// fathomResources lists every Fathom custom resource, in purgeKinds order,
+// each kind at the version its live CRD serves. A kind whose CRD is already
+// gone has no resources.
 func fathomResources(ctx context.Context, c client.Client) (map[string][]unstructured.Unstructured, error) {
 	// The purge deletes every CRD in the group, but can only count and
 	// export the kinds this binary knows; a newer release's kind would lose
@@ -210,12 +211,16 @@ func fathomResources(ctx context.Context, c client.Client) (map[string][]unstruc
 	}
 	out := map[string][]unstructured.Unstructured{}
 	for _, kind := range purgeKinds {
+		gv := fathomv1alpha1.GroupVersion
+		if version, ok := live[kind]; ok {
+			gv.Version = version
+		}
 		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(fathomv1alpha1.GroupVersion.WithKind(kind + "List"))
+		list.SetGroupVersionKind(gv.WithKind(kind + "List"))
 		if err := c.List(ctx, list); err != nil {
 			// "No such kind" is believed only when its CRD is really gone; a
 			// stale mapping for a live CRD would purge its resources unseen.
-			if (apierrors.IsNotFound(err) || meta.IsNoMatchError(err)) && !live[kind] {
+			if _, isLive := live[kind]; (apierrors.IsNotFound(err) || meta.IsNoMatchError(err)) && !isLive {
 				continue
 			}
 			return nil, fmt.Errorf("list %s: %w", kind, err)
@@ -305,10 +310,11 @@ func purgeResources(ctx context.Context, f *factory, c client.Client, resources 
 }
 
 // refuseUnknownKinds refuses when the group holds a CRD this binary cannot
-// enumerate — a kind not in purgeKinds, or one no longer served at the
-// version it lists — naming each one. Otherwise it returns the kinds whose
-// CRDs are live.
-func refuseUnknownKinds(ctx context.Context, c client.Client) (map[string]bool, error) {
+// enumerate — a kind not in purgeKinds, or one that serves no version at all
+// — naming each one. Otherwise it returns, for every live kind, the version
+// its CRD serves, so callers list at whatever version the cluster really has
+// rather than the one this binary was compiled against.
+func refuseUnknownKinds(ctx context.Context, c client.Client) (map[string]string, error) {
 	crds, err := fathomCRDs(ctx, c)
 	if err != nil {
 		return nil, err
@@ -317,14 +323,16 @@ func refuseUnknownKinds(ctx context.Context, c client.Client) (map[string]bool, 
 	for _, k := range purgeKinds {
 		known[k] = true
 	}
-	live := map[string]bool{}
+	live := map[string]string{}
 	var unknown []string
 	for _, obj := range crds {
 		crd := obj.(*apiextensionsv1.CustomResourceDefinition)
-		if !known[crd.Spec.Names.Kind] || !servesVersion(crd, fathomv1alpha1.GroupVersion.Version) {
+		version, served := servedVersion(crd)
+		if !known[crd.Spec.Names.Kind] || !served {
 			unknown = append(unknown, crd.Name)
+			continue
 		}
-		live[crd.Spec.Names.Kind] = true
+		live[crd.Spec.Names.Kind] = version
 	}
 	if len(unknown) == 0 {
 		return live, nil
@@ -337,13 +345,23 @@ func refuseUnknownKinds(ctx context.Context, c client.Client) (map[string]bool, 
 	}
 }
 
-func servesVersion(crd *apiextensionsv1.CustomResourceDefinition, version string) bool {
+// servedVersion is the version a CRD's resources are listed at: its storage
+// version when that is served, else the first served version. The second
+// result is false when the CRD serves nothing.
+func servedVersion(crd *apiextensionsv1.CustomResourceDefinition) (string, bool) {
+	first := ""
 	for _, v := range crd.Spec.Versions {
-		if v.Name == version && v.Served {
-			return true
+		if !v.Served {
+			continue
+		}
+		if v.Storage {
+			return v.Name, true
+		}
+		if first == "" {
+			first = v.Name
 		}
 	}
-	return false
+	return first, first != ""
 }
 
 // fathomCRDs lists every CRD in the fathom.skaphos.io group, shipped by this

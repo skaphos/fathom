@@ -29,9 +29,9 @@ Single Go module, kubebuilder v4 layout: `api/`, `internal/`, `cmd/`, `config/`,
 
 **Purpose**: Confirm the baseline and the tooling the later phases rely on.
 
-- [ ] T001 Run `go -C tools tool task ci` and `go -C tools tool task crd-compat` on the branch base and record both green in `specs/014-api-v1-promotion/checklists/baseline.md` (date, commit, toolchain versions from `tools/go.mod`)
-- [ ] T002 [P] Confirm the viper decode hook in `internal/app/options.go` (`v.Unmarshal(&opts, weaklyTyped)` near line 440) parses `time.Duration` from config strings; note the result in `specs/014-api-v1-promotion/research.md` under R6
-- [ ] T003 [P] Confirm `go -C tools tool task docs:api-ref` with `--source-path=api` renders both group versions into one `docs/reference/api.md` on a scratch run (do not commit the output yet); note the result in `specs/014-api-v1-promotion/research.md` under R12
+- [X] T001 Run `go -C tools tool task ci` and `go -C tools tool task crd-compat` on the branch base and record both green in `specs/014-api-v1-promotion/checklists/baseline.md` (date, commit, toolchain versions from `tools/go.mod`)
+- [X] T002 [P] Confirm the viper decode hook in `internal/app/options.go` (`v.Unmarshal(&opts, weaklyTyped)` near line 440) parses `time.Duration` from config strings; note the result in `specs/014-api-v1-promotion/research.md` under R6
+- [X] T003 [P] Confirm `go -C tools tool task docs:api-ref` with `--source-path=api` renders both group versions into one `docs/reference/api.md` on a scratch run (do not commit the output yet); note the result in `specs/014-api-v1-promotion/research.md` under R12
 
 ---
 
@@ -39,15 +39,15 @@ Single Go module, kubebuilder v4 layout: `api/`, `internal/`, `cmd/`, `config/`,
 
 **Purpose**: Refactors every story depends on. No schema or behaviour change; `verify-generated` and `crd-compat` stay green with no new allowlist entries.
 
-- [ ] T004 Create `internal/controller/healthreport_history.go` with one `pruneHealthReportHistory(ctx, client, namespace, labels map[string]string, limit int32, protect string)` helper: list by labels, sort by `spec.observedAt` then `metadata.creationTimestamp` then name, delete the oldest beyond `limit`, protect the named report, log but do not return delete errors; keep `defaultHealthReportHistoryLimit = 10`
-- [ ] T005 Replace the four prune implementations with calls to the helper: `(*AddonCheckReconciler).pruneHealthReportHistory` in `internal/controller/addoncheck_controller.go`, `pruneDNSHealthReports` in `internal/controller/dnscheck_controller.go`, `pruneNodeCertHealthReports` in `internal/controller/nodecertificatecheck_helpers.go`, `pruneNodeHealthHealthReports` in `internal/controller/nodehealthcheck_helpers.go`; keep every existing call site
-- [ ] T006 Add `internal/controller/healthreport_history_test.go` (envtest, Ginkgo) covering ordering, the protected name, limit < 1 early return, and that existing prune specs in `internal/controller/addoncheck_prune_test.go` still pass unchanged
-- [ ] T007 [P] Add a duration binding kind to `internal/app/options.go`: `isDuration bool` and `durationDef time.Duration` on `flagBinding`, a `fs.Duration` case in `RegisterFlags`, and the matching case in `Load`; no option uses it yet
-- [ ] T008 [P] Add table tests for the duration kind in `internal/app/options_test.go`: flag beats env beats config file beats default, and `0` round-trips
-- [ ] T009 [P] Extend the classifier in `scripts/check-crd-compat.sh` with a `servedVersionRemoval` check: compare `spec.versions[].name` of baseline and target per CRD; a version served at the baseline and absent from the target is reported on path `^` with that check name and is sanctioned only by an allowlist entry whose `path` is `*`; `INCOMPATIBLE` otherwise
-- [ ] T010 [P] Add `scripts/check_crd_compat_test.go` driving the script through `CRD_COMPAT_OLD_DIR` with two fixture CRDs under `scripts/testdata/crd-compat/` (one version swap sanctioned by `*`, one unsanctioned) and asserting the `SANCTIONED ^ (servedVersionRemoval)` line and the exit code
-- [ ] T011 [P] In `internal/cli/lifecycle_cleanup.go` replace the compiled-in `fathomv1alpha1.GroupVersion` in `fathomResources` and `refuseUnknownKinds`/`servesVersion` with the served version read from each live CRD (`spec.versions` where `served: true`), keeping the purge order in `purgeKinds`; add cases to `internal/cli/lifecycle_cleanup_test.go` for a CRD serving a different version than compiled
-- [ ] T012 Run `go -C tools tool task ci` and `go -C tools tool task crd-compat`; both green with no allowlist change. Commit as PR 1 (`refactor:` prefix, DCO)
+- [X] T004 Create `internal/controller/healthreport_history.go` with one `pruneHealthReportHistory(ctx, client, namespace, labels map[string]string, limit int32, protect string)` helper: list by labels, sort by `spec.observedAt` then `metadata.creationTimestamp` then name, delete the oldest beyond `limit`, protect the named report, log but do not return delete errors; keep `defaultHealthReportHistoryLimit = 10`
+- [X] T005 Replace the four prune implementations with calls to the helper: `(*AddonCheckReconciler).pruneHealthReportHistory` in `internal/controller/addoncheck_controller.go`, `pruneDNSHealthReports` in `internal/controller/dnscheck_controller.go`, `pruneNodeCertHealthReports` in `internal/controller/nodecertificatecheck_helpers.go`, `pruneNodeHealthHealthReports` in `internal/controller/nodehealthcheck_helpers.go`; keep every existing call site
+- [X] T006 Add `internal/controller/healthreport_history_test.go` (envtest, Ginkgo) covering ordering, the protected name, limit < 1 early return, and that existing prune specs in `internal/controller/addoncheck_prune_test.go` still pass unchanged
+- [X] T007 [P] Add a duration binding kind to `internal/app/options.go`: `isDuration bool` and `durationDef time.Duration` on `flagBinding`, a `fs.Duration` case in `RegisterFlags`, and the matching case in `Load`; no option uses it yet
+- [X] T008 [P] Add table tests for the duration kind in `internal/app/options_test.go`: flag beats env beats config file beats default, and `0` round-trips
+- [X] T009 [P] Extend the classifier in `scripts/check-crd-compat.sh` with a `servedVersionRemoval` check: compare `spec.versions[].name` of baseline and target per CRD; a version served at the baseline and absent from the target is reported on path `^` with that check name and is sanctioned only by an allowlist entry whose `path` is `*`; `INCOMPATIBLE` otherwise
+- [X] T010 [P] Add `scripts/check_crd_compat_test.go` driving the script through `CRD_COMPAT_OLD_DIR` with two fixture CRDs under `scripts/testdata/crd-compat/` (one version swap sanctioned by `*`, one unsanctioned) and asserting the `SANCTIONED ^ (servedVersionRemoval)` line and the exit code
+- [X] T011 [P] In `internal/cli/lifecycle_cleanup.go` replace the compiled-in `fathomv1alpha1.GroupVersion` in `fathomResources` and `refuseUnknownKinds`/`servesVersion` with the served version read from each live CRD (`spec.versions` where `served: true`), keeping the purge order in `purgeKinds`; add cases to `internal/cli/lifecycle_cleanup_test.go` for a CRD serving a different version than compiled
+- [X] T012 Run `go -C tools tool task ci` and `go -C tools tool task crd-compat`; both green with no allowlist change. Commit as PR 1 (`refactor:` prefix, DCO)
 
 **Checkpoint**: Foundation ready. Stories may start; US1 must precede US2, US3-retention and US4 because they edit the `api/v1` files it creates.
 

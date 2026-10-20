@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Rillan AI LLC
+# SPDX-License-Identifier: MIT
+#
+# Allowlist fixture for scripts/check_crd_compat_test.go: sanctions both
+# version swaps, so the gate passes.
+
+- crd: widgets.example.com
+  path: "*"
+  reason: served version replaced in the fixture
+  issue: https://example.com/issues/1
+
+- crd: gadgets.example.com
+  path: "*"
+  reason: served version replaced in the fixture
+  issue: https://example.com/issues/1

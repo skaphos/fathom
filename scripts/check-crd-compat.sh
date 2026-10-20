@@ -17,6 +17,13 @@
 # Check configuration lives in .crdify.yaml (description-only changes are
 # compatible; unhandled changes are errors).
 #
+# crdify compares only versions both CRDs serve, so replacing a served version
+# outright (v1alpha1 removed, v1 added) produces no finding at all. The gate
+# adds one CRD-level check of its own, servedVersionRemoval, reported on the
+# path "^": a version served at the baseline and not by the target. Only an
+# allowlist entry with path "*" sanctions it, because dropping a served version
+# is a new-API-version decision, never a property-level one.
+#
 # Usage:
 #   scripts/check-crd-compat.sh
 #
@@ -80,9 +87,14 @@ echo "check-crd-compat: baseline is $baseline_desc"
 compared=()
 for new_file in "$new_dir"/*.yaml; do
   name="$(basename "$new_file")"
+  # Both sides land in the work directory so the classifier below can read
+  # their served versions without knowing where the baseline came from.
   old_file=""
   if [[ -n "$old_dir" ]]; then
-    [[ -f "$old_dir/$name" ]] && old_file="$old_dir/$name"
+    if [[ -f "$old_dir/$name" ]]; then
+      old_file="$workdir/old-$name"
+      cp "$old_dir/$name" "$old_file"
+    fi
   elif git cat-file -e "$baseline_ref:config/crd/bases/$name" 2>/dev/null; then
     old_file="$workdir/old-$name"
     git show "$baseline_ref:config/crd/bases/$name" > "$old_file"
@@ -91,6 +103,7 @@ for new_file in "$new_dir"/*.yaml; do
     echo "  NEW $name: no baseline counterpart; skipped"
     continue
   fi
+  cp "$new_file" "$workdir/new-$name"
 
   # crdify exits non-zero when it finds incompatibilities; the JSON report is
   # the interesting part either way, so tolerate the exit code here and let
@@ -154,6 +167,44 @@ def load_allowlist(path):
     return entries
 
 
+def served_versions(path):
+    """Names of the versions a CRD file serves.
+
+    Reads only the `spec.versions` block of a controller-gen CRD: entries start
+    with `  - ` and their scalar keys sit at exactly four spaces of indent.
+    Schema properties called `name` or `served` nest deeper and never match.
+    """
+    served = []
+    name, is_served, in_versions = None, False, False
+
+    def flush():
+        if name is not None and is_served:
+            served.append(name)
+
+    for raw in open(path, encoding="utf-8"):
+        line = raw.rstrip("\n")
+        if not in_versions:
+            in_versions = line == "  versions:"
+            continue
+        if line and not line.startswith("   ") and not line.startswith("  - "):
+            break  # left the versions block
+        if line.startswith("  - "):
+            flush()
+            name, is_served = None, False
+            line = "    " + line[4:]
+        if line.startswith("    ") and not line.startswith("     "):
+            key, _, value = line.strip().partition(":")
+            value = value.strip()
+            if key == "name":
+                name = value
+            elif key == "served":
+                is_served = value == "true"
+    flush()
+    return served
+
+
+SERVED_VERSION_REMOVAL = "servedVersionRemoval"
+
 allowlist = load_allowlist(allowlist_path)
 matched = [False] * len(allowlist)
 incompatible = 0
@@ -164,6 +215,15 @@ for filename in names:
         report = json.load(f)
 
     findings, warnings = [], []
+    old_served = served_versions(os.path.join(workdir, f"old-{filename}"))
+    new_served = served_versions(os.path.join(workdir, f"new-{filename}"))
+    for version in old_served:
+        if version not in new_served:
+            findings.append(("^", SERVED_VERSION_REMOVAL, [
+                f"version {version} is served at the baseline but not by the target; "
+                "a served version may only be removed by a sanctioned new API version "
+                '(allowlist path "*")',
+            ]))
     for section in report.values():
         for version_result in section or []:
             for pc in version_result.get("propertyComparisons") or []:
@@ -180,7 +240,9 @@ for filename in names:
     for prop, check, errors in findings:
         sanction = None
         for i, e in enumerate(allowlist):
-            if e["crd"] == crd and e["path"] in ("*", prop):
+            if e["crd"] != crd:
+                continue
+            if e["path"] == "*" or (check != SERVED_VERSION_REMOVAL and e["path"] == prop):
                 sanction, matched[i] = e, True
                 break
         if sanction:
