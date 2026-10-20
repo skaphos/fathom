@@ -36,7 +36,7 @@ Task-oriented guides for installing and using Fathom live in
 | [authoring-adapters.md](authoring-adapters.md) | How to add a new add-on adapter — the declarative `AddonDefinition` path, the Go escape hatch, RBAC declaration, versioning, and a ship-it checklist. |
 | [reference/configuration.md](reference/configuration.md) | Every operator option (flag / env var / config file / default) and the precedence rules. |
 | [reference/fathomctl.md](reference/fathomctl.md) | The `fathomctl` CLI: global flags, kind aliases, exit codes, `run` propagation and bulk confirmation, the lifecycle verbs (`install`, `upgrade`, `uninstall`, `status`) with their refusals and permissions, and the RBAC roles for CLI users. |
-| [reference/api.md](reference/api.md) | Generated CRD API reference for the `fathom.skaphos.io/v1alpha1` kinds. |
+| [reference/api.md](reference/api.md) | Generated CRD API reference for the stable `fathom.skaphos.io/v1` check kinds and the `v1alpha1` runtime definition kinds. |
 | [reference/status-conditions.md](reference/status-conditions.md) | Operational status and condition reference: result fields, reasons, freshness, and troubleshooting actions. |
 | [reference/rbac.md](reference/rbac.md) | Generated per-adapter RBAC matrix and least-privilege impersonation model. |
 | [reference/operator-rbac.md](reference/operator-rbac.md) | Per-rule justification of the operator's own ClusterRole, the namespace-scoping analysis, and the auxiliary/runtime-created roles. |

@@ -14,32 +14,52 @@ spec:
       displayName: Addon Check
       kind: AddonCheck
       name: addonchecks.fathom.skaphos.io
+      version: v1
+    - description: AddonDefinition declares administrator-bound runtime health checks.
+      displayName: Addon Definition
+      kind: AddonDefinition
+      name: addondefinitions.fathom.skaphos.io
       version: v1alpha1
-    - description: ClusterHealth is the Schema for the clusterhealths API.
+    - description: AddonDefinitionBinding delegates a definition to a dedicated identity.
+      displayName: Addon Definition Binding
+      kind: AddonDefinitionBinding
+      name: addondefinitionbindings.fathom.skaphos.io
+      version: v1alpha1
+    - description: |-
+        ClusterHealth is the Schema for the clusterhealths API. It is
+        cluster-scoped: one object rolls up HealthChecks across namespaces,
+        optionally narrowed by spec.namespaces (allowlist) or
+        spec.excludedNamespaces (denylist). See ClusterHealthSpec for precedence.
       displayName: Cluster Health
       kind: ClusterHealth
       name: clusterhealths.fathom.skaphos.io
-      version: v1alpha1
+      version: v1
+    - description: DNSCheck is the Schema for the dnschecks API.
+      displayName: DNSCheck
+      kind: DNSCheck
+      name: dnschecks.fathom.skaphos.io
+      version: v1
     - description: HealthCheck is the Schema for the healthchecks API.
       displayName: Health Check
       kind: HealthCheck
       name: healthchecks.fathom.skaphos.io
-      version: v1alpha1
+      version: v1
     - description: HealthReport is the Schema for the healthreports API.
       displayName: Health Report
       kind: HealthReport
       name: healthreports.fathom.skaphos.io
-      version: v1alpha1
-    - description: NodeCertificateCheck is the Schema for the nodecertificatechecks API.
+      version: v1
+    - description: NodeCertificateCheck is the Schema for the nodecertificatechecks
+        API.
       displayName: Node Certificate Check
       kind: NodeCertificateCheck
       name: nodecertificatechecks.fathom.skaphos.io
-      version: v1alpha1
+      version: v1
     - description: NodeHealthCheck is the Schema for the nodehealthchecks API.
       displayName: Node Health Check
       kind: NodeHealthCheck
       name: nodehealthchecks.fathom.skaphos.io
-      version: v1alpha1
+      version: v1
   description: |
     Fathom is a Kubernetes operator that continuously validates the platform
     integrity of a cluster. It reconciles HealthCheck and ClusterHealth custom

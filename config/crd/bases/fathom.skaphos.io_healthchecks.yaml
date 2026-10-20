@@ -29,7 +29,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: HealthCheck is the Schema for the healthchecks API.
@@ -53,10 +53,9 @@ spec:
             type: object
           spec:
             description: |-
-              HealthCheckSpec defines the desired state of HealthCheck. A HealthCheck is
-              a thin wrapper that mirrors the status of a specialized check resource into
-              a uniform shape suitable for ClusterHealth aggregation. HealthCheck does not
-              execute checks itself.
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               checkRef:
                 description: |-
@@ -67,7 +66,11 @@ spec:
                   apiVersion:
                     description: |-
                       APIVersion of the target check resource. When empty, defaults to
-                      fathom.skaphos.io/v1alpha1.
+                      fathom.skaphos.io/v1, which is also the only accepted value: every
+                      kind a HealthCheck can target is served at v1, and a foreign group or
+                      version is rejected at admission rather than silently mirrored.
+                    enum:
+                    - fathom.skaphos.io/v1
                     maxLength: 317
                     type: string
                   kind:
@@ -99,11 +102,6 @@ spec:
                 description: Description is a human-readable purpose for this HealthCheck.
                 maxLength: 1024
                 type: string
-              paused:
-                description: |-
-                  Paused suspends mirroring of the referenced check's status into this
-                  HealthCheck. The most recent Status snapshot is preserved while paused.
-                type: boolean
             required:
             - checkRef
             type: object
@@ -258,6 +256,8 @@ spec:
                 maxLength: 1024
                 type: string
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

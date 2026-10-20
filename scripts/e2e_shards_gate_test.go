@@ -74,7 +74,7 @@ func TestE2EShardPlannerClassifiesPaths(t *testing.T) {
 		{path: "test/e2e/dnscheck_resolution_test.go", want: "core"},
 		{path: "test/e2e/dnscheck_aggregation_test.go", want: "core"},
 		{path: "test/e2e/dnscheck_restricted_test.go", want: "core"},
-		{path: "config/samples/fathom_v1alpha1_dnscheck.yaml", want: "core"},
+		{path: "config/samples/fathom_v1_dnscheck.yaml", want: "core"},
 		// Its reconciler is shared surface and must still fan out.
 		{path: "internal/controller/dnscheck_controller.go", want: "all"},
 		// Anchors on either side of the DNSCheck rows.

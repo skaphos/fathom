@@ -83,7 +83,7 @@ func listProbePods(namespace string) ([]dnsCheckPod, error) {
 // writeDNSCheckManifest renders a DNSCheck that resolves through a blackholed
 // upstream, so its probe Pod stays alive for the declared timeout.
 func writeDNSCheckManifest(name string, timeout, interval string) string {
-	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	manifest := fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: %s

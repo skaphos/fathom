@@ -107,7 +107,7 @@ check "Taskfile.yml E2E_NODE_AGENT_IMG" \
 # must match E2E_PROBE_IMG / DefaultProbeImage or kind e2e ImagePullBackOffs
 # when the sample asks for a tag that was never kind-loaded.
 check "config/samples coredns probeImage" \
-  "$probe_ref" "$(first_quoted 'probeImage:' config/samples/fathom_v1alpha1_addoncheck_coredns.yaml)"
+  "$probe_ref" "$(first_quoted 'probeImage:' config/samples/fathom_v1_addoncheck_coredns.yaml)"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "::error::version lockstep check failed: ${failures} site(s) do not match release ${version}." >&2

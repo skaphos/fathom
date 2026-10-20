@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	definitions "github.com/skaphos/fathom/pkg/addondefinition"
 	"github.com/spf13/cobra"
@@ -52,19 +53,19 @@ func waitDrainPoll(ctx context.Context) error {
 	}
 }
 
-func leaseEpoch(lease *coordinationv1.Lease) (*api.DefinitionLeaderEpoch, error) {
+func leaseEpoch(lease *coordinationv1.Lease) (*fathomv1.DefinitionLeaderEpoch, error) {
 	s := lease.Spec
 	if lease.UID == "" || s.HolderIdentity == nil || *s.HolderIdentity == "" || s.AcquireTime == nil || s.AcquireTime.IsZero() || s.RenewTime == nil || s.RenewTime.IsZero() || s.LeaseTransitions == nil || *s.LeaseTransitions < 0 || s.LeaseDurationSeconds == nil || *s.LeaseDurationSeconds <= 0 || !lease.DeletionTimestamp.IsZero() {
 		return nil, fmt.Errorf("lease lacks live leadership evidence")
 	}
-	return &api.DefinitionLeaderEpoch{LeaseUID: string(lease.UID), HolderIdentity: *s.HolderIdentity, AcquireTime: *s.AcquireTime, LeaseTransitions: *s.LeaseTransitions}, nil
+	return &fathomv1.DefinitionLeaderEpoch{LeaseUID: string(lease.UID), HolderIdentity: *s.HolderIdentity, AcquireTime: *s.AcquireTime, LeaseTransitions: *s.LeaseTransitions}, nil
 }
 
-func sameEpoch(a, b *api.DefinitionLeaderEpoch) bool {
+func sameEpoch(a, b *fathomv1.DefinitionLeaderEpoch) bool {
 	return a != nil && b != nil && a.LeaseUID == b.LeaseUID && a.HolderIdentity == b.HolderIdentity && a.AcquireTime.Equal(&b.AcquireTime) && a.LeaseTransitions == b.LeaseTransitions
 }
 
-func verifyDefinitionDrain(ctx context.Context, reader client.Reader, namespace, name, leaseName string, wait func(context.Context) error) (*api.DefinitionLeaderEpoch, error) {
+func verifyDefinitionDrain(ctx context.Context, reader client.Reader, namespace, name, leaseName string, wait func(context.Context) error) (*fathomv1.DefinitionLeaderEpoch, error) {
 	ctx, cancel := context.WithTimeout(ctx, definitions.MaxDrainDuration)
 	defer cancel()
 	get := func(key types.NamespacedName, obj client.Object) error {
@@ -72,7 +73,7 @@ func verifyDefinitionDrain(ctx context.Context, reader client.Reader, namespace,
 		defer cancel()
 		return reader.Get(req, key, obj)
 	}
-	readLease := func() (*coordinationv1.Lease, *api.DefinitionLeaderEpoch, error) {
+	readLease := func() (*coordinationv1.Lease, *fathomv1.DefinitionLeaderEpoch, error) {
 		var lease coordinationv1.Lease
 		if err := get(types.NamespacedName{Namespace: namespace, Name: leaseName}, &lease); err != nil {
 			return nil, nil, err
@@ -91,7 +92,7 @@ func verifyDefinitionDrain(ctx context.Context, reader client.Reader, namespace,
 		if err := wait(ctx); err != nil {
 			return nil, &commandError{2, err}
 		}
-		var observed *api.DefinitionLeaderEpoch
+		var observed *fathomv1.DefinitionLeaderEpoch
 		last, observed, err = readLease()
 		if err != nil {
 			return nil, &commandError{2, err}

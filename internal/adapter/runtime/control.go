@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -55,7 +56,7 @@ func (t ControlTargets) permits(route apiRoute) bool {
 		return route.namespace == "" && route.name == t.DefinitionName
 	case api.GroupVersion.String() + "/addondefinitionbindings":
 		return route.namespace == t.OperatorNamespace && (route.list || route.name == t.DefinitionName)
-	case api.GroupVersion.String() + "/addonchecks":
+	case fathomv1.GroupVersion.String() + "/addonchecks":
 		return route.namespace == t.Check.Namespace && route.name == t.Check.Name
 	case "v1/serviceaccounts":
 		// The initial reader has no service account target. Authority resolution

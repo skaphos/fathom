@@ -19,14 +19,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
-func nhCheck(items ...fathomv1alpha1.NodeHealthCheckItem) *fathomv1alpha1.NodeHealthCheck {
-	return &fathomv1alpha1.NodeHealthCheck{
+func nhCheck(items ...fathomv1.NodeHealthCheckItem) *fathomv1.NodeHealthCheck {
+	return &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh", Namespace: "default"},
-		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: items},
+		Spec:       fathomv1.NodeHealthCheckSpec{Checks: items},
 	}
 }
 
@@ -38,15 +38,15 @@ func nhCheck(items ...fathomv1alpha1.NodeHealthCheckItem) *fathomv1alpha1.NodeHe
 func TestResolveNodeHealthItems(t *testing.T) {
 	t.Parallel()
 	check := nhCheck(
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/log"},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](5), CriticalPercentFree: ptr.To[int32](30)},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckKubeletHealthz},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/log"},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", WarnPercentFree: ptr.To[int32](5), CriticalPercentFree: ptr.To[int32](30)},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition},
 	)
 	got := resolveNodeHealthItems(check)
 	want := []nodehealth.Item{
-		{Type: "ContainerRuntime", SocketPath: fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket},
+		{Type: "ContainerRuntime", SocketPath: fathomv1.DefaultNodeHealthContainerRuntimeSocket},
 		{Type: "DiskHeadroom", Path: "/var/lib/kubelet", WarnPercentFree: 5, CriticalPercentFree: 5},
 		{Type: "DiskHeadroom", Path: "/var/log", WarnPercentFree: 20, CriticalPercentFree: 10},
 		{Type: "KubeletHealthz"},
@@ -73,11 +73,11 @@ func TestResolveNodeHealthItems(t *testing.T) {
 
 	// Two ContainerRuntime items sort by socket, so their order is stable too.
 	twoSockets := nhCheck(
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime, SocketPath: "/run/crio/crio.sock"},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime},
 	)
 	sockets := resolveNodeHealthItems(twoSockets)
-	if len(sockets) != 2 || sockets[0].SocketPath != fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket || sockets[1].SocketPath != "/run/crio/crio.sock" {
+	if len(sockets) != 2 || sockets[0].SocketPath != fathomv1.DefaultNodeHealthContainerRuntimeSocket || sockets[1].SocketPath != "/run/crio/crio.sock" {
 		t.Fatalf("runtime items not sorted by socket: %+v", sockets)
 	}
 
@@ -91,14 +91,14 @@ func TestResolveNodeHealthItems(t *testing.T) {
 
 func TestNodeHealthConditionTypes(t *testing.T) {
 	t.Parallel()
-	if got := nodeHealthConditionTypes(nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})); got != nil {
+	if got := nodeHealthConditionTypes(nhCheck(fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckKubeletHealthz})); got != nil {
 		t.Fatalf("no NodeCondition item should yield nil, got %v", got)
 	}
-	got := nodeHealthConditionTypes(nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition}))
-	if strings.Join(got, ",") != strings.Join(fathomv1alpha1.DefaultNodeHealthConditions(), ",") {
+	got := nodeHealthConditionTypes(nhCheck(fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition}))
+	if strings.Join(got, ",") != strings.Join(fathomv1.DefaultNodeHealthConditions(), ",") {
 		t.Fatalf("default conditions = %v", got)
 	}
-	got = nodeHealthConditionTypes(nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready", "NetworkUnavailable"}}))
+	got = nodeHealthConditionTypes(nhCheck(fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready", "NetworkUnavailable"}}))
 	if strings.Join(got, ",") != "NetworkUnavailable,Ready" {
 		t.Fatalf("explicit conditions = %v (want sorted)", got)
 	}
@@ -171,25 +171,25 @@ func TestMergeNodeHealthEvaluationAndSummary(t *testing.T) {
 	}
 
 	evals := []nodeHealthEvaluation{sick, healthy}
-	if agg := aggregateNodeHealth(evals); agg != fathomv1alpha1.HealthReportResultFail {
+	if agg := aggregateNodeHealth(evals); agg != fathomv1.HealthReportResultFail {
 		t.Fatalf("aggregate = %s", agg)
 	}
-	if agg := aggregateNodeHealth(nil); agg != fathomv1alpha1.HealthReportResultSkipped {
+	if agg := aggregateNodeHealth(nil); agg != fathomv1.HealthReportResultSkipped {
 		t.Fatalf("empty aggregate = %s", agg)
 	}
-	summary := nodeHealthSummary(evals, fathomv1alpha1.HealthReportResultFail)
+	summary := nodeHealthSummary(evals, fathomv1.HealthReportResultFail)
 	if summary != "1 of 2 node(s) passed; worst: node-b DiskHeadroom /var/lib/kubelet: 8.2% of bytes free (at or below criticalPercentFree 10)" {
 		t.Fatalf("summary = %q", summary)
 	}
-	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy}, fathomv1alpha1.HealthReportResultPass); s != "1 of 1 node(s) passed" {
+	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy}, fathomv1.HealthReportResultPass); s != "1 of 1 node(s) passed" {
 		t.Fatalf("passing summary = %q", s)
 	}
 	// Skipped is "nothing graded", never "passed".
 	skipped := nodeHealthEvaluation{Node: "node-s", Outcome: nodehealth.OutcomeSkipped}
-	if s := nodeHealthSummary([]nodeHealthEvaluation{skipped}, fathomv1alpha1.HealthReportResultSkipped); s != "0 of 1 node(s) passed" {
+	if s := nodeHealthSummary([]nodeHealthEvaluation{skipped}, fathomv1.HealthReportResultSkipped); s != "0 of 1 node(s) passed" {
 		t.Fatalf("all-Skipped summary = %q", s)
 	}
-	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy, skipped}, fathomv1alpha1.HealthReportResultPass); s != "1 of 2 node(s) passed" {
+	if s := nodeHealthSummary([]nodeHealthEvaluation{healthy, skipped}, fathomv1.HealthReportResultPass); s != "1 of 2 node(s) passed" {
 		t.Fatalf("mixed Pass/Skipped summary = %q", s)
 	}
 
@@ -202,23 +202,23 @@ func TestMergeNodeHealthEvaluationAndSummary(t *testing.T) {
 	}
 
 	// The cap bounds the projection, not the fold.
-	many := make([]nodeHealthEvaluation, fathomv1alpha1.MaxNodeHealthNodeResults+5)
+	many := make([]nodeHealthEvaluation, fathomv1.MaxNodeHealthNodeResults+5)
 	for i := range many {
 		many[i] = nodeHealthEvaluation{Node: "node-" + strings.Repeat("z", i%3) + string(rune('a'+i%26)) + strings.Repeat("q", i/26), Outcome: nodehealth.OutcomePass}
 	}
 	many[len(many)-1].Outcome = nodehealth.OutcomeFail
-	if got := len(nodeHealthNodeResults(many)); got != fathomv1alpha1.MaxNodeHealthNodeResults {
+	if got := len(nodeHealthNodeResults(many)); got != fathomv1.MaxNodeHealthNodeResults {
 		t.Fatalf("capped results = %d", got)
 	}
-	if agg := aggregateNodeHealth(many); agg != fathomv1alpha1.HealthReportResultFail {
+	if agg := aggregateNodeHealth(many); agg != fathomv1.HealthReportResultFail {
 		t.Fatalf("truncation must not hide the failing node from the fold: %s", agg)
 	}
 
-	report := healthReportForNodeHealth(nhCheck(), evals, fathomv1alpha1.HealthReportResultFail, metav1.NewTime(at))
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultFail || len(report.Spec.Checks) != 5 {
+	report := healthReportForNodeHealth(nhCheck(), evals, fathomv1.HealthReportResultFail, metav1.NewTime(at))
+	if report.Spec.Result != fathomv1.HealthReportResultFail || len(report.Spec.Checks) != 5 {
 		t.Fatalf("report = %+v", report.Spec)
 	}
-	if report.Labels[fathomv1alpha1.LabelHealthReportSourceKind] != "NodeHealthCheck" || report.Spec.SourceRef.Kind != "NodeHealthCheck" {
+	if report.Labels[fathomv1.LabelHealthReportSourceKind] != "NodeHealthCheck" || report.Spec.SourceRef.Kind != "NodeHealthCheck" {
 		t.Fatalf("report provenance = %v / %+v", report.Labels, report.Spec.SourceRef)
 	}
 	var sawPct bool
@@ -308,13 +308,13 @@ func TestNodeHealthCadence(t *testing.T) {
 		t.Fatalf("short agent interval = %v", got)
 	}
 	unset := nhCheck()
-	if nodeHealthInterval(unset) != fathomv1alpha1.DefaultNodeHealthCheckInterval || nodeHealthTimeout(unset) != fathomv1alpha1.DefaultNodeHealthCheckTimeout {
+	if nodeHealthInterval(unset) != fathomv1.DefaultNodeHealthCheckInterval || nodeHealthTimeout(unset) != fathomv1.DefaultNodeHealthCheckTimeout {
 		t.Fatal("defaults not applied")
 	}
 	sub := nhCheck()
 	sub.Spec.Interval = &metav1.Duration{Duration: time.Second}
 	sub.Spec.Timeout = &metav1.Duration{Duration: time.Millisecond}
-	if nodeHealthInterval(sub) != fathomv1alpha1.MinCheckInterval || nodeHealthTimeout(sub) != fathomv1alpha1.MinCheckTimeout {
+	if nodeHealthInterval(sub) != fathomv1.MinCheckInterval || nodeHealthTimeout(sub) != fathomv1.MinCheckTimeout {
 		t.Fatal("sub-floor cadence not clamped")
 	}
 
@@ -339,14 +339,14 @@ func TestDecideNodeHealthRollup(t *testing.T) {
 	at := func(d time.Duration) *metav1.Time { mt := metav1.NewTime(now.Add(d)); return &mt }
 	tests := []struct {
 		name      string
-		status    fathomv1alpha1.NodeHealthCheckStatus
+		status    fathomv1.NodeHealthCheckStatus
 		aggregate string
 		want      nodeCertRollupDecision
 	}{
-		{"first roll-up persists", fathomv1alpha1.NodeHealthCheckStatus{}, "Pass", rollupPersist},
-		{"transition persists", fathomv1alpha1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(0)}, "Fail", rollupPersist},
-		{"unchanged within interval is a no-op", fathomv1alpha1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(-time.Minute)}, "Pass", rollupNoop},
-		{"unchanged past interval refreshes liveness", fathomv1alpha1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(-5 * time.Minute)}, "Pass", rollupRefreshLiveness},
+		{"first roll-up persists", fathomv1.NodeHealthCheckStatus{}, "Pass", rollupPersist},
+		{"transition persists", fathomv1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(0)}, "Fail", rollupPersist},
+		{"unchanged within interval is a no-op", fathomv1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(-time.Minute)}, "Pass", rollupNoop},
+		{"unchanged past interval refreshes liveness", fathomv1.NodeHealthCheckStatus{LastReportName: "r", LastResult: "Pass", LastRunTime: at(-5 * time.Minute)}, "Pass", rollupRefreshLiveness},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -453,8 +453,8 @@ func TestTruncateNodeHealthMessageCountsRunes(t *testing.T) {
 func TestDesiredDaemonSetNeverMountsOnePathTwice(t *testing.T) {
 	t.Parallel()
 	check := nhCheck(
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime},
 	)
 	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
 	ds := r.desiredDaemonSet(check, "sa", resolveNodeHealthItems(check))
@@ -511,7 +511,7 @@ func TestNodeHealthReportFreshClampsTheFuture(t *testing.T) {
 func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 	t.Parallel()
 	r := &NodeHealthCheckReconciler{NodeAgentImage: "img"}
-	plain := nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"})
+	plain := nhCheck(fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"})
 	ds := r.desiredDaemonSet(plain, "sa", resolveNodeHealthItems(plain))
 	c := ds.Spec.Template.Spec.Containers[0]
 	// Exec against loopback, not an HTTP probe from the kubelet: the per-check
@@ -523,7 +523,7 @@ func TestDesiredDaemonSetLivenessAndFatalBind(t *testing.T) {
 	if slices.Contains(c.Args, "--fatal-metrics-bind") {
 		t.Fatal("a pod-network agent must tolerate a metrics bind failure")
 	}
-	hostNet := nhCheck(fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz})
+	hostNet := nhCheck(fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckKubeletHealthz})
 	ds = r.desiredDaemonSet(hostNet, "sa", resolveNodeHealthItems(hostNet))
 	if !ds.Spec.Template.Spec.HostNetwork || !slices.Contains(ds.Spec.Template.Spec.Containers[0].Args, "--fatal-metrics-bind") {
 		t.Fatal("a host-network agent must be told a metrics bind failure is fatal")
@@ -666,8 +666,8 @@ func TestNodeHealthObservedBoundIgnoresAdoptionWrites(t *testing.T) {
 func TestRejectedItemsIncludeSocketCollisions(t *testing.T) {
 	t.Parallel()
 	check := nhCheck(
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/containerd.sock"},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime},
 	)
 	rejected := rejectedNodeHealthItems(check)
 	if len(rejected) != 1 || !strings.Contains(rejected[0], "collides with ContainerRuntime socketPath") {
@@ -676,8 +676,8 @@ func TestRejectedItemsIncludeSocketCollisions(t *testing.T) {
 	// An alias of the socket path is rejected twice over: as a non-canonical
 	// path, and — compared on cleaned values — as the same collision.
 	alias := nhCheck(
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/./containerd.sock"},
-		fathomv1alpha1.NodeHealthCheckItem{Type: fathomv1alpha1.NodeHealthCheckContainerRuntime},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/run/containerd/./containerd.sock"},
+		fathomv1.NodeHealthCheckItem{Type: fathomv1.NodeHealthCheckContainerRuntime},
 	)
 	rejected = rejectedNodeHealthItems(alias)
 	joined := strings.Join(rejected, "; ")

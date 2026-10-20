@@ -36,7 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/go-logr/logr"
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
@@ -47,7 +47,6 @@ import (
 
 const (
 	addonCheckConditionAccepted = "Accepted"
-	addonCheckConditionPaused   = "Paused"
 	addonCheckConditionReady    = "Ready"
 
 	// addonCheckMaxConcurrentReconciles bounds how many AddonChecks reconcile in
@@ -175,7 +174,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	log := logf.FromContext(ctx).WithValues("namespacedName", req.NamespacedName)
 
-	var check fathomv1alpha1.AddonCheck
+	var check fathomv1.AddonCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries("AddonCheck", req.Namespace, req.Name)
@@ -191,35 +190,13 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	before := check.Status.DeepCopy()
 	defer func() {
 		observeCheck(r.Recorder, &check, "AddonCheck",
-			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			fathomv1.HealthReportResult(before.LastResult), fathomv1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
 			check.Status.LastRunTime, addonCheckInterval(&check), err)
 	}()
 	previousObservedGeneration := check.Status.ObservedGeneration
 	check.Status.ObservedGeneration = check.Generation
 
-	pausedStatus := metav1.ConditionFalse
-	pausedReason := "RunEnabled"
-	pausedMessage := "AddonCheck is eligible for adapter execution."
-	if check.Spec.Paused {
-		pausedStatus = metav1.ConditionTrue
-		pausedReason = "Paused"
-		pausedMessage = "AddonCheck is paused; adapter execution is disabled."
-	}
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               addonCheckConditionPaused,
-		Status:             pausedStatus,
-		ObservedGeneration: check.Generation,
-		Reason:             pausedReason,
-		Message:            pausedMessage,
-	})
-	// Pausing a check withdraws any queued runtime wake: the pool would
-	// otherwise still admit a run for a check that has been switched off.
-	// Forget for a check the pool never heard of is a no-op, and the whole call
-	// is a no-op while runtime loading is off.
-	if check.Spec.Paused {
-		r.forgetRuntimeWork(req.NamespacedName)
-	}
 	// A runtime-backed identity never goes through resolveAddonAdapter: that
 	// path reports MissingAdapter for an identity no BUILT-IN claims, and it
 	// would run a compiled runtime adapter through the built-in impersonation
@@ -328,7 +305,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // addonCheckDueForRun reports whether the adapter should run this reconcile: on
 // first sight, on a spec (generation) change, when the on-demand run-now trigger
 // is due (runTriggerDue), or when Interval has elapsed since the last run.
-func addonCheckDueForRun(check *fathomv1alpha1.AddonCheck, previousObservedGeneration int64, triggerDue bool, interval time.Duration) bool {
+func addonCheckDueForRun(check *fathomv1.AddonCheck, previousObservedGeneration int64, triggerDue bool, interval time.Duration) bool {
 	switch {
 	case check.Status.LastRunTime == nil:
 		return true
@@ -369,17 +346,7 @@ func builtinAdapterFor(adapters addonAdapterLookup, addonType string) (adapter.A
 	return resolution.Adapter, nil
 }
 
-func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
-	if check.Spec.Paused {
-		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-			Type:               addonCheckConditionReady,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: check.Generation,
-			Reason:             "Paused",
-			Message:            "AddonCheck is paused; adapter execution is disabled.",
-		})
-		return nil, false
-	}
+func resolveAddonAdapter(check *fathomv1.AddonCheck, adapters addonAdapterLookup) (adapter.Adapter, bool) {
 	if adapters == nil {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type:               addonCheckConditionReady,
@@ -418,7 +385,7 @@ func resolveAddonAdapter(check *fathomv1alpha1.AddonCheck, adapters addonAdapter
 	return selectedAdapter, true
 }
 
-func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) error {
+func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logger, check *fathomv1.AddonCheck, selectedAdapter adapter.Adapter) error {
 	timeout := addonCheckTimeout(check)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -599,19 +566,12 @@ func (r *AddonCheckReconciler) adapterClient(ctx context.Context, addon string) 
 //     never be enqueued; it keeps the existing MissingAdapter answer rather
 //     than disappearing into a queue that would refuse it.
 //
-// A paused check is likewise left to the built-in path, which is where the
-// Paused condition is written — and its queued wake is withdrawn, because a
-// paused check must not run.
-//
 // A barrier (BuiltinCollision, RuntimeCollision, RuntimeAdmissionClosed) and an
 // entirely unknown identity both answer TRUE: those outcomes belong to the
 // runtime path, which reports them with the lifecycle matrix's own reasons
 // (contracts/runtime.md), and the reconciler has nothing truer to say.
-func (r *AddonCheckReconciler) runtimeBacked(check *fathomv1alpha1.AddonCheck) bool {
+func (r *AddonCheckReconciler) runtimeBacked(check *fathomv1.AddonCheck) bool {
 	if r.Runtime == nil || r.RuntimeQueue == nil || r.Runtime.Registry == nil {
-		return false
-	}
-	if check.Spec.Paused {
 		return false
 	}
 	if len(validation.IsDNS1123Label(check.Spec.AddonType)) != 0 {
@@ -623,7 +583,7 @@ func (r *AddonCheckReconciler) runtimeBacked(check *fathomv1alpha1.AddonCheck) b
 
 // enqueueRuntimeWork asks the shared runtime pool for one run of check. The
 // queue deduplicates per check, so an event storm cannot multiply runs.
-func (r *AddonCheckReconciler) enqueueRuntimeWork(log logr.Logger, check *fathomv1alpha1.AddonCheck) {
+func (r *AddonCheckReconciler) enqueueRuntimeWork(log logr.Logger, check *fathomv1.AddonCheck) {
 	work := execution.Work{Definition: check.Spec.AddonType, Check: client.ObjectKeyFromObject(check)}
 	if err := r.RuntimeQueue.Enqueue(work, time.Now()); err != nil {
 		// The queue validates the names it will key work by. A rejected enqueue
@@ -668,7 +628,7 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 		return execution.MissingInput
 	}
 
-	var check fathomv1alpha1.AddonCheck
+	var check fathomv1.AddonCheck
 	if err := r.Get(ctx, work.Check, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			return execution.Completed
@@ -677,9 +637,10 @@ func (r *AddonCheckReconciler) RunRuntimeWork(ctx context.Context, work executio
 		return execution.Retry
 	}
 	// The queue entry is keyed by the check, not by its spec, so an edit
-	// between the enqueue and the admission can retarget or pause it. Neither
-	// is this run's to execute.
-	if check.Spec.Paused || check.Spec.AddonType != work.Definition {
+	// between the enqueue and the admission can retarget it (or delete it,
+	// which the read above already answered). That is not this run's to
+	// execute.
+	if check.Spec.AddonType != work.Definition {
 		return execution.Completed
 	}
 
@@ -799,8 +760,8 @@ func runtimeDisposition(attempt RuntimeAttempt) execution.Disposition {
 // still refuse. The ordering stays; the intermediate state is made RECOVERABLE
 // instead, by backfillRuntimeTransition.
 func (r *AddonCheckReconciler) recordRuntimeTransition(
-	ctx context.Context, log logr.Logger, check *fathomv1alpha1.AddonCheck,
-	previous *fathomv1alpha1.AddonCheckEvidence, attempt RuntimeAttempt,
+	ctx context.Context, log logr.Logger, check *fathomv1.AddonCheck,
+	previous *fathomv1.AddonCheckEvidence, attempt RuntimeAttempt,
 ) (string, error) {
 	if check == nil || !attempt.Completed || !attempt.Published {
 		return "", nil
@@ -881,15 +842,15 @@ func (r *AddonCheckReconciler) recordRuntimeTransition(
 // where lastReportName names a report whose result already IS this verdict,
 // writes nothing: that is the contract clause this repair must not break.
 func (r *AddonCheckReconciler) backfillRuntimeTransition(
-	ctx context.Context, check *fathomv1alpha1.AddonCheck,
-	verdict fathomv1alpha1.AddonCheckEvidenceVerdict,
+	ctx context.Context, check *fathomv1.AddonCheck,
+	verdict fathomv1.AddonCheckEvidenceVerdict,
 ) (string, bool, error) {
 	if check.Status.LastReportName == "" {
 		// Nothing was ever recorded for this check, so the current verdict is
 		// not in history at all — the transition that produced it was lost.
 		return "", true, nil
 	}
-	var recorded fathomv1alpha1.HealthReport
+	var recorded fathomv1.HealthReport
 	key := client.ObjectKey{Namespace: check.Namespace, Name: check.Status.LastReportName}
 	if err := r.Get(ctx, key, &recorded); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -925,10 +886,10 @@ func (r *AddonCheckReconciler) backfillRuntimeTransition(
 // report is a record of when the observation happened, and re-dating it is the
 // same mistake as renewing evidence on a failed attempt.
 func runtimeHealthReportForAddonCheck(
-	check *fathomv1alpha1.AddonCheck, evidence *fathomv1alpha1.AddonCheckEvidence, attempt RuntimeAttempt,
-) *fathomv1alpha1.HealthReport {
-	sourceRef := fathomv1alpha1.HealthReportTargetRef{
-		APIVersion: fathomv1alpha1.GroupVersion.String(),
+	check *fathomv1.AddonCheck, evidence *fathomv1.AddonCheckEvidence, attempt RuntimeAttempt,
+) *fathomv1.HealthReport {
+	sourceRef := fathomv1.HealthReportTargetRef{
+		APIVersion: fathomv1.GroupVersion.String(),
 		Kind:       "AddonCheck",
 		Namespace:  check.Namespace,
 		Name:       check.Name,
@@ -940,16 +901,16 @@ func runtimeHealthReportForAddonCheck(
 	if attempt.Evidence.Duration > 0 {
 		duration = &metav1.Duration{Duration: attempt.Evidence.Duration}
 	}
-	return &fathomv1alpha1.HealthReport{
+	return &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+				fathomv1.LabelHealthReportSourceName: check.Name,
 			},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
+		Spec: fathomv1.HealthReportSpec{
 			SourceRef: sourceRef,
 			AddonType: check.Spec.AddonType,
 			// A compiled runtime adapter's identity IS the addon type, and its
@@ -963,12 +924,12 @@ func runtimeHealthReportForAddonCheck(
 			// this binary's adapter contract, so this is the exact contract the
 			// run used, not an assumption about someone else's adapter.
 			ContractVersion: adapter.ContractVersion,
-			Result:          fathomv1alpha1.HealthReportResult(evidence.Verdict),
+			Result:          fathomv1.HealthReportResult(evidence.Verdict),
 			Checks: append(healthReportChecks(attempt.Evidence.Checks, observedAt),
 				ratioRollupReportChecks(rollups, sourceRef, observedAt)...),
 			ObservedAt: observedAt,
 			Duration:   duration,
-			Attribution: &fathomv1alpha1.HealthReportAttribution{
+			Attribution: &fathomv1.HealthReportAttribution{
 				Revision:  evidence.Revision,
 				Authority: *evidence.Authority.DeepCopy(),
 				Coverage:  evidence.Coverage,
@@ -989,27 +950,27 @@ func runtimeHealthReportForAddonCheck(
 func (r *AddonCheckReconciler) pruneHealthReportHistory(
 	ctx context.Context,
 	log logr.Logger,
-	check *fathomv1alpha1.AddonCheck,
+	check *fathomv1.AddonCheck,
 	protectedName string,
 ) {
 	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
-		fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+		fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+		fathomv1.LabelHealthReportSourceName: check.Name,
 	}, historyLimit(check.Spec.HistoryLimit), protectedName)
 }
 
-func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {
+func addonCheckTimeout(check *fathomv1.AddonCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1.MinCheckTimeout)
 	}
-	return fathomv1alpha1.DefaultAddonCheckTimeout
+	return fathomv1.DefaultAddonCheckTimeout
 }
 
-func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
+func addonCheckInterval(check *fathomv1.AddonCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
+		return clampCadence(check.Spec.Interval.Duration, fathomv1.MinCheckInterval)
 	}
-	return fathomv1alpha1.DefaultAddonCheckInterval
+	return fathomv1.DefaultAddonCheckInterval
 }
 
 // setAddonCheckAccepted records the Accepted condition from policy validation:
@@ -1018,7 +979,7 @@ func addonCheckInterval(check *fathomv1alpha1.AddonCheck) time.Duration {
 // sub-floor cadence (pre-floor object) downgrades a clean acceptance to
 // True/SpecClamped naming the clamped fields — an invalid policy outranks the
 // clamp notice because it stops the check entirely.
-func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string) {
+func setAddonCheckAccepted(check *fathomv1.AddonCheck, policyErrs []string) {
 	cond := metav1.Condition{
 		Type:               addonCheckConditionAccepted,
 		Status:             metav1.ConditionTrue,
@@ -1054,7 +1015,7 @@ func setAddonCheckAccepted(check *fathomv1alpha1.AddonCheck, policyErrs []string
 // outright when the selected adapter predates contract
 // [adapter.RatioThresholdsContractVersion]. Every other threshold value remains
 // adapter-private and is never validated here.
-func validateAddonCheckPolicy(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter) []string {
+func validateAddonCheckPolicy(check *fathomv1.AddonCheck, selectedAdapter adapter.Adapter) []string {
 	if len(check.Spec.Policy) == 0 {
 		return nil
 	}
@@ -1139,7 +1100,7 @@ func unknownThresholdKeys(family string, thresholds map[string]string, advertise
 	return problems
 }
 
-func addonCheckPolicy(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {
+func addonCheckPolicy(check *fathomv1.AddonCheck) map[adapter.Family]adapter.FamilyPolicy {
 	if len(check.Spec.Policy) == 0 {
 		return nil
 	}
@@ -1173,7 +1134,7 @@ func copyStringMap(in map[string]string) map[string]string {
 // thresholdStringMap converts the API's bounded ThresholdValue map to the
 // plain string map the adapter contract uses (pkg/adapter deliberately knows
 // nothing about API schema bounds).
-func thresholdStringMap(in map[string]fathomv1alpha1.ThresholdValue) map[string]string {
+func thresholdStringMap(in map[string]fathomv1.ThresholdValue) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}
@@ -1184,37 +1145,37 @@ func thresholdStringMap(in map[string]fathomv1alpha1.ThresholdValue) map[string]
 	return out
 }
 
-func addonCheckTargetRef(check *fathomv1alpha1.AddonCheck) adapter.TargetRef {
+func addonCheckTargetRef(check *fathomv1.AddonCheck) adapter.TargetRef {
 	return adapter.TargetRef{
-		APIVersion: fathomv1alpha1.GroupVersion.String(),
+		APIVersion: fathomv1.GroupVersion.String(),
 		Kind:       "AddonCheck",
 		Namespace:  check.Namespace,
 		Name:       check.Name,
 	}
 }
 
-func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter adapter.Adapter, result adapter.Result, observedAt metav1.Time, runErr error) *fathomv1alpha1.HealthReport {
-	sourceRef := fathomv1alpha1.HealthReportTargetRef{
-		APIVersion: fathomv1alpha1.GroupVersion.String(),
+func healthReportForAddonCheck(check *fathomv1.AddonCheck, selectedAdapter adapter.Adapter, result adapter.Result, observedAt metav1.Time, runErr error) *fathomv1.HealthReport {
+	sourceRef := fathomv1.HealthReportTargetRef{
+		APIVersion: fathomv1.GroupVersion.String(),
 		Kind:       "AddonCheck",
 		Namespace:  check.Namespace,
 		Name:       check.Name,
 	}
 	aggregate, rollups := aggregateWithRatioRollups(result.Checks, ratioThresholdsByFamily(check))
 	if runErr != nil {
-		aggregate = fathomv1alpha1.HealthReportResultError
+		aggregate = fathomv1.HealthReportResultError
 	}
 	duration := metav1.Duration{Duration: result.Duration}
-	report := &fathomv1alpha1.HealthReport{
+	report := &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+				fathomv1.LabelHealthReportSourceName: check.Name,
 			},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
+		Spec: fathomv1.HealthReportSpec{
 			SourceRef:       sourceRef,
 			AddonType:       check.Spec.AddonType,
 			AdapterName:     selectedAdapter.Name(),
@@ -1228,9 +1189,9 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 		},
 	}
 	if runErr != nil {
-		report.Spec.Checks = append(report.Spec.Checks, fathomv1alpha1.HealthReportCheck{
+		report.Spec.Checks = append(report.Spec.Checks, fathomv1.HealthReportCheck{
 			Family:     "adapter",
-			Result:     fathomv1alpha1.HealthReportResultError,
+			Result:     fathomv1.HealthReportResultError,
 			TargetRef:  report.Spec.SourceRef,
 			Summary:    runErr.Error(),
 			ObservedAt: observedAt,
@@ -1239,11 +1200,11 @@ func healthReportForAddonCheck(check *fathomv1alpha1.AddonCheck, selectedAdapter
 	return report
 }
 
-func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.Time) []fathomv1alpha1.HealthReportCheck {
+func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.Time) []fathomv1.HealthReportCheck {
 	if len(checks) == 0 {
 		return nil
 	}
-	out := make([]fathomv1alpha1.HealthReportCheck, 0, len(checks))
+	out := make([]fathomv1.HealthReportCheck, 0, len(checks))
 	for _, check := range checks {
 		observedAt := fallbackObservedAt
 		if !check.ObservedAt.IsZero() {
@@ -1253,10 +1214,10 @@ func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.
 		if check.Duration > 0 {
 			duration = &metav1.Duration{Duration: check.Duration}
 		}
-		out = append(out, fathomv1alpha1.HealthReportCheck{
+		out = append(out, fathomv1.HealthReportCheck{
 			Family: string(check.Family),
 			Result: healthReportResult(check.Outcome),
-			TargetRef: fathomv1alpha1.HealthReportTargetRef{
+			TargetRef: fathomv1.HealthReportTargetRef{
 				APIVersion: check.TargetRef.APIVersion,
 				Kind:       check.TargetRef.Kind,
 				Namespace:  check.TargetRef.Namespace,
@@ -1278,12 +1239,12 @@ func healthReportChecks(checks []adapter.CheckResult, fallbackObservedAt metav1.
 // no longer flaps as the first managed CR appears or disappears (#160). An
 // empty checks slice (the adapter ran but produced no outcomes) folds to
 // Skipped so the report still carries a signal.
-func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1alpha1.HealthReportResult {
-	results := make([]fathomv1alpha1.HealthReportResult, 0, len(checks))
+func aggregateHealthReportResult(checks []adapter.CheckResult) fathomv1.HealthReportResult {
+	results := make([]fathomv1.HealthReportResult, 0, len(checks))
 	for _, check := range checks {
 		results = append(results, healthReportResult(check.Outcome))
 	}
-	return fathomv1alpha1.WorstResult(results, false)
+	return fathomv1.WorstResult(results, false)
 }
 
 // familyRatioRollup pairs a ratio-evaluated family with its thresholds and
@@ -1298,7 +1259,7 @@ type familyRatioRollup struct {
 // reserved ratio keys (#159). Values that fail to parse are skipped here —
 // they were already rejected loudly via the Accepted condition before the
 // run, so this is only a defensive guard against racing spec updates.
-func ratioThresholdsByFamily(check *fathomv1alpha1.AddonCheck) map[adapter.Family]adapter.RatioThresholds {
+func ratioThresholdsByFamily(check *fathomv1.AddonCheck) map[adapter.Family]adapter.RatioThresholds {
 	var out map[adapter.Family]adapter.RatioThresholds
 	for family, familyPolicy := range check.Spec.Policy {
 		rt, err := adapter.ParseRatioThresholds(thresholdStringMap(familyPolicy.Thresholds))
@@ -1322,7 +1283,7 @@ func ratioThresholdsByFamily(check *fathomv1alpha1.AddonCheck) map[adapter.Famil
 // informational and an all-Skipped report still folds to Skipped, exactly as
 // without thresholds. Rollups are returned in first-appearance order, which
 // follows the adapter's deterministic emit order.
-func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.Family]adapter.RatioThresholds) (fathomv1alpha1.HealthReportResult, []familyRatioRollup) {
+func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.Family]adapter.RatioThresholds) (fathomv1.HealthReportResult, []familyRatioRollup) {
 	if len(ratios) == 0 {
 		return aggregateHealthReportResult(checks), nil
 	}
@@ -1339,7 +1300,7 @@ func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.
 		computed[family] = adapter.FamilyRatioVerdict(familyChecks, family, ratios[family])
 	}
 
-	results := make([]fathomv1alpha1.HealthReportResult, 0, len(checks))
+	results := make([]fathomv1.HealthReportResult, 0, len(checks))
 	folded := make(map[adapter.Family]bool, len(computed))
 	var rollups []familyRatioRollup
 	for _, check := range checks {
@@ -1359,7 +1320,7 @@ func aggregateWithRatioRollups(checks []adapter.CheckResult, ratios map[adapter.
 			results = append(results, healthReportResult(rollup.Verdict))
 		}
 	}
-	return fathomv1alpha1.WorstResult(results, false), rollups
+	return fathomv1.WorstResult(results, false), rollups
 }
 
 // Well-known Details keys of the synthetic ratio-rollup report entry. The
@@ -1377,11 +1338,11 @@ const (
 // ratioRollupReportChecks renders one synthetic HealthReportCheck per
 // ratio-evaluated family, targeting the driving AddonCheck. Per-resource
 // entries are never modified; these ride alongside them.
-func ratioRollupReportChecks(rollups []familyRatioRollup, sourceRef fathomv1alpha1.HealthReportTargetRef, observedAt metav1.Time) []fathomv1alpha1.HealthReportCheck {
+func ratioRollupReportChecks(rollups []familyRatioRollup, sourceRef fathomv1.HealthReportTargetRef, observedAt metav1.Time) []fathomv1.HealthReportCheck {
 	if len(rollups) == 0 {
 		return nil
 	}
-	out := make([]fathomv1alpha1.HealthReportCheck, 0, len(rollups))
+	out := make([]fathomv1.HealthReportCheck, 0, len(rollups))
 	for _, fr := range rollups {
 		details := map[string]string{
 			detailRollup:           detailRollupRatio,
@@ -1395,7 +1356,7 @@ func ratioRollupReportChecks(rollups []familyRatioRollup, sourceRef fathomv1alph
 		if fr.thresholds.Fail != nil {
 			details[adapter.ThresholdKeyFailRatio] = fr.thresholds.Fail.String()
 		}
-		out = append(out, fathomv1alpha1.HealthReportCheck{
+		out = append(out, fathomv1.HealthReportCheck{
 			Family:     string(fr.family),
 			Result:     healthReportResult(fr.rollup.Verdict),
 			TargetRef:  sourceRef,
@@ -1428,20 +1389,20 @@ func ratioRollupSummary(fr familyRatioRollup) string {
 	return b.String()
 }
 
-func healthReportResult(outcome adapter.Outcome) fathomv1alpha1.HealthReportResult {
+func healthReportResult(outcome adapter.Outcome) fathomv1.HealthReportResult {
 	switch outcome {
 	case adapter.OutcomePass:
-		return fathomv1alpha1.HealthReportResultPass
+		return fathomv1.HealthReportResultPass
 	case adapter.OutcomeWarn:
-		return fathomv1alpha1.HealthReportResultWarn
+		return fathomv1.HealthReportResultWarn
 	case adapter.OutcomeFail:
-		return fathomv1alpha1.HealthReportResultFail
+		return fathomv1.HealthReportResultFail
 	case adapter.OutcomeError:
-		return fathomv1alpha1.HealthReportResultError
+		return fathomv1.HealthReportResultError
 	case adapter.OutcomeSkipped:
-		return fathomv1alpha1.HealthReportResultSkipped
+		return fathomv1.HealthReportResultSkipped
 	default:
-		return fathomv1alpha1.HealthReportResultUnknown
+		return fathomv1.HealthReportResultUnknown
 	}
 }
 
@@ -1461,7 +1422,7 @@ func countAbsent(checks []adapter.CheckResult) int32 {
 // SetupWithManager sets up the controller with the Manager.
 func (r *AddonCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&fathomv1alpha1.AddonCheck{}).
+		For(&fathomv1.AddonCheck{}).
 		Named("addoncheck").
 		WithOptions(controller.Options{MaxConcurrentReconciles: addonCheckMaxConcurrentReconciles}).
 		Complete(r)

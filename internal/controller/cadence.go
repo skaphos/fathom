@@ -11,7 +11,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // The CRD schema rejects sub-floor interval/timeout values at admission, but
@@ -19,7 +19,7 @@ import (
 // were installed) still reconcile. clampCadence is the runtime backstop: the
 // cadence helpers route every read — requeue period, run deadline, node-agent
 // arguments — through it, so nothing can schedule faster than the floors in
-// api/v1alpha1. Zero and negative values keep their historical treat-as-unset
+// api/v1. Zero and negative values keep their historical treat-as-unset
 // semantics in the callers (the defaults all exceed the floors).
 
 // clampCadence returns d raised to floor when 0 < d < floor, otherwise d.
@@ -36,13 +36,13 @@ func clampCadence(d, floor time.Duration) time.Duration {
 // effective value so the Event and the Accepted condition explain themselves.
 func cadenceClampMessages(interval, timeout *metav1.Duration) []string {
 	var msgs []string
-	if interval != nil && interval.Duration > 0 && interval.Duration < fathomv1alpha1.MinCheckInterval {
+	if interval != nil && interval.Duration > 0 && interval.Duration < fathomv1.MinCheckInterval {
 		msgs = append(msgs, fmt.Sprintf("spec.interval %s is below the minimum %s; using %s",
-			interval.Duration, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.MinCheckInterval))
+			interval.Duration, fathomv1.MinCheckInterval, fathomv1.MinCheckInterval))
 	}
-	if timeout != nil && timeout.Duration > 0 && timeout.Duration < fathomv1alpha1.MinCheckTimeout {
+	if timeout != nil && timeout.Duration > 0 && timeout.Duration < fathomv1.MinCheckTimeout {
 		msgs = append(msgs, fmt.Sprintf("spec.timeout %s is below the minimum %s; using %s",
-			timeout.Duration, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.MinCheckTimeout))
+			timeout.Duration, fathomv1.MinCheckTimeout, fathomv1.MinCheckTimeout))
 	}
 	return msgs
 }

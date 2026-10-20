@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func newDescribeCommand(f *factory) *cobra.Command {
@@ -111,11 +111,10 @@ func (d *describer) header(ref checkRef, obj client.Object) {
 func (d *describer) spec(obj client.Object) {
 	d.section("Spec")
 	switch o := obj.(type) {
-	case *fathomv1alpha1.AddonCheck:
+	case *fathomv1.AddonCheck:
 		d.sub("Addon type", o.Spec.AddonType)
-		d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultAddonCheckInterval))
-		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultAddonCheckTimeout))
-		d.sub("Paused", fmt.Sprint(o.Spec.Paused))
+		d.sub("Interval", cadence(o.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultAddonCheckInterval))
+		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultAddonCheckTimeout))
 		d.sub("History limit", int32PtrString(o.Spec.HistoryLimit, "10 (default)"))
 		families := make([]string, 0, len(o.Spec.Policy))
 		for name := range o.Spec.Policy {
@@ -143,9 +142,9 @@ func (d *describer) spec(obj client.Object) {
 			}
 			d.sub("Policy "+name, strings.Join(extra, ", "))
 		}
-	case *fathomv1alpha1.DNSCheck:
-		d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultDNSCheckInterval))
-		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultDNSCheckTimeout))
+	case *fathomv1.DNSCheck:
+		d.sub("Interval", cadence(o.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultDNSCheckInterval))
+		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultDNSCheckTimeout))
 		d.sub("History limit", int32PtrString(o.Spec.HistoryLimit, "10 (default)"))
 		if len(o.Spec.Resolvers) == 0 {
 			d.sub("Resolvers", "cluster (implicit)")
@@ -170,10 +169,9 @@ func (d *describer) spec(obj client.Object) {
 			}
 			d.sub("Target "+t.Name, strings.Join(parts, ", "))
 		}
-	case *fathomv1alpha1.NodeCertificateCheck:
-		d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeCertificateCheckInterval))
-		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeCertificateCheckTimeout))
-		d.sub("Paused", fmt.Sprint(o.Spec.Paused))
+	case *fathomv1.NodeCertificateCheck:
+		d.sub("Interval", cadence(o.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultNodeCertificateCheckInterval))
+		d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultNodeCertificateCheckTimeout))
 		d.sub("Warn days", int32PtrString(o.Spec.WarnDays, "30 (default)"))
 		d.sub("Critical days", int32PtrString(o.Spec.CriticalDays, "7 (default)"))
 		d.sub("Control-plane nodes", fmt.Sprint(o.Spec.IncludeControlPlaneNodes != nil && *o.Spec.IncludeControlPlaneNodes))
@@ -185,22 +183,22 @@ func (d *describer) spec(obj client.Object) {
 		} else {
 			d.sub("Paths", strings.Join(o.Spec.Paths, ", "))
 		}
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		// The runtime cadence is capped at the agent cadence; show what the
 		// controller applies, naming the declared value when it was capped.
-		declaredInterval := effectiveDuration(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval)
+		declaredInterval := effectiveDuration(o.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultNodeHealthCheckInterval)
 		if capped := nodeHealthCheckCadence(o); capped < declaredInterval {
 			d.sub("Interval", fmt.Sprintf("%s (declared %s, capped at the agent cadence)", capped, declaredInterval))
 		} else {
-			d.sub("Interval", cadence(o.Spec.Interval, fathomv1alpha1.MinCheckInterval, fathomv1alpha1.DefaultNodeHealthCheckInterval))
+			d.sub("Interval", cadence(o.Spec.Interval, fathomv1.MinCheckInterval, fathomv1.DefaultNodeHealthCheckInterval))
 		}
 		// The agent's pass is bounded by min(timeout, agent cadence); show the
 		// value the runtime enforces, naming the declared one when it was capped.
-		declared := effectiveDuration(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout)
+		declared := effectiveDuration(o.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultNodeHealthCheckTimeout)
 		if eff := nodeHealthCheckTimeout(o); eff < declared {
 			d.sub("Timeout", fmt.Sprintf("%s (declared %s, capped at the agent cadence)", eff, declared))
 		} else {
-			d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1alpha1.MinCheckTimeout, fathomv1alpha1.DefaultNodeHealthCheckTimeout))
+			d.sub("Timeout", cadence(o.Spec.Timeout, fathomv1.MinCheckTimeout, fathomv1.DefaultNodeHealthCheckTimeout))
 		}
 		d.sub("History limit", int32PtrString(o.Spec.HistoryLimit, "10 (default)"))
 		d.sub("Control-plane nodes", fmt.Sprint(o.Spec.IncludeControlPlaneNodes != nil && *o.Spec.IncludeControlPlaneNodes))
@@ -214,28 +212,28 @@ func (d *describer) spec(obj client.Object) {
 			}
 			var parts []string
 			switch c.Type {
-			case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
+			case fathomv1.NodeHealthCheckDiskHeadroom, fathomv1.NodeHealthCheckInodeHeadroom:
 				parts = append(parts,
-					"warn<="+int32PtrString(c.WarnPercentFree, fmt.Sprintf("%d (default)", fathomv1alpha1.DefaultNodeHealthWarnPercentFree))+"%",
-					"critical<="+int32PtrString(c.CriticalPercentFree, fmt.Sprintf("%d (default)", fathomv1alpha1.DefaultNodeHealthCriticalPercentFree))+"%")
-			case fathomv1alpha1.NodeHealthCheckNodeCondition:
+					"warn<="+int32PtrString(c.WarnPercentFree, fmt.Sprintf("%d (default)", fathomv1.DefaultNodeHealthWarnPercentFree))+"%",
+					"critical<="+int32PtrString(c.CriticalPercentFree, fmt.Sprintf("%d (default)", fathomv1.DefaultNodeHealthCriticalPercentFree))+"%")
+			case fathomv1.NodeHealthCheckNodeCondition:
 				conds := c.Conditions
 				if len(conds) == 0 {
-					conds = fathomv1alpha1.DefaultNodeHealthConditions()
+					conds = fathomv1.DefaultNodeHealthConditions()
 				}
 				parts = append(parts, strings.Join(conds, ","))
-			case fathomv1alpha1.NodeHealthCheckKubeletHealthz:
+			case fathomv1.NodeHealthCheckKubeletHealthz:
 				parts = append(parts, "hostNetwork")
-			case fathomv1alpha1.NodeHealthCheckContainerRuntime:
+			case fathomv1.NodeHealthCheckContainerRuntime:
 				sock := c.SocketPath
 				if sock == "" {
-					sock = fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket + " (default)"
+					sock = fathomv1.DefaultNodeHealthContainerRuntimeSocket + " (default)"
 				}
 				parts = append(parts, sock, "runs as root")
 			}
 			d.sub("Check "+label, strings.Join(parts, ", "))
 		}
-	case *fathomv1alpha1.HealthCheck:
+	case *fathomv1.HealthCheck:
 		ref := o.Spec.CheckRef
 		target := ref.Kind + "/" + ref.Name
 		if ref.Namespace != "" {
@@ -245,8 +243,7 @@ func (d *describer) spec(obj client.Object) {
 		if o.Spec.Description != "" {
 			d.sub("Description", o.Spec.Description)
 		}
-		d.sub("Paused", fmt.Sprint(o.Spec.Paused))
-	case *fathomv1alpha1.ClusterHealth:
+	case *fathomv1.ClusterHealth:
 		if o.Spec.Selector != nil {
 			d.sub("Selector", metav1.FormatLabelSelector(o.Spec.Selector))
 		} else {
@@ -277,29 +274,29 @@ func (d *describer) status(k *kindDescriptor, obj client.Object) {
 		d.sub("Consumed trigger", snap.ConsumedTrigger)
 	}
 	switch o := obj.(type) {
-	case *fathomv1alpha1.AddonCheck:
+	case *fathomv1.AddonCheck:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		if o.Status.DetectedVersion != "" {
 			d.sub("Detected version", o.Status.DetectedVersion)
 		}
 		d.sub("Absent checks", fmt.Sprint(o.Status.Absent))
-	case *fathomv1alpha1.DNSCheck:
+	case *fathomv1.DNSCheck:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		d.sub("Observed targets", fmt.Sprint(o.Status.ObservedTargets))
-	case *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1.NodeCertificateCheck:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		d.sub("Desired nodes", fmt.Sprint(o.Status.DesiredNodes))
 		d.sub("Reporting nodes", fmt.Sprint(o.Status.ReportingNodes))
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		d.sub("Desired nodes", fmt.Sprint(o.Status.DesiredNodes))
 		d.sub("Reporting nodes", fmt.Sprint(o.Status.ReportingNodes))
-	case *fathomv1alpha1.HealthCheck:
+	case *fathomv1.HealthCheck:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		if o.Status.SourceInterval != nil {
 			d.sub("Source interval", o.Status.SourceInterval.Duration.String())
 		}
-	case *fathomv1alpha1.ClusterHealth:
+	case *fathomv1.ClusterHealth:
 		d.sub("Observed generation", fmt.Sprint(o.Status.ObservedGeneration))
 		d.sub("Matched", fmt.Sprint(o.Status.MatchedCount))
 	}
@@ -322,7 +319,7 @@ func (d *describer) conditions(conds []metav1.Condition) {
 
 func (d *describer) details(obj client.Object) {
 	switch o := obj.(type) {
-	case *fathomv1alpha1.DNSCheck:
+	case *fathomv1.DNSCheck:
 		if len(o.Status.TargetResults) == 0 {
 			return
 		}
@@ -338,7 +335,7 @@ func (d *describer) details(obj client.Object) {
 				orDash(truncate(strings.Join(r.Answers, ","), 40)), truncate(r.Message, summaryColumnWidth))
 		}
 		_ = tb.flush()
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		if len(o.Status.NodeResults) == 0 {
 			return
 		}
@@ -353,11 +350,11 @@ func (d *describer) details(obj client.Object) {
 		// included, while NodeResults is the in-scope fleet, so the two differing
 		// is not truncation; DesiredNodes is the in-scope count to compare with,
 		// and only a list at the cap was cut.
-		if len(o.Status.NodeResults) == int(fathomv1alpha1.MaxNodeHealthNodeResults) && int(o.Status.DesiredNodes) > len(o.Status.NodeResults) {
+		if len(o.Status.NodeResults) == int(fathomv1.MaxNodeHealthNodeResults) && int(o.Status.DesiredNodes) > len(o.Status.NodeResults) {
 			_, _ = fmt.Fprintf(d.w, "  (%d of %d nodes listed; the list is capped at %d)\n",
-				len(o.Status.NodeResults), o.Status.DesiredNodes, fathomv1alpha1.MaxNodeHealthNodeResults)
+				len(o.Status.NodeResults), o.Status.DesiredNodes, fathomv1.MaxNodeHealthNodeResults)
 		}
-	case *fathomv1alpha1.ClusterHealth:
+	case *fathomv1.ClusterHealth:
 		if len(o.Status.Children) == 0 {
 			return
 		}
@@ -370,7 +367,7 @@ func (d *describer) details(obj client.Object) {
 		_ = tb.flush()
 		if int(o.Status.MatchedCount) > len(o.Status.Children) {
 			_, _ = fmt.Fprintf(d.w, "  (%d of %d contributors listed; the list is capped at %d)\n",
-				len(o.Status.Children), o.Status.MatchedCount, fathomv1alpha1.MaxClusterHealthChildren)
+				len(o.Status.Children), o.Status.MatchedCount, fathomv1.MaxClusterHealthChildren)
 		}
 	}
 }
@@ -384,17 +381,17 @@ func (d *describer) report(ref checkRef, snap snapshot) {
 
 func conditionsOf(obj client.Object) []metav1.Condition {
 	switch o := obj.(type) {
-	case *fathomv1alpha1.AddonCheck:
+	case *fathomv1.AddonCheck:
 		return o.Status.Conditions
-	case *fathomv1alpha1.DNSCheck:
+	case *fathomv1.DNSCheck:
 		return o.Status.Conditions
-	case *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1.NodeCertificateCheck:
 		return o.Status.Conditions
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		return o.Status.Conditions
-	case *fathomv1alpha1.HealthCheck:
+	case *fathomv1.HealthCheck:
 		return o.Status.Conditions
-	case *fathomv1alpha1.ClusterHealth:
+	case *fathomv1.ClusterHealth:
 		return o.Status.Conditions
 	}
 	return nil

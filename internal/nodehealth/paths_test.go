@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
 
@@ -160,19 +160,19 @@ func TestAllowlistsMirrorCRDRules(t *testing.T) {
 // comment), so this is what keeps the two in step.
 func TestCheckTypesMirrorAPI(t *testing.T) {
 	t.Parallel()
-	pairs := map[string]fathomv1alpha1.NodeHealthCheckType{
-		nodehealth.TypeDiskHeadroom:     fathomv1alpha1.NodeHealthCheckDiskHeadroom,
-		nodehealth.TypeInodeHeadroom:    fathomv1alpha1.NodeHealthCheckInodeHeadroom,
-		nodehealth.TypeNodeCondition:    fathomv1alpha1.NodeHealthCheckNodeCondition,
-		nodehealth.TypeKubeletHealthz:   fathomv1alpha1.NodeHealthCheckKubeletHealthz,
-		nodehealth.TypeContainerRuntime: fathomv1alpha1.NodeHealthCheckContainerRuntime,
+	pairs := map[string]fathomv1.NodeHealthCheckType{
+		nodehealth.TypeDiskHeadroom:     fathomv1.NodeHealthCheckDiskHeadroom,
+		nodehealth.TypeInodeHeadroom:    fathomv1.NodeHealthCheckInodeHeadroom,
+		nodehealth.TypeNodeCondition:    fathomv1.NodeHealthCheckNodeCondition,
+		nodehealth.TypeKubeletHealthz:   fathomv1.NodeHealthCheckKubeletHealthz,
+		nodehealth.TypeContainerRuntime: fathomv1.NodeHealthCheckContainerRuntime,
 	}
 	for wire, api := range pairs {
 		if wire != string(api) {
 			t.Errorf("wire type %q != api type %q", wire, api)
 		}
 	}
-	if DefaultProbeSocket := fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket; !nodehealth.SocketPathAllowed(DefaultProbeSocket) {
+	if DefaultProbeSocket := fathomv1.DefaultNodeHealthContainerRuntimeSocket; !nodehealth.SocketPathAllowed(DefaultProbeSocket) {
 		t.Errorf("the API default socket %q is not allowed by nodehealth.SocketPathAllowed", DefaultProbeSocket)
 	}
 }

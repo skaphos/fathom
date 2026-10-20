@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 )
 
@@ -27,7 +27,7 @@ const (
 	eventReasonReconcileError = "ReconcileError"
 
 	// eventReasonCadenceClamped marks a check whose stored interval/timeout is
-	// below the api/v1alpha1 floors and runs clamped (issue #152). Emitted once
+	// below the api/v1 floors and runs clamped (issue #152). Emitted once
 	// per clamp episode, keyed off the Accepted condition transitioning to
 	// conditionReasonSpecClamped.
 	eventReasonCadenceClamped = "CadenceClamped"
@@ -63,7 +63,7 @@ const (
 // constant that cannot suit every kind (#277). Pass 0 where no cadence can be
 // resolved; the series is then left unset rather than claiming zero.
 func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
-	previousResult, result fathomv1alpha1.HealthReportResult,
+	previousResult, result fathomv1.HealthReportResult,
 	previousConditions, conditions []metav1.Condition,
 	lastRun *metav1.Time, interval time.Duration, reconcileErr error,
 ) {
@@ -84,7 +84,7 @@ func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
 	previous, next := coerceResult(previousResult), coerceResult(result)
 	if previous != next {
 		eventType := corev1.EventTypeNormal
-		if next.Severity() >= fathomv1alpha1.HealthReportResultWarn.Severity() {
+		if next.Severity() >= fathomv1.HealthReportResultWarn.Severity() {
 			eventType = corev1.EventTypeWarning
 		}
 		recorder.Eventf(obj, nil, eventType, eventReasonResultChanged, eventActionEvaluate, "check result changed from %s to %s", previous, next)
@@ -124,9 +124,9 @@ func observeCheck(recorder events.EventRecorder, obj client.Object, kind string,
 	}
 }
 
-func coerceResult(r fathomv1alpha1.HealthReportResult) fathomv1alpha1.HealthReportResult {
+func coerceResult(r fathomv1.HealthReportResult) fathomv1.HealthReportResult {
 	if r == "" {
-		return fathomv1alpha1.HealthReportResultUnknown
+		return fathomv1.HealthReportResultUnknown
 	}
 	return r
 }

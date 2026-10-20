@@ -1,0 +1,31 @@
+apiVersion: fathom.skaphos.io/v1
+kind: AddonCheck
+metadata:
+  labels:
+    app.kubernetes.io/name: fathom
+    app.kubernetes.io/managed-by: kustomize
+  name: addoncheck-sample
+spec:
+  addonType: cert-manager
+  interval: 5m
+  timeout: 30s
+  policy:
+    system_health:
+      enabled: true
+      thresholds:
+        controllerName: "cert-manager"
+        webhookName: "cert-manager-webhook"
+        cainjectorName: "cert-manager-cainjector"
+        webhookServiceName: "cert-manager-webhook"
+        webhookConfigName: "cert-manager-webhook"
+        restartWarnCount: "3"
+        webhookProbe: "true"
+    issuer_health:
+      enabled: true
+      thresholds:
+        kinds: "Issuer,ClusterIssuer"
+    certificate_health:
+      enabled: true
+      thresholds:
+        warnDays: "30"
+        failDays: "7"

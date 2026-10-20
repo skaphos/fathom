@@ -13,37 +13,37 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 var _ = Describe("HealthReport idempotency", func() {
 	ctx := context.Background()
 
-	newExpectedReport := func() *fathomv1alpha1.HealthReport {
-		return &fathomv1alpha1.HealthReport{
+	newExpectedReport := func() *fathomv1.HealthReport {
+		return &fathomv1.HealthReport{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "hr-reuse-collision",
 				Namespace: "default",
 				Labels: map[string]string{
-					fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-					fathomv1alpha1.LabelHealthReportSourceName: "expected-check",
+					fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+					fathomv1.LabelHealthReportSourceName: "expected-check",
 				},
 			},
-			Spec: fathomv1alpha1.HealthReportSpec{
-				SourceRef: fathomv1alpha1.HealthReportTargetRef{
-					APIVersion: fathomv1alpha1.GroupVersion.String(),
+			Spec: fathomv1.HealthReportSpec{
+				SourceRef: fathomv1.HealthReportTargetRef{
+					APIVersion: fathomv1.GroupVersion.String(),
 					Kind:       "AddonCheck",
 					Namespace:  "default",
 					Name:       "expected-check",
 				},
-				Result:     fathomv1alpha1.HealthReportResultPass,
+				Result:     fathomv1.HealthReportResultPass,
 				ObservedAt: metav1.Now(),
 			},
 		}
 	}
 
 	DescribeTable("rejects mismatched reports before reuse",
-		func(mutate func(*fathomv1alpha1.HealthReport), message string) {
+		func(mutate func(*fathomv1.HealthReport), message string) {
 			expected := newExpectedReport()
 			existing := expected.DeepCopy()
 			mutate(existing)
@@ -51,14 +51,14 @@ var _ = Describe("HealthReport idempotency", func() {
 			err := validateReusableHealthReport(existing, expected)
 			Expect(err).To(MatchError(ContainSubstring(message)))
 		},
-		Entry("sourceRef", func(report *fathomv1alpha1.HealthReport) {
+		Entry("sourceRef", func(report *fathomv1.HealthReport) {
 			report.Spec.SourceRef.Name = "other-check"
 		}, "mismatched sourceRef"),
-		Entry("source label", func(report *fathomv1alpha1.HealthReport) {
-			report.Labels[fathomv1alpha1.LabelHealthReportSourceName] = "other-check"
+		Entry("source label", func(report *fathomv1.HealthReport) {
+			report.Labels[fathomv1.LabelHealthReportSourceName] = "other-check"
 		}, "mismatched label"),
-		Entry("result", func(report *fathomv1alpha1.HealthReport) {
-			report.Spec.Result = fathomv1alpha1.HealthReportResultFail
+		Entry("result", func(report *fathomv1.HealthReport) {
+			report.Spec.Result = fathomv1.HealthReportResultFail
 		}, "mismatched result"),
 	)
 
@@ -66,7 +66,7 @@ var _ = Describe("HealthReport idempotency", func() {
 		expected := newExpectedReport()
 		existing := expected.DeepCopy()
 		existing.Spec.SourceRef.Name = "other-check"
-		existing.Labels[fathomv1alpha1.LabelHealthReportSourceName] = "other-check"
+		existing.Labels[fathomv1.LabelHealthReportSourceName] = "other-check"
 		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, existing))).To(Succeed()) })
 

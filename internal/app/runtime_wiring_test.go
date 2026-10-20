@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
@@ -545,7 +546,7 @@ type recordingClient struct {
 }
 
 func (c *recordingClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if _, ok := obj.(*fathomv1alpha1.AddonCheck); ok {
+	if _, ok := obj.(*fathomv1.AddonCheck); ok {
 		c.mu.Lock()
 		c.gets = append(c.gets, key)
 		c.mu.Unlock()

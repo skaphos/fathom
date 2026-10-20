@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 const (
@@ -227,9 +227,6 @@ func resolveRunTargets(ctx context.Context, c client.Client, f *factory, opts *r
 			refs = []sourceResolution{{Ref: ref}}
 			break
 		}
-		if ref.Kind.Paused(obj) {
-			return nil, nil, fmt.Errorf("%s is paused; it would not mirror a fresh result, unpause it or run its source directly", ref)
-		}
 		sources, err := ref.Kind.Sources(ctx, c, obj)
 		if err != nil {
 			return nil, nil, err
@@ -257,10 +254,6 @@ func resolveRunTargets(ctx context.Context, c client.Client, f *factory, opts *r
 				continue
 			}
 			return nil, nil, fmt.Errorf("get %s: %w", key, err)
-		}
-		if r.Ref.Kind.Paused(obj) {
-			skipped = append(skipped, runOutcome{Target: key, Via: r.Via, Skipped: "paused; the operator would never consume the trigger"})
-			continue
 		}
 		targets = append(targets, runTarget{ref: r.Ref, obj: obj, via: r.Via})
 	}
@@ -295,12 +288,12 @@ func listExecutable(ctx context.Context, c client.Client, ns, selector string) (
 
 // healthCheckSources resolves the executable check a HealthCheck mirrors.
 func healthCheckSources(_ context.Context, _ client.Client, obj client.Object) ([]sourceResolution, error) {
-	hc := obj.(*fathomv1alpha1.HealthCheck)
+	hc := obj.(*fathomv1.HealthCheck)
 	via := checkRef{Kind: kindByName("HealthCheck"), Namespace: hc.Namespace, Name: hc.Name}.String()
 	return []sourceResolution{healthCheckSource(hc, via)}, nil
 }
 
-func healthCheckSource(hc *fathomv1alpha1.HealthCheck, via string) sourceResolution {
+func healthCheckSource(hc *fathomv1.HealthCheck, via string) sourceResolution {
 	ref := hc.Spec.CheckRef
 	k := kindByName(ref.Kind)
 	if k == nil || !k.Executable {
@@ -311,11 +304,7 @@ func healthCheckSource(hc *fathomv1alpha1.HealthCheck, via string) sourceResolut
 	if ns == "" {
 		ns = hc.Namespace
 	}
-	res := sourceResolution{Ref: checkRef{Kind: k, Namespace: ns, Name: ref.Name}, Via: via}
-	if hc.Spec.Paused {
-		res.Skip = "reached through a paused HealthCheck, which would not mirror the result"
-	}
-	return res
+	return sourceResolution{Ref: checkRef{Kind: k, Namespace: ns, Name: ref.Name}, Via: via}
 }
 
 // clusterHealthSources resolves the sources behind every HealthCheck a
@@ -323,7 +312,7 @@ func healthCheckSource(hc *fathomv1alpha1.HealthCheck, via string) sourceResolut
 // selection (status.children, capped by the controller) rather than
 // re-implementing the selector.
 func clusterHealthSources(ctx context.Context, c client.Client, obj client.Object) ([]sourceResolution, error) {
-	ch := obj.(*fathomv1alpha1.ClusterHealth)
+	ch := obj.(*fathomv1.ClusterHealth)
 	if len(ch.Status.Children) == 0 {
 		return nil, fmt.Errorf("clusterhealth/%s selects no HealthChecks (status.children is empty); nothing to trigger", ch.Name)
 	}
@@ -331,7 +320,7 @@ func clusterHealthSources(ctx context.Context, c client.Client, obj client.Objec
 	var out []sourceResolution
 	for _, child := range ch.Status.Children {
 		via := checkRef{Kind: hcKind, Namespace: child.Namespace, Name: child.Name}.String()
-		hc := &fathomv1alpha1.HealthCheck{}
+		hc := &fathomv1.HealthCheck{}
 		if err := c.Get(ctx, types.NamespacedName{Namespace: child.Namespace, Name: child.Name}, hc); err != nil {
 			if apierrors.IsNotFound(err) {
 				out = append(out, sourceResolution{Ref: checkRef{Kind: hcKind, Namespace: child.Namespace, Name: child.Name}, Via: via, Skip: "HealthCheck not found"})
@@ -363,7 +352,7 @@ func writeTrigger(ctx context.Context, c client.Client, obj client.Object, token
 	if ann == nil {
 		ann = map[string]string{}
 	}
-	ann[fathomv1alpha1.AnnotationRunNow] = token
+	ann[fathomv1.AnnotationRunNow] = token
 	obj.SetAnnotations(ann)
 	if err := c.Patch(ctx, obj, client.MergeFrom(before), client.FieldOwner(fieldManager)); err != nil {
 		return fmt.Errorf("write trigger: %w", err)
@@ -445,8 +434,8 @@ func viaSuffix(via string) string {
 // verdictPasses is the exit-code rule: Pass, Warn, and Skipped are not
 // failures; Fail, Error, Unknown, and "no verdict" are.
 func verdictPasses(v string) bool {
-	switch fathomv1alpha1.HealthReportResult(v) {
-	case fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultWarn, fathomv1alpha1.HealthReportResultSkipped:
+	switch fathomv1.HealthReportResult(v) {
+	case fathomv1.HealthReportResultPass, fathomv1.HealthReportResultWarn, fathomv1.HealthReportResultSkipped:
 		return true
 	}
 	return false

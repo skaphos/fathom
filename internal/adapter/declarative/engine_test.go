@@ -59,7 +59,7 @@ func TestEngine_AllFamiliesPassByDefault(t *testing.T) {
 	result, err := NewCiliumEngine().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, healthyObjects()...),
 		Logger: logr.Discard(),
-		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"},
+		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"},
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -173,7 +173,7 @@ func TestEngine_CRDNotEstablishedFails(t *testing.T) {
 }
 
 func TestEngine_AllFamiliesDisabledSkips(t *testing.T) {
-	target := adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"}
+	target := adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"}
 	result, err := NewCiliumEngine().Run(context.Background(), adapter.Request{
 		Client: newFakeClient(t, healthyObjects()...),
 		Logger: logr.Discard(),
@@ -472,7 +472,7 @@ func TestEngine_TruncatedRunReturnsError(t *testing.T) {
 	_, err := NewCiliumEngine().Run(ctx, adapter.Request{
 		Client: newFakeClient(t, healthyObjects()...),
 		Logger: logr.Discard(),
-		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1alpha1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"},
+		Target: adapter.TargetRef{APIVersion: "fathom.skaphos.io/v1", Kind: "AddonCheck", Namespace: "default", Name: "cilium"},
 	})
 	if err == nil {
 		t.Fatal("Run returned nil error for a context-cancelled (incomplete) run; want a non-nil error so the controller records Error, not a partial verdict")

@@ -40,7 +40,7 @@ kubectl -n fathom-system get healthreport \
 ```
 
 `status.conditions` on each resource explains *why* it is in its current state
-(`Accepted`, `Ready`, `Paused`, and the failure reasons in
+(`Accepted`, `Ready`, and the failure reasons in
 [Add-on checks → Troubleshooting](addon-checks.md#troubleshooting)). For the
 complete condition reason table across all CRDs, see
 [Status and conditions](../reference/status-conditions.md).
@@ -486,7 +486,7 @@ partial fleet window, the accepted subset is exposed without manufacturing
 healthy samples for missing nodes, while the last complete aggregate status and
 `HealthReport` history remain intact. Reconciliation withdraws a check's old
 detail series before rebuilding them, so a scrape can briefly see them absent;
-pause, deletion, rejected or expired reports, removed nodes, and removed items
+deletion, rejected or expired reports, removed nodes, and removed items
 withdraw their series without erasing another check's samples.
 
 With multiple operator replicas, use the normal leader-election deployment and
@@ -580,7 +580,7 @@ Catch the operator failing to run checks at all:
 `fathom_check_result` and `fathom_check_last_run_timestamp_seconds` make both
 failing checks and *silently stale* checks first-class alerts. The staleness
 rule is the one that catches what nothing else does: a wedged operator, a
-paused check, or a selector matching nothing all leave the last recorded
+check whose adapter never runs, or a selector matching nothing all leave the last recorded
 result frozen — the metrics stop advancing even though status still reads
 `Pass`:
 

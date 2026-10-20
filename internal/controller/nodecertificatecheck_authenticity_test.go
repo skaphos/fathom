@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -74,7 +74,7 @@ func reportAuthenticityAdmissionDeniesIdentityChange(ctx context.Context, writer
 // Node and the authenticity node-name annotation can be set independently, so a
 // test can forge the mismatch a compromised node would produce. An empty
 // annotationNode omits the annotation entirely (a pre-authenticity report).
-func writeReportWithAnnotation(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, cmSuffix, reportNode, annotationNode string, certs []nodecert.CertResult) {
+func writeReportWithAnnotation(ctx context.Context, check *fathomv1.NodeCertificateCheck, cmSuffix, reportNode, annotationNode string, certs []nodecert.CertResult) {
 	report := nodecert.NodeReport{
 		Node:       reportNode,
 		CheckName:  check.Name,
@@ -115,7 +115,7 @@ func writeReportWithAnnotation(ctx context.Context, check *fathomv1alpha1.NodeCe
 // authenticates the writer→node binding via the node-name claim, but it cannot
 // enforce that the report is written at the canonical ConfigMap name; the
 // canonical-name binding is what catches this one.
-func writeReportAtName(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, cmName, reportNode string, certs []nodecert.CertResult) {
+func writeReportAtName(ctx context.Context, check *fathomv1.NodeCertificateCheck, cmName, reportNode string, certs []nodecert.CertResult) {
 	report := nodecert.NodeReport{
 		Node:       reportNode,
 		CheckName:  check.Name,
@@ -149,7 +149,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 
 	It("excludes a report whose payload node does not match its authenticated annotation", func() {
 		name := types.NamespacedName{Name: "nc-forged", Namespace: "default"}
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -174,10 +174,10 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		updated := &fathomv1.NodeCertificateCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.ReportingNodes).To(Equal(int32(1)), "only the authentic node-a report may count")
-		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)), "the forged Fail must not poison the aggregate")
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1.HealthReportResultPass)), "the forged Fail must not poison the aggregate")
 
 		// SEC-1: the rejection is surfaced, not silently skipped.
 		authentic := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionAuthentic)
@@ -191,7 +191,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 
 	It("rejects a self-consistent report written at a non-canonical name (SEC-1)", func() {
 		name := types.NamespacedName{Name: "nc-offname", Namespace: "default"}
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -217,10 +217,10 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		updated := &fathomv1.NodeCertificateCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		Expect(updated.Status.ReportingNodes).To(Equal(int32(1)), "the off-name report must not be consumed")
-		Expect(updated.Status.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)), "a forged Fail must not poison the aggregate")
+		Expect(updated.Status.LastResult).To(Equal(string(fathomv1.HealthReportResultPass)), "a forged Fail must not poison the aggregate")
 
 		authentic := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionAuthentic)
 		Expect(authentic).NotTo(BeNil())
@@ -232,7 +232,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 
 	It("reports every collected node report as bound when none was forged", func() {
 		name := types.NamespacedName{Name: "nc-authentic", Namespace: "default"}
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -249,7 +249,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		updated := &fathomv1alpha1.NodeCertificateCheck{}
+		updated := &fathomv1.NodeCertificateCheck{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
 		authentic := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionAuthentic)
 		Expect(authentic).NotTo(BeNil())
@@ -259,7 +259,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 
 	It("denies a node-report write from a principal with no node claim (SEC-1)", func() {
 		name := types.NamespacedName{Name: "nc-noclaim", Namespace: "default"}
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -311,7 +311,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 
 	It("provisions the report-authenticity ValidatingAdmissionPolicy and binding", func() {
 		name := types.NamespacedName{Name: "nc-vap", Namespace: "default"}
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -349,7 +349,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 	})
 
 	It("keeps report identity immutable for both node-scoped kinds while allowing adoption and same-node refresh (#338)", func() {
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "nc-identity", Namespace: "default"},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -453,7 +453,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 	})
 
 	It("limits report reads and updates to the check's active canonical report names", func() {
-		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-scoped-rbac", Namespace: "default"}}
+		check := &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-scoped-rbac", Namespace: "default"}}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 
@@ -520,7 +520,7 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 	})
 
 	It("revokes the per-check ConfigMap grant while an agent DaemonSet still exists", func() {
-		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-create-revoke", Namespace: "default"}}
+		check := &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-create-revoke", Namespace: "default"}}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
 		r := newNodeCertReconciler()
@@ -544,57 +544,4 @@ var _ = Describe("NodeCertificateCheck report authenticity (#155)", func() {
 		}).Should(BeTrue(), "clearing the per-check Role must remove ConfigMap create access")
 	})
 
-	It("revokes scoped report updates while paused and persists revocation failures", func() {
-		check := &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-pause-rbac", Namespace: "default"}}
-		Expect(k8sClient.Create(ctx, check)).To(Succeed())
-		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, check))).To(Succeed()) })
-		r := newNodeCertReconciler()
-		request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)}
-		_, err := r.Reconcile(ctx, request)
-		Expect(err).NotTo(HaveOccurred())
-		scheduleAgentPods(ctx, check, "node-a")
-		_, err = r.Reconcile(ctx, request)
-		Expect(err).NotTo(HaveOccurred())
-
-		roleKey := types.NamespacedName{Name: scopedReportAccessName(agentResourceName(check)), Namespace: check.Namespace}
-		role := &rbacv1.Role{}
-		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
-		Expect(role.Rules).NotTo(BeEmpty())
-		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
-		check.Spec.Paused = true
-		Expect(k8sClient.Update(ctx, check)).To(Succeed())
-		_, err = r.Reconcile(ctx, request)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
-		Expect(role.Rules).To(BeEmpty())
-
-		// A role that lost the check's controller reference is not ours to edit.
-		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
-		check.Spec.Paused = false
-		Expect(k8sClient.Update(ctx, check)).To(Succeed())
-		_, err = r.Reconcile(ctx, request)
-		Expect(err).NotTo(HaveOccurred())
-		legacyBinding := &rbacv1.RoleBinding{}
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, legacyBinding)
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "resume must not restore the legacy ClusterRole binding")
-		scheduleAgentPods(ctx, check, "node-a")
-		_, err = r.Reconcile(ctx, request)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(k8sClient.Get(ctx, roleKey, role)).To(Succeed())
-		role.OwnerReferences = nil
-		Expect(k8sClient.Update(ctx, role)).To(Succeed())
-		Expect(k8sClient.Get(ctx, request.NamespacedName, check)).To(Succeed())
-		check.Spec.Paused = true
-		Expect(k8sClient.Update(ctx, check)).To(Succeed())
-		_, err = r.Reconcile(ctx, request)
-		Expect(err).To(HaveOccurred())
-		updated := &fathomv1alpha1.NodeCertificateCheck{}
-		Expect(k8sClient.Get(ctx, request.NamespacedName, updated)).To(Succeed())
-		ready := apiMeta.FindStatusCondition(updated.Status.Conditions, nodeCertConditionReady)
-		Expect(ready).NotTo(BeNil())
-		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-		Expect(ready.Reason).To(Equal("RBACRevocationFailed"))
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: agentResourceName(check), Namespace: check.Namespace}, &appsv1.DaemonSet{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "DaemonSet deletion must still be attempted when Role revocation fails")
-	})
 })

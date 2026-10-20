@@ -55,8 +55,7 @@ DaemonSet:
   allowed; this is a documented residual risk rather than an address-level
   restriction. If your API server uses another port, add an appropriate policy;
   policies are additive.
-- **Lifecycle**: garbage-collected with the check; like the agent's RBAC it is
-  left in place while the check is paused.
+- **Lifecycle**: garbage-collected with the check, like the agent's RBAC.
 
 `NodeHealthCheck` agents get an identical per-check policy
 (`<check>-node-health-agent`), with one caveat that the check states on its own

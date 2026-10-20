@@ -29,7 +29,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: DNSCheck is the Schema for the dnschecks API.
@@ -53,17 +53,9 @@ spec:
             type: object
           spec:
             description: |-
-              DNSCheckSpec defines the desired state of DNSCheck.
-
-              A DNSCheck asserts that a set of names resolve — or deliberately do not —
-              from one or more vantage points, on a cadence. It reports a verdict per
-              (target, vantage point) pair and a single folded verdict for the check.
-
-              There is no field to pause a DNSCheck. Stopping a check means deleting it.
-              Per-target results are keyed by (name, recordType, resolver), so two targets
-              identical in all three would collide there. Rejecting the duplicate at write
-              time is far kinder than letting the controller fail a status update later
-              with an error that says nothing about the specification that caused it.
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               historyLimit:
                 default: 10
@@ -472,6 +464,8 @@ spec:
                 - resolver
                 x-kubernetes-list-type: map
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

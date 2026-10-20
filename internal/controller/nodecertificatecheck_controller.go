@@ -44,7 +44,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-logr/logr"
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -52,7 +52,6 @@ import (
 
 const (
 	nodeCertConditionAccepted   = "Accepted"
-	nodeCertConditionPaused     = "Paused"
 	nodeCertConditionAgentReady = "AgentReady"
 	nodeCertConditionReady      = "Ready"
 	// nodeCertConditionCoverage distinguishes "this verdict is current" from
@@ -178,7 +177,8 @@ func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=nodecertificatechecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=fathom.skaphos.io,resources=healthreports,verbs=create;get;list;watch;delete
 // All managed-resource writes below go through CreateOrUpdate (Update, never
-// Patch), and only the DaemonSet is ever deleted directly (reconcilePaused);
+// Patch), and only the DaemonSet is ever deleted directly (revokeNodeCertAgent,
+// when the spec turns invalid; deleting the check removes it by ownership);
 // the ServiceAccount, RoleBinding, and NetworkPolicy are owner-referenced and
 // removed by garbage collection, so those grants carry no patch/delete (#153).
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;delete
@@ -232,7 +232,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}()
 
-	var check fathomv1alpha1.NodeCertificateCheck
+	var check fathomv1.NodeCertificateCheck
 	if err := r.Get(ctx, req.NamespacedName, &check); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteCheckSeries("NodeCertificateCheck", req.Namespace, req.Name)
@@ -244,7 +244,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	before := check.Status.DeepCopy()
 	defer func() {
 		observeCheck(r.Recorder, &check, "NodeCertificateCheck",
-			fathomv1alpha1.HealthReportResult(before.LastResult), fathomv1alpha1.HealthReportResult(check.Status.LastResult),
+			fathomv1.HealthReportResult(before.LastResult), fathomv1.HealthReportResult(check.Status.LastResult),
 			before.Conditions, check.Status.Conditions,
 			check.Status.LastRunTime, nodeCertInterval(&check), err)
 	}()
@@ -257,7 +257,7 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 		Message:            "NodeCertificateCheck specification has been accepted for reconciliation.",
 	}
 	// A stored sub-floor cadence (pre-floor object) runs clamped, not rejected:
-	// the cadence helpers raise it to the api/v1alpha1 floors, and the Accepted
+	// the cadence helpers raise it to the api/v1 floors, and the Accepted
 	// condition says so (observeCheck turns the transition into a Warning event).
 	if msgs := cadenceClampMessages(check.Spec.Interval, check.Spec.Timeout); len(msgs) > 0 {
 		accepted.Reason = conditionReasonSpecClamped
@@ -266,21 +266,6 @@ func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl
 	apiMeta.SetStatusCondition(&check.Status.Conditions, accepted)
 
 	interval := nodeCertInterval(&check)
-
-	if check.Spec.Paused {
-		if err := r.reconcilePaused(ctx, &check); err != nil {
-			r.invalidateAgentConditions(&check, "RBACRevocationFailed", "Report access could not be revoked while pausing; agent state and coverage are unknown: "+err.Error())
-			return r.failProvisioning(ctx, log, before, &check, "RBACRevocationFailed", err)
-		}
-		return r.finish(ctx, log, before, &check, 0)
-	}
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               nodeCertConditionPaused,
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: check.Generation,
-		Reason:             "RunEnabled",
-		Message:            "NodeCertificateCheck is eligible for node-agent execution.",
-	})
 
 	authenticityEnforced, err := ensureReportAuthenticityPolicy(ctx, r.Client, log)
 	if err != nil {
@@ -388,7 +373,7 @@ func observeNodeCertificateReports(namespace, check string, reports []nodecert.N
 // nodeCertTemplateToken is the run-now token the agent template carries: the
 // annotation when set (a new one rolls the agents), otherwise the last
 // consumed token so removing the annotation is not itself a template change.
-func nodeCertTemplateToken(check *fathomv1alpha1.NodeCertificateCheck) string {
+func nodeCertTemplateToken(check *fathomv1.NodeCertificateCheck) string {
 	if token, _ := runTriggerDue(check.Annotations, check.Status.LastRunTrigger); token != "" {
 		return token
 	}
@@ -406,7 +391,7 @@ func nodeCertTemplateToken(check *fathomv1alpha1.NodeCertificateCheck) string {
 // A forced run that leaves the aggregate unchanged would otherwise be a rollup
 // no-op, so LastRunTime is refreshed when the rollup did not move it; a waiter
 // then sees both the consumed token and a run time at or after its request.
-func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, before *fathomv1alpha1.NodeCertificateCheckStatus, ds *appsv1.DaemonSet, expected map[string]struct{}, reports []nodecert.NodeReport, token string, now time.Time) {
+func consumeNodeCertRunTrigger(check *fathomv1.NodeCertificateCheck, before *fathomv1.NodeCertificateCheckStatus, ds *appsv1.DaemonSet, expected map[string]struct{}, reports []nodecert.NodeReport, token string, now time.Time) {
 	// Per-node-identity, exactly like the routine roll-up: a trigger completes
 	// only once every node in scope has answered with this token, so a departed
 	// node's report can never stand in for a live node that has not run yet.
@@ -427,7 +412,7 @@ func consumeNodeCertRunTrigger(check *fathomv1alpha1.NodeCertificateCheck, befor
 
 // finish persists Status if it changed and requeues after interval (0 disables
 // the periodic requeue, used while paused).
-func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeCertificateCheckStatus, check *fathomv1alpha1.NodeCertificateCheck, interval time.Duration) (ctrl.Result, error) {
+func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Logger, before *fathomv1.NodeCertificateCheckStatus, check *fathomv1.NodeCertificateCheck, interval time.Duration) (ctrl.Result, error) {
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
 		if err := r.Status().Update(ctx, check); err != nil {
 			return ctrl.Result{}, err
@@ -437,34 +422,11 @@ func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Lo
 	return ctrl.Result{RequeueAfter: interval}, nil
 }
 
-func (r *NodeCertificateCheckReconciler) reconcilePaused(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
-	if err := r.revokeNodeCertAgent(ctx, check); err != nil {
-		return fmt.Errorf("revoke node-agent while paused: %w", err)
-	}
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               nodeCertConditionPaused,
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: check.Generation,
-		Reason:             "Paused",
-		Message:            "NodeCertificateCheck is paused; the node-agent DaemonSet has been removed.",
-	})
-	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
-		Type:               nodeCertConditionAgentReady,
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: check.Generation,
-		Reason:             "Paused",
-		Message:            "Node-agent DaemonSet is not running while paused.",
-	})
-	r.setReady(check, metav1.ConditionFalse, "Paused", "NodeCertificateCheck is paused.")
-	check.Status.DesiredNodes = 0
-	return nil
-}
-
 // revokeNodeCertAgent clears all per-check report permissions and any legacy
 // binding subjects, then removes the DaemonSet without changing status. Both
 // operations are attempted so either one can still reduce authority when the
 // other fails.
-func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
+func (r *NodeCertificateCheckReconciler) revokeNodeCertAgent(ctx context.Context, check *fathomv1.NodeCertificateCheck) error {
 	var errs []error
 	if err := clearNodeAgentAccess(ctx, r.apiReader(), r.Client, check, agentResourceName(check), r.roleName()); err != nil {
 		errs = append(errs, fmt.Errorf("clear node-agent report access: %w", err))
@@ -664,7 +626,7 @@ func reportAuthenticityPolicySpec() admissionregistrationv1.ValidatingAdmissionP
 // owner-referenced legacy binding to the shared ClusterRole. The namespaced
 // report-access Role and RoleBinding grant the current permissions after pod
 // discovery. It returns the ServiceAccount name.
-func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) (string, error) {
+func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, check *fathomv1.NodeCertificateCheck) (string, error) {
 	name := agentResourceName(check)
 	labels := agentLabels(check)
 
@@ -694,7 +656,7 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 // RBAC it is deliberately left in place while paused.
 // Enforcement requires a NetworkPolicy-capable CNI — on clusters without one
 // this object is inert, which is also why creating it is safe unconditionally.
-func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck) error {
+func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1.NodeCertificateCheck) error {
 	tcp := corev1.ProtocolTCP
 	metricsPort := intstr.FromInt32(metricsContainerPort)
 	// The API server is reached through the kubernetes Service ClusterIP
@@ -738,7 +700,7 @@ func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Co
 
 // ensureDaemonSet converges the node-agent DaemonSet to the desired spec and
 // returns the live object (with Status) for rollout bookkeeping.
-func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, saName string) (*appsv1.DaemonSet, error) {
+func (r *NodeCertificateCheckReconciler) ensureDaemonSet(ctx context.Context, check *fathomv1.NodeCertificateCheck, saName string) (*appsv1.DaemonSet, error) {
 	name := agentResourceName(check)
 	desired := r.desiredDaemonSet(check, saName)
 	desiredHash := nodeAgentSpecHash(desired)
@@ -810,7 +772,7 @@ func nodeAgentSpecHash(desired *appsv1.DaemonSet) string {
 	return hex.EncodeToString(sum[:])[:nodeAgentSpecHashLength]
 }
 
-func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.NodeCertificateCheck, saName string) *appsv1.DaemonSet {
+func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1.NodeCertificateCheck, saName string) *appsv1.DaemonSet {
 	labels := agentLabels(check)
 	selectorLabels := map[string]string{
 		nodecert.LabelSourceName: check.Name,
@@ -861,12 +823,12 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 	// changes the template: exactly one rollout per new token.
 	var templateAnnotations map[string]string
 	if token := nodeCertTemplateToken(check); token != "" {
-		templateAnnotations = map[string]string{fathomv1alpha1.AnnotationRunNow: token}
+		templateAnnotations = map[string]string{fathomv1.AnnotationRunNow: token}
 		env = append(env, corev1.EnvVar{
 			Name: nodecert.EnvRunTrigger,
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
 				APIVersion: "v1",
-				FieldPath:  "metadata.annotations['" + fathomv1alpha1.AnnotationRunNow + "']",
+				FieldPath:  "metadata.annotations['" + fathomv1.AnnotationRunNow + "']",
 			}},
 		})
 	}
@@ -929,7 +891,7 @@ func (r *NodeCertificateCheckReconciler) desiredDaemonSet(check *fathomv1alpha1.
 // decodes them into NodeReports, and adopts only reports whose payload belongs
 // to this check. Reports are keyed by unique node name so duplicate ConfigMaps
 // cannot inflate coverage.
-func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, []reportRejection, error) {
+func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context, log logr.Logger, check *fathomv1.NodeCertificateCheck, now time.Time, maxAge time.Duration) ([]nodecert.NodeReport, []reportRejection, error) {
 	var cms corev1.ConfigMapList
 	if err := r.List(ctx, &cms,
 		client.InNamespace(check.Namespace),
@@ -995,7 +957,7 @@ func (r *NodeCertificateCheckReconciler) collectNodeReports(ctx context.Context,
 // adoptReportConfigMap sets a controller owner reference on a report ConfigMap
 // so it is garbage-collected with the check. Failures are non-fatal: the report
 // was still consumed and the next reconcile retries.
-func (r *NodeCertificateCheckReconciler) adoptReportConfigMap(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, cm *corev1.ConfigMap) {
+func (r *NodeCertificateCheckReconciler) adoptReportConfigMap(ctx context.Context, log logr.Logger, check *fathomv1.NodeCertificateCheck, cm *corev1.ConfigMap) {
 	if metav1.IsControlledBy(cm, check) {
 		return
 	}
@@ -1020,7 +982,7 @@ func (r *NodeCertificateCheckReconciler) adoptReportConfigMap(ctx context.Contex
 // with a bounded history, pruned a real Fail incident out of existence after
 // historyLimit intervals (#157). Per-node daysRemaining drift is intentionally
 // not a transition: unchanged-aggregate reports differ only in details.
-func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1alpha1.HealthReportResult, interval time.Duration) error {
+func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Logger, check *fathomv1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1.HealthReportResult, interval time.Duration) error {
 	now := time.Now()
 	switch decideNodeCertRollup(&check.Status, string(aggregate), interval, now) {
 	case rollupNoop:
@@ -1109,7 +1071,7 @@ const (
 // node-report ConfigMaps with a ResourceVersionChangedPredicate and every
 // node-agent rewrites its ConfigMap each scan, so an unthrottled refresh would
 // rewrite Status on each of the ~N-per-interval watch events instead of once.
-func decideNodeCertRollup(status *fathomv1alpha1.NodeCertificateCheckStatus, aggregate string, interval time.Duration, now time.Time) nodeCertRollupDecision {
+func decideNodeCertRollup(status *fathomv1.NodeCertificateCheckStatus, aggregate string, interval time.Duration, now time.Time) nodeCertRollupDecision {
 	if status.LastReportName == "" || status.LastRunTime == nil || status.LastResult != aggregate {
 		return rollupPersist
 	}
@@ -1119,7 +1081,7 @@ func decideNodeCertRollup(status *fathomv1alpha1.NodeCertificateCheckStatus, agg
 	return rollupNoop
 }
 
-func nodeCertReportMaxAge(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
+func nodeCertReportMaxAge(check *fathomv1.NodeCertificateCheck) time.Duration {
 	return nodeCertInterval(check) + nodeCertTimeout(check)
 }
 
@@ -1161,7 +1123,7 @@ func nodeAgentRolledOut(ds *appsv1.DaemonSet) bool {
 // Only pods the managed DaemonSet controls count: labels are public, so a
 // planted pod naming a node that never reports could otherwise pin coverage
 // incomplete indefinitely.
-func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
+func (r *NodeCertificateCheckReconciler) expectedAgentNodes(ctx context.Context, check *fathomv1.NodeCertificateCheck, ds *appsv1.DaemonSet) (map[string]struct{}, error) {
 	// The kind label is part of the match: a NodeHealthCheck that shares this
 	// check's name runs its own agent pods under the same component and
 	// source-name labels, and those must never count as this check's coverage
@@ -1247,7 +1209,7 @@ func nodeCertReportsComplete(ds *appsv1.DaemonSet, expected, reported map[string
 
 // setCoverage records whether the current verdict was computed from a complete
 // scan of the fleet, so a frozen verdict is distinguishable from a fresh one.
-func (r *NodeCertificateCheckReconciler) setCoverage(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, complete bool) {
+func (r *NodeCertificateCheckReconciler) setCoverage(check *fathomv1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, complete bool) {
 	condition := metav1.Condition{
 		Type:               nodeCertConditionCoverage,
 		Status:             metav1.ConditionTrue,
@@ -1287,7 +1249,7 @@ func coverageGapSummary(expected, reported map[string]struct{}, desired int32) s
 	return fmt.Sprintf("%d of %d node(s) in scope (%s)", len(missing), len(expected), strings.Join(missing, ", "))
 }
 
-func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet) {
+func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1.NodeCertificateCheck, ds *appsv1.DaemonSet) {
 	status := metav1.ConditionFalse
 	reason := "RollingOut"
 	message := "Node-agent DaemonSet is rolling out."
@@ -1309,7 +1271,7 @@ func (r *NodeCertificateCheckReconciler) setAgentReady(check *fathomv1alpha1.Nod
 	})
 }
 
-func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, reports []nodecert.NodeReport) {
+func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1.NodeCertificateCheck, ds *appsv1.DaemonSet, expected, reported map[string]struct{}, reports []nodecert.NodeReport) {
 	switch {
 	case ds.Status.DesiredNumberScheduled == 0:
 		r.setReady(check, metav1.ConditionFalse, "NoMatchingNodes", "No nodes match the node-agent DaemonSet.")
@@ -1338,7 +1300,7 @@ func (r *NodeCertificateCheckReconciler) setReadyFromState(check *fathomv1alpha1
 // failure mode for a health product, whose entire job is to be believed when it
 // says something is wrong. The provisioning error is returned unchanged so the
 // controller keeps its rate-limited retry.
-func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1alpha1.NodeCertificateCheckStatus, check *fathomv1alpha1.NodeCertificateCheck, reason string, cause error) (ctrl.Result, error) {
+func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, log logr.Logger, before *fathomv1.NodeCertificateCheckStatus, check *fathomv1.NodeCertificateCheck, reason string, cause error) (ctrl.Result, error) {
 	r.setReady(check, metav1.ConditionFalse, reason, cause.Error())
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
 		if err := r.Status().Update(ctx, check); err != nil {
@@ -1353,7 +1315,7 @@ func (r *NodeCertificateCheckReconciler) failProvisioning(ctx context.Context, l
 // invalidateAgentConditions prevents a failure before agent inspection from
 // leaving a prior generation's AgentReady and CoverageComplete conditions
 // advertised as current. The last completed verdict and report remain frozen.
-func (r *NodeCertificateCheckReconciler) invalidateAgentConditions(check *fathomv1alpha1.NodeCertificateCheck, reason, message string) {
+func (r *NodeCertificateCheckReconciler) invalidateAgentConditions(check *fathomv1.NodeCertificateCheck, reason, message string) {
 	for _, conditionType := range []string{nodeCertConditionAgentReady, nodeCertConditionCoverage} {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 			Type: conditionType, Status: metav1.ConditionFalse, ObservedGeneration: check.Generation,
@@ -1390,7 +1352,7 @@ const reasonAuthenticityUnavailable = "EnforcementUnavailable"
 // signal means some principal with ConfigMap write in the namespace is actively
 // trying to steer a node's verdict, which must not be a V(1) log line nobody
 // reads (SEC-1).
-func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alpha1.NodeCertificateCheck, rejections []reportRejection, authenticityEnforced bool) {
+func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1.NodeCertificateCheck, rejections []reportRejection, authenticityEnforced bool) {
 	forged := forgeryRejections(rejections)
 	if len(forged) == 0 {
 		apiMeta.SetStatusCondition(&check.Status.Conditions, reportsAuthenticCondition(nodeCertConditionAuthentic, check.Generation, authenticityEnforced))
@@ -1422,7 +1384,7 @@ func (r *NodeCertificateCheckReconciler) setReportsAuthentic(check *fathomv1alph
 	}
 }
 
-func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1alpha1.NodeCertificateCheck, status metav1.ConditionStatus, reason, message string) {
+func (r *NodeCertificateCheckReconciler) setReady(check *fathomv1.NodeCertificateCheck, status metav1.ConditionStatus, reason, message string) {
 	apiMeta.SetStatusCondition(&check.Status.Conditions, metav1.Condition{
 		Type:               nodeCertConditionReady,
 		Status:             status,
@@ -1443,7 +1405,7 @@ func (r *NodeCertificateCheckReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		r.APIReader = mgr.GetAPIReader()
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&fathomv1alpha1.NodeCertificateCheck{}).
+		For(&fathomv1.NodeCertificateCheck{}).
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).

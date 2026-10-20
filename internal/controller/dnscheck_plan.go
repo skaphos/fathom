@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // This file holds the DNSCheck reconciler's arithmetic, kept pure so the
@@ -22,7 +22,7 @@ import (
 // dnscheck_controller.go supplies the I/O around them.
 
 const (
-	// The default interval and timeout live in api/v1alpha1
+	// The default interval and timeout live in api/v1
 	// (DefaultDNSCheckInterval, DefaultDNSCheckTimeout) so fathomctl computes
 	// next-run and wait bounds from the same values. They are applied here
 	// rather than as CRD defaults because a stored object may predate them.
@@ -50,7 +50,7 @@ const (
 // declares none.
 type dnsVantagePoint struct {
 	Name    string
-	From    fathomv1alpha1.DNSResolverSource
+	From    fathomv1.DNSResolverSource
 	Address string
 }
 
@@ -58,7 +58,7 @@ type dnsVantagePoint struct {
 // of per-target result identity, and of metric series (FR-035).
 type dnsPair struct {
 	Name         string
-	RecordType   fathomv1alpha1.DNSRecordType
+	RecordType   fathomv1.DNSRecordType
 	Expected     []string
 	Absent       bool
 	VantagePoint dnsVantagePoint
@@ -69,19 +69,19 @@ type dnsPair struct {
 // schema is frozen — and the summary must name it (FR-021).
 type dnsPairOutcome struct {
 	pair   dnsPair
-	result fathomv1alpha1.DNSTargetResult
+	result fathomv1.DNSTargetResult
 }
 
 // implicitDNSVantagePoint is the vantage point a check resolves from when it
 // declares none, and the one the reserved name "cluster" always denotes.
 func implicitDNSVantagePoint() dnsVantagePoint {
-	return dnsVantagePoint{Name: fathomv1alpha1.DefaultDNSResolverName, From: fathomv1alpha1.DNSResolverCluster}
+	return dnsVantagePoint{Name: fathomv1.DefaultDNSResolverName, From: fathomv1.DNSResolverCluster}
 }
 
 // dnsVantagePoints returns the vantage points a target with no override is
 // evaluated against. An empty spec.resolvers still means one vantage point —
 // the implicit "cluster" one — not zero.
-func dnsVantagePoints(spec *fathomv1alpha1.DNSCheckSpec) []dnsVantagePoint {
+func dnsVantagePoints(spec *fathomv1.DNSCheckSpec) []dnsVantagePoint {
 	if len(spec.Resolvers) == 0 {
 		return []dnsVantagePoint{implicitDNSVantagePoint()}
 	}
@@ -89,7 +89,7 @@ func dnsVantagePoints(spec *fathomv1alpha1.DNSCheckSpec) []dnsVantagePoint {
 	for _, resolver := range spec.Resolvers {
 		from := resolver.From
 		if from == "" {
-			from = fathomv1alpha1.DNSResolverCluster
+			from = fathomv1.DNSResolverCluster
 		}
 		points = append(points, dnsVantagePoint{Name: resolver.Name, From: from, Address: resolver.Address})
 	}
@@ -101,8 +101,8 @@ func dnsVantagePoints(spec *fathomv1alpha1.DNSCheckSpec) []dnsVantagePoint {
 // check also declares its own — admission permits "cluster" unconditionally.
 // The second return is false when the name matches nothing, which admission
 // should have rejected; the caller reports that pair rather than dropping it.
-func namedDNSVantagePoint(spec *fathomv1alpha1.DNSCheckSpec, name string) (dnsVantagePoint, bool) {
-	if name == fathomv1alpha1.DefaultDNSResolverName {
+func namedDNSVantagePoint(spec *fathomv1.DNSCheckSpec, name string) (dnsVantagePoint, bool) {
+	if name == fathomv1.DefaultDNSResolverName {
 		return implicitDNSVantagePoint(), true
 	}
 	for _, point := range dnsVantagePoints(spec) {
@@ -124,13 +124,13 @@ func namedDNSVantagePoint(spec *fathomv1alpha1.DNSCheckSpec, name string) (dnsVa
 // the vantage point marked unresolved. Admission rejects that specification, so
 // reaching this path means a stored object predates the rule; reporting it as a
 // failed pair explains itself far better than a missing result would.
-func expandDNSPairs(spec *fathomv1alpha1.DNSCheckSpec) []dnsPair {
+func expandDNSPairs(spec *fathomv1.DNSCheckSpec) []dnsPair {
 	points := dnsVantagePoints(spec)
 	pairs := make([]dnsPair, 0, len(spec.Targets)*len(points))
 	for _, target := range spec.Targets {
 		recordType := target.RecordType
 		if recordType == "" {
-			recordType = fathomv1alpha1.DNSRecordHost
+			recordType = fathomv1.DNSRecordHost
 		}
 		base := dnsPair{
 			Name:       target.Name,
@@ -158,11 +158,11 @@ func expandDNSPairs(spec *fathomv1alpha1.DNSCheckSpec) []dnsPair {
 }
 
 // dnsCheckInterval is the cadence, defaulted and raised to the schema floor.
-func dnsCheckInterval(check *fathomv1alpha1.DNSCheck) time.Duration {
+func dnsCheckInterval(check *fathomv1.DNSCheck) time.Duration {
 	if check.Spec.Interval == nil || check.Spec.Interval.Duration <= 0 {
-		return fathomv1alpha1.DefaultDNSCheckInterval
+		return fathomv1.DefaultDNSCheckInterval
 	}
-	return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
+	return clampCadence(check.Spec.Interval.Duration, fathomv1.MinCheckInterval)
 }
 
 // dnsCheckRunBound is how long one run may take in total (FR-104): the whole
@@ -173,10 +173,10 @@ func dnsCheckInterval(check *fathomv1alpha1.DNSCheck) time.Duration {
 // the cap only engages for an object stored before that rule existed — but the
 // invariant is what makes overlapping runs impossible, so it is enforced here
 // rather than assumed.
-func dnsCheckRunBound(check *fathomv1alpha1.DNSCheck) time.Duration {
-	bound := fathomv1alpha1.DefaultDNSCheckTimeout
+func dnsCheckRunBound(check *fathomv1.DNSCheck) time.Duration {
+	bound := fathomv1.DefaultDNSCheckTimeout
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		bound = clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
+		bound = clampCadence(check.Spec.Timeout.Duration, fathomv1.MinCheckTimeout)
 	}
 	if interval := dnsCheckInterval(check); bound > interval {
 		return interval
@@ -232,12 +232,12 @@ func nextDNSRequeue(interval, elapsed, minGap time.Duration) time.Duration {
 // Unreached pairs arrive here as Unknown, which participates: it ranks above
 // Warn so incomplete evidence degrades the verdict, and below Fail so a genuine
 // failure among the pairs that did run still wins (FR-106).
-func foldDNSVerdict(outcomes []dnsPairOutcome) fathomv1alpha1.HealthReportResult {
-	results := make([]fathomv1alpha1.HealthReportResult, 0, len(outcomes))
+func foldDNSVerdict(outcomes []dnsPairOutcome) fathomv1.HealthReportResult {
+	results := make([]fathomv1.HealthReportResult, 0, len(outcomes))
 	for _, outcome := range outcomes {
-		results = append(results, fathomv1alpha1.HealthReportResult(outcome.result.Result))
+		results = append(results, fathomv1.HealthReportResult(outcome.result.Result))
 	}
-	return fathomv1alpha1.WorstResult(results, true)
+	return fathomv1.WorstResult(results, true)
 }
 
 // countUnreachedDNSPairs reports how many pairs the run never evaluated. A pair
@@ -245,7 +245,7 @@ func foldDNSVerdict(outcomes []dnsPairOutcome) fathomv1alpha1.HealthReportResult
 func countUnreachedDNSPairs(outcomes []dnsPairOutcome) int {
 	var unreached int
 	for _, outcome := range outcomes {
-		if outcome.result.Result == string(fathomv1alpha1.HealthReportResultUnknown) {
+		if outcome.result.Result == string(fathomv1.HealthReportResultUnknown) {
 			unreached++
 		}
 	}
@@ -261,20 +261,20 @@ func countUnreachedDNSPairs(outcomes []dnsPairOutcome) int {
 // When the verdict comes from a negative assertion the summary says so
 // explicitly: "resolved but is asserted absent" reads as the deliberate policy
 // failure it is, where a bare "target failed" would be triaged as a DNS outage.
-func summarizeDNSRun(outcomes []dnsPairOutcome, verdict fathomv1alpha1.HealthReportResult, unreached int) string {
+func summarizeDNSRun(outcomes []dnsPairOutcome, verdict fathomv1.HealthReportResult, unreached int) string {
 	if len(outcomes) == 0 {
 		return "no targets to evaluate"
 	}
 
 	var passing int
 	for _, outcome := range outcomes {
-		if outcome.result.Result == string(fathomv1alpha1.HealthReportResultPass) {
+		if outcome.result.Result == string(fathomv1.HealthReportResultPass) {
 			passing++
 		}
 	}
 	scope := fmt.Sprintf("%d/%d pairs passing", passing, len(outcomes))
 
-	if verdict == fathomv1alpha1.HealthReportResultPass {
+	if verdict == fathomv1.HealthReportResultPass {
 		return truncateSummary(fmt.Sprintf("all %d (target, vantage point) pairs resolved as expected", len(outcomes)))
 	}
 
@@ -294,7 +294,7 @@ func summarizeDNSRun(outcomes []dnsPairOutcome, verdict fathomv1alpha1.HealthRep
 
 // firstOutcomeWithResult returns the first pair matching the folded verdict, in
 // deterministic pair order, so the same failing run always names the same pair.
-func firstOutcomeWithResult(outcomes []dnsPairOutcome, result fathomv1alpha1.HealthReportResult) (dnsPairOutcome, bool) {
+func firstOutcomeWithResult(outcomes []dnsPairOutcome, result fathomv1.HealthReportResult) (dnsPairOutcome, bool) {
 	for _, outcome := range outcomes {
 		if outcome.result.Result == string(result) {
 			return outcome, true
@@ -303,18 +303,18 @@ func firstOutcomeWithResult(outcomes []dnsPairOutcome, result fathomv1alpha1.Hea
 	return dnsPairOutcome{}, false
 }
 
-func describeDNSFailure(outcome dnsPairOutcome, verdict fathomv1alpha1.HealthReportResult) string {
+func describeDNSFailure(outcome dnsPairOutcome, verdict fathomv1.HealthReportResult) string {
 	subject := fmt.Sprintf("%s (%s) from %s", outcome.pair.Name, outcome.pair.RecordType, outcome.pair.VantagePoint.Name)
 	switch {
-	case verdict == fathomv1alpha1.HealthReportResultFail && outcome.pair.Absent:
+	case verdict == fathomv1.HealthReportResultFail && outcome.pair.Absent:
 		// FR-021: name the polarity. This check asserts the name is GONE, so a
 		// failure means it resolved — the opposite of an outage.
 		return "asserted absent but resolved: " + subject
-	case verdict == fathomv1alpha1.HealthReportResultFail:
+	case verdict == fathomv1.HealthReportResultFail:
 		return "did not resolve as expected: " + subject
-	case verdict == fathomv1alpha1.HealthReportResultError:
+	case verdict == fathomv1.HealthReportResultError:
 		return "could not be evaluated: " + subject
-	case verdict == fathomv1alpha1.HealthReportResultUnknown:
+	case verdict == fathomv1.HealthReportResultUnknown:
 		return "not evaluated: " + subject
 	default:
 		return string(verdict) + ": " + subject
@@ -368,7 +368,7 @@ func dnsNameserverAddress(address string) (string, error) {
 //
 // A report whose creation failed leaves lastReportName empty, so the next run
 // retries rather than silently skipping the transition.
-func dnsCheckShouldPersistReport(before *fathomv1alpha1.DNSCheckStatus, verdict fathomv1alpha1.HealthReportResult) bool {
+func dnsCheckShouldPersistReport(before *fathomv1.DNSCheckStatus, verdict fathomv1.HealthReportResult) bool {
 	if before == nil {
 		return true
 	}
@@ -379,11 +379,11 @@ func dnsCheckShouldPersistReport(before *fathomv1alpha1.DNSCheckStatus, verdict 
 // slice is rebuilt from the current specification every run and replaces the
 // stored one wholesale, so a pair the specification no longer declares cannot
 // survive (FR-036).
-func dnsTargetResults(outcomes []dnsPairOutcome) []fathomv1alpha1.DNSTargetResult {
+func dnsTargetResults(outcomes []dnsPairOutcome) []fathomv1.DNSTargetResult {
 	if len(outcomes) == 0 {
 		return nil
 	}
-	results := make([]fathomv1alpha1.DNSTargetResult, 0, len(outcomes))
+	results := make([]fathomv1.DNSTargetResult, 0, len(outcomes))
 	for _, outcome := range outcomes {
 		results = append(results, outcome.result)
 	}

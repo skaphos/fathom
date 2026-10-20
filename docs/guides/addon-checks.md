@@ -15,7 +15,7 @@ New to the model? Start with [Concepts](concepts.md) and
 ## The shape of an AddonCheck
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: <name>
@@ -705,18 +705,18 @@ See [Configuration → Probe image default](../reference/configuration.md#probe-
 checks, wrap each in a `HealthCheck` and let a `ClusterHealth` aggregate them:
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: cert-manager
   namespace: fathom-system
 spec:
   checkRef:
-    apiVersion: fathom.skaphos.io/v1alpha1
+    apiVersion: fathom.skaphos.io/v1
     kind: AddonCheck
     name: cert-manager-system-health
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: platform
@@ -748,8 +748,8 @@ spec: {}   # empty spec matches all HealthChecks in all namespaces
 
 ## Troubleshooting
 
-Read the conditions: `kubectl describe addoncheck <name>` shows `Accepted`,
-`Ready`, and (when paused) `Paused`. `Accepted=False` means the spec/policy was
+Read the conditions: `kubectl describe addoncheck <name>` shows `Accepted`
+and `Ready`. `Accepted=False` means the spec/policy was
 rejected and no adapter run happens until it is corrected — the exact problems
 are in the `Accepted` condition message. The full status contract is in
 [Status and conditions](../reference/status-conditions.md). Common
@@ -759,7 +759,6 @@ are in the `Accepted` condition message. The full status contract is in
 | --- | --- | --- |
 | `MissingAdapter` | `spec.addonType` doesn't match a built-in adapter. | Check the spelling; valid values are the `addonType`s in the [adapter catalog](#adapter-catalog). |
 | `AdapterLookupFailed` | The registry could not resolve the adapter. | Inspect operator logs; usually a startup/registration issue. |
-| `Paused` | `spec.paused` is set. | The last status snapshot is preserved; unset `paused` to resume. |
 | `InvalidPolicy` | A `spec.policy` key names a family the adapter doesn't advertise, or a family carries an invalid `labelSelector`. Also sets `Accepted=False`. | Use a family the adapter exposes and a valid selector; the `Accepted` message lists each problem. Editing the spec re-runs the check. |
 
 On the wrapper side, `kubectl describe healthcheck <name>`:
@@ -768,7 +767,6 @@ On the wrapper side, `kubectl describe healthcheck <name>`:
 | --- | --- |
 | `TargetNotFound` | `checkRef` points at an `AddonCheck` that doesn't exist in the wrapper namespace, or in the explicit `checkRef.namespace` when one is set. |
 | `UnsupportedKind` | `checkRef.kind` is not `AddonCheck`. |
-| `Paused` | `spec.paused` is set; mirroring is suspended. |
 
 If a check is stuck on a stale result, compare `status.lastRunTime` with
 `spec.interval` and the controller logs. To force an immediate run, set a fresh
@@ -780,3 +778,9 @@ If a check is stuck on a stale result, compare `status.lastRunTime` with
   env vars.
 - [API reference](../reference/api.md) — generated, field-level CRD reference.
 - [Architecture](../architecture.md) — adapter contract and reconciler detail.
+
+## Stopping a check
+
+There is no pause. To stop a check, delete it; to resume, recreate it (from
+Git, which is where it came from). Fathom emits signal and does not own alert
+suppression: silence the alert in the alerting stack instead (#262).

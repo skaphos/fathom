@@ -18,7 +18,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // installInMemoryTracer swaps the global tracer provider for a synchronous,
@@ -56,7 +56,7 @@ func attrValue(s tracetest.SpanStub, key string) (string, bool) {
 func newControllerScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add fathom scheme: %v", err)
 	}
 	return scheme

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	externalDNSSamplePath = "config/samples/fathom_v1alpha1_addoncheck_external_dns.yaml"
+	externalDNSSamplePath = "config/samples/fathom_v1_addoncheck_external_dns.yaml"
 	externalDNSSampleName = "external-dns-sample"
 	externalDNSSampleNS   = "default"
 	externalDNSAddonNS    = "external-dns"

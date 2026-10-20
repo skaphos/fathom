@@ -116,17 +116,17 @@ steps are:
 
 The AddonCheck samples used by this stack live in `config/samples/`:
 
-- `fathom_v1alpha1_addoncheck_coredns.yaml` — exercises CoreDNS `system_health` + `dns_resolution`.
-- `fathom_v1alpha1_addoncheck.yaml` — exercises cert-manager `system_health`, `issuer_health`, `certificate_health`.
-- `fathom_v1alpha1_addoncheck_external_secrets.yaml` — exercises external-secrets `system_health` + `secret_sync`.
-- `fathom_v1alpha1_addoncheck_external_dns.yaml` — exercises external-dns `system_health` + `crd_health` (the chart ships the DNSEndpoint CRD in `crds/`, so it is Established in this stack).
-- `fathom_v1alpha1_addoncheck_metrics_server.yaml` — exercises metrics-server `system_health` + `api_availability` (the aggregated `v1beta1.metrics.k8s.io` APIService).
-- `fathom_v1alpha1_addoncheck_kube_state_metrics.yaml` — exercises kube-state-metrics `system_health` + `metrics_endpoint` (probe-pod scrapes of the main 8080 `/metrics` port and — because the fixture enables `selfMonitor` — the 8081 self-telemetry port).
-- `fathom_v1alpha1_addoncheck_envoy_gateway.yaml` — exercises envoy-gateway `system_health` + `crd_health` + the `gateway_status` empty-cluster Skipped contract (no Gateway objects are declared).
-- `fathom_v1alpha1_addoncheck_istio.yaml` — exercises istio `system_health` (istiod + both webhook configurations) + `crd_health`, plus the `ztunnel_health`/`istio_cni_health` Optional-absence Skipped contract (the stack installs sidecar mode only).
-- `fathom_v1alpha1_addoncheck_argocd.yaml` — exercises argocd `system_health` (the application-controller StatefulSet, the repo-server/server/redis Deployments, and the Application/ApplicationSet/AppProject CRDs) + the `sync_health` empty-cluster Skipped contract (no Application objects are declared).
-- `fathom_v1alpha1_addoncheck_node_local_dns.yaml` — exercises node-local-dns `system_health` (DaemonSet + per-node coverage) + `dns_resolution` through the cache's `169.254.20.10` listen address (the helmfile pins the chart's `config.localDns` to the upstream convention).
-- `fathom_v1alpha1_addoncheck_azure_workload_identity.yaml` — exercises azure-workload-identity `system_health` + `webhook_wiring` (mutating configuration wired, backing service endpoints ready), plus the `projection_sanity` empty-cluster Skipped contract (no pod in the stack opts in via `azure.workload.identity/use=true`).
+- `fathom_v1_addoncheck_coredns.yaml` — exercises CoreDNS `system_health` + `dns_resolution`.
+- `fathom_v1_addoncheck.yaml` — exercises cert-manager `system_health`, `issuer_health`, `certificate_health`.
+- `fathom_v1_addoncheck_external_secrets.yaml` — exercises external-secrets `system_health` + `secret_sync`.
+- `fathom_v1_addoncheck_external_dns.yaml` — exercises external-dns `system_health` + `crd_health` (the chart ships the DNSEndpoint CRD in `crds/`, so it is Established in this stack).
+- `fathom_v1_addoncheck_metrics_server.yaml` — exercises metrics-server `system_health` + `api_availability` (the aggregated `v1beta1.metrics.k8s.io` APIService).
+- `fathom_v1_addoncheck_kube_state_metrics.yaml` — exercises kube-state-metrics `system_health` + `metrics_endpoint` (probe-pod scrapes of the main 8080 `/metrics` port and — because the fixture enables `selfMonitor` — the 8081 self-telemetry port).
+- `fathom_v1_addoncheck_envoy_gateway.yaml` — exercises envoy-gateway `system_health` + `crd_health` + the `gateway_status` empty-cluster Skipped contract (no Gateway objects are declared).
+- `fathom_v1_addoncheck_istio.yaml` — exercises istio `system_health` (istiod + both webhook configurations) + `crd_health`, plus the `ztunnel_health`/`istio_cni_health` Optional-absence Skipped contract (the stack installs sidecar mode only).
+- `fathom_v1_addoncheck_argocd.yaml` — exercises argocd `system_health` (the application-controller StatefulSet, the repo-server/server/redis Deployments, and the Application/ApplicationSet/AppProject CRDs) + the `sync_health` empty-cluster Skipped contract (no Application objects are declared).
+- `fathom_v1_addoncheck_node_local_dns.yaml` — exercises node-local-dns `system_health` (DaemonSet + per-node coverage) + `dns_resolution` through the cache's `169.254.20.10` listen address (the helmfile pins the chart's `config.localDns` to the upstream convention).
+- `fathom_v1_addoncheck_azure_workload_identity.yaml` — exercises azure-workload-identity `system_health` + `webhook_wiring` (mutating configuration wired, backing service endpoints ready), plus the `projection_sanity` empty-cluster Skipped contract (no pod in the stack opts in via `azure.workload.identity/use=true`).
 
 ## Prerequisites
 
@@ -188,7 +188,7 @@ kubectl get pods -l app.kubernetes.io/managed-by=fathom -A --watch
 
 - **`ImagePullBackOff` on probe pods (CoreDNS `dns_resolution`)**: until
   SKA-311 publishes `ghcr.io/skaphos/fathom-probe:vX.Y.Z` to GHCR, the
-  probe image referenced in `config/samples/fathom_v1alpha1_addoncheck_coredns.yaml`
+  probe image referenced in `config/samples/fathom_v1_addoncheck_coredns.yaml`
   does not exist remotely. Two workarounds for local testing:
 
     1. Build the probe image locally with the tag the operator expects and

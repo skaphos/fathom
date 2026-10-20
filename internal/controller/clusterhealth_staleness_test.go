@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // ClusterHealth staleness semantics (skaphos/fathom#277).
@@ -38,19 +38,19 @@ var _ = Describe("ClusterHealth staleness", func() {
 	// pinned to observedAt. A nil observedAt leaves it unset, which is how a
 	// selected-but-never-evaluated child presents.
 	createHealthCheckObservedAt := func(name string, lbls map[string]string,
-		result fathomv1alpha1.HealthReportResult, observedAt *metav1.Time,
-	) *fathomv1alpha1.HealthCheck {
-		hc := &fathomv1alpha1.HealthCheck{
+		result fathomv1.HealthReportResult, observedAt *metav1.Time,
+	) *fathomv1.HealthCheck {
+		hc := &fathomv1.HealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", Labels: lbls},
-			Spec: fathomv1alpha1.HealthCheckSpec{
-				CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: name + "-target"},
+			Spec: fathomv1.HealthCheckSpec{
+				CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: name + "-target"},
 			},
 		}
 		Expect(k8sClient.Create(ctx, hc)).To(Succeed())
 		DeferCleanup(func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, hc))).To(Succeed())
 		})
-		hc.Status = fathomv1alpha1.HealthCheckStatus{
+		hc.Status = fathomv1.HealthCheckStatus{
 			Result:           result,
 			Summary:          string(result) + " for " + name,
 			SourceObservedAt: observedAt,
@@ -60,9 +60,9 @@ var _ = Describe("ClusterHealth staleness", func() {
 	}
 
 	createAggregate := func(name string, selector map[string]string) {
-		ch := &fathomv1alpha1.ClusterHealth{
+		ch := &fathomv1.ClusterHealth{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec: fathomv1alpha1.ClusterHealthSpec{
+			Spec: fathomv1.ClusterHealthSpec{
 				Selector: &metav1.LabelSelector{MatchLabels: selector},
 			},
 		}
@@ -72,12 +72,12 @@ var _ = Describe("ClusterHealth staleness", func() {
 		})
 	}
 
-	reconcileAggregate := func(name string) fathomv1alpha1.ClusterHealth {
+	reconcileAggregate := func(name string) fathomv1.ClusterHealth {
 		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: name},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		var got fathomv1alpha1.ClusterHealth
+		var got fathomv1.ClusterHealth
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, &got)).To(Succeed())
 		return got
 	}
@@ -88,14 +88,14 @@ var _ = Describe("ClusterHealth staleness", func() {
 		frozen := metav1.NewTime(time.Now().Add(-6 * time.Hour).Truncate(time.Second))
 		live := metav1.NewTime(time.Now().Truncate(time.Second))
 
-		createHealthCheckObservedAt("stale-frozen-fail", lbls, fathomv1alpha1.HealthReportResultFail, &frozen)
-		createHealthCheckObservedAt("stale-live-pass", lbls, fathomv1alpha1.HealthReportResultPass, &live)
+		createHealthCheckObservedAt("stale-frozen-fail", lbls, fathomv1.HealthReportResultFail, &frozen)
+		createHealthCheckObservedAt("stale-live-pass", lbls, fathomv1.HealthReportResultPass, &live)
 		createAggregate("ch-staleness-masked", lbls)
 
 		got := reconcileAggregate("ch-staleness-masked")
 
 		By("still folding the frozen child's Fail into the verdict")
-		Expect(got.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultFail))
+		Expect(got.Status.Result).To(Equal(fathomv1.HealthReportResultFail))
 
 		By("publishing the STALEST observation so the Fail cannot look fresh")
 		Expect(got.Status.ObservedAt).NotTo(BeNil())
@@ -105,7 +105,7 @@ var _ = Describe("ClusterHealth staleness", func() {
 
 	// T009 — staleness must never alter the verdict (D1, FR-007, SC-006).
 	DescribeTable("leaves the worst-of verdict untouched regardless of staleness",
-		func(childResults []fathomv1alpha1.HealthReportResult, want fathomv1alpha1.HealthReportResult) {
+		func(childResults []fathomv1.HealthReportResult, want fathomv1.HealthReportResult) {
 			// Kubernetes names are RFC1123: lowercase only.
 			slug := strings.ToLower(string(want))
 			lbls := map[string]string{"verdict-case": slug + "-fold"}
@@ -121,14 +121,14 @@ var _ = Describe("ClusterHealth staleness", func() {
 			Expect(got.Status.Result).To(Equal(want))
 		},
 		Entry("Error outranks Fail",
-			[]fathomv1alpha1.HealthReportResult{fathomv1alpha1.HealthReportResultFail, fathomv1alpha1.HealthReportResultError},
-			fathomv1alpha1.HealthReportResultError),
+			[]fathomv1.HealthReportResult{fathomv1.HealthReportResultFail, fathomv1.HealthReportResultError},
+			fathomv1.HealthReportResultError),
 		Entry("Fail outranks Unknown",
-			[]fathomv1alpha1.HealthReportResult{fathomv1alpha1.HealthReportResultUnknown, fathomv1alpha1.HealthReportResultFail},
-			fathomv1alpha1.HealthReportResultFail),
+			[]fathomv1.HealthReportResult{fathomv1.HealthReportResultUnknown, fathomv1.HealthReportResultFail},
+			fathomv1.HealthReportResultFail),
 		Entry("Pass stays Pass",
-			[]fathomv1alpha1.HealthReportResult{fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass},
-			fathomv1alpha1.HealthReportResultPass),
+			[]fathomv1.HealthReportResult{fathomv1.HealthReportResultPass, fathomv1.HealthReportResultPass},
+			fathomv1.HealthReportResultPass),
 	)
 
 	// T010 — the gauge is fed from the same field, so it must agree (FR-009).
@@ -137,8 +137,8 @@ var _ = Describe("ClusterHealth staleness", func() {
 		frozen := metav1.NewTime(time.Now().Add(-4 * time.Hour).Truncate(time.Second))
 		live := metav1.NewTime(time.Now().Truncate(time.Second))
 
-		createHealthCheckObservedAt("gauge-frozen", lbls, fathomv1alpha1.HealthReportResultFail, &frozen)
-		createHealthCheckObservedAt("gauge-live", lbls, fathomv1alpha1.HealthReportResultPass, &live)
+		createHealthCheckObservedAt("gauge-frozen", lbls, fathomv1.HealthReportResultFail, &frozen)
+		createHealthCheckObservedAt("gauge-live", lbls, fathomv1.HealthReportResultPass, &live)
 		createAggregate("ch-staleness-gauge", lbls)
 
 		got := reconcileAggregate("ch-staleness-gauge")
@@ -155,8 +155,8 @@ var _ = Describe("ClusterHealth staleness", func() {
 	It("treats a never-observed child as the strongest staleness signal", func() {
 		lbls := map[string]string{"stale-case": "never-ran"}
 		live := metav1.NewTime(time.Now())
-		createHealthCheckObservedAt("never-observed", lbls, fathomv1alpha1.HealthReportResultPass, nil)
-		createHealthCheckObservedAt("never-sibling", lbls, fathomv1alpha1.HealthReportResultPass, &live)
+		createHealthCheckObservedAt("never-observed", lbls, fathomv1.HealthReportResultPass, nil)
+		createHealthCheckObservedAt("never-sibling", lbls, fathomv1.HealthReportResultPass, &live)
 		createAggregate("ch-never-ran", lbls)
 
 		got := reconcileAggregate("ch-never-ran")
@@ -172,7 +172,7 @@ var _ = Describe("ClusterHealth staleness", func() {
 	It("never reports an aggregate as more current than now", func() {
 		lbls := map[string]string{"stale-case": "skew"}
 		future := metav1.NewTime(time.Now().Add(3 * time.Hour))
-		createHealthCheckObservedAt("skewed-child", lbls, fathomv1alpha1.HealthReportResultPass, &future)
+		createHealthCheckObservedAt("skewed-child", lbls, fathomv1.HealthReportResultPass, &future)
 		createAggregate("ch-clock-skew", lbls)
 
 		before := time.Now()
@@ -188,8 +188,8 @@ var _ = Describe("ClusterHealth staleness", func() {
 		older := metav1.NewTime(time.Now().Add(-12 * time.Hour).Truncate(time.Second))
 		old := metav1.NewTime(time.Now().Add(-2 * time.Hour).Truncate(time.Second))
 
-		createHealthCheckObservedAt("frozen-older", lbls, fathomv1alpha1.HealthReportResultFail, &older)
-		createHealthCheckObservedAt("frozen-old", lbls, fathomv1alpha1.HealthReportResultFail, &old)
+		createHealthCheckObservedAt("frozen-older", lbls, fathomv1.HealthReportResultFail, &older)
+		createHealthCheckObservedAt("frozen-old", lbls, fathomv1.HealthReportResultFail, &old)
 		createAggregate("ch-all-frozen", lbls)
 
 		got := reconcileAggregate("ch-all-frozen")

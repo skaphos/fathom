@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ksmSamplePath = "config/samples/fathom_v1alpha1_addoncheck_kube_state_metrics.yaml"
+	ksmSamplePath = "config/samples/fathom_v1_addoncheck_kube_state_metrics.yaml"
 	ksmSampleName = "kube-state-metrics-sample"
 	ksmSampleNS   = "default"
 	ksmAddonNS    = "kube-system"

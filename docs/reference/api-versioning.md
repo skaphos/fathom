@@ -24,19 +24,28 @@ Reference implementations and current state:
 
 | Repo | Group | Served versions | Storage version | Maturity |
 | --- | --- | --- | --- | --- |
-| [`fathom`](https://github.com/skaphos/fathom) | `fathom.skaphos.io` | `v1alpha1` | `v1alpha1` | alpha |
+| [`fathom`](https://github.com/skaphos/fathom) — check kinds | `fathom.skaphos.io` | `v1` | `v1` | stable |
+| [`fathom`](https://github.com/skaphos/fathom) — runtime definition kinds | `fathom.skaphos.io` | `v1alpha1` | `v1alpha1` | alpha |
 | [`berth`](https://github.com/skaphos/berth) | `berth.skaphos.io` | `v1alpha1` | `v1alpha1` | alpha |
 
-Both reference operators are single-version and alpha today. The expensive
+Every CRD in both operators serves exactly one version. The expensive
 machinery below — conversion, storage migration, deprecation windows — does not
 exist in either repo yet, and that is correct: you build it the day you
-introduce a second version, not before. This standard exists now so that day
-follows a written procedure instead of an improvisation.
+introduce a second served version, not before. This standard exists now so
+that day follows a written procedure instead of an improvisation.
 
-Fathom's five kinds — `AddonCheck`, `HealthCheck`, `ClusterHealth`,
-`HealthReport`, `NodeCertificateCheck` — all live at
-`fathom.skaphos.io/v1alpha1`. The generated reference for that surface is
-[`api.md`](api.md); this document is the policy for changing it.
+Fathom's seven check kinds — `AddonCheck`, `HealthCheck`, `ClusterHealth`,
+`HealthReport`, `NodeCertificateCheck`, `DNSCheck`, `NodeHealthCheck` — are
+served at the stable `fathom.skaphos.io/v1` from release 0.7.0. **Release
+1.0.0 ships that stable `v1`; "alpha at 1.0" was never the intent.** The two
+runtime definition kinds, `AddonDefinition` and `AddonDefinitionBinding`, stay
+at `v1alpha1` on their own track. The alpha versions of the check kinds were
+removed, not deprecated and converted: alpha carries no support window, and
+the API server refuses to drop a stored version in place, so each CRD was
+replaced and adopters recreated their resources from `fathomctl export`
+(ADR 0009, `RELEASE.md` → "v1 API migration"). The generated reference for the
+whole surface is [`api.md`](api.md); this document is the policy for changing
+it.
 
 ## The one rule everything else follows
 
@@ -62,7 +71,9 @@ version. None of them are governed here:
   "Relationship to the operator release version" below.
 - **Any in-process contract version** an operator maintains between its own
   components — e.g. Fathom's adapter `ContractVersion` handshake. That is an
-  internal Go compatibility boundary, not a Kubernetes API surface.
+  internal Go compatibility boundary, not a Kubernetes API surface, and it is
+  deliberately an **independent axis**: Fathom's contract stayed at `1.1.0`
+  when the check kinds went to `v1`, because nothing in the contract changed.
 - **The served versions of *third-party* CRDs** an operator inspects at runtime
   (cert-manager, External Secrets, Cilium, …). Detecting which version of
   someone else's CRD is installed is reconcile behavior, not our API contract.
@@ -248,7 +259,9 @@ The CRD API version and the operator's SemVer release are **orthogonal axes.**
   *API version*, not merely a new operator version.
 - A new GA API version *may* coincide with a major operator release, but neither
   requires the other. `release-please` versions the software; this standard
-  versions the API.
+  versions the API. Fathom's `v1` shipped in operator 0.7.0, the last
+  breaking release before 1.0.0, and is frozen from there: the 1.0.0 operator
+  changes nothing about it.
 - Adding a compatible field is a `feat:` in the operator (minor bump) and no CRD
   version change at all.
 

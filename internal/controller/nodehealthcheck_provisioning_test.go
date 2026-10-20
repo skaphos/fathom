@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -50,18 +50,18 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	// Second precision: the fake client round-trips status through JSON, and
 	// metav1.Time serialises without sub-second digits.
 	lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-provisioning", Namespace: "default", Generation: 2},
-		Spec: fathomv1alpha1.NodeHealthCheckSpec{
-			Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}},
+		Spec: fathomv1.NodeHealthCheckSpec{
+			Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}},
 		},
-		Status: fathomv1alpha1.NodeHealthCheckStatus{
+		Status: fathomv1.NodeHealthCheckStatus{
 			ObservedGeneration: 1,
 			LastRunTime:        &lastRun,
-			LastResult:         string(fathomv1alpha1.HealthReportResultPass),
+			LastResult:         string(fathomv1.HealthReportResultPass),
 			LastReportName:     "nh-provisioning-report",
 			Summary:            "2 of 2 node(s) passed",
-			NodeResults:        []fathomv1alpha1.NodeHealthNodeResult{{Node: "node-a", Result: "Pass"}, {Node: "node-b", Result: "Pass"}},
+			NodeResults:        []fathomv1.NodeHealthNodeResult{{Node: "node-a", Result: "Pass"}, {Node: "node-b", Result: "Pass"}},
 			Conditions: []metav1.Condition{
 				{
 					Type:               nodeHealthConditionReady,
@@ -83,7 +83,7 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(check).
-		WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+		WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 				if _, ok := obj.(*corev1.ServiceAccount); ok {
@@ -108,7 +108,7 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 		}
 	}
 
-	persisted := &fathomv1alpha1.NodeHealthCheck{}
+	persisted := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "RBACProvisioningFailed" {
 		t.Fatalf("Ready must be persisted as False/RBACProvisioningFailed (COR-2), got %+v", ready)
 	}
-	if persisted.Status.LastResult != string(fathomv1alpha1.HealthReportResultPass) || persisted.Status.LastReportName != "nh-provisioning-report" {
+	if persisted.Status.LastResult != string(fathomv1.HealthReportResultPass) || persisted.Status.LastReportName != "nh-provisioning-report" {
 		t.Fatalf("a provisioning failure must not clear the last complete verdict: %+v", persisted.Status)
 	}
 	if persisted.Status.LastRunTime == nil || !persisted.Status.LastRunTime.Time.Equal(lastRun.Time) {
@@ -140,15 +140,15 @@ func TestNodeHealthProvisioningFailurePersistsStatus(t *testing.T) {
 // phase fails, the stale reason must not survive on the same generation.
 func TestNodeHealthLaterProvisioningFailureClearsRecoveredAuthenticityError(t *testing.T) {
 	t.Parallel()
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-auth-recovered", Namespace: "default", Generation: 2},
-		Status: fathomv1alpha1.NodeHealthCheckStatus{ObservedGeneration: 2, Conditions: []metav1.Condition{{
+		Status: fathomv1.NodeHealthCheckStatus{ObservedGeneration: 2, Conditions: []metav1.Condition{{
 			Type: nodeHealthConditionAuthentic, Status: metav1.ConditionUnknown,
 			Reason: reasonAuthenticityUnavailable, ObservedGeneration: 2, LastTransitionTime: metav1.Now(),
 		}}},
 	}
 	scheme := newProvisioningScheme(t)
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).Build()
 	before := check.Status.DeepCopy()
 	injected := errors.New("network policy create failed")
 	_, err := (&NodeHealthCheckReconciler{Client: cl}).failProvisioning(
@@ -157,7 +157,7 @@ func TestNodeHealthLaterProvisioningFailureClearsRecoveredAuthenticityError(t *t
 	if !errors.Is(err, injected) {
 		t.Fatalf("error = %v, want original %v", err, injected)
 	}
-	persisted := &fathomv1alpha1.NodeHealthCheck{}
+	persisted := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 		t.Fatal(err)
 	}
@@ -176,21 +176,21 @@ func TestNodeHealthLaterProvisioningFailureClearsRecoveredAuthenticityError(t *t
 func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{fathomv1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-bad", Namespace: "default", UID: "check-uid", Generation: 3},
-		Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
-			{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"},
-			{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"},
+		Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{
+			{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"},
+			{Type: fathomv1.NodeHealthCheckInodeHeadroom, Path: "/var/lib/kubelet"},
 		}},
 	}
 	// The previous, accepted generation left a host-network agent running.
 	check.Generation = 4
-	check.Status = fathomv1alpha1.NodeHealthCheckStatus{
+	check.Status = fathomv1.NodeHealthCheckStatus{
 		ObservedGeneration: 3, LastResult: "Pass", DesiredNodes: 3, ReportingNodes: 3,
 		Conditions: []metav1.Condition{
 			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 3, LastTransitionTime: metav1.Now()},
@@ -201,7 +201,7 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 	oldAgent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
 		Name: nodeHealthAgentResourceName(check), Namespace: "default",
 		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+			APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 			Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 		}},
 	},
@@ -210,7 +210,7 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scopedReportAccessName(nodeHealthAgentResourceName(check)), Namespace: check.Namespace,
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}},
 		},
@@ -219,12 +219,12 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 			ResourceNames: []string{nodehealth.ReportConfigMapName(check.Name, "node-a")}, Verbs: []string{"get", "update"},
 		}},
 	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, oldAgent, oldRole).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, oldAgent, oldRole).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).Build()
 	r := &NodeHealthCheckReconciler{Client: cl, Scheme: scheme, NodeAgentImage: "img", APIReader: cl}
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-bad", Namespace: "default"}}); err != nil {
 		t.Fatalf("a rejected item is a status outcome, not a reconcile error: %v", err)
 	}
-	got := &fathomv1alpha1.NodeHealthCheck{}
+	got := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-bad", Namespace: "default"}, got); err != nil {
 		t.Fatal(err)
 	}
@@ -265,18 +265,18 @@ func TestNodeHealthRejectedItemIsObservable(t *testing.T) {
 func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{fathomv1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-stale", Namespace: "default", Generation: 2},
-		Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
-			{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
-			{Type: fathomv1alpha1.NodeHealthCheckKubeletHealthz},
+		Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{
+			{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
+			{Type: fathomv1.NodeHealthCheckKubeletHealthz},
 		}},
-		Status: fathomv1alpha1.NodeHealthCheckStatus{
+		Status: fathomv1.NodeHealthCheckStatus{
 			ObservedGeneration: 1, LastResult: "Pass",
 			Conditions: []metav1.Condition{
 				{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
@@ -286,7 +286,7 @@ func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
 			},
 		},
 	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 			if _, ok := obj.(*appsv1.DaemonSet); ok {
 				return apierrors.NewInternalError(errors.New("daemonset create refused"))
@@ -297,7 +297,7 @@ func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-stale", Namespace: "default"}}); err == nil {
 		t.Fatal("the provisioning error must be returned for retry")
 	}
-	got := &fathomv1alpha1.NodeHealthCheck{}
+	got := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-stale", Namespace: "default"}, got); err != nil {
 		t.Fatal(err)
 	}
@@ -324,15 +324,15 @@ func TestNodeHealthProvisioningFailureInvalidatesAgentConditions(t *testing.T) {
 func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{fathomv1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-stuck", Namespace: "default", UID: "check-uid", Generation: 2},
-		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"}}},
-		Status: fathomv1alpha1.NodeHealthCheckStatus{ObservedGeneration: 1, LastResult: "Pass", Conditions: []metav1.Condition{
+		Spec:       fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/etc/shadow"}}},
+		Status: fathomv1.NodeHealthCheckStatus{ObservedGeneration: 1, LastResult: "Pass", Conditions: []metav1.Condition{
 			{Type: nodeHealthConditionAccepted, Status: metav1.ConditionTrue, Reason: "SpecAccepted", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
 			{Type: nodeHealthConditionPrivileged, Status: metav1.ConditionTrue, Reason: "HostNetwork", ObservedGeneration: 1, LastTransitionTime: metav1.Now()},
 		}},
@@ -340,11 +340,11 @@ func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
 	agent := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{
 		Name: nodeHealthAgentResourceName(check), Namespace: "default",
 		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+			APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 			Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 		}},
 	}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, agent).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, agent).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
 			if _, ok := obj.(*appsv1.DaemonSet); ok {
 				return apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "daemonsets"}, obj.GetName(), errors.New("delete denied"))
@@ -355,7 +355,7 @@ func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-stuck", Namespace: "default"}}); err == nil {
 		t.Fatal("a failed revocation must be returned for retry")
 	}
-	got := &fathomv1alpha1.NodeHealthCheck{}
+	got := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-stuck", Namespace: "default"}, got); err != nil {
 		t.Fatal(err)
 	}
@@ -381,9 +381,9 @@ func TestNodeHealthRejectedSpecWithFailedRevocation(t *testing.T) {
 // rejected generation, not a silently rewritten policy.
 func TestNodeHealthInvertedThresholdsAreRejected(t *testing.T) {
 	t.Parallel()
-	check := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
-		{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", CriticalPercentFree: ptr.To[int32](30)}, // warn defaults to 20
-		{Type: fathomv1alpha1.NodeHealthCheckInodeHeadroom, Path: "/var/log", WarnPercentFree: ptr.To[int32](50), CriticalPercentFree: ptr.To[int32](10)},
+	check := &fathomv1.NodeHealthCheck{Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{
+		{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet", CriticalPercentFree: ptr.To[int32](30)}, // warn defaults to 20
+		{Type: fathomv1.NodeHealthCheckInodeHeadroom, Path: "/var/log", WarnPercentFree: ptr.To[int32](50), CriticalPercentFree: ptr.To[int32](10)},
 	}}}
 	rejected := rejectedNodeHealthItems(check)
 	if len(rejected) != 1 || !strings.Contains(rejected[0], "criticalPercentFree 30 above warnPercentFree 20") {
@@ -398,17 +398,17 @@ func TestNodeHealthInvertedThresholdsAreRejected(t *testing.T) {
 func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{fathomv1alpha1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{fathomv1.AddToScheme, corev1.AddToScheme, appsv1.AddToScheme, rbacv1.AddToScheme, networkingv1.AddToScheme, admissionregistrationv1.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check := &fathomv1alpha1.NodeHealthCheck{
+	check := &fathomv1.NodeHealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "nh-novap", Namespace: "default", Generation: 1},
-		Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}}},
+		Spec:       fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}}},
 	}
 	noMatch := &apiMeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "admissionregistration.k8s.io", Kind: "ValidatingAdmissionPolicy"}, SearchedVersions: []string{"v1"}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 		WithInterceptorFuncs(interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 			switch obj.(type) {
 			case *admissionregistrationv1.ValidatingAdmissionPolicy, *admissionregistrationv1.ValidatingAdmissionPolicyBinding:
@@ -420,7 +420,7 @@ func TestNodeHealthAuthenticityUnenforcedWithoutPolicyAPI(t *testing.T) {
 	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "nh-novap", Namespace: "default"}}); err == nil {
 		t.Fatal("an unsupported policy API must fail closed and retry")
 	}
-	got := &fathomv1alpha1.NodeHealthCheck{}
+	got := &fathomv1.NodeHealthCheck{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "nh-novap", Namespace: "default"}, got); err != nil {
 		t.Fatal(err)
 	}
@@ -464,19 +464,19 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 			t.Parallel()
 			scheme := newProvisioningScheme(t)
 			lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-			check := &fathomv1alpha1.NodeHealthCheck{
+			check := &fathomv1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "nh-auth-loss", Namespace: "default", UID: "check-uid", Generation: 2},
-				Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{
-					Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet",
+				Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{
+					Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet",
 				}}},
-				Status: fathomv1alpha1.NodeHealthCheckStatus{
+				Status: fathomv1.NodeHealthCheckStatus{
 					ObservedGeneration: 1, LastRunTime: &lastRun, LastResult: "Pass", LastReportName: "previous-report", Summary: "1 of 1 node(s) passed",
 					Conditions: []metav1.Condition{{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun}},
 				},
 			}
 			agentName := nodeHealthAgentResourceName(check)
 			owner := metav1.OwnerReference{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}
 			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, OwnerReferences: []metav1.OwnerReference{owner}}}
@@ -499,7 +499,7 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 			roleErr := errors.New("Role update failed")
 			deleteErr := errors.New("DaemonSet delete failed")
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
-				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 						if _, ok := obj.(*admissionregistrationv1.ValidatingAdmissionPolicy); ok {
@@ -559,7 +559,7 @@ func TestNodeHealthAuthenticityFailureRevokesExistingAgent(t *testing.T) {
 				t.Fatalf("successful revocation left DaemonSet behind: %v", dsErr)
 			}
 
-			persisted := &fathomv1alpha1.NodeHealthCheck{}
+			persisted := &fathomv1.NodeHealthCheck{}
 			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 				t.Fatal(err)
 			}
@@ -583,9 +583,9 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 	t.Run("rejects an unrelated binding without mutation", func(t *testing.T) {
 		t.Parallel()
 		scheme := newProvisioningScheme(t)
-		check := &fathomv1alpha1.NodeHealthCheck{
+		check := &fathomv1.NodeHealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "nh-rb-conflict", Namespace: "default", UID: "check-uid", Generation: 1},
-			Spec:       fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}}},
+			Spec:       fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"}}},
 		}
 		name := nodeHealthAgentResourceName(check)
 		binding := &rbacv1.RoleBinding{
@@ -594,7 +594,7 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "unrelated", Namespace: check.Namespace}},
 		}
 		foreignDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace}}
-		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).Build()
+		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, binding, foreignDaemonSet).WithStatusSubresource(&fathomv1.NodeHealthCheck{}).Build()
 		r := &NodeHealthCheckReconciler{Client: cl, APIReader: cl, Scheme: scheme, NodeAgentImage: "img:test"}
 		_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)})
 		if err == nil || !strings.Contains(err.Error(), "not controlled") {
@@ -615,11 +615,11 @@ func TestNodeHealthAgentRBACValidatesExistingRoleBinding(t *testing.T) {
 	t.Run("drains the expected legacy binding idempotently", func(t *testing.T) {
 		t.Parallel()
 		scheme := newProvisioningScheme(t)
-		check := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-rb-ok", Namespace: "default", UID: "check-uid"}}
+		check := &fathomv1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-rb-ok", Namespace: "default", UID: "check-uid"}}
 		name := nodeHealthAgentResourceName(check)
 		labels := nodeHealthAgentLabels(check)
 		owner := metav1.OwnerReference{
-			APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+			APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 			Name: check.Name, UID: check.UID, Controller: ptr.To(true), BlockOwnerDeletion: ptr.To(true),
 		}
 		sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: check.Namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{owner}}}
@@ -667,12 +667,12 @@ func TestNodeHealthRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			t.Parallel()
 			scheme := newProvisioningScheme(t)
 			lastRun := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-			check := &fathomv1alpha1.NodeHealthCheck{
+			check := &fathomv1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "nh-rbac-migration", Namespace: "default", UID: "check-uid", Generation: 2},
-				Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{
-					Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet",
+				Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{
+					Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet",
 				}}},
-				Status: fathomv1alpha1.NodeHealthCheckStatus{
+				Status: fathomv1.NodeHealthCheckStatus{
 					ObservedGeneration: 1, LastRunTime: &lastRun, LastResult: "Pass", LastReportName: "previous-report", Summary: "1 of 1 node(s) passed",
 					Conditions: []metav1.Condition{
 						{Type: nodeHealthConditionReady, Status: metav1.ConditionTrue, Reason: "Reporting", ObservedGeneration: 1, LastTransitionTime: lastRun},
@@ -683,7 +683,7 @@ func TestNodeHealthRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			}
 			agentName := nodeHealthAgentResourceName(check)
 			owner := metav1.OwnerReference{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}
 			ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: check.Namespace, UID: "ds-uid", OwnerReferences: []metav1.OwnerReference{owner}}}
@@ -703,7 +703,7 @@ func TestNodeHealthRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			deleteErr := errors.New("DaemonSet delete denied")
 			var bindingUpdates, deleteAttempts int
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, role, binding).
-				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
 						if _, ok := obj.(*rbacv1.RoleBinding); ok {
@@ -744,7 +744,7 @@ func TestNodeHealthRBACMigrationFailureRevokesExistingAgent(t *testing.T) {
 			if !tc.daemonSetExists && !apierrors.IsNotFound(dsErr) {
 				t.Fatalf("successful delete left DaemonSet behind: %v", dsErr)
 			}
-			persisted := &fathomv1alpha1.NodeHealthCheck{}
+			persisted := &fathomv1.NodeHealthCheck{}
 			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 				t.Fatal(err)
 			}
@@ -784,8 +784,8 @@ func TestNodeHealthEvaluationIgnoresDepartedNodes(t *testing.T) {
 			}
 			return c.Get(ctx, key, obj, opts...)
 		}}).Build()
-	check := &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{{
-		Type: fathomv1alpha1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"},
+	check := &fathomv1.NodeHealthCheck{Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{{
+		Type: fathomv1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"},
 	}}}}
 	reports := []nodehealth.NodeReport{{Node: "node-departed"}, {Node: "node-live"}}
 
@@ -812,7 +812,7 @@ func TestNodeHealthExpectedAgentNodesIgnoresTerminatingPods(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	check := &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-scope", Namespace: "default"}}
+	check := &fathomv1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-scope", Namespace: "default"}}
 	ds := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: check.Namespace, UID: "daemonset-uid"}}
 	controlled := func(name, node string) *corev1.Pod {
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -867,20 +867,20 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 			scheme := newProvisioningScheme(t)
 			lastRun := metav1.NewTime(time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC))
 			resultObservedAt := metav1.NewTime(lastRun.Add(-time.Minute))
-			check := &fathomv1alpha1.NodeHealthCheck{
+			check := &fathomv1.NodeHealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "nh-evaluation-error", Namespace: "default", UID: "check-uid", Generation: 2},
-				Spec: fathomv1alpha1.NodeHealthCheckSpec{Checks: []fathomv1alpha1.NodeHealthCheckItem{
-					{Type: fathomv1alpha1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
-					{Type: fathomv1alpha1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"}},
+				Spec: fathomv1.NodeHealthCheckSpec{Checks: []fathomv1.NodeHealthCheckItem{
+					{Type: fathomv1.NodeHealthCheckDiskHeadroom, Path: "/var/lib/kubelet"},
+					{Type: fathomv1.NodeHealthCheckNodeCondition, Conditions: []string{"Ready"}},
 				}},
-				Status: fathomv1alpha1.NodeHealthCheckStatus{
+				Status: fathomv1.NodeHealthCheckStatus{
 					ObservedGeneration: 1,
 					LastRunTime:        &lastRun,
-					LastResult:         string(fathomv1alpha1.HealthReportResultPass),
+					LastResult:         string(fathomv1.HealthReportResultPass),
 					Summary:            "1 of 1 node(s) passed",
 					LastReportName:     "nh-evaluation-error-previous",
-					NodeResults: []fathomv1alpha1.NodeHealthNodeResult{{
-						Node: "node-live", Result: string(fathomv1alpha1.HealthReportResultPass), ObservedAt: &resultObservedAt,
+					NodeResults: []fathomv1.NodeHealthNodeResult{{
+						Node: "node-live", Result: string(fathomv1.HealthReportResultPass), ObservedAt: &resultObservedAt,
 					}},
 					DesiredNodes: 1, ReportingNodes: 1,
 					Conditions: []metav1.Condition{
@@ -898,7 +898,7 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 			ds.Generation = 1
 			ds.CreationTimestamp = lastRun
 			ds.OwnerReferences = []metav1.OwnerReference{{
-				APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: nodeHealthKind,
+				APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind,
 				Name: check.Name, UID: check.UID, Controller: ptr.To(true),
 			}}
 			ds.Annotations = map[string]string{nodeAgentSpecHashAnnotation: nodeAgentSpecHash(ds)}
@@ -942,7 +942,7 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 
 			injected := errors.New("injected " + tt.stage + " failure")
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check, ds, pod, cm, node).
-				WithStatusSubresource(&fathomv1alpha1.NodeHealthCheck{}).
+				WithStatusSubresource(&fathomv1.NodeHealthCheck{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 						switch list.(type) {
@@ -967,7 +967,7 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 					},
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						if tt.stage == "healthreport" {
-							if _, ok := obj.(*fathomv1alpha1.HealthReport); ok {
+							if _, ok := obj.(*fathomv1.HealthReport); ok {
 								return injected
 							}
 						}
@@ -996,7 +996,7 @@ func TestNodeHealthEvaluationFailuresPersistStatus(t *testing.T) {
 				t.Fatalf("failed reconcile left %d filesystem series, want none", got)
 			}
 
-			persisted := &fathomv1alpha1.NodeHealthCheck{}
+			persisted := &fathomv1.NodeHealthCheck{}
 			if err := cl.Get(context.Background(), client.ObjectKeyFromObject(check), persisted); err != nil {
 				t.Fatal(err)
 			}

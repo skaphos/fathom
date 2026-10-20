@@ -4,7 +4,8 @@
 # Configuration for elastic/crd-ref-docs. Drives the generated CRD API
 # reference at docs/reference/api.md (regenerated via `task docs:api-ref`).
 # Field descriptions come from the doc comments on the Go types in
-# api/v1alpha1 — keep those comments accurate, they double as CRD descriptions.
+# api/v1 and api/v1alpha1 — keep those comments accurate, they double as CRD
+# descriptions.
 
 processor:
   # Status is part of the documented contract for these CRDs (consumers read

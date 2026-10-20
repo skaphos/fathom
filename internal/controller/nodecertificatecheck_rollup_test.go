@@ -11,7 +11,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // TestDecideNodeCertRollup pins the transition-only contract (#157): a new
@@ -32,43 +32,43 @@ func TestDecideNodeCertRollup(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		status    fathomv1alpha1.NodeCertificateCheckStatus
+		status    fathomv1.NodeCertificateCheckStatus
 		aggregate string
 		want      nodeCertRollupDecision
 	}{
 		{
 			name:      "first roll-up with no prior report persists",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{},
+			status:    fathomv1.NodeCertificateCheckStatus{},
 			aggregate: "Pass",
 			want:      rollupPersist,
 		},
 		{
 			name:      "prior report but nil LastRunTime persists",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass"},
+			status:    fathomv1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass"},
 			aggregate: "Pass",
 			want:      rollupPersist,
 		},
 		{
 			name:      "result transition persists immediately, not throttled by interval",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(0)},
+			status:    fathomv1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(0)},
 			aggregate: "Fail",
 			want:      rollupPersist,
 		},
 		{
 			name:      "unchanged result within the interval is a no-op",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-30 * time.Minute)},
+			status:    fathomv1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-30 * time.Minute)},
 			aggregate: "Pass",
 			want:      rollupNoop,
 		},
 		{
 			name:      "unchanged result at the interval boundary refreshes liveness",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-interval)},
+			status:    fathomv1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-interval)},
 			aggregate: "Pass",
 			want:      rollupRefreshLiveness,
 		},
 		{
 			name:      "unchanged result past the interval refreshes liveness only",
-			status:    fathomv1alpha1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-2 * time.Hour)},
+			status:    fathomv1.NodeCertificateCheckStatus{LastReportName: "r1", LastResult: "Pass", LastRunTime: at(-2 * time.Hour)},
 			aggregate: "Pass",
 			want:      rollupRefreshLiveness,
 		},

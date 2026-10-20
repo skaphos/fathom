@@ -24,7 +24,7 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/probe"
 )
 
@@ -120,8 +120,8 @@ func newDNSNamespace(ctx context.Context) string {
 	return name
 }
 
-func createDNSCheck(ctx context.Context, ns, name string, spec fathomv1alpha1.DNSCheckSpec) *fathomv1alpha1.DNSCheck {
-	check := &fathomv1alpha1.DNSCheck{
+func createDNSCheck(ctx context.Context, ns, name string, spec fathomv1.DNSCheckSpec) *fathomv1.DNSCheck {
+	check := &fathomv1.DNSCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec:       spec,
 	}
@@ -129,13 +129,13 @@ func createDNSCheck(ctx context.Context, ns, name string, spec fathomv1alpha1.DN
 	return check
 }
 
-func reloadDNSCheck(ctx context.Context, check *fathomv1alpha1.DNSCheck) *fathomv1alpha1.DNSCheck {
-	loaded := &fathomv1alpha1.DNSCheck{}
+func reloadDNSCheck(ctx context.Context, check *fathomv1.DNSCheck) *fathomv1.DNSCheck {
+	loaded := &fathomv1.DNSCheck{}
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: check.Namespace, Name: check.Name}, loaded)).To(Succeed())
 	return loaded
 }
 
-func reconcileDNSCheck(ctx context.Context, r *DNSCheckReconciler, check *fathomv1alpha1.DNSCheck) reconcile.Result {
+func reconcileDNSCheck(ctx context.Context, r *DNSCheckReconciler, check *fathomv1.DNSCheck) reconcile.Result {
 	result, err := r.Reconcile(ctx, reconcile.Request{
 		NamespacedName: types.NamespacedName{Namespace: check.Namespace, Name: check.Name},
 	})
@@ -170,13 +170,13 @@ func dnsTargetGauge(ns, check string) map[string]float64 {
 }
 
 // dnsHealthReports lists the history records one check has produced.
-func dnsHealthReports(ctx context.Context, ns, check string) []fathomv1alpha1.HealthReport {
-	var reports fathomv1alpha1.HealthReportList
+func dnsHealthReports(ctx context.Context, ns, check string) []fathomv1.HealthReport {
+	var reports fathomv1.HealthReportList
 	Expect(k8sClient.List(ctx, &reports,
 		client.InNamespace(ns),
 		client.MatchingLabels{
-			fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
-			fathomv1alpha1.LabelHealthReportSourceName: check,
+			fathomv1.LabelHealthReportSourceKind: dnsCheckKind,
+			fathomv1.LabelHealthReportSourceName: check,
 		},
 	)).To(Succeed())
 	return reports.Items
@@ -211,7 +211,7 @@ func checkResultGauge(kind, ns, name string) map[string]float64 {
 // Events contract is shared across every check kind, so its helper is too.
 
 // targetResultFor finds one pair's reported result by its identity triple.
-func targetResultFor(status fathomv1alpha1.DNSCheckStatus, name, recordType, resolver string) *fathomv1alpha1.DNSTargetResult {
+func targetResultFor(status fathomv1.DNSCheckStatus, name, recordType, resolver string) *fathomv1.DNSTargetResult {
 	for i := range status.TargetResults {
 		r := status.TargetResults[i]
 		if r.Name == name && string(r.RecordType) == recordType && r.Resolver == resolver {
@@ -230,10 +230,10 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T015 / US1
 	It("reports a verdict, pair count, and generation after one run", func() {
-		check := createDNSCheck(ctx, ns, "basic", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "basic", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "a.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "b.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -241,7 +241,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, check)
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultPass)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultPass)))
 		Expect(got.ObservedTargets).To(BeEquivalentTo(2))
 		Expect(got.ObservedGeneration).To(Equal(check.Generation))
 		Expect(got.LastRunTime).NotTo(BeNil())
@@ -252,8 +252,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T015 / US1 — the requeue is anchored to run start, not completion.
 	It("requeues on the declared cadence", func() {
-		check := createDNSCheck(ctx, ns, "cadence", fathomv1alpha1.DNSCheckSpec{
-			Targets:  []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "cadence", fathomv1.DNSCheckSpec{
+			Targets:  []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
 			Interval: &metav1.Duration{Duration: time.Minute},
 			Timeout:  &metav1.Duration{Duration: 10 * time.Second},
 		})
@@ -269,10 +269,10 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// T016 / US1 — FR-025: a resolver's negative answer is the check's finding,
 	// not an operator-side fault.
 	It("folds an unresolvable target to Fail, not Error", func() {
-		check := createDNSCheck(ctx, ns, "mixed", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "good.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "bad.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "mixed", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "good.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "bad.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -286,7 +286,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, check)
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultFail)))
 		Expect(targetResultFor(got, "good.example.com", "A", "cluster").Result).To(Equal("Pass"))
 		Expect(targetResultFor(got, "bad.example.com", "A", "cluster").Result).To(Equal("Fail"))
 	})
@@ -295,12 +295,12 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// "absence cannot be proven" when a resolver does not answer under an absent
 	// assertion; the controller must not launder that into a Pass.
 	It("never lets an unreachable resolver satisfy a negative assertion", func() {
-		check := createDNSCheck(ctx, ns, "absent-unreachable", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "retired.example.com", RecordType: fathomv1alpha1.DNSRecordA, Absent: true},
+		check := createDNSCheck(ctx, ns, "absent-unreachable", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "retired.example.com", RecordType: fathomv1.DNSRecordA, Absent: true},
 			},
-			Resolvers: []fathomv1alpha1.DNSResolver{
-				{Name: "upstream", From: fathomv1alpha1.DNSResolverExplicit, Address: "10.255.255.1:53"},
+			Resolvers: []fathomv1.DNSResolver{
+				{Name: "upstream", From: fathomv1.DNSResolverExplicit, Address: "10.255.255.1:53"},
 			},
 		})
 
@@ -314,16 +314,16 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, check)
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).NotTo(Equal(string(fathomv1alpha1.HealthReportResultPass)),
+		Expect(got.LastResult).NotTo(Equal(string(fathomv1.HealthReportResultPass)),
 			"an unreachable resolver must never read as a satisfied absence assertion (FR-014)")
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultError)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultError)))
 		Expect(targetResultFor(got, "retired.example.com", "A", "upstream").Result).To(Equal("Error"))
 	})
 
 	// T018 / US1
 	It("reflects a spec edit on the next run and advances observedGeneration", func() {
-		check := createDNSCheck(ctx, ns, "edited", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "edited", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 
 		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
@@ -332,7 +332,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 		edited := reloadDNSCheck(ctx, check)
 		edited.Spec.Targets = append(edited.Spec.Targets,
-			fathomv1alpha1.DNSTarget{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA})
+			fathomv1.DNSTarget{Name: "b.example.com", RecordType: fathomv1.DNSRecordA})
 		Expect(k8sClient.Update(ctx, edited)).To(Succeed())
 
 		reconcileDNSCheck(ctx, r, edited)
@@ -343,14 +343,14 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T019 / US1 — FR-035: the fan-out is over pairs, each evaluated once.
 	It("evaluates every (target, vantage point) pair exactly once", func() {
-		check := createDNSCheck(ctx, ns, "fanout", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "fanout", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "a.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "b.example.com", RecordType: fathomv1.DNSRecordA},
 			},
-			Resolvers: []fathomv1alpha1.DNSResolver{
-				{Name: "cluster-dns", From: fathomv1alpha1.DNSResolverCluster},
-				{Name: "node-dns", From: fathomv1alpha1.DNSResolverNode},
+			Resolvers: []fathomv1.DNSResolver{
+				{Name: "cluster-dns", From: fathomv1.DNSResolverCluster},
+				{Name: "node-dns", From: fathomv1.DNSResolverNode},
 			},
 		})
 
@@ -373,13 +373,13 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// T020 / US1 — FR-103a. Without a peak-concurrency assertion a cap that is
 	// silently ignored passes every other spec in this file.
 	It("never exceeds the configured in-flight probe cap", func() {
-		spec := fathomv1alpha1.DNSCheckSpec{
+		spec := fathomv1.DNSCheckSpec{
 			Interval: &metav1.Duration{Duration: time.Minute},
 			Timeout:  &metav1.Duration{Duration: 50 * time.Second},
 		}
 		for i := range 12 {
-			spec.Targets = append(spec.Targets, fathomv1alpha1.DNSTarget{
-				Name: fmt.Sprintf("n%02d.example.com", i), RecordType: fathomv1alpha1.DNSRecordA,
+			spec.Targets = append(spec.Targets, fathomv1.DNSTarget{
+				Name: fmt.Sprintf("n%02d.example.com", i), RecordType: fathomv1.DNSRecordA,
 			})
 		}
 		check := createDNSCheck(ctx, ns, "capped", spec)
@@ -397,11 +397,11 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T021 / US1 — FR-103b: fault isolation between pairs.
 	It("isolates a launch failure to its own pair", func() {
-		check := createDNSCheck(ctx, ns, "isolated", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "ok-1.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "doomed.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "ok-2.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "isolated", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "ok-1.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "doomed.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "ok-2.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -419,17 +419,17 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(targetResultFor(got, "doomed.example.com", "A", "cluster").Result).To(Equal("Error"))
 		Expect(targetResultFor(got, "ok-1.example.com", "A", "cluster").Result).To(Equal("Pass"))
 		Expect(targetResultFor(got, "ok-2.example.com", "A", "cluster").Result).To(Equal("Pass"))
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultError)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultError)))
 	})
 
 	// T028 / US2 — SC-104: the failing name is identifiable from the resource
 	// and the metrics alone, with no log reading.
 	It("identifies the single failing target in both status and metrics", func() {
-		check := createDNSCheck(ctx, ns, "pinpoint", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "healthy.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "broken.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "also-healthy.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "pinpoint", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "healthy.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "broken.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "also-healthy.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -470,10 +470,10 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// lookup, so the two timings are recorded apart and never substituted.
 	It("reports the probe-measured lookup time as latency and pod lifecycle as runMillis", func() {
 		const podLifecycle = 250 * time.Millisecond
-		check := createDNSCheck(ctx, ns, "timing", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "measured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "unmeasured.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "timing", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "measured.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "unmeasured.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -520,9 +520,9 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// the run bound (admission, quota, API round-trips), and has no lookup.
 	It("records runMillis without latency for a pair that fails to launch", func() {
 		const launchCost = 150 * time.Millisecond
-		check := createDNSCheck(ctx, ns, "launch-failure", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "rejected.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "launch-failure", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "rejected.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -551,9 +551,9 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// replaced, so no parser change can smuggle wall time back in unnoticed.
 	DescribeTable("omits latency when the probe's figure is invalid",
 		func(checkName, raw string) {
-			check := createDNSCheck(ctx, ns, checkName, fathomv1alpha1.DNSCheckSpec{
-				Targets: []fathomv1alpha1.DNSTarget{
-					{Name: "invalid.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+			check := createDNSCheck(ctx, ns, checkName, fathomv1.DNSCheckSpec{
+				Targets: []fathomv1.DNSTarget{
+					{Name: "invalid.example.com", RecordType: fathomv1.DNSRecordA},
 				},
 			})
 
@@ -587,10 +587,10 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// T029 / US2 — FR-036 and SC-105: a pair the spec no longer declares must
 	// leave both the status and the registry, within one run.
 	It("withdraws a removed target's result and metric series", func() {
-		check := createDNSCheck(ctx, ns, "shrinking", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "keeper.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "doomed.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "shrinking", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "keeper.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "doomed.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -601,8 +601,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 		Expect(targetResultFor(reloadDNSCheck(ctx, check).Status, "doomed.example.com", "A", "cluster")).NotTo(BeNil())
 
 		edited := reloadDNSCheck(ctx, check)
-		edited.Spec.Targets = []fathomv1alpha1.DNSTarget{
-			{Name: "keeper.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		edited.Spec.Targets = []fathomv1.DNSTarget{
+			{Name: "keeper.example.com", RecordType: fathomv1.DNSRecordA},
 		}
 		Expect(k8sClient.Update(ctx, edited)).To(Succeed())
 		reconcileDNSCheck(ctx, r, edited)
@@ -623,9 +623,9 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// T030 / US2 — FR-021. Without the polarity a deliberate "this name must be
 	// gone" failure gets triaged as a DNS outage.
 	It("names assertion polarity in a negative-assertion failure summary", func() {
-		check := createDNSCheck(ctx, ns, "polarity", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "decommissioned.example.com", RecordType: fathomv1alpha1.DNSRecordA, Absent: true},
+		check := createDNSCheck(ctx, ns, "polarity", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "decommissioned.example.com", RecordType: fathomv1.DNSRecordA, Absent: true},
 			},
 		})
 
@@ -636,7 +636,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, check)
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultFail)))
 		Expect(got.Summary).To(ContainSubstring("asserted absent but resolved"))
 		Expect(got.Summary).To(ContainSubstring("decommissioned.example.com"))
 	})
@@ -646,12 +646,12 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// degrade to Unknown rather than reporting the two passes as green, and the
 	// Complete condition must name how many were missed.
 	It("degrades to Unknown and reports the unreached count when a run truncates", func() {
-		check := createDNSCheck(ctx, ns, "truncated", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "fast-1.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "fast-2.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "slow-1.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "slow-2.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "truncated", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "fast-1.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "fast-2.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "slow-1.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "slow-2.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 			Interval: &metav1.Duration{Duration: 10 * time.Second},
 			Timeout:  &metav1.Duration{Duration: time.Second},
@@ -668,7 +668,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, check)
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultUnknown)),
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultUnknown)),
 			"a truncated run must not report the pairs it did reach as the whole story")
 		Expect(targetResultFor(got, "fast-1.example.com", "A", "cluster").Result).To(Equal("Pass"))
 		slow := targetResultFor(got, "slow-1.example.com", "A", "cluster")
@@ -694,8 +694,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T036 / US3 — FR-111, SC-103. History records transitions, not runs.
 	It("writes one HealthReport for a stable verdict while lastRunTime keeps advancing", func() {
-		check := createDNSCheck(ctx, ns, "stable", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "steady.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "stable", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "steady.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 
 		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)
@@ -718,8 +718,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T037 / US3 — one record and one event per transition.
 	It("writes exactly one HealthReport and one event per verdict change", func() {
-		check := createDNSCheck(ctx, ns, "changing", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "flappy.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "changing", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "flappy.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 
 		var failing bool
@@ -741,7 +741,7 @@ var _ = Describe("DNSCheckReconciler", func() {
 		reconcileDNSCheck(ctx, r, reloadDNSCheck(ctx, check))
 
 		got := reloadDNSCheck(ctx, check).Status
-		Expect(got.LastResult).To(Equal(string(fathomv1alpha1.HealthReportResultFail)))
+		Expect(got.LastResult).To(Equal(string(fathomv1.HealthReportResultFail)))
 		Expect(dnsHealthReports(ctx, ns, "changing")).To(HaveLen(2))
 		Expect(got.LastReportName).NotTo(Equal(passReport))
 
@@ -752,8 +752,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// T036 / US3 — history is bounded by the declared limit.
 	It("prunes HealthReport history to spec.historyLimit", func() {
 		limit := int32(2)
-		check := createDNSCheck(ctx, ns, "bounded", fathomv1alpha1.DNSCheckSpec{
-			Targets:      []fathomv1alpha1.DNSTarget{{Name: "churn.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "bounded", fathomv1.DNSCheckSpec{
+			Targets:      []fathomv1.DNSTarget{{Name: "churn.example.com", RecordType: fathomv1.DNSRecordA}},
 			HistoryLimit: &limit,
 		})
 
@@ -779,10 +779,10 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// the check that caused it, and it is legal only because FR-031 puts the pod
 	// in the check's own namespace.
 	It("owns every probe pod it launches, in the check's own namespace", func() {
-		check := createDNSCheck(ctx, ns, "owned", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{
-				{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA},
-				{Name: "b.example.com", RecordType: fathomv1alpha1.DNSRecordA},
+		check := createDNSCheck(ctx, ns, "owned", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{
+				{Name: "a.example.com", RecordType: fathomv1.DNSRecordA},
+				{Name: "b.example.com", RecordType: fathomv1.DNSRecordA},
 			},
 		})
 
@@ -817,8 +817,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 	// by a crashed operator, which would surface as AlreadyExists on every run
 	// until the sweeper's minimum age elapsed.
 	It("gives each run distinct probe pod names", func() {
-		check := createDNSCheck(ctx, ns, "distinct", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "distinct", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 
 		launcher := &fakeDNSLauncher{}
@@ -834,8 +834,8 @@ var _ = Describe("DNSCheckReconciler", func() {
 
 	// T041 / US4 — FR-114. A deleted check must stop asserting anything.
 	It("withdraws every metric series when the check is gone", func() {
-		check := createDNSCheck(ctx, ns, "vanishing", fathomv1alpha1.DNSCheckSpec{
-			Targets: []fathomv1alpha1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1alpha1.DNSRecordA}},
+		check := createDNSCheck(ctx, ns, "vanishing", fathomv1.DNSCheckSpec{
+			Targets: []fathomv1.DNSTarget{{Name: "a.example.com", RecordType: fathomv1.DNSRecordA}},
 		})
 
 		r := newDNSCheckReconciler(&fakeDNSLauncher{}, 4)

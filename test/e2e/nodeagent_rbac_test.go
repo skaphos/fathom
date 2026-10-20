@@ -123,7 +123,7 @@ metadata:
   labels:
     fathom.skaphos.io/managed-by: fathom
   ownerReferences:
-  - apiVersion: fathom.skaphos.io/v1alpha1
+  - apiVersion: fathom.skaphos.io/v1
     kind: %s
     name: %s
     uid: %s

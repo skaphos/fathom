@@ -36,7 +36,7 @@ var _ = Describe("ClusterHealth staleness", Ordered, Label(utils.CoreLabel), fun
 		aggregate   = "staleness-aggregate-e2e"
 	)
 
-	manifest := `apiVersion: fathom.skaphos.io/v1alpha1
+	manifest := `apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: ` + liveTarget + `
@@ -45,17 +45,19 @@ spec:
   addonType: coredns
   interval: 1m
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: ` + staleTarget + `
   namespace: ` + ns + `
 spec:
-  addonType: coredns
+  # No adapter claims this addonType, so the check deterministically never
+  # runs (MissingAdapter) and never produces an observation; this is what
+  # spec.paused used to provide before delete became the only stop.
+  addonType: never-runs
   interval: 30m
-  paused: true
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: ` + liveWrap + `
@@ -67,7 +69,7 @@ spec:
     kind: AddonCheck
     name: ` + liveTarget + `
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: ` + staleWrap + `
@@ -79,7 +81,7 @@ spec:
     kind: AddonCheck
     name: ` + staleTarget + `
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: ` + aggregate + `
@@ -138,7 +140,7 @@ spec:
 	})
 
 	It("reports no aggregate observation when one contributor has never run", func() {
-		// The paused source deterministically never runs, while its live sibling
+		// The adapterless source deterministically never runs, while its live sibling
 		// does. The old newest-wins fold would publish the live timestamp; the
 		// stalest-wins contract must publish no timestamp at all.
 		Eventually(func(g Gomega) {

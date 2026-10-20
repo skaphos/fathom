@@ -20,7 +20,7 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/metrics"
 )
 
@@ -89,7 +89,7 @@ func readyCondition(status metav1.ConditionStatus, reason, message string) metav
 }
 
 func testCheckObject(name string) client.Object {
-	return &fathomv1alpha1.HealthCheck{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"}}
+	return &fathomv1.HealthCheck{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"}}
 }
 
 func TestObserveCheckFirstResultTransitionsFromUnknown(t *testing.T) {
@@ -98,7 +98,7 @@ func TestObserveCheckFirstResultTransitionsFromUnknown(t *testing.T) {
 	now := metav1.Now()
 
 	observeCheck(rec, testCheckObject("first"), "HealthCheck",
-		"", fathomv1alpha1.HealthReportResultPass, nil, nil, &now, 0, nil)
+		"", fathomv1.HealthReportResultPass, nil, nil, &now, 0, nil)
 
 	events := drainEvents(rec)
 	if len(events) != 1 {
@@ -116,7 +116,7 @@ func TestObserveCheckDegradationIsWarning(t *testing.T) {
 	rec := events.NewFakeRecorder(10)
 
 	observeCheck(rec, testCheckObject("degrade"), "HealthCheck",
-		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultFail, nil, nil, nil, 0, nil)
+		fathomv1.HealthReportResultPass, fathomv1.HealthReportResultFail, nil, nil, nil, 0, nil)
 
 	events := drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning ResultChanged check result changed from Pass to Fail" {
@@ -130,7 +130,7 @@ func TestObserveCheckNoChangeIsSilent(t *testing.T) {
 	// A restart re-observation: previous result comes from status, so an
 	// unchanged result — even with a fresh reconciler process — emits nothing.
 	observeCheck(rec, testCheckObject("steady"), "HealthCheck",
-		fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.HealthReportResultPass, nil, nil, nil, 0, nil)
+		fathomv1.HealthReportResultPass, fathomv1.HealthReportResultPass, nil, nil, nil, 0, nil)
 
 	if events := drainEvents(rec); len(events) != 0 {
 		t.Errorf("no-change observation emitted events: %v", events)
@@ -143,7 +143,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 
 	// Newly failing: one Warning with the condition's reason.
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, nil, failing, nil, 0, nil)
+		fathomv1.HealthReportResultError, fathomv1.HealthReportResultError, nil, failing, nil, 0, nil)
 	events := drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning AdapterRunFailed boom" {
 		t.Fatalf("unexpected events: %v", events)
@@ -151,7 +151,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 
 	// Same failure next reconcile: silent (single event per failure episode).
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, failing, nil, 0, nil)
+		fathomv1.HealthReportResultError, fathomv1.HealthReportResultError, failing, failing, nil, 0, nil)
 	if events := drainEvents(rec); len(events) != 0 {
 		t.Errorf("persistent failure re-emitted: %v", events)
 	}
@@ -159,7 +159,7 @@ func TestObserveCheckReadyFailureEmitsOncePerEpisode(t *testing.T) {
 	// Reason change: a new episode, one new event.
 	probeFailing := []metav1.Condition{readyCondition(metav1.ConditionFalse, "ProbeLaunchFailed", "no image")}
 	observeCheck(rec, testCheckObject("fail-once"), "AddonCheck",
-		fathomv1alpha1.HealthReportResultError, fathomv1alpha1.HealthReportResultError, failing, probeFailing, nil, 0, nil)
+		fathomv1.HealthReportResultError, fathomv1.HealthReportResultError, failing, probeFailing, nil, 0, nil)
 	events = drainEvents(rec)
 	if len(events) != 1 || events[0] != "Warning ProbeLaunchFailed no image" {
 		t.Errorf("unexpected events: %v", events)
@@ -194,7 +194,7 @@ func TestObserveCheckNilRecorderStillMirrorsGauges(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 
 	observeCheck(nil, testCheckObject("no-rec"), "HealthCheck",
-		"", fathomv1alpha1.HealthReportResultWarn, nil, nil, &now, 0, nil)
+		"", fathomv1.HealthReportResultWarn, nil, nil, &now, 0, nil)
 
 	if v, ok := checkGaugeValue(t, "HealthCheck", "no-rec", "default", "Warn"); !ok || v != 1 {
 		t.Errorf("gauge Warn = %v (found=%v), want 1", v, ok)
@@ -220,15 +220,15 @@ var _ = Describe("Check observability wiring", func() {
 
 	It("HealthCheck: mirrors gauges, stamps freshness, emits the first-result event, and clears series on deletion", func() {
 		runTime := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
-		createAddonCheckWithStatusForObservability(ctx, "obs-target", fathomv1alpha1.AddonCheckStatus{
+		createAddonCheckWithStatusForObservability(ctx, "obs-target", fathomv1.AddonCheckStatus{
 			LastResult:     "Pass",
 			LastRunTime:    &runTime,
 			LastReportName: "obs-target-report",
 		})
-		hc := &fathomv1alpha1.HealthCheck{
+		hc := &fathomv1.HealthCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "obs-hc", Namespace: "default"},
-			Spec: fathomv1alpha1.HealthCheckSpec{
-				CheckRef: fathomv1alpha1.CheckTargetRef{Kind: "AddonCheck", Name: "obs-target"},
+			Spec: fathomv1.HealthCheckSpec{
+				CheckRef: fathomv1.CheckTargetRef{Kind: "AddonCheck", Name: "obs-target"},
 			},
 		}
 		Expect(k8sClient.Create(ctx, hc)).To(Succeed())
@@ -254,9 +254,9 @@ var _ = Describe("Check observability wiring", func() {
 	})
 
 	It("AddonCheck: discovery emits the Unknown/0 sentinels and a Ready failure surfaces as a Warning event", func() {
-		check := &fathomv1alpha1.AddonCheck{
+		check := &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "obs-ac", Namespace: "default"},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
 		DeferCleanup(func() {
@@ -282,7 +282,7 @@ var _ = Describe("Check observability wiring", func() {
 	})
 
 	It("ClusterHealth: cluster-scoped series carry an empty namespace label and vanish on deletion", func() {
-		ch := &fathomv1alpha1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: "obs-ch"}}
+		ch := &fathomv1.ClusterHealth{ObjectMeta: metav1.ObjectMeta{Name: "obs-ch"}}
 		Expect(k8sClient.Create(ctx, ch)).To(Succeed())
 
 		r := &ClusterHealthReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
@@ -300,7 +300,7 @@ var _ = Describe("Check observability wiring", func() {
 	})
 
 	It("NodeCertificateCheck: discovery emits the sentinels and deletion clears the series", func() {
-		check := &fathomv1alpha1.NodeCertificateCheck{
+		check := &fathomv1.NodeCertificateCheck{
 			ObjectMeta: metav1.ObjectMeta{Name: "obs-ncc", Namespace: "default"},
 		}
 		Expect(k8sClient.Create(ctx, check)).To(Succeed())
@@ -324,11 +324,11 @@ var _ = Describe("Check observability wiring", func() {
 
 // createAddonCheckWithStatusForObservability mirrors the helper in
 // healthcheck_controller_test.go without capturing its closure scope.
-func createAddonCheckWithStatusForObservability(ctx context.Context, name string, status fathomv1alpha1.AddonCheckStatus) {
+func createAddonCheckWithStatusForObservability(ctx context.Context, name string, status fathomv1.AddonCheckStatus) {
 	GinkgoHelper()
-	ac := &fathomv1alpha1.AddonCheck{
+	ac := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-		Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "cert-manager"},
+		Spec:       fathomv1.AddonCheckSpec{AddonType: "cert-manager"},
 	}
 	Expect(k8sClient.Create(ctx, ac)).To(Succeed())
 	DeferCleanup(func() {

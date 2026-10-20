@@ -13,7 +13,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // historyLimit resolves a check's spec.historyLimit, falling back to the CRD
@@ -53,7 +53,7 @@ func pruneHealthReports(
 		return 0
 	}
 
-	var reports fathomv1alpha1.HealthReportList
+	var reports fathomv1.HealthReportList
 	if err := c.List(ctx, &reports, client.InNamespace(namespace), client.MatchingLabels(labels)); err != nil {
 		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
 		return 0
@@ -81,7 +81,7 @@ func pruneHealthReports(
 
 // olderHealthReport reports whether left should be pruned before right. The
 // protected report always sorts last.
-func olderHealthReport(left, right *fathomv1alpha1.HealthReport, protectedName string) bool {
+func olderHealthReport(left, right *fathomv1.HealthReport, protectedName string) bool {
 	if left.Name == protectedName {
 		return false
 	}

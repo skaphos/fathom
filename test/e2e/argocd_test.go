@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	argocdSamplePath = "config/samples/fathom_v1alpha1_addoncheck_argocd.yaml"
+	argocdSamplePath = "config/samples/fathom_v1_addoncheck_argocd.yaml"
 	argocdSampleName = "argocd-sample"
 	argocdSampleNS   = "default"
 	argocdAddonNS    = "argocd"

@@ -1,0 +1,55 @@
+/*
+SPDX-FileCopyrightText: 2026 Rillan AI LLC
+SPDX-License-Identifier: MIT
+*/
+
+package v1
+
+import "time"
+
+// Default cadences applied when a check's spec.interval or spec.timeout is
+// unset. They live in the API package rather than the controllers so that
+// clients (fathomctl) computing "next run" and "how long to wait" use the
+// same values the controllers schedule with. The CRD field documentation
+// quotes these numbers; the controllers apply them at runtime rather than as
+// CRD defaults because a stored object may predate them.
+const (
+	// DefaultAddonCheckInterval is the cadence at which an AddonCheck's adapter
+	// re-runs when Spec.Interval is unset. Periodic re-execution is what keeps
+	// a HealthReport current: without it a check runs once and its result goes
+	// stale the moment the underlying addon degrades.
+	DefaultAddonCheckInterval = 5 * time.Minute
+	// DefaultAddonCheckTimeout bounds one adapter run when Spec.Timeout is
+	// unset.
+	DefaultAddonCheckTimeout = 30 * time.Second
+
+	// DefaultDNSCheckInterval is the cadence at which a DNSCheck re-evaluates
+	// its targets when Spec.Interval is unset.
+	DefaultDNSCheckInterval = time.Minute
+	// DefaultDNSCheckTimeout bounds one whole DNSCheck run (every pair, not
+	// each pair) when Spec.Timeout is unset.
+	DefaultDNSCheckTimeout = 10 * time.Second
+
+	// DefaultNodeCertificateCheckInterval is the node-agent re-scan cadence
+	// and the operator's rollup cadence when Spec.Interval is unset.
+	DefaultNodeCertificateCheckInterval = time.Hour
+	// DefaultNodeCertificateCheckTimeout bounds a node-agent scan when
+	// Spec.Timeout is unset.
+	DefaultNodeCertificateCheckTimeout = 30 * time.Second
+
+	// DefaultNodeHealthCheckInterval is the node-agent re-evaluation cadence
+	// and the operator's rollup cadence for a NodeHealthCheck when
+	// Spec.Interval is unset. Shorter than the certificate scan: headroom,
+	// kubelet, and runtime liveness change on the order of minutes, not days.
+	DefaultNodeHealthCheckInterval = 5 * time.Minute
+	// MaxNodeHealthCheckAgentInterval caps how rarely a NodeHealthCheck agent
+	// re-evaluates its node, whatever spec.interval says: the agent runs at
+	// min(interval, this), and its pass timeout is min(timeout, that cadence).
+	// It lives here so fathomctl computes the same effective timeout the
+	// controller enforces (run --wait) without importing the controller.
+	MaxNodeHealthCheckAgentInterval = 5 * time.Minute
+	// DefaultNodeHealthCheckTimeout bounds one node-agent evaluation pass
+	// (every check, including the kubelet and runtime-socket probes) when
+	// Spec.Timeout is unset.
+	DefaultNodeHealthCheckTimeout = 30 * time.Second
+)

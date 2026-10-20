@@ -112,7 +112,7 @@ func managedObjects() []string {
 
 func applySampleChecks() {
 	root, _ := utils.GetProjectDir()
-	for _, sample := range []string{"fathom_v1alpha1_dnscheck.yaml", "fathom_v1alpha1_nodecertificatecheck.yaml"} {
+	for _, sample := range []string{"fathom_v1_dnscheck.yaml", "fathom_v1_nodecertificatecheck.yaml"} {
 		_, err := kubectl("apply", "-n", lifecycleChecksNS, "-f", filepath.Join(root, "config", "samples", sample))
 		Expect(err).NotTo(HaveOccurred())
 	}

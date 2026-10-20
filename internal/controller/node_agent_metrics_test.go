@@ -11,12 +11,10 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/metrics"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
@@ -83,27 +81,5 @@ func TestNodeDetailMetricsWithdrawAtReconcileEntryWithoutAffectingSiblingCheck(t
 	}
 	if got := testutil.CollectAndCount(metrics.NodeHealthCheckResult); got != len(checkResultValuesForTest) {
 		t.Fatalf("deleted check withdrawal left %d health series, want sibling only", got)
-	}
-}
-
-func TestPausedNodeCertificateCheckWithdrawsDetailMetrics(t *testing.T) {
-	metrics.NodeCertificateExpiryDays.Reset()
-	scheme := newProvisioningScheme(t)
-	check := &fathomv1alpha1.NodeCertificateCheck{
-		ObjectMeta: metav1.ObjectMeta{Name: "paused", Namespace: "tenant-a", UID: "check-uid"},
-		Spec:       fathomv1alpha1.NodeCertificateCheckSpec{Paused: true},
-	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(check).
-		WithStatusSubresource(&fathomv1alpha1.NodeCertificateCheck{}).Build()
-	metrics.ObserveNodeCertificateReport(check.Namespace, check.Name, nodecert.NodeReport{
-		Node: "node-a", Certs: []nodecert.CertResult{{NotAfter: time.Unix(1, 0), DaysRemaining: 3}},
-	})
-
-	r := &NodeCertificateCheckReconciler{Client: cl, Scheme: scheme}
-	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(check)}); err != nil {
-		t.Fatal(err)
-	}
-	if got := testutil.CollectAndCount(metrics.NodeCertificateExpiryDays); got != 0 {
-		t.Fatalf("paused check left %d certificate series, want none", got)
 	}
 }

@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -56,7 +56,7 @@ const (
 	// report is fresh for one full cycle — that cadence plus three effective
 	// timeouts (nodeHealthReportMaxAge) — so a long-interval check still
 	// detects a transition within minutes.
-	maxNodeHealthAgentInterval = fathomv1alpha1.MaxNodeHealthCheckAgentInterval
+	maxNodeHealthAgentInterval = fathomv1.MaxNodeHealthCheckAgentInterval
 
 	// nodeHealthHostMetricsPortMin/Max bound the liveness port an agent binds
 	// when it runs on the host network. Container port 8080 would then bind on
@@ -76,7 +76,7 @@ const (
 
 // nodeHealthAgentResourceName is the shared name of the per-check
 // ServiceAccount, RoleBinding, NetworkPolicy, and DaemonSet.
-func nodeHealthAgentResourceName(check *fathomv1alpha1.NodeHealthCheck) string {
+func nodeHealthAgentResourceName(check *fathomv1.NodeHealthCheck) string {
 	return check.Name + nodeHealthAgentSuffix
 }
 
@@ -84,7 +84,7 @@ func nodeHealthAgentResourceName(check *fathomv1alpha1.NodeHealthCheck) string {
 // The distinct component value (see nodeHealthAgentComponentValue) is what
 // keeps them disjoint from a same-named NodeCertificateCheck's selectors; the
 // kind label is carried as well so the pods are self-describing.
-func nodeHealthAgentSelectorLabels(check *fathomv1alpha1.NodeHealthCheck) map[string]string {
+func nodeHealthAgentSelectorLabels(check *fathomv1.NodeHealthCheck) map[string]string {
 	return map[string]string{
 		nodecert.LabelSourceKind: nodehealth.KindNodeHealthCheck,
 		nodecert.LabelSourceName: check.Name,
@@ -94,29 +94,29 @@ func nodeHealthAgentSelectorLabels(check *fathomv1alpha1.NodeHealthCheck) map[st
 
 // nodeHealthAgentLabels are applied to every operator-managed agent object so
 // they trace back to their check and are discoverable.
-func nodeHealthAgentLabels(check *fathomv1alpha1.NodeHealthCheck) map[string]string {
+func nodeHealthAgentLabels(check *fathomv1.NodeHealthCheck) map[string]string {
 	labels := nodeHealthAgentSelectorLabels(check)
 	labels[nodecert.LabelManagedBy] = nodecert.ManagedByValue
 	return labels
 }
 
-func nodeHealthInterval(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthInterval(check *fathomv1.NodeHealthCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
+		return clampCadence(check.Spec.Interval.Duration, fathomv1.MinCheckInterval)
 	}
-	return fathomv1alpha1.DefaultNodeHealthCheckInterval
+	return fathomv1.DefaultNodeHealthCheckInterval
 }
 
-func nodeHealthTimeout(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthTimeout(check *fathomv1.NodeHealthCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1.MinCheckTimeout)
 	}
-	return fathomv1alpha1.DefaultNodeHealthCheckTimeout
+	return fathomv1.DefaultNodeHealthCheckTimeout
 }
 
 // nodeHealthAgentInterval is the cadence the agent actually re-evaluates at:
 // the spec interval, capped so freshness never scales with a long interval.
-func nodeHealthAgentInterval(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthAgentInterval(check *fathomv1.NodeHealthCheck) time.Duration {
 	return min(nodeHealthInterval(check), maxNodeHealthAgentInterval)
 }
 
@@ -125,14 +125,14 @@ func nodeHealthAgentInterval(check *fathomv1alpha1.NodeHealthCheck) time.Duratio
 // on, and the schema allows timeout == interval, so without this cap a 24h
 // interval with a 24h timeout would stretch the freshness bound to a day —
 // exactly what the capped cadence exists to prevent.
-func nodeHealthAgentTimeout(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthAgentTimeout(check *fathomv1.NodeHealthCheck) time.Duration {
 	return min(nodeHealthTimeout(check), nodeHealthAgentInterval(check))
 }
 
 // nodeHealthRequeueAfter is the periodic reconcile cadence: the capped agent
 // cadence, which is never longer than spec.interval. Reports go stale on that
 // cadence, so that is how often a silent agent failure must be looked for.
-func nodeHealthRequeueAfter(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthRequeueAfter(check *fathomv1.NodeHealthCheck) time.Duration {
 	return nodeHealthAgentInterval(check)
 }
 
@@ -151,7 +151,7 @@ func nodeHealthRequeueAfter(check *fathomv1alpha1.NodeHealthCheck) time.Duration
 // scheduler and API latency is added on top: without it a probe that ran to
 // its deadline could make a healthy check read as stale in the moments before
 // its next report became visible.
-func nodeHealthReportMaxAge(check *fathomv1alpha1.NodeHealthCheck) time.Duration {
+func nodeHealthReportMaxAge(check *fathomv1.NodeHealthCheck) time.Duration {
 	return nodeHealthAgentInterval(check) + 3*nodeHealthAgentTimeout(check) + nodeHealthFreshnessSlack
 }
 
@@ -234,14 +234,14 @@ func nodeHealthClockSkewNotable(observedAt, now time.Time) bool {
 // hence the template hash — are stable across spec reorderings. Items the
 // allowlist refuses are not filtered here; Reconcile rejects the whole spec
 // (rejectedNodeHealthItems) so nothing is ever silently dropped.
-func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.Item {
+func resolveNodeHealthItems(check *fathomv1.NodeHealthCheck) []nodehealth.Item {
 	items := make([]nodehealth.Item, 0, len(check.Spec.Checks))
 	for _, c := range check.Spec.Checks {
 		it := nodehealth.Item{Type: string(c.Type), Path: c.Path}
 		switch c.Type {
-		case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
-			it.WarnPercentFree = fathomv1alpha1.DefaultNodeHealthWarnPercentFree
-			it.CriticalPercentFree = fathomv1alpha1.DefaultNodeHealthCriticalPercentFree
+		case fathomv1.NodeHealthCheckDiskHeadroom, fathomv1.NodeHealthCheckInodeHeadroom:
+			it.WarnPercentFree = fathomv1.DefaultNodeHealthWarnPercentFree
+			it.CriticalPercentFree = fathomv1.DefaultNodeHealthCriticalPercentFree
 			if c.WarnPercentFree != nil {
 				it.WarnPercentFree = *c.WarnPercentFree
 			}
@@ -255,10 +255,10 @@ func resolveNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []nodehealth.
 			if it.CriticalPercentFree > it.WarnPercentFree {
 				it.CriticalPercentFree = it.WarnPercentFree
 			}
-		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
+		case fathomv1.NodeHealthCheckContainerRuntime:
 			it.SocketPath = c.SocketPath
 			if it.SocketPath == "" {
-				it.SocketPath = fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket
+				it.SocketPath = fathomv1.DefaultNodeHealthContainerRuntimeSocket
 			}
 		}
 		items = append(items, it)
@@ -287,9 +287,9 @@ func nodeHealthAgentItems(items []nodehealth.Item) []nodehealth.Item {
 // nodeHealthConditionTypes returns the node condition types the check asserts,
 // or nil when the spec declares no NodeCondition item. Duplicate items cannot
 // exist (admission rejects them), so at most one item contributes.
-func nodeHealthConditionTypes(check *fathomv1alpha1.NodeHealthCheck) []string {
+func nodeHealthConditionTypes(check *fathomv1.NodeHealthCheck) []string {
 	for _, c := range check.Spec.Checks {
-		if c.Type != fathomv1alpha1.NodeHealthCheckNodeCondition {
+		if c.Type != fathomv1.NodeHealthCheckNodeCondition {
 			continue
 		}
 		if len(c.Conditions) > 0 {
@@ -297,7 +297,7 @@ func nodeHealthConditionTypes(check *fathomv1alpha1.NodeHealthCheck) []string {
 			sort.Strings(out)
 			return out
 		}
-		return fathomv1alpha1.DefaultNodeHealthConditions()
+		return fathomv1.DefaultNodeHealthConditions()
 	}
 	return nil
 }
@@ -344,7 +344,7 @@ func nodeHealthSocketPaths(items []nodehealth.Item) []string {
 // so two host-network checks on one node can collide deterministically; the
 // explicit field is the operator's way out, and the AgentPrivileged condition
 // names the port in effect so the collision is diagnosable.
-func nodeHealthHostMetricsPort(check *fathomv1alpha1.NodeHealthCheck) int32 {
+func nodeHealthHostMetricsPort(check *fathomv1.NodeHealthCheck) int32 {
 	if check.Spec.MetricsHostPort != nil {
 		return *check.Spec.MetricsHostPort
 	}
@@ -355,7 +355,7 @@ func nodeHealthHostMetricsPort(check *fathomv1alpha1.NodeHealthCheck) int32 {
 
 // resolveNodeHealthTolerations mirrors resolveTolerations for this kind:
 // spec.tolerations verbatim, control-plane tolerations only on explicit opt-in.
-func resolveNodeHealthTolerations(check *fathomv1alpha1.NodeHealthCheck) []corev1.Toleration {
+func resolveNodeHealthTolerations(check *fathomv1.NodeHealthCheck) []corev1.Toleration {
 	var tolerations []corev1.Toleration
 	if len(check.Spec.Tolerations) > 0 {
 		tolerations = append(tolerations, check.Spec.Tolerations...)
@@ -481,27 +481,27 @@ func truncateNodeHealthMessage(s string, max int) string {
 // aggregateNodeHealth folds every node's outcome into the check's verdict via
 // the shared WorstResult fold: Skipped is informational, and no nodes at all
 // (nothing in scope reported) yields Skipped.
-func aggregateNodeHealth(evals []nodeHealthEvaluation) fathomv1alpha1.HealthReportResult {
-	results := make([]fathomv1alpha1.HealthReportResult, 0, len(evals))
+func aggregateNodeHealth(evals []nodeHealthEvaluation) fathomv1.HealthReportResult {
+	results := make([]fathomv1.HealthReportResult, 0, len(evals))
 	for _, e := range evals {
 		results = append(results, nodeOutcomeToResult(e.Outcome))
 	}
-	return fathomv1alpha1.WorstResult(results, false)
+	return fathomv1.WorstResult(results, false)
 }
 
 // nodeHealthNodeResults projects the evaluations into status.nodeResults,
 // sorted by node and capped at MaxNodeHealthNodeResults. The verdict is folded
 // across every evaluation before this truncation, so the cap bounds only what
 // is enumerated.
-func nodeHealthNodeResults(evals []nodeHealthEvaluation) []fathomv1alpha1.NodeHealthNodeResult {
+func nodeHealthNodeResults(evals []nodeHealthEvaluation) []fathomv1.NodeHealthNodeResult {
 	sorted := append([]nodeHealthEvaluation(nil), evals...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Node < sorted[j].Node })
-	if len(sorted) > fathomv1alpha1.MaxNodeHealthNodeResults {
-		sorted = sorted[:fathomv1alpha1.MaxNodeHealthNodeResults]
+	if len(sorted) > fathomv1.MaxNodeHealthNodeResults {
+		sorted = sorted[:fathomv1.MaxNodeHealthNodeResults]
 	}
-	out := make([]fathomv1alpha1.NodeHealthNodeResult, 0, len(sorted))
+	out := make([]fathomv1.NodeHealthNodeResult, 0, len(sorted))
 	for _, e := range sorted {
-		r := fathomv1alpha1.NodeHealthNodeResult{
+		r := fathomv1.NodeHealthNodeResult{
 			Node:    e.Node,
 			Result:  string(nodeOutcomeToResult(e.Outcome)),
 			Message: e.Message,
@@ -519,17 +519,17 @@ func nodeHealthNodeResults(evals []nodeHealthEvaluation) []fathomv1alpha1.NodeHe
 // and when some did not, the worst of them. Only Pass counts as passed: a
 // node whose checks produced no participating result folds to Skipped, which
 // is "nothing graded", not "healthy".
-func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1alpha1.HealthReportResult) string {
+func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1.HealthReportResult) string {
 	passed := 0
 	var worst *nodeHealthEvaluation
 	worstRank := 0
 	for i := range evals {
 		e := &evals[i]
 		r := nodeOutcomeToResult(e.Outcome)
-		if r == fathomv1alpha1.HealthReportResultPass {
+		if r == fathomv1.HealthReportResultPass {
 			passed++
 		}
-		if r == fathomv1alpha1.HealthReportResultSkipped {
+		if r == fathomv1.HealthReportResultSkipped {
 			continue
 		}
 		if rank := r.Severity(); rank > worstRank {
@@ -537,7 +537,7 @@ func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1alpha1.He
 		}
 	}
 	s := fmt.Sprintf("%d of %d node(s) passed", passed, len(evals))
-	if aggregate != fathomv1alpha1.HealthReportResultPass && aggregate != fathomv1alpha1.HealthReportResultSkipped && worst != nil && worst.Message != "" {
+	if aggregate != fathomv1.HealthReportResultPass && aggregate != fathomv1.HealthReportResultSkipped && worst != nil && worst.Message != "" {
 		s += "; worst: " + worst.Node + " " + worst.Message
 	}
 	return truncateNodeHealthMessage(s, nodeHealthMaxSummaryLen)
@@ -545,8 +545,8 @@ func nodeHealthSummary(evals []nodeHealthEvaluation, aggregate fathomv1alpha1.He
 
 // healthReportForNodeHealth builds the rolled-up HealthReport: one check per
 // (node, item), aggregated into a single worst-case Result.
-func healthReportForNodeHealth(check *fathomv1alpha1.NodeHealthCheck, evals []nodeHealthEvaluation, aggregate fathomv1alpha1.HealthReportResult, observedAt metav1.Time) *fathomv1alpha1.HealthReport {
-	var checks []fathomv1alpha1.HealthReportCheck
+func healthReportForNodeHealth(check *fathomv1.NodeHealthCheck, evals []nodeHealthEvaluation, aggregate fathomv1.HealthReportResult, observedAt metav1.Time) *fathomv1.HealthReport {
+	var checks []fathomv1.HealthReportCheck
 	for _, e := range evals {
 		nodeObservedAt := observedAt
 		if !e.ObservedAt.IsZero() {
@@ -563,10 +563,10 @@ func healthReportForNodeHealth(check *fathomv1alpha1.NodeHealthCheck, evals []no
 				details["total"] = strconv.FormatUint(c.Total, 10)
 				details["free"] = strconv.FormatUint(c.Free, 10)
 			}
-			checks = append(checks, fathomv1alpha1.HealthReportCheck{
+			checks = append(checks, fathomv1.HealthReportCheck{
 				Family:     nodeHealthReportFamily,
 				Result:     nodeOutcomeToResult(c.Outcome),
-				TargetRef:  fathomv1alpha1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: e.Node},
+				TargetRef:  fathomv1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: e.Node},
 				Summary:    nodeHealthCheckLabel(c) + ": " + c.Summary,
 				Details:    details,
 				ObservedAt: nodeObservedAt,
@@ -574,18 +574,18 @@ func healthReportForNodeHealth(check *fathomv1alpha1.NodeHealthCheck, evals []no
 		}
 	}
 
-	return &fathomv1alpha1.HealthReport{
+	return &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				fathomv1alpha1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
-				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
+				fathomv1.LabelHealthReportSourceName: check.Name,
 			},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
-			SourceRef: fathomv1alpha1.HealthReportTargetRef{
-				APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Spec: fathomv1.HealthReportSpec{
+			SourceRef: fathomv1.HealthReportTargetRef{
+				APIVersion: fathomv1.GroupVersion.String(),
 				Kind:       nodehealth.KindNodeHealthCheck,
 				Namespace:  check.Namespace,
 				Name:       check.Name,
@@ -602,7 +602,7 @@ func healthReportForNodeHealth(check *fathomv1alpha1.NodeHealthCheck, evals []no
 // decideNodeHealthRollup applies the transition-only contract (#157) to this
 // kind's status fields; the decision vocabulary is shared with
 // NodeCertificateCheck.
-func decideNodeHealthRollup(status *fathomv1alpha1.NodeHealthCheckStatus, aggregate string, interval time.Duration, now time.Time) nodeCertRollupDecision {
+func decideNodeHealthRollup(status *fathomv1.NodeHealthCheckStatus, aggregate string, interval time.Duration, now time.Time) nodeCertRollupDecision {
 	if status.LastReportName == "" || status.LastRunTime == nil || status.LastResult != aggregate {
 		return rollupPersist
 	}
@@ -615,10 +615,10 @@ func decideNodeHealthRollup(status *fathomv1alpha1.NodeHealthCheckStatus, aggreg
 // pruneNodeHealthHealthReports enforces Spec.HistoryLimit by deleting the
 // oldest HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
-func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, protected string) {
+func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1.NodeHealthCheck, protected string) {
 	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
-		fathomv1alpha1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
-		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+		fathomv1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
+		fathomv1.LabelHealthReportSourceName: check.Name,
 	}, historyLimit(check.Spec.HistoryLimit), protected)
 }
 
@@ -657,11 +657,11 @@ func nodeHealthReportCoversSpec(report nodehealth.NodeReport, agentItems []nodeh
 
 // nodeHealthEffectiveSocket is a ContainerRuntime item's socket with the API
 // default applied.
-func nodeHealthEffectiveSocket(c fathomv1alpha1.NodeHealthCheckItem) string {
+func nodeHealthEffectiveSocket(c fathomv1.NodeHealthCheckItem) string {
 	if c.SocketPath != "" {
 		return c.SocketPath
 	}
-	return fathomv1alpha1.DefaultNodeHealthContainerRuntimeSocket
+	return fathomv1.DefaultNodeHealthContainerRuntimeSocket
 }
 
 // rejectedNodeHealthItems returns the spec items the operator cannot run as
@@ -671,15 +671,15 @@ func nodeHealthEffectiveSocket(c fathomv1alpha1.NodeHealthCheckItem) string {
 // stored under an older CRD. Such items are never silently dropped or
 // rewritten: a check that cannot measure what it declares must say so, not
 // grade a different policy than the object states.
-func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
+func rejectedNodeHealthItems(check *fathomv1.NodeHealthCheck) []string {
 	var rejected []string
 	for _, c := range check.Spec.Checks {
 		switch c.Type {
-		case fathomv1alpha1.NodeHealthCheckDiskHeadroom, fathomv1alpha1.NodeHealthCheckInodeHeadroom:
+		case fathomv1.NodeHealthCheckDiskHeadroom, fathomv1.NodeHealthCheckInodeHeadroom:
 			if !nodehealth.PathAllowed(c.Path) {
 				rejected = append(rejected, string(c.Type)+" path "+c.Path)
 			}
-			warn, critical := fathomv1alpha1.DefaultNodeHealthWarnPercentFree, fathomv1alpha1.DefaultNodeHealthCriticalPercentFree
+			warn, critical := fathomv1.DefaultNodeHealthWarnPercentFree, fathomv1.DefaultNodeHealthCriticalPercentFree
 			if c.WarnPercentFree != nil {
 				warn = *c.WarnPercentFree
 			}
@@ -697,11 +697,11 @@ func rejectedNodeHealthItems(check *fathomv1alpha1.NodeHealthCheck) []string {
 				// Compared on cleaned values: PathAllowed already refuses aliases,
 				// but the collision must hold even for a stored object that slipped
 				// an alias past an older rule.
-				if other.Type == fathomv1alpha1.NodeHealthCheckContainerRuntime && path.Clean(c.Path) == path.Clean(nodeHealthEffectiveSocket(other)) {
+				if other.Type == fathomv1.NodeHealthCheckContainerRuntime && path.Clean(c.Path) == path.Clean(nodeHealthEffectiveSocket(other)) {
 					rejected = append(rejected, fmt.Sprintf("%s path %s collides with ContainerRuntime socketPath %s", c.Type, c.Path, c.Path))
 				}
 			}
-		case fathomv1alpha1.NodeHealthCheckContainerRuntime:
+		case fathomv1.NodeHealthCheckContainerRuntime:
 			if c.SocketPath != "" && !nodehealth.SocketPathAllowed(c.SocketPath) {
 				rejected = append(rejected, string(c.Type)+" socketPath "+c.SocketPath)
 			}

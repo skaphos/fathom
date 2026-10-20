@@ -19,7 +19,7 @@ the canonical resource list.
 
 ## Project Structure & Module Organization
 
-- `api/v1alpha1/`: CRD type definitions. `zz_generated.deepcopy.go` is produced by `controller-gen`; never hand-edit it.
+- `api/v1/`: the stable CRD type definitions for the seven check kinds (`AddonCheck`, `HealthCheck`, `ClusterHealth`, `HealthReport`, `NodeCertificateCheck`, `DNSCheck`, `NodeHealthCheck`), served at `fathom.skaphos.io/v1` only; incompatible changes are forbidden (ADR 0009, `docs/reference/api-versioning.md`). `api/v1alpha1/`: the alpha `AddonDefinition` and `AddonDefinitionBinding` kinds. In both, `zz_generated.deepcopy.go` is produced by `controller-gen`; never hand-edit it.
 - `pkg/addondefinition/`: pure validation, grant planning and offline rendering for typed runtime `AddonDefinition`/`AddonDefinitionBinding` resources. Its built-in inventory file is generated; do not hand-edit it.
 - `cmd/main.go`: thin entrypoint. Constructs the cobra root command via `internal/app` and runs it.
 - `cmd/probe/`: the tiny in-cluster network probe binary (`Dockerfile.probe`).
@@ -126,7 +126,7 @@ Changes that **require** an e2e run before the PR is considered ready:
 - `internal/adapter/*/adapter.go` — adapter `Run` and per-family check logic.
 - `internal/controller/*` — reconciler bodies and watch wiring.
 - `pkg/adapter/*` — adapter contract surface.
-- `api/v1alpha1/*_types.go` — CRD schema changes.
+- `api/v1/*_types.go` and `api/v1alpha1/*_types.go` — CRD schema changes (for `api/v1`, only compatible additions are permitted at all).
 - `internal/probe/*` — probe pod lifecycle / pod-builder changes.
 - `internal/nodecert/*`, `internal/nodehealth/*`, and `cmd/node-agent/*` — the on-disk cert scan and node-health engines and the node-agent DaemonSet binary; they read real host paths, the kubelet, and the CRI socket over hostPath/hostNetwork, which only e2e exercises.
 - `test/e2e/fixtures/*` — addon stack itself; the fixture change is the test.

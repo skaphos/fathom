@@ -36,7 +36,7 @@ const (
 )
 
 // Check types, as strings so the wire contract is self-describing without
-// importing the API package. They mirror api/v1alpha1.NodeHealthCheckType and
+// importing the API package. They mirror api/v1.NodeHealthCheckType and
 // a test asserts the two sets stay identical.
 const (
 	TypeDiskHeadroom     = "DiskHeadroom"
@@ -155,7 +155,7 @@ func KnownOutcome(o Outcome) bool {
 }
 
 // WorstOutcome returns the highest-severity outcome across results, with the
-// same fold the operator applies (api/v1alpha1.WorstResult): Skipped is
+// same fold the operator applies (api/v1.WorstResult): Skipped is
 // informational — "this check did not apply on this node" — and never wins
 // while any other outcome is present, so a Pass alongside a Skipped headroom
 // path folds to Pass. An empty or all-Skipped slice yields OutcomeSkipped (the

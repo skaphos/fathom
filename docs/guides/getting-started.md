@@ -61,6 +61,11 @@ It applies the CRDs before the operator and waits until the operator is
 for upgrades across several releases, the `uninstall --purge-crds --export`
 path, mixing `fathomctl` with `helm`, and air-gapped clusters. Installs made
 with kustomize (`dist/install.yaml`) or OLM are not managed by these verbs.
+Upgrading from 0.6.x is the one upgrade with a prerequisite: the check kinds
+moved from `v1alpha1` to the stable `v1`, and the alpha resources do not
+survive the CRD replacement, so run `fathomctl export` first and recreate
+them from its output afterwards — see
+[v1 API migration](../../RELEASE.md#v1-api-migration).
 
 ### With Helm
 
@@ -114,7 +119,7 @@ built-in adapter via `spec.addonType` and enables one or more **check
 families** under `spec.policy`. Save this as `cert-manager-check.yaml`:
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: cert-manager-system-health
@@ -174,8 +179,8 @@ Pass < Skipped < Warn < Unknown < Fail < Error
 ```
 
 So a single failing certificate makes the whole check `Fail`; a missing,
-not-applicable path reports `Skipped` (which rolls up green). The `Accepted`,
-`Ready`, and (if set) `Paused` conditions explain *why* a check is in its
+not-applicable path reports `Skipped` (which rolls up green). The `Accepted`
+and `Ready` conditions explain *why* a check is in its
 current state — for example `Ready=False / MissingAdapter` if `addonType` is
 misspelled. The complete condition reason table is in
 [Status and conditions](../reference/status-conditions.md).
@@ -204,7 +209,7 @@ thin layers:
 Add both (save as `rollup.yaml`):
 
 ```yaml
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: cert-manager
@@ -212,11 +217,11 @@ metadata:
 spec:
   description: "Mirror the cert-manager AddonCheck for ClusterHealth aggregation."
   checkRef:
-    apiVersion: fathom.skaphos.io/v1alpha1
+    apiVersion: fathom.skaphos.io/v1
     kind: AddonCheck
     name: cert-manager-system-health
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: platform

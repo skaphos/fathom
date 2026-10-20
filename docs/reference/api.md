@@ -1,20 +1,21 @@
 # API Reference
 
 ## Packages
+- [fathom.skaphos.io/v1](#fathomskaphosiov1)
 - [fathom.skaphos.io/v1alpha1](#fathomskaphosiov1alpha1)
 
 
-## fathom.skaphos.io/v1alpha1
+## fathom.skaphos.io/v1
 
-Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API group.
+Package v1 contains the stable API Schema definitions for the fathom v1 API
+group: AddonCheck, HealthCheck, ClusterHealth, HealthReport,
+NodeCertificateCheck, DNSCheck and NodeHealthCheck. It is the only served
+and stored version of those kinds; incompatible changes to it are forbidden
+(docs/reference/api-versioning.md, ADR 0009).
 
 ### Resource Types
 - [AddonCheck](#addoncheck)
 - [AddonCheckList](#addonchecklist)
-- [AddonDefinition](#addondefinition)
-- [AddonDefinitionBinding](#addondefinitionbinding)
-- [AddonDefinitionBindingList](#addondefinitionbindinglist)
-- [AddonDefinitionList](#addondefinitionlist)
 - [ClusterHealth](#clusterhealth)
 - [ClusterHealthList](#clusterhealthlist)
 - [DNSCheck](#dnscheck)
@@ -43,10 +44,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `AddonCheck` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[AddonCheckSpec](#addoncheckspec)_ |  |  |  |
+| `spec` _[AddonCheckSpec](#addoncheckspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
 | `status` _[AddonCheckStatus](#addoncheckstatus)_ |  |  |  |
 
 
@@ -248,7 +249,7 @@ AddonCheckList contains a list of AddonCheck.
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `AddonCheckList` | | |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[AddonCheck](#addoncheck) array_ |  |  |  |
@@ -270,7 +271,6 @@ _Appears in:_
 | `addonType` _string_ | AddonType selects the adapter responsible for this check, such as<br />cert-manager, coredns, or external-secrets. |  | MinLength: 1 <br /> |
 | `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the adapter re-runs and the HealthReport<br />is refreshed. Defaults to 5m when unset. Must be at least 10s<br />(MinCheckInterval); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
 | `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single adapter run. Must be at least 1s<br />(MinCheckTimeout); the operator clamps stored objects that predate this<br />floor to it at runtime. |  | Optional: \{\} <br /> |
-| `paused` _boolean_ | Paused prevents the controller from starting new adapter runs. |  | Optional: \{\} <br /> |
 | `policy` _object (keys:string, values:[AddonCheckFamilyPolicy](#addoncheckfamilypolicy))_ | Policy configures adapter-defined check families. A missing or empty policy<br />leaves family selection to the adapter defaults. Keys are adapter family<br />names: 1-63 lowercase alphanumerics with interior '-' or '_' (e.g.<br />system_health). Whether a well-formed key names a family the selected<br />adapter actually supports is judged at reconcile time via the Accepted<br />condition. |  | MaxProperties: 32 <br />Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this<br />AddonCheck. After each new HealthReport is created the controller<br />deletes the oldest reports until the total count is at or below this<br />limit. The minimum of 1 keeps Status.LastReportName referenceable. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
 
@@ -289,7 +289,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted and processed this<br />check specification. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted and processed this<br />check specification. Keyed by type so several server-side-apply managers<br />can each own a condition, as on every sibling kind. |  | Optional: \{\} <br /> |
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when an adapter run last completed. |  | Optional: \{\} <br /> |
 | `lastResult` _string_ | LastResult is the aggregate result from the most recent adapter run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
 | `absent` _integer_ | Absent is the number of checks in the most recent run whose target was not<br />installed — the required-absent Fails and optional-absent Skips alike. It<br />makes "not installed" queryable and distinct from "unhealthy" (a Fail whose<br />target exists) and "disabled" (a Skipped family). Zero when every checked<br />target is present (SKA-526). |  | Minimum: 0 <br />Optional: \{\} <br /> |
@@ -303,166 +303,6 @@ _Appears in:_
 | `latestAttemptMessage` _string_ | LatestAttemptMessage explains the most recent attempt's outcome. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
 | `evidenceFreshness` _[AddonCheckEvidenceFreshness](#addoncheckevidencefreshness)_ | EvidenceFreshness describes the recency and eligibility of<br />LastSuccessfulEvaluation as of the most recent attempt. It is derived,<br />not authority, and it never implies a healthy verdict. |  | Enum: [Current Stale Superseded Unavailable] <br />Optional: \{\} <br /> |
 | `evidenceFreshnessReason` _string_ | EvidenceFreshnessReason explains a freshness that is not Current. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-
-
-#### AddonDefinition
-
-
-
-AddonDefinition declares administrator-bound runtime health checks.
-
-
-
-_Appears in:_
-- [AddonDefinitionList](#addondefinitionlist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `AddonDefinition` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[AddonDefinitionSpec](#addondefinitionspec)_ |  |  |  |
-| `status` _[AddonDefinitionStatus](#addondefinitionstatus)_ |  |  | Optional: \{\} <br /> |
-
-
-#### AddonDefinitionBinding
-
-
-
-AddonDefinitionBinding delegates a definition to a dedicated identity.
-
-
-
-_Appears in:_
-- [AddonDefinitionBindingList](#addondefinitionbindinglist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `AddonDefinitionBinding` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[AddonDefinitionBindingSpec](#addondefinitionbindingspec)_ |  |  |  |
-| `status` _[AddonDefinitionBindingStatus](#addondefinitionbindingstatus)_ |  |  | Optional: \{\} <br /> |
-
-
-#### AddonDefinitionBindingList
-
-
-
-AddonDefinitionBindingList contains delegation bindings.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `AddonDefinitionBindingList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[AddonDefinitionBinding](#addondefinitionbinding) array_ |  |  |  |
-
-
-#### AddonDefinitionBindingSpec
-
-
-
-AddonDefinitionBindingSpec is a bounded runtime definition contract.
-
-
-
-_Appears in:_
-- [AddonDefinitionBinding](#addondefinitionbinding)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `definitionRef` _[DefinitionReference](#definitionreference)_ | DefinitionRef is the declared definitionRef. |  |  |
-| `serviceAccountRef` _[DefinitionObjectReference](#definitionobjectreference)_ | ServiceAccountRef is the declared serviceAccountRef. |  |  |
-| `enabled` _boolean_ | Enabled is the declared enabled. | false | Optional: \{\} <br /> |
-| `targetScope` _[DefinitionBindingScope](#definitionbindingscope)_ | TargetScope is the declared targetScope. |  |  |
-
-
-#### AddonDefinitionBindingStatus
-
-
-
-AddonDefinitionBindingStatus describes observation, never authorization.
-Accepted records spec/identity validity; Ready records eligibility; Drained is
-acknowledged only for disabled, observed-generation state with zero active
-runs in the current leadership epoch. Consumers must independently verify the
-epoch against the configured Lease before treating Drained as current.
-
-
-
-_Appears in:_
-- [AddonDefinitionBinding](#addondefinitionbinding)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
-| `activeRuns` _integer_ | ActiveRuns is the declared activeRuns. |  | Maximum: 4 <br />Minimum: 0 <br />Optional: \{\} <br /> |
-| `leaderIdentity` _string_ | LeaderIdentity is the declared leaderIdentity. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `leaderEpoch` _[DefinitionLeaderEpoch](#definitionleaderepoch)_ | LeaderEpoch is the declared leaderEpoch. |  | Optional: \{\} <br /> |
-| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
-
-
-#### AddonDefinitionList
-
-
-
-AddonDefinitionList contains runtime definitions.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `AddonDefinitionList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[AddonDefinition](#addondefinition) array_ |  |  |  |
-
-
-#### AddonDefinitionSpec
-
-
-
-AddonDefinitionSpec is a bounded runtime definition contract.
-
-
-
-_Appears in:_
-- [AddonDefinition](#addondefinition)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `addonType` _[DefinitionDNSLabel](#definitiondnslabel)_ | AddonType is the declared addonType. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
-| `adapterVersion` _string_ | AdapterVersion is the declared adapterVersion. |  | MaxLength: 256 <br />MinLength: 1 <br /> |
-| `semanticsVersion` _integer_ | SemanticsVersion is the declared semanticsVersion. |  | Enum: [1] <br /> |
-| `optional` _boolean_ | Optional is the declared optional. | false | Optional: \{\} <br /> |
-| `supportedVersions` _string_ | SupportedVersions is the declared supportedVersions. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
-| `versionSource` _[DefinitionVersionSource](#definitionversionsource)_ | VersionSource is the declared versionSource. |  | Optional: \{\} <br /> |
-| `families` _[DefinitionFamily](#definitionfamily) array_ | Families is the declared families. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
-| `requestedReads` _[DefinitionReadRule](#definitionreadrule) array_ | RequestedReads is the declared requestedReads. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
-
-
-#### AddonDefinitionStatus
-
-
-
-AddonDefinitionStatus is a bounded runtime definition contract.
-
-
-
-_Appears in:_
-- [AddonDefinition](#addondefinition)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
-| `revision` _string_ | Revision is the declared revision. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
-| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
 
 
 #### CheckTargetRef
@@ -480,7 +320,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | APIVersion of the target check resource. When empty, defaults to<br />fathom.skaphos.io/v1alpha1. |  | MaxLength: 317 <br />Optional: \{\} <br /> |
+| `apiVersion` _string_ | APIVersion of the target check resource. When empty, defaults to<br />fathom.skaphos.io/v1, which is also the only accepted value: every<br />kind a HealthCheck can target is served at v1, and a foreign group or<br />version is rejected at admission rather than silently mirrored. |  | Enum: [fathom.skaphos.io/v1] <br />MaxLength: 317 <br />Optional: \{\} <br /> |
 | `kind` _string_ | Kind of the target check resource: AddonCheck, DNSCheck,<br />NodeCertificateCheck, or NodeHealthCheck. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
 | `name` _string_ | Name of the target check resource. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
 | `namespace` _string_ | Namespace of the target check resource. When empty, the HealthCheck's<br />own namespace is used. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
@@ -502,10 +342,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `ClusterHealth` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[ClusterHealthSpec](#clusterhealthspec)_ |  |  |  |
+| `spec` _[ClusterHealthSpec](#clusterhealthspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
 | `status` _[ClusterHealthStatus](#clusterhealthstatus)_ |  |  |  |
 
 
@@ -543,7 +383,7 @@ ClusterHealthList contains a list of ClusterHealth.
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `ClusterHealthList` | | |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[ClusterHealth](#clusterhealth) array_ |  |  |  |
@@ -618,10 +458,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `DNSCheck` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[DNSCheckSpec](#dnscheckspec)_ |  |  |  |
+| `spec` _[DNSCheckSpec](#dnscheckspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
 | `status` _[DNSCheckStatus](#dnscheckstatus)_ |  |  |  |
 
 
@@ -637,7 +477,7 @@ DNSCheckList contains a list of DNSCheck.
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
 | `kind` _string_ | `DNSCheckList` | | |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `items` _[DNSCheck](#dnscheck) array_ |  |  |  |
@@ -809,6 +649,783 @@ _Appears in:_
 | `answers` _string array_ | Answers are the records returned, retained as the evidence behind the<br />verdict. |  | MaxItems: 16 <br />items:MaxLength: 253 <br />Optional: \{\} <br /> |
 | `latencyMillis` _integer_ | LatencyMillis is how long the lookup took, as measured by the probe<br />inside its pod. It excludes pod scheduling and start-up, and is absent<br />when the probe reported no measurement (for example, a pair that was<br />never reached). It is recorded as evidence only; slow resolution is not<br />by itself a failure in this API version. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `runMillis` _integer_ | RunMillis is the wall time Fathom spent performing this pair: probe pod<br />scheduling, image pull, any admission-injected init containers, the<br />lookup itself, result collection and the probe Pod delete request (which<br />does not wait for termination). It is what the pair costs against the<br />run bound, not the probe's own runtime. When it dwarfs LatencyMillis, pod<br />start-up rather than DNS is what consumes the run bound (spec.timeout). |  | Minimum: 0 <br />Optional: \{\} <br /> |
+
+
+#### DefinitionLeaderEpoch
+
+
+
+DefinitionLeaderEpoch is a bounded runtime definition contract: the
+leadership epoch under which runtime definition work was admitted.
+
+It is owned by the stable API because AddonCheck evidence (and therefore
+HealthReport attribution) records it; the alpha AddonDefinitionBinding
+status references this type rather than the other way round, so the frozen
+v1 schema never depends on an alpha package (spec 014, research R2).
+
+
+
+_Appears in:_
+- [AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)
+- [AddonDefinitionBindingStatus](#addondefinitionbindingstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `leaseUID` _string_ | LeaseUID is the declared leaseUID. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
+| `holderIdentity` _string_ | HolderIdentity is the declared holderIdentity. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `acquireTime` _[MicroTime](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#microtime-v1-meta)_ | AcquireTime is the declared acquireTime. |  |  |
+| `leaseTransitions` _integer_ | LeaseTransitions is the declared leaseTransitions. |  | Minimum: 0 <br /> |
+
+
+#### HealthCheck
+
+
+
+HealthCheck is the Schema for the healthchecks API.
+
+
+
+_Appears in:_
+- [HealthCheckList](#healthchecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `HealthCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[HealthCheckSpec](#healthcheckspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
+| `status` _[HealthCheckStatus](#healthcheckstatus)_ |  |  |  |
+
+
+#### HealthCheckList
+
+
+
+HealthCheckList contains a list of HealthCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `HealthCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[HealthCheck](#healthcheck) array_ |  |  |  |
+
+
+#### HealthCheckSpec
+
+
+
+HealthCheckSpec defines the desired state of HealthCheck. A HealthCheck is
+a thin wrapper that mirrors the status of a specialized check resource into
+a uniform shape suitable for ClusterHealth aggregation. HealthCheck does not
+execute checks itself.
+
+
+
+_Appears in:_
+- [HealthCheck](#healthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `checkRef` _[CheckTargetRef](#checktargetref)_ | CheckRef identifies the specialized check resource this HealthCheck wraps.<br />It is immutable: retargeting a wrapper would silently repoint its mirrored<br />status snapshot at a different check; replace the HealthCheck instead (SKA-576). |  |  |
+| `description` _string_ | Description is a human-readable purpose for this HealthCheck. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+
+
+#### HealthCheckStatus
+
+
+
+HealthCheckStatus defines the observed state of HealthCheck. The fields are
+derived from the referenced check's status; consumers (notably
+ClusterHealth) read this status without needing to understand any
+specialized check schema.
+
+
+
+_Appears in:_
+- [HealthCheck](#healthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize the controller's view of the wrapped check. |  | Optional: \{\} <br /> |
+| `result` _[HealthReportResult](#healthreportresult)_ | Result is the outcome surfaced from the referenced check's most recent run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `summary` _string_ | Summary is a human-readable one-line outcome description. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `sourceInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | SourceInterval is the cadence the referenced check is expected to run at,<br />after its own defaults and floor clamping. It is a fact about the wrapped<br />check, not a judgement about this one: it is what lets a ClusterHealth<br />aggregate judge staleness relative to cadence, since aggregates select<br />HealthChecks and never see the underlying checks (#277).<br />Empty when the cadence cannot be resolved — an unsupported checkRef kind,<br />a missing target, or a lookup failure — so consumers can tell "runs hourly"<br />from "cadence unknown" rather than reading an absent value as zero. |  | Optional: \{\} <br /> |
+| `sourceObservedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | SourceObservedAt is when the referenced check last completed. |  | Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the most recent HealthReport produced by the<br />referenced check, when one exists. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `sourceReady` _boolean_ | SourceReady mirrors whether the referenced check's most recent run could<br />EXECUTE and COMPLETE with eligible inputs. It is not a verdict:<br />contracts/runtime.md, "Ready denotes executable/completed, freshness<br />denotes recency, and neither means Pass". A false SourceReady beside a<br />Pass Result is the ordinary shape of preserved evidence — the last<br />completed run passed, and the most recent attempt could not run at all.<br />Nil when the referenced check has never published a readiness condition,<br />which is a different statement from "the check is not ready". |  | Optional: \{\} <br /> |
+| `sourceReadyReason` _string_ | SourceReadyReason is the referenced check's own reason for that<br />readiness — UnknownAddonType, AuthorizationRevoked, AccessDenied,<br />RunCompleted and so on — so an operator can tell why a mirrored verdict<br />is not being refreshed without reading the wrapped check. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
+| `evidenceFreshness` _[AddonCheckEvidenceFreshness](#addoncheckevidencefreshness)_ | EvidenceFreshness mirrors the recency and eligibility of the completed<br />evidence behind Result, re-derived from the evidence's age at mirror<br />time. Empty for checks that publish no evidence (every built-in adapter),<br />which is "not applicable" rather than "unavailable".<br />This is the field that keeps a retained Pass from reading as a fresh<br />success: "Freshness=Stale even if stored verdict was Pass." |  | Enum: [Current Stale Superseded Unavailable] <br />Optional: \{\} <br /> |
+| `evidenceFreshnessReason` _string_ | EvidenceFreshnessReason explains a freshness that is not Current. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+
+
+#### HealthReport
+
+
+
+HealthReport is the Schema for the healthreports API.
+
+
+
+_Appears in:_
+- [HealthReportList](#healthreportlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `HealthReport` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[HealthReportSpec](#healthreportspec)_ | Spec is immutable: a HealthReport is a point-in-time history record.<br />The operator only ever creates reports (createOrReuseHealthReport);<br />mutating one after the fact would rewrite history (SKA-576). |  | Required: \{\} <br /> |
+| `status` _[HealthReportStatus](#healthreportstatus)_ |  |  |  |
+
+
+#### HealthReportAttribution
+
+
+
+HealthReportAttribution records which runtime revision, under which
+delegated authority, produced a report, and how much that run actually
+covered (T045 of specs/012-addon-definition-runtime).
+
+A HealthReport is history, and history is only useful while it stays
+attributable: contracts/runtime.md requires that when a binding or grant
+recovers, "history remains attributable", and the lifecycle matrix keeps
+superseded evidence "with its original time/revision/context". Without this
+block a stored report is just a verdict and a timestamp, so a Pass produced
+under authority that has since been revoked, or under a definition revision
+that has since been replaced, reads exactly like one produced under the
+current one.
+
+It reuses the AddonCheck evidence vocabulary deliberately rather than
+restating it: the report is created FROM published evidence, and two
+independent spellings of the same context would be free to drift apart —
+which is precisely the divergence this field exists to make visible.
+
+It is optional and absent on reports from built-in adapters, which carry no
+runtime revision, no delegated binding and no dedicated identity to name.
+
+
+
+_Appears in:_
+- [HealthReportSpec](#healthreportspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `revision` _[AddonCheckEvidenceRevision](#addoncheckevidencerevision)_ | Revision is the runtime definition revision that produced the report:<br />the definition incarnation plus the operator build and adapter version<br />that compiled it. |  | Optional: \{\} <br /> |
+| `authority` _[AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)_ | Authority is the delegated binding, dedicated identity, check context and<br />leadership epoch the producing run was attributed to. |  | Optional: \{\} <br /> |
+| `coverage` _[AddonCheckEvidenceCoverage](#addoncheckevidencecoverage)_ | Coverage distinguishes an assessed verdict from a completed run that<br />evaluated nothing, so a Skipped entry in history cannot be mistaken for<br />an assessed-and-healthy one. |  | Enum: [ChecksEvaluated NoChecksEvaluated] <br />Optional: \{\} <br /> |
+| `message` _string_ | Message explains the coverage in one line. A report produced by a<br />completed all-Skipped run carries exactly<br />[AddonCheckNoChecksEvaluatedMessage]. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+
+
+#### HealthReportCheck
+
+
+
+HealthReportCheck records one adapter-emitted check result.
+
+
+
+_Appears in:_
+- [HealthReportSpec](#healthreportspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `family` _string_ | Family is the adapter-defined check family that produced this result. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `result` _[HealthReportResult](#healthreportresult)_ | Result is this check's outcome. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
+| `targetRef` _[HealthReportTargetRef](#healthreporttargetref)_ | TargetRef is the observed resource for this check. |  |  |
+| `summary` _string_ | Summary is a human-readable one-line outcome description. |  | Optional: \{\} <br /> |
+| `details` _object (keys:string, values:string)_ | Details is adapter-defined structured context for the check. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when this check completed. |  |  |
+| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is how long this check took. |  | Optional: \{\} <br /> |
+
+
+#### HealthReportList
+
+
+
+HealthReportList contains a list of HealthReport.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `HealthReportList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[HealthReport](#healthreport) array_ |  |  |  |
+
+
+#### HealthReportResult
+
+_Underlying type:_ _string_
+
+HealthReportResult is the aggregate result for a report or individual check.
+
+_Validation:_
+- Enum: [Pass Warn Fail Error Skipped Unknown]
+
+_Appears in:_
+- [ClusterHealthChildSummary](#clusterhealthchildsummary)
+- [ClusterHealthStatus](#clusterhealthstatus)
+- [HealthCheckStatus](#healthcheckstatus)
+- [HealthReportCheck](#healthreportcheck)
+- [HealthReportSpec](#healthreportspec)
+
+| Field | Description |
+| --- | --- |
+| `Pass` |  |
+| `Warn` |  |
+| `Fail` |  |
+| `Error` |  |
+| `Skipped` |  |
+| `Unknown` |  |
+
+
+#### HealthReportSpec
+
+
+
+HealthReportSpec defines the desired state of HealthReport.
+
+
+
+_Appears in:_
+- [HealthReport](#healthreport)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `sourceRef` _[HealthReportTargetRef](#healthreporttargetref)_ | SourceRef identifies the check resource that produced this report. |  |  |
+| `addonType` _string_ | AddonType is the AddonCheck addon type used to select the adapter. |  | Optional: \{\} <br /> |
+| `adapterName` _string_ | AdapterName is the adapter identity that produced this report. |  | Optional: \{\} <br /> |
+| `adapterVersion` _string_ | AdapterVersion is the adapter implementation version. |  | Optional: \{\} <br /> |
+| `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected for this<br />run, or empty when undetectable or not detected. Distinct from<br />AdapterVersion (the adapter's own version) — SKA-527. |  | Optional: \{\} <br /> |
+| `contractVersion` _string_ | ContractVersion is the adapter contract version used for this run. |  | Optional: \{\} <br /> |
+| `result` _[HealthReportResult](#healthreportresult)_ | Result is the aggregate outcome across all checks. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
+| `checks` _[HealthReportCheck](#healthreportcheck) array_ | Checks are the individual observations produced by the adapter. |  | Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the adapter run completed. |  |  |
+| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is the total adapter run duration. |  | Optional: \{\} <br /> |
+| `attribution` _[HealthReportAttribution](#healthreportattribution)_ | Attribution names the runtime revision and delegated authority this<br />report was produced under. Absent for built-in adapters, which have<br />neither. |  | Optional: \{\} <br /> |
+
+
+#### HealthReportStatus
+
+
+
+HealthReportStatus defines the observed state of HealthReport.
+
+
+
+_Appears in:_
+- [HealthReport](#healthreport)
+
+
+
+#### HealthReportTargetRef
+
+
+
+HealthReportTargetRef identifies a Kubernetes object observed by a check.
+
+
+
+_Appears in:_
+- [HealthReportCheck](#healthreportcheck)
+- [HealthReportSpec](#healthreportspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | APIVersion is the target object's API version. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `kind` _string_ | Kind is the target object's kind. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
+| `namespace` _string_ | Namespace is the target object's namespace, if namespaced. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `name` _string_ | Name is the target object's name. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+
+
+#### NodeCertificateCheck
+
+
+
+NodeCertificateCheck is the Schema for the nodecertificatechecks API.
+
+
+
+_Appears in:_
+- [NodeCertificateCheckList](#nodecertificatechecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `NodeCertificateCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[NodeCertificateCheckSpec](#nodecertificatecheckspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
+| `status` _[NodeCertificateCheckStatus](#nodecertificatecheckstatus)_ |  |  |  |
+
+
+#### NodeCertificateCheckList
+
+
+
+NodeCertificateCheckList contains a list of NodeCertificateCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `NodeCertificateCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[NodeCertificateCheck](#nodecertificatecheck) array_ |  |  |  |
+
+
+#### NodeCertificateCheckSpec
+
+
+
+NodeCertificateCheckSpec defines the desired state of NodeCertificateCheck.
+
+A NodeCertificateCheck scans on-disk X.509 certificates on every selected
+node and reports time-to-expiry before an expiring certificate can take the
+cluster down. The operator runs the scan via a hardened, read-only node-agent
+DaemonSet (one pod per node); each agent publishes its per-node result, and
+the operator rolls those up into a single HealthReport and mirrors the
+aggregate into Status.
+
+
+
+_Appears in:_
+- [NodeCertificateCheck](#nodecertificatecheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `paths` _string array_ | Paths is the set of on-disk certificate locations each node-agent scans.<br />Every entry is an absolute path to either a PEM-encoded certificate file<br />(read directly) or a directory (scanned recursively, to a bounded depth,<br />for *.crt, *.pem, and *.cert files). Files ending in .conf or .kubeconfig<br />are parsed as kubeconfigs and their embedded client/CA certificates are<br />extracted. Paths the non-root agent cannot read are reported as Skipped,<br />never Fail or Error; paths that do not exist on a node are omitted from the<br />report entirely, so absent distribution defaults do not flood it. When empty, a<br />distribution-agnostic default set covering common kubeadm, k3s/RKE2, etcd,<br />and kubelet certificate locations is used. The operator mounts the parent<br />directory of each configured path into the agent read-only; a configured<br />directory absent on a node is created empty by the kubelet (hostPath<br />DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions.<br />To prevent a namespaced tenant from turning the privileged node-agent into a<br />confused deputy that mounts arbitrary host directories, every entry must be a<br />traversal-free absolute path (no "..", never the host root "/") under one of<br />the operator-approved certificate prefixes: /etc/kubernetes, /var/lib/kubelet,<br />/etc/etcd, /var/lib/etcd, /var/lib/rancher. Paths outside this allowlist are<br />rejected at admission. |  | MaxItems: 64 <br />items:MaxLength: 512 <br />Optional: \{\} <br /> |
+| `warnDays` _integer_ | WarnDays is the days-to-expiry threshold at or below which a certificate<br />is reported as Warn. Must be greater than or equal to CriticalDays. | 30 | Minimum: 0 <br />Optional: \{\} <br /> |
+| `criticalDays` _integer_ | CriticalDays is the days-to-expiry threshold at or below which a<br />certificate is reported as Fail. A certificate already past its notAfter<br />time is always Fail regardless of this value. | 7 | Minimum: 0 <br />Optional: \{\} <br /> |
+| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. It is empty by default. Control-plane<br />tolerations are NOT added here — use IncludeControlPlaneNodes for that, so<br />scheduling the privileged agent onto control-plane nodes is always an<br />explicit, auditable opt-in rather than a silent default. |  | Optional: \{\} <br /> |
+| `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on control-plane<br />nodes by adding tolerations for the standard control-plane and legacy master<br />taints (node-role.kubernetes.io/control-plane and .../master, Exists /<br />NoSchedule) on top of any Tolerations.<br />It defaults to false. The kubeadm apiserver, etcd, and front-proxy<br />certificates live on control-plane nodes, so set this to true to scan them —<br />but doing so mounts control-plane host paths into the agent, which is why it<br />is gated behind an explicit opt-in rather than applied by default. | false | Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which each node-agent re-scans its<br />certificates and the operator refreshes the rolled-up HealthReport.<br />Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the<br />operator clamps stored objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent scan pass. Defaults to 30s when<br />unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored<br />objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
+| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />After each new HealthReport the controller deletes the oldest reports<br />beyond the limit. The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### NodeCertificateCheckStatus
+
+
+
+NodeCertificateCheckStatus defines the observed state of NodeCertificateCheck.
+
+
+
+_Appears in:_
+- [NodeCertificateCheck](#nodecertificatecheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results (the latest poll). It is refreshed on the interval cadence even<br />when the aggregate result is unchanged, so downstream liveness stays fresh,<br />and does not imply a new HealthReport was written on every refresh. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes as of the<br />most recent evaluation. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
+| `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every desired<br />node's fresh report carries it. Until then the previous verdict is kept.<br />A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheck
+
+
+
+NodeHealthCheck is the Schema for the nodehealthchecks API.
+
+
+
+_Appears in:_
+- [NodeHealthCheckList](#nodehealthchecklist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `NodeHealthCheck` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[NodeHealthCheckSpec](#nodehealthcheckspec)_ | Spec is required: a stable object without one is meaningless, and<br />requiring it keeps field-level immutability rules from being bypassed<br />by removing and re-adding the whole spec. |  | Required: \{\} <br /> |
+| `status` _[NodeHealthCheckStatus](#nodehealthcheckstatus)_ |  |  |  |
+
+
+#### NodeHealthCheckItem
+
+
+
+NodeHealthCheckItem is one assertion made on every node in scope. Which
+fields are legal depends on Type; the rules below reject a field on a type
+that does not use it, so a misapplied threshold is a write-time error and
+not a silently ignored one.
+The relation is checked on the effective values: an omitted threshold
+counts as its runtime default, so criticalPercentFree: 30 with warn omitted
+(effective warn 20) and warnPercentFree: 0 with critical omitted (effective
+critical 10) are rejected here rather than silently clamped at run time.
+The path allowlist stops a namespaced tenant from turning the node-agent into
+a confused deputy that mounts arbitrary host directories; it is mirrored in
+internal/nodehealth so the operator re-checks it on clusters running an older
+CRD. The host root is never allowed: statfs of /var/lib/kubelet reports the
+root filesystem on any node where it is not a separate mount.
+
+
+
+_Appears in:_
+- [NodeHealthCheckSpec](#nodehealthcheckspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[NodeHealthCheckType](#nodehealthchecktype)_ | Type is the assertion this item makes. See NodeHealthCheckType for the<br />privilege each type costs the node-agent. |  | Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime] <br /> |
+| `path` _string_ | Path is an existing directory on every selected node whose headroom is<br />measured. Regular files are not supported. Required for DiskHeadroom and<br />InodeHeadroom and rejected for every other type. The operator mounts it<br />into the agent read-only, so it must be a traversal-free absolute path<br />under one of the operator-approved prefixes. Admission validates the path's<br />syntax and prefix but cannot inspect a node's host filesystem.<br />The operator uses a non-creating hostPath Directory mount. If Path does<br />not exist or is not a directory on a node, Kubernetes cannot start<br />that node's agent pod;<br />AgentReady becomes False and coverage remains incomplete while the last<br />complete verdict is retained. This avoids mutating the host or measuring<br />the filesystem that would have held a newly created directory. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+| `warnPercentFree` _integer_ | WarnPercentFree is the percentage of free space (or inodes) at or below<br />which the check is Warn. Applies only to the headroom types. Defaults to<br />20 (DefaultNodeHealthWarnPercentFree) when unset. Must be greater than or<br />equal to CriticalPercentFree. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `criticalPercentFree` _integer_ | CriticalPercentFree is the percentage of free space (or inodes) at or<br />below which the check is Fail. Applies only to the headroom types.<br />Defaults to 10 (DefaultNodeHealthCriticalPercentFree) when unset. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `conditions` _string array_ | Conditions names the node condition types a NodeCondition check asserts.<br />Ready is expected True; every other listed condition is expected False,<br />which is the healthy value for every pressure and unavailability<br />condition Kubernetes and the cloud providers define. Defaults to Ready,<br />MemoryPressure, DiskPressure, and PIDPressure when unset. A condition the<br />node does not report is Skipped, not Fail. Applies only to NodeCondition. |  | MaxItems: 16 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `socketPath` _string_ | SocketPath is the CRI socket a ContainerRuntime check dials. Defaults to<br />/run/containerd/containerd.sock when unset. The operator mounts the socket<br />itself (hostPath type Socket), so a node without a socket at this path<br />cannot schedule the agent and surfaces as incomplete coverage rather than<br />as a verdict. Applies only to ContainerRuntime. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckList
+
+
+
+NodeHealthCheckList contains a list of NodeHealthCheck.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1` | | |
+| `kind` _string_ | `NodeHealthCheckList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[NodeHealthCheck](#nodehealthcheck) array_ |  |  |  |
+
+
+#### NodeHealthCheckSpec
+
+
+
+NodeHealthCheckSpec defines the desired state of NodeHealthCheck.
+
+A NodeHealthCheck asserts a set of node-local health signals on every
+selected node — filesystem headroom, the node's own conditions, kubelet
+health, and container-runtime liveness — and reports one verdict per node
+plus a single folded verdict for the check. The node-local signals are
+collected by the same hardened node-agent DaemonSet NodeCertificateCheck
+uses; the operator rolls the per-node reports into a HealthReport and
+mirrors the aggregate into Status.
+
+There is no field to pause a NodeHealthCheck. Stopping a check means
+deleting it (#262).
+The comparison uses the effective interval: an omitted interval is 5m at
+runtime, so timeout: 10m without an interval is rejected here rather than
+admitted and silently capped. Keep the literal in step with
+DefaultNodeHealthCheckInterval.
+Per-node results and HealthReport checks are keyed by the item's identity —
+its type plus what it measures: the path for the headroom types, the socket
+for ContainerRuntime (its default counts as a value), nothing for the
+rest — so two items with the same identity would collide there. Rejecting
+the duplicate at write time is far kinder than a status update failing
+later with an error that says nothing about the specification that caused
+it. Two ContainerRuntime items with different sockets are distinct. The
+pathless types key on their own type name rather than an empty string:
+gofmt rewrites two adjacent apostrophes inside a doc comment as a
+typographic quote, which would silently break the rule at CRD install.
+A headroom path that is also a ContainerRuntime socket would be mounted
+twice at one mountPath — as a Directory and as a Socket —
+which the kubelet rejects, and a directory mount over a socket is
+meaningless anyway. The socket's default counts as a value.
+
+
+
+_Appears in:_
+- [NodeHealthCheck](#nodehealthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `checks` _[NodeHealthCheckItem](#nodehealthcheckitem) array_ | Checks are the assertions made on every node in scope. At least one is<br />required — a check with no items would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
+| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. Control-plane tolerations are NOT<br />added here — use IncludeControlPlaneNodes for that, so scheduling the<br />agent onto control-plane nodes is always an explicit, auditable opt-in.<br />An omitted list and an empty list mean the same thing: no tolerations.<br />The operator never distinguishes the two, so the nil-vs-empty round-trip<br />the sibling kind carries (#150) has no effect here. |  | Optional: \{\} <br /> |
+| `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on<br />control-plane nodes by adding tolerations for the standard control-plane<br />and legacy master taints on top of any Tolerations. It defaults to false:<br />a KubeletHealthz or ContainerRuntime check runs the agent with host<br />network or as root, so landing it on a control-plane node is a decision<br />the author makes, not a default. | false | Optional: \{\} <br /> |
+| `metricsHostPort` _integer_ | MetricsHostPort is the legacy-named host port where a host-network agent<br />(one running a KubeletHealthz item) serves liveness. When unset, the operator<br />derives a port in 20000–22767 from the check's namespaced name; that<br />derivation is a hash, so two host-network checks scheduled on the same<br />node can collide, which surfaces as the second agent crash-looping<br />(AgentReady=False) and is reported on the AgentPrivileged condition. Set<br />this to resolve such a collision, or to avoid an unrelated host listener.<br />Ignored for a check without a host-network item. |  | Maximum: 65535 <br />Minimum: 1024 <br />Optional: \{\} <br /> |
+| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the operator refreshes the rolled-up<br />HealthReport (the roll-up transition cadence). Defaults to 5m when<br />unset. Must be at least 10s (MinCheckInterval); the operator clamps<br />stored objects that predate this floor to it at runtime.<br />The runtime cadence is capped: the node-agent re-evaluates at<br />min(interval, 5m), the operator reconciles and refreshes<br />status.lastRunTime on that same cadence (so a silently dead agent is<br />noticed within minutes and a healthy check never reads as stale), and a<br />report counts as fresh for one full agent cycle — that cadence plus<br />three times the capped Timeout. A value above 5m therefore has no<br />further runtime effect; HealthReports are written only when the verdict<br />transitions, whatever the interval.<br />Headroom, kubelet, and runtime liveness change on the order of minutes,<br />so a long interval must not accept a measurement that old: a 24h<br />interval still detects a disk filling up within minutes. Unchanged<br />evaluations refresh only status liveness (LastRunTime); a new<br />HealthReport is written only when the verdict transitions. |  | Optional: \{\} <br /> |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent evaluation pass, including the kubelet<br />and runtime-socket probes. Defaults to 30s when unset. Must be at least 1s<br />(MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
+| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckStatus
+
+
+
+NodeHealthCheckStatus defines the observed state of NodeHealthCheck.
+
+
+
+_Appears in:_
+- [NodeHealthCheck](#nodehealthcheck)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec, whether<br />the agent DaemonSet is rolled out and reporting, and whether the current<br />verdict was computed from a complete scan of the fleet. |  | Optional: \{\} <br /> |
+| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results. It is refreshed on the capped agent cadence, min(interval, 5m),<br />even when the aggregate is unchanged, so downstream liveness stays<br />fresh, and never moves backward: an incomplete window freezes it along<br />with the verdict. |  | Optional: \{\} <br /> |
+| `lastResult` _string_ | LastResult is the aggregate result across every node in scope as of the<br />most recent complete evaluation. An incomplete window (a rollout, a node<br />joining, an agent restart) freezes it rather than clearing it; the<br />CoverageComplete condition says which. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
+| `summary` _string_ | Summary is a human-readable one-line outcome naming how many nodes<br />passed and, when some did not, the worst of them. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
+| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions,<br />so this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every node in<br />scope has a fresh report carrying it. Until then the previous verdict is<br />kept. A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
+| `reportingNodes` _integer_ | ReportingNodes is the number of fresh, well-formed reports the operator<br />found at its latest reconcile, including surplus reports from nodes that<br />have since left scope. It is refreshed every reconcile, so it can change<br />while LastResult and NodeResults are frozen across an incomplete window;<br />it is a liveness count, not the coverage signal — CoverageComplete is. |  | Optional: \{\} <br /> |
+| `nodeResults` _[NodeHealthNodeResult](#nodehealthnoderesult) array_ | NodeResults holds one entry per node in the most recent complete<br />evaluation, sorted by node name, as bounded per-node detail. Capped at<br />100 entries, so in a larger fleet a node can be absent here although it<br />reported; the fleet-wide coverage signal is the CoverageComplete<br />condition, which names the nodes that have not reported. The verdict and<br />coverage are computed across every node before truncation. Like<br />LastResult it is frozen, not cleared, across an incomplete window. |  | MaxItems: 100 <br />Optional: \{\} <br /> |
+
+
+#### NodeHealthCheckType
+
+_Underlying type:_ _string_
+
+NodeHealthCheckType selects what a NodeHealthCheck asserts on each node.
+
+The five types are not equal in what they cost the agent. DiskHeadroom and
+InodeHeadroom are a statfs over a read-only hostPath mount and keep the
+hardened default profile. NodeCondition is evaluated by the operator, not
+the agent, and needs a cluster-wide read on Node objects. KubeletHealthz
+needs hostNetwork, because the kubelet's health endpoint binds to
+localhost. ContainerRuntime needs the runtime socket mounted and the agent
+running as root to open it. The operator grants each privilege only when a
+check of that type is present, so a spec that declares only headroom checks
+never pays for the others (#206).
+
+_Validation:_
+- Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime]
+
+_Appears in:_
+- [NodeHealthCheckItem](#nodehealthcheckitem)
+
+| Field | Description |
+| --- | --- |
+| `DiskHeadroom` | NodeHealthCheckDiskHeadroom asserts the percentage of free bytes on the<br />filesystem holding Path stays above the thresholds.<br /> |
+| `InodeHeadroom` | NodeHealthCheckInodeHeadroom asserts the percentage of free inodes on the<br />filesystem holding Path stays above the thresholds.<br /> |
+| `NodeCondition` | NodeHealthCheckNodeCondition asserts the node's own status conditions<br />carry their healthy value (Ready=True; every pressure condition False).<br /> |
+| `KubeletHealthz` | NodeHealthCheckKubeletHealthz asserts the kubelet answers its localhost<br />/healthz endpoint.<br /> |
+| `ContainerRuntime` | NodeHealthCheckContainerRuntime asserts the container runtime accepts<br />connections on its CRI socket.<br /> |
+
+
+#### NodeHealthNodeResult
+
+
+
+NodeHealthNodeResult is the folded verdict for one node on the most recent
+complete evaluation.
+
+
+
+_Appears in:_
+- [NodeHealthCheckStatus](#nodehealthcheckstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `node` _string_ | Node is the node the result belongs to. |  | MaxLength: 253 <br /> |
+| `result` _string_ | Result is the worst outcome across every check evaluated on this node. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
+| `message` _string_ | Message summarises the worst check on the node, so a failing node is<br />triaged without opening the HealthReport. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
+| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the node's report was produced. |  | Optional: \{\} <br /> |
+
+
+#### ThresholdValue
+
+_Underlying type:_ _string_
+
+ThresholdValue is one adapter threshold knob value. It is an ordinary
+string on the wire; the MaxLength bound exists so the API server's CEL cost
+estimator has a real input size for the threshold shape rules below (an
+unbounded map value string prices those rules out of the per-CRD budget).
+
+_Validation:_
+- MaxLength: 64
+
+_Appears in:_
+- [AddonCheckFamilyPolicy](#addoncheckfamilypolicy)
+
+
+
+
+## fathom.skaphos.io/v1alpha1
+
+Package v1alpha1 contains API Schema definitions for the fathom v1alpha1 API group.
+
+### Resource Types
+- [AddonDefinition](#addondefinition)
+- [AddonDefinitionBinding](#addondefinitionbinding)
+- [AddonDefinitionBindingList](#addondefinitionbindinglist)
+- [AddonDefinitionList](#addondefinitionlist)
+
+
+
+#### AddonDefinition
+
+
+
+AddonDefinition declares administrator-bound runtime health checks.
+
+
+
+_Appears in:_
+- [AddonDefinitionList](#addondefinitionlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinition` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[AddonDefinitionSpec](#addondefinitionspec)_ |  |  |  |
+| `status` _[AddonDefinitionStatus](#addondefinitionstatus)_ |  |  | Optional: \{\} <br /> |
+
+
+#### AddonDefinitionBinding
+
+
+
+AddonDefinitionBinding delegates a definition to a dedicated identity.
+
+
+
+_Appears in:_
+- [AddonDefinitionBindingList](#addondefinitionbindinglist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionBinding` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[AddonDefinitionBindingSpec](#addondefinitionbindingspec)_ |  |  |  |
+| `status` _[AddonDefinitionBindingStatus](#addondefinitionbindingstatus)_ |  |  | Optional: \{\} <br /> |
+
+
+#### AddonDefinitionBindingList
+
+
+
+AddonDefinitionBindingList contains delegation bindings.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionBindingList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[AddonDefinitionBinding](#addondefinitionbinding) array_ |  |  |  |
+
+
+#### AddonDefinitionBindingSpec
+
+
+
+AddonDefinitionBindingSpec is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinitionBinding](#addondefinitionbinding)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `definitionRef` _[DefinitionReference](#definitionreference)_ | DefinitionRef is the declared definitionRef. |  |  |
+| `serviceAccountRef` _[DefinitionObjectReference](#definitionobjectreference)_ | ServiceAccountRef is the declared serviceAccountRef. |  |  |
+| `enabled` _boolean_ | Enabled is the declared enabled. | false | Optional: \{\} <br /> |
+| `targetScope` _[DefinitionBindingScope](#definitionbindingscope)_ | TargetScope is the declared targetScope. |  |  |
+
+
+#### AddonDefinitionBindingStatus
+
+
+
+AddonDefinitionBindingStatus describes observation, never authorization.
+Accepted records spec/identity validity; Ready records eligibility; Drained is
+acknowledged only for disabled, observed-generation state with zero active
+runs in the current leadership epoch. Consumers must independently verify the
+epoch against the configured Lease before treating Drained as current.
+
+
+
+_Appears in:_
+- [AddonDefinitionBinding](#addondefinitionbinding)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `activeRuns` _integer_ | ActiveRuns is the declared activeRuns. |  | Maximum: 4 <br />Minimum: 0 <br />Optional: \{\} <br /> |
+| `leaderIdentity` _string_ | LeaderIdentity is the declared leaderIdentity. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `leaderEpoch` _[DefinitionLeaderEpoch](#definitionleaderepoch)_ | LeaderEpoch is the declared leaderEpoch. |  | Optional: \{\} <br /> |
+| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
+
+
+#### AddonDefinitionList
+
+
+
+AddonDefinitionList contains runtime definitions.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
+| `kind` _string_ | `AddonDefinitionList` | | |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[AddonDefinition](#addondefinition) array_ |  |  |  |
+
+
+#### AddonDefinitionSpec
+
+
+
+AddonDefinitionSpec is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinition](#addondefinition)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `addonType` _[DefinitionDNSLabel](#definitiondnslabel)_ | AddonType is the declared addonType. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `adapterVersion` _string_ | AdapterVersion is the declared adapterVersion. |  | MaxLength: 256 <br />MinLength: 1 <br /> |
+| `semanticsVersion` _integer_ | SemanticsVersion is the declared semanticsVersion. |  | Enum: [1] <br /> |
+| `optional` _boolean_ | Optional is the declared optional. | false | Optional: \{\} <br /> |
+| `supportedVersions` _string_ | SupportedVersions is the declared supportedVersions. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
+| `versionSource` _[DefinitionVersionSource](#definitionversionsource)_ | VersionSource is the declared versionSource. |  | Optional: \{\} <br /> |
+| `families` _[DefinitionFamily](#definitionfamily) array_ | Families is the declared families. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
+| `requestedReads` _[DefinitionReadRule](#definitionreadrule) array_ | RequestedReads is the declared requestedReads. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+
+
+#### AddonDefinitionStatus
+
+
+
+AddonDefinitionStatus is a bounded runtime definition contract.
+
+
+
+_Appears in:_
+- [AddonDefinition](#addondefinition)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the declared observedGeneration. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `revision` _string_ | Revision is the declared revision. |  | MaxLength: 256 <br />Optional: \{\} <br /> |
+| `conditions` _[DefinitionStatusCondition](#definitionstatuscondition) array_ | Conditions is the declared conditions. |  | MaxItems: 8 <br />Optional: \{\} <br /> |
 
 
 #### DefinitionAnnotationStaleness
@@ -1083,26 +1700,6 @@ _Appears in:_
 - [DefinitionVersionSource](#definitionversionsource)
 - [DefinitionWorkload](#definitionworkload)
 
-
-
-#### DefinitionLeaderEpoch
-
-
-
-DefinitionLeaderEpoch is a bounded runtime definition contract.
-
-
-
-_Appears in:_
-- [AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)
-- [AddonDefinitionBindingStatus](#addondefinitionbindingstatus)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `leaseUID` _string_ | LeaseUID is the declared leaseUID. |  | MaxLength: 128 <br />MinLength: 1 <br /> |
-| `holderIdentity` _string_ | HolderIdentity is the declared holderIdentity. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
-| `acquireTime` _[MicroTime](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#microtime-v1-meta)_ | AcquireTime is the declared acquireTime. |  |  |
-| `leaseTransitions` _integer_ | LeaseTransitions is the declared leaseTransitions. |  | Minimum: 0 <br /> |
 
 
 #### DefinitionObjectReference
@@ -1424,585 +2021,5 @@ _Appears in:_
 | `checkPods` _boolean_ | CheckPods is the declared checkPods. | false | Optional: \{\} <br /> |
 | `restartWarnThresholdKey` _[DefinitionThresholdKey](#definitionthresholdkey)_ | RestartWarnThresholdKey is the declared restartWarnThresholdKey. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[A-Za-z][A-Za-z0-9_.-]*$` <br />Optional: \{\} <br /> |
 | `defaultRestartWarn` _integer_ | DefaultRestartWarn is the declared defaultRestartWarn. | 0 | Minimum: 0 <br />Optional: \{\} <br /> |
-
-
-#### HealthCheck
-
-
-
-HealthCheck is the Schema for the healthchecks API.
-
-
-
-_Appears in:_
-- [HealthCheckList](#healthchecklist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `HealthCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[HealthCheckSpec](#healthcheckspec)_ |  |  |  |
-| `status` _[HealthCheckStatus](#healthcheckstatus)_ |  |  |  |
-
-
-#### HealthCheckList
-
-
-
-HealthCheckList contains a list of HealthCheck.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `HealthCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[HealthCheck](#healthcheck) array_ |  |  |  |
-
-
-#### HealthCheckSpec
-
-
-
-HealthCheckSpec defines the desired state of HealthCheck. A HealthCheck is
-a thin wrapper that mirrors the status of a specialized check resource into
-a uniform shape suitable for ClusterHealth aggregation. HealthCheck does not
-execute checks itself.
-
-
-
-_Appears in:_
-- [HealthCheck](#healthcheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `checkRef` _[CheckTargetRef](#checktargetref)_ | CheckRef identifies the specialized check resource this HealthCheck wraps.<br />It is immutable: retargeting a wrapper would silently repoint its mirrored<br />status snapshot at a different check; replace the HealthCheck instead (SKA-576). |  |  |
-| `description` _string_ | Description is a human-readable purpose for this HealthCheck. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-| `paused` _boolean_ | Paused suspends mirroring of the referenced check's status into this<br />HealthCheck. The most recent Status snapshot is preserved while paused. |  | Optional: \{\} <br /> |
-
-
-#### HealthCheckStatus
-
-
-
-HealthCheckStatus defines the observed state of HealthCheck. The fields are
-derived from the referenced check's status; consumers (notably
-ClusterHealth) read this status without needing to understand any
-specialized check schema.
-
-
-
-_Appears in:_
-- [HealthCheck](#healthcheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize the controller's view of the wrapped check. |  | Optional: \{\} <br /> |
-| `result` _[HealthReportResult](#healthreportresult)_ | Result is the outcome surfaced from the referenced check's most recent run. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
-| `summary` _string_ | Summary is a human-readable one-line outcome description. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-| `sourceInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | SourceInterval is the cadence the referenced check is expected to run at,<br />after its own defaults and floor clamping. It is a fact about the wrapped<br />check, not a judgement about this one: it is what lets a ClusterHealth<br />aggregate judge staleness relative to cadence, since aggregates select<br />HealthChecks and never see the underlying checks (#277).<br />Empty when the cadence cannot be resolved — an unsupported checkRef kind,<br />a missing target, or a lookup failure — so consumers can tell "runs hourly"<br />from "cadence unknown" rather than reading an absent value as zero. |  | Optional: \{\} <br /> |
-| `sourceObservedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | SourceObservedAt is when the referenced check last completed. |  | Optional: \{\} <br /> |
-| `lastReportName` _string_ | LastReportName names the most recent HealthReport produced by the<br />referenced check, when one exists. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `sourceReady` _boolean_ | SourceReady mirrors whether the referenced check's most recent run could<br />EXECUTE and COMPLETE with eligible inputs. It is not a verdict:<br />contracts/runtime.md, "Ready denotes executable/completed, freshness<br />denotes recency, and neither means Pass". A false SourceReady beside a<br />Pass Result is the ordinary shape of preserved evidence — the last<br />completed run passed, and the most recent attempt could not run at all.<br />Nil when the referenced check has never published a readiness condition,<br />which is a different statement from "the check is not ready". |  | Optional: \{\} <br /> |
-| `sourceReadyReason` _string_ | SourceReadyReason is the referenced check's own reason for that<br />readiness — UnknownAddonType, AuthorizationRevoked, AccessDenied,<br />RunCompleted and so on — so an operator can tell why a mirrored verdict<br />is not being refreshed without reading the wrapped check. |  | MaxLength: 128 <br />Optional: \{\} <br /> |
-| `evidenceFreshness` _[AddonCheckEvidenceFreshness](#addoncheckevidencefreshness)_ | EvidenceFreshness mirrors the recency and eligibility of the completed<br />evidence behind Result, re-derived from the evidence's age at mirror<br />time. Empty for checks that publish no evidence (every built-in adapter),<br />which is "not applicable" rather than "unavailable".<br />This is the field that keeps a retained Pass from reading as a fresh<br />success: "Freshness=Stale even if stored verdict was Pass." |  | Enum: [Current Stale Superseded Unavailable] <br />Optional: \{\} <br /> |
-| `evidenceFreshnessReason` _string_ | EvidenceFreshnessReason explains a freshness that is not Current. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-
-
-#### HealthReport
-
-
-
-HealthReport is the Schema for the healthreports API.
-
-
-
-_Appears in:_
-- [HealthReportList](#healthreportlist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `HealthReport` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[HealthReportSpec](#healthreportspec)_ | Spec is immutable: a HealthReport is a point-in-time history record.<br />The operator only ever creates reports (createOrReuseHealthReport);<br />mutating one after the fact would rewrite history (SKA-576). |  |  |
-| `status` _[HealthReportStatus](#healthreportstatus)_ |  |  |  |
-
-
-#### HealthReportAttribution
-
-
-
-HealthReportAttribution records which runtime revision, under which
-delegated authority, produced a report, and how much that run actually
-covered (T045 of specs/012-addon-definition-runtime).
-
-A HealthReport is history, and history is only useful while it stays
-attributable: contracts/runtime.md requires that when a binding or grant
-recovers, "history remains attributable", and the lifecycle matrix keeps
-superseded evidence "with its original time/revision/context". Without this
-block a stored report is just a verdict and a timestamp, so a Pass produced
-under authority that has since been revoked, or under a definition revision
-that has since been replaced, reads exactly like one produced under the
-current one.
-
-It reuses the AddonCheck evidence vocabulary deliberately rather than
-restating it: the report is created FROM published evidence, and two
-independent spellings of the same context would be free to drift apart —
-which is precisely the divergence this field exists to make visible.
-
-It is optional and absent on reports from built-in adapters, which carry no
-runtime revision, no delegated binding and no dedicated identity to name.
-
-
-
-_Appears in:_
-- [HealthReportSpec](#healthreportspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `revision` _[AddonCheckEvidenceRevision](#addoncheckevidencerevision)_ | Revision is the runtime definition revision that produced the report:<br />the definition incarnation plus the operator build and adapter version<br />that compiled it. |  | Optional: \{\} <br /> |
-| `authority` _[AddonCheckEvidenceAuthority](#addoncheckevidenceauthority)_ | Authority is the delegated binding, dedicated identity, check context and<br />leadership epoch the producing run was attributed to. |  | Optional: \{\} <br /> |
-| `coverage` _[AddonCheckEvidenceCoverage](#addoncheckevidencecoverage)_ | Coverage distinguishes an assessed verdict from a completed run that<br />evaluated nothing, so a Skipped entry in history cannot be mistaken for<br />an assessed-and-healthy one. |  | Enum: [ChecksEvaluated NoChecksEvaluated] <br />Optional: \{\} <br /> |
-| `message` _string_ | Message explains the coverage in one line. A report produced by a<br />completed all-Skipped run carries exactly<br />[AddonCheckNoChecksEvaluatedMessage]. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-
-
-#### HealthReportCheck
-
-
-
-HealthReportCheck records one adapter-emitted check result.
-
-
-
-_Appears in:_
-- [HealthReportSpec](#healthreportspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `family` _string_ | Family is the adapter-defined check family that produced this result. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
-| `result` _[HealthReportResult](#healthreportresult)_ | Result is this check's outcome. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
-| `targetRef` _[HealthReportTargetRef](#healthreporttargetref)_ | TargetRef is the observed resource for this check. |  |  |
-| `summary` _string_ | Summary is a human-readable one-line outcome description. |  | Optional: \{\} <br /> |
-| `details` _object (keys:string, values:string)_ | Details is adapter-defined structured context for the check. |  | Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when this check completed. |  |  |
-| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is how long this check took. |  | Optional: \{\} <br /> |
-
-
-#### HealthReportList
-
-
-
-HealthReportList contains a list of HealthReport.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `HealthReportList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[HealthReport](#healthreport) array_ |  |  |  |
-
-
-#### HealthReportResult
-
-_Underlying type:_ _string_
-
-HealthReportResult is the aggregate result for a report or individual check.
-
-_Validation:_
-- Enum: [Pass Warn Fail Error Skipped Unknown]
-
-_Appears in:_
-- [ClusterHealthChildSummary](#clusterhealthchildsummary)
-- [ClusterHealthStatus](#clusterhealthstatus)
-- [HealthCheckStatus](#healthcheckstatus)
-- [HealthReportCheck](#healthreportcheck)
-- [HealthReportSpec](#healthreportspec)
-
-| Field | Description |
-| --- | --- |
-| `Pass` |  |
-| `Warn` |  |
-| `Fail` |  |
-| `Error` |  |
-| `Skipped` |  |
-| `Unknown` |  |
-
-
-#### HealthReportSpec
-
-
-
-HealthReportSpec defines the desired state of HealthReport.
-
-
-
-_Appears in:_
-- [HealthReport](#healthreport)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `sourceRef` _[HealthReportTargetRef](#healthreporttargetref)_ | SourceRef identifies the check resource that produced this report. |  |  |
-| `addonType` _string_ | AddonType is the AddonCheck addon type used to select the adapter. |  | Optional: \{\} <br /> |
-| `adapterName` _string_ | AdapterName is the adapter identity that produced this report. |  | Optional: \{\} <br /> |
-| `adapterVersion` _string_ | AdapterVersion is the adapter implementation version. |  | Optional: \{\} <br /> |
-| `detectedVersion` _string_ | DetectedVersion is the installed addon release version detected for this<br />run, or empty when undetectable or not detected. Distinct from<br />AdapterVersion (the adapter's own version) — SKA-527. |  | Optional: \{\} <br /> |
-| `contractVersion` _string_ | ContractVersion is the adapter contract version used for this run. |  | Optional: \{\} <br /> |
-| `result` _[HealthReportResult](#healthreportresult)_ | Result is the aggregate outcome across all checks. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
-| `checks` _[HealthReportCheck](#healthreportcheck) array_ | Checks are the individual observations produced by the adapter. |  | Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the adapter run completed. |  |  |
-| `duration` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Duration is the total adapter run duration. |  | Optional: \{\} <br /> |
-| `attribution` _[HealthReportAttribution](#healthreportattribution)_ | Attribution names the runtime revision and delegated authority this<br />report was produced under. Absent for built-in adapters, which have<br />neither. |  | Optional: \{\} <br /> |
-
-
-#### HealthReportStatus
-
-
-
-HealthReportStatus defines the observed state of HealthReport.
-
-
-
-_Appears in:_
-- [HealthReport](#healthreport)
-
-
-
-#### HealthReportTargetRef
-
-
-
-HealthReportTargetRef identifies a Kubernetes object observed by a check.
-
-
-
-_Appears in:_
-- [HealthReportCheck](#healthreportcheck)
-- [HealthReportSpec](#healthreportspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | APIVersion is the target object's API version. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `kind` _string_ | Kind is the target object's kind. |  | MaxLength: 63 <br />Optional: \{\} <br /> |
-| `namespace` _string_ | Namespace is the target object's namespace, if namespaced. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `name` _string_ | Name is the target object's name. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
-
-
-#### NodeCertificateCheck
-
-
-
-NodeCertificateCheck is the Schema for the nodecertificatechecks API.
-
-
-
-_Appears in:_
-- [NodeCertificateCheckList](#nodecertificatechecklist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `NodeCertificateCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[NodeCertificateCheckSpec](#nodecertificatecheckspec)_ |  |  |  |
-| `status` _[NodeCertificateCheckStatus](#nodecertificatecheckstatus)_ |  |  |  |
-
-
-#### NodeCertificateCheckList
-
-
-
-NodeCertificateCheckList contains a list of NodeCertificateCheck.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `NodeCertificateCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[NodeCertificateCheck](#nodecertificatecheck) array_ |  |  |  |
-
-
-#### NodeCertificateCheckSpec
-
-
-
-NodeCertificateCheckSpec defines the desired state of NodeCertificateCheck.
-
-A NodeCertificateCheck scans on-disk X.509 certificates on every selected
-node and reports time-to-expiry before an expiring certificate can take the
-cluster down. The operator runs the scan via a hardened, read-only node-agent
-DaemonSet (one pod per node); each agent publishes its per-node result, and
-the operator rolls those up into a single HealthReport and mirrors the
-aggregate into Status.
-
-
-
-_Appears in:_
-- [NodeCertificateCheck](#nodecertificatecheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `paths` _string array_ | Paths is the set of on-disk certificate locations each node-agent scans.<br />Every entry is an absolute path to either a PEM-encoded certificate file<br />(read directly) or a directory (scanned recursively, to a bounded depth,<br />for *.crt, *.pem, and *.cert files). Files ending in .conf or .kubeconfig<br />are parsed as kubeconfigs and their embedded client/CA certificates are<br />extracted. Paths the non-root agent cannot read are reported as Skipped,<br />never Fail or Error; paths that do not exist on a node are omitted from the<br />report entirely, so absent distribution defaults do not flood it. When empty, a<br />distribution-agnostic default set covering common kubeadm, k3s/RKE2, etcd,<br />and kubelet certificate locations is used. The operator mounts the parent<br />directory of each configured path into the agent read-only; a configured<br />directory absent on a node is created empty by the kubelet (hostPath<br />DirectoryOrCreate), so prefer narrowing Paths on immutable-OS distributions.<br />To prevent a namespaced tenant from turning the privileged node-agent into a<br />confused deputy that mounts arbitrary host directories, every entry must be a<br />traversal-free absolute path (no "..", never the host root "/") under one of<br />the operator-approved certificate prefixes: /etc/kubernetes, /var/lib/kubelet,<br />/etc/etcd, /var/lib/etcd, /var/lib/rancher. Paths outside this allowlist are<br />rejected at admission. |  | MaxItems: 64 <br />items:MaxLength: 512 <br />Optional: \{\} <br /> |
-| `warnDays` _integer_ | WarnDays is the days-to-expiry threshold at or below which a certificate<br />is reported as Warn. Must be greater than or equal to CriticalDays. | 30 | Minimum: 0 <br />Optional: \{\} <br /> |
-| `criticalDays` _integer_ | CriticalDays is the days-to-expiry threshold at or below which a<br />certificate is reported as Fail. A certificate already past its notAfter<br />time is always Fail regardless of this value. | 7 | Minimum: 0 <br />Optional: \{\} <br /> |
-| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
-| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. It is empty by default. Control-plane<br />tolerations are NOT added here — use IncludeControlPlaneNodes for that, so<br />scheduling the privileged agent onto control-plane nodes is always an<br />explicit, auditable opt-in rather than a silent default. |  | Optional: \{\} <br /> |
-| `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on control-plane<br />nodes by adding tolerations for the standard control-plane and legacy master<br />taints (node-role.kubernetes.io/control-plane and .../master, Exists /<br />NoSchedule) on top of any Tolerations.<br />It defaults to false. The kubeadm apiserver, etcd, and front-proxy<br />certificates live on control-plane nodes, so set this to true to scan them —<br />but doing so mounts control-plane host paths into the agent, which is why it<br />is gated behind an explicit opt-in rather than applied by default. | false | Optional: \{\} <br /> |
-| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which each node-agent re-scans its<br />certificates and the operator refreshes the rolled-up HealthReport.<br />Defaults to 1h when unset. Must be at least 10s (MinCheckInterval); the<br />operator clamps stored objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent scan pass. Defaults to 30s when<br />unset. Must be at least 1s (MinCheckTimeout); the operator clamps stored<br />objects that predate this floor to it at runtime. |  | Optional: \{\} <br /> |
-| `paused` _boolean_ | Paused stops the operator from running the agent DaemonSet and refreshing<br />reports. The agent DaemonSet is removed while paused; the most recent<br />Status snapshot is preserved. |  | Optional: \{\} <br /> |
-| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />After each new HealthReport the controller deletes the oldest reports<br />beyond the limit. The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
-
-
-#### NodeCertificateCheckStatus
-
-
-
-NodeCertificateCheckStatus defines the observed state of NodeCertificateCheck.
-
-
-
-_Appears in:_
-- [NodeCertificateCheck](#nodecertificatecheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec and whether<br />the agent DaemonSet is rolled out and reporting. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results (the latest poll). It is refreshed on the interval cadence even<br />when the aggregate result is unchanged, so downstream liveness stays fresh,<br />and does not imply a new HealthReport was written on every refresh. |  | Optional: \{\} <br /> |
-| `lastResult` _string_ | LastResult is the aggregate result across all reporting nodes as of the<br />most recent evaluation. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
-| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions, so<br />this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
-| `reportingNodes` _integer_ | ReportingNodes is the number of nodes that have published a scan result<br />the operator consumed in the most recent roll-up. |  | Optional: \{\} <br /> |
-| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every desired<br />node's fresh report carries it. Until then the previous verdict is kept.<br />A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-
-
-#### NodeHealthCheck
-
-
-
-NodeHealthCheck is the Schema for the nodehealthchecks API.
-
-
-
-_Appears in:_
-- [NodeHealthCheckList](#nodehealthchecklist)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `NodeHealthCheck` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[NodeHealthCheckSpec](#nodehealthcheckspec)_ |  |  |  |
-| `status` _[NodeHealthCheckStatus](#nodehealthcheckstatus)_ |  |  |  |
-
-
-#### NodeHealthCheckItem
-
-
-
-NodeHealthCheckItem is one assertion made on every node in scope. Which
-fields are legal depends on Type; the rules below reject a field on a type
-that does not use it, so a misapplied threshold is a write-time error and
-not a silently ignored one.
-The relation is checked on the effective values: an omitted threshold
-counts as its runtime default, so criticalPercentFree: 30 with warn omitted
-(effective warn 20) and warnPercentFree: 0 with critical omitted (effective
-critical 10) are rejected here rather than silently clamped at run time.
-The path allowlist stops a namespaced tenant from turning the node-agent into
-a confused deputy that mounts arbitrary host directories; it is mirrored in
-internal/nodehealth so the operator re-checks it on clusters running an older
-CRD. The host root is never allowed: statfs of /var/lib/kubelet reports the
-root filesystem on any node where it is not a separate mount.
-
-
-
-_Appears in:_
-- [NodeHealthCheckSpec](#nodehealthcheckspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `type` _[NodeHealthCheckType](#nodehealthchecktype)_ | Type is the assertion this item makes. See NodeHealthCheckType for the<br />privilege each type costs the node-agent. |  | Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime] <br /> |
-| `path` _string_ | Path is an existing directory on every selected node whose headroom is<br />measured. Regular files are not supported. Required for DiskHeadroom and<br />InodeHeadroom and rejected for every other type. The operator mounts it<br />into the agent read-only, so it must be a traversal-free absolute path<br />under one of the operator-approved prefixes. Admission validates the path's<br />syntax and prefix but cannot inspect a node's host filesystem.<br />The operator uses a non-creating hostPath Directory mount. If Path does<br />not exist or is not a directory on a node, Kubernetes cannot start<br />that node's agent pod;<br />AgentReady becomes False and coverage remains incomplete while the last<br />complete verdict is retained. This avoids mutating the host or measuring<br />the filesystem that would have held a newly created directory. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
-| `warnPercentFree` _integer_ | WarnPercentFree is the percentage of free space (or inodes) at or below<br />which the check is Warn. Applies only to the headroom types. Defaults to<br />20 (DefaultNodeHealthWarnPercentFree) when unset. Must be greater than or<br />equal to CriticalPercentFree. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
-| `criticalPercentFree` _integer_ | CriticalPercentFree is the percentage of free space (or inodes) at or<br />below which the check is Fail. Applies only to the headroom types.<br />Defaults to 10 (DefaultNodeHealthCriticalPercentFree) when unset. |  | Maximum: 100 <br />Minimum: 0 <br />Optional: \{\} <br /> |
-| `conditions` _string array_ | Conditions names the node condition types a NodeCondition check asserts.<br />Ready is expected True; every other listed condition is expected False,<br />which is the healthy value for every pressure and unavailability<br />condition Kubernetes and the cloud providers define. Defaults to Ready,<br />MemoryPressure, DiskPressure, and PIDPressure when unset. A condition the<br />node does not report is Skipped, not Fail. Applies only to NodeCondition. |  | MaxItems: 16 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
-| `socketPath` _string_ | SocketPath is the CRI socket a ContainerRuntime check dials. Defaults to<br />/run/containerd/containerd.sock when unset. The operator mounts the socket<br />itself (hostPath type Socket), so a node without a socket at this path<br />cannot schedule the agent and surfaces as incomplete coverage rather than<br />as a verdict. Applies only to ContainerRuntime. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
-
-
-#### NodeHealthCheckList
-
-
-
-NodeHealthCheckList contains a list of NodeHealthCheck.
-
-
-
-
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `apiVersion` _string_ | `fathom.skaphos.io/v1alpha1` | | |
-| `kind` _string_ | `NodeHealthCheckList` | | |
-| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[NodeHealthCheck](#nodehealthcheck) array_ |  |  |  |
-
-
-#### NodeHealthCheckSpec
-
-
-
-NodeHealthCheckSpec defines the desired state of NodeHealthCheck.
-
-A NodeHealthCheck asserts a set of node-local health signals on every
-selected node — filesystem headroom, the node's own conditions, kubelet
-health, and container-runtime liveness — and reports one verdict per node
-plus a single folded verdict for the check. The node-local signals are
-collected by the same hardened node-agent DaemonSet NodeCertificateCheck
-uses; the operator rolls the per-node reports into a HealthReport and
-mirrors the aggregate into Status.
-
-There is no field to pause a NodeHealthCheck. Stopping a check means
-deleting it (#262).
-The comparison uses the effective interval: an omitted interval is 5m at
-runtime, so timeout: 10m without an interval is rejected here rather than
-admitted and silently capped. Keep the literal in step with
-DefaultNodeHealthCheckInterval.
-Per-node results and HealthReport checks are keyed by the item's identity —
-its type plus what it measures: the path for the headroom types, the socket
-for ContainerRuntime (its default counts as a value), nothing for the
-rest — so two items with the same identity would collide there. Rejecting
-the duplicate at write time is far kinder than a status update failing
-later with an error that says nothing about the specification that caused
-it. Two ContainerRuntime items with different sockets are distinct. The
-pathless types key on their own type name rather than an empty string:
-gofmt rewrites two adjacent apostrophes inside a doc comment as a
-typographic quote, which would silently break the rule at CRD install.
-A headroom path that is also a ContainerRuntime socket would be mounted
-twice at one mountPath — as a Directory and as a Socket —
-which the kubelet rejects, and a directory mount over a socket is
-meaningless anyway. The socket's default counts as a value.
-
-
-
-_Appears in:_
-- [NodeHealthCheck](#nodehealthcheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `checks` _[NodeHealthCheckItem](#nodehealthcheckitem) array_ | Checks are the assertions made on every node in scope. At least one is<br />required — a check with no items would report a vacuous pass. |  | MaxItems: 16 <br />MinItems: 1 <br /> |
-| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector restricts which nodes run the agent DaemonSet. An empty<br />selector targets every node. |  | Optional: \{\} <br /> |
-| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#toleration-v1-core) array_ | Tolerations are applied verbatim to the agent DaemonSet so it can schedule<br />onto nodes carrying arbitrary taints. Control-plane tolerations are NOT<br />added here — use IncludeControlPlaneNodes for that, so scheduling the<br />agent onto control-plane nodes is always an explicit, auditable opt-in.<br />An omitted list and an empty list mean the same thing: no tolerations.<br />The operator never distinguishes the two, so the nil-vs-empty round-trip<br />the sibling kind carries (#150) has no effect here. |  | Optional: \{\} <br /> |
-| `includeControlPlaneNodes` _boolean_ | IncludeControlPlaneNodes opts the node-agent into scheduling on<br />control-plane nodes by adding tolerations for the standard control-plane<br />and legacy master taints on top of any Tolerations. It defaults to false:<br />a KubeletHealthz or ContainerRuntime check runs the agent with host<br />network or as root, so landing it on a control-plane node is a decision<br />the author makes, not a default. | false | Optional: \{\} <br /> |
-| `metricsHostPort` _integer_ | MetricsHostPort is the legacy-named host port where a host-network agent<br />(one running a KubeletHealthz item) serves liveness. When unset, the operator<br />derives a port in 20000–22767 from the check's namespaced name; that<br />derivation is a hash, so two host-network checks scheduled on the same<br />node can collide, which surfaces as the second agent crash-looping<br />(AgentReady=False) and is reported on the AgentPrivileged condition. Set<br />this to resolve such a collision, or to avoid an unrelated host listener.<br />Ignored for a check without a host-network item. |  | Maximum: 65535 <br />Minimum: 1024 <br />Optional: \{\} <br /> |
-| `interval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Interval is the cadence at which the operator refreshes the rolled-up<br />HealthReport (the roll-up transition cadence). Defaults to 5m when<br />unset. Must be at least 10s (MinCheckInterval); the operator clamps<br />stored objects that predate this floor to it at runtime.<br />The runtime cadence is capped: the node-agent re-evaluates at<br />min(interval, 5m), the operator reconciles and refreshes<br />status.lastRunTime on that same cadence (so a silently dead agent is<br />noticed within minutes and a healthy check never reads as stale), and a<br />report counts as fresh for one full agent cycle — that cadence plus<br />three times the capped Timeout. A value above 5m therefore has no<br />further runtime effect; HealthReports are written only when the verdict<br />transitions, whatever the interval.<br />Headroom, kubelet, and runtime liveness change on the order of minutes,<br />so a long interval must not accept a measurement that old: a 24h<br />interval still detects a disk filling up within minutes. Unchanged<br />evaluations refresh only status liveness (LastRunTime); a new<br />HealthReport is written only when the verdict transitions. |  | Optional: \{\} <br /> |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Timeout bounds a single node-agent evaluation pass, including the kubelet<br />and runtime-socket probes. Defaults to 30s when unset. Must be at least 1s<br />(MinCheckTimeout) and must not exceed Interval. |  | Optional: \{\} <br /> |
-| `historyLimit` _integer_ | HistoryLimit caps the number of HealthReports retained for this check.<br />The minimum of 1 keeps Status.LastReportName valid. | 10 | Minimum: 1 <br />Optional: \{\} <br /> |
-
-
-#### NodeHealthCheckStatus
-
-
-
-NodeHealthCheckStatus defines the observed state of NodeHealthCheck.
-
-
-
-_Appears in:_
-- [NodeHealthCheck](#nodehealthcheck)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the most recent metadata.generation reconciled by<br />the controller. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions summarize whether the controller accepted the spec, whether<br />the agent DaemonSet is rolled out and reporting, and whether the current<br />verdict was computed from a complete scan of the fleet. |  | Optional: \{\} <br /> |
-| `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | LastRunTime records when the operator last evaluated the node-agent<br />results. It is refreshed on the capped agent cadence, min(interval, 5m),<br />even when the aggregate is unchanged, so downstream liveness stays<br />fresh, and never moves backward: an incomplete window freezes it along<br />with the verdict. |  | Optional: \{\} <br /> |
-| `lastResult` _string_ | LastResult is the aggregate result across every node in scope as of the<br />most recent complete evaluation. An incomplete window (a rollout, a node<br />joining, an agent restart) freezes it rather than clearing it; the<br />CoverageComplete condition says which. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br />Optional: \{\} <br /> |
-| `summary` _string_ | Summary is a human-readable one-line outcome naming how many nodes<br />passed and, when some did not, the worst of them. |  | MaxLength: 1024 <br />Optional: \{\} <br /> |
-| `lastReportName` _string_ | LastReportName names the HealthReport capturing the current aggregate<br />result. A new HealthReport is written only when that result transitions,<br />so this name is stable across polls that observe the same result. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `lastRunTrigger` _string_ | LastRunTrigger records the fathom.skaphos.io/run-now annotation value<br />most recently consumed. A new value is carried to the node-agents through<br />their DaemonSet template, which restarts them; each agent stamps the value<br />into its report, and the operator records it here only once every node in<br />scope has a fresh report carrying it. Until then the previous verdict is<br />kept. A given on-demand trigger therefore completes exactly once. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
-| `desiredNodes` _integer_ | DesiredNodes is the number of nodes the agent DaemonSet targets<br />(DaemonSet status DesiredNumberScheduled). |  | Optional: \{\} <br /> |
-| `reportingNodes` _integer_ | ReportingNodes is the number of fresh, well-formed reports the operator<br />found at its latest reconcile, including surplus reports from nodes that<br />have since left scope. It is refreshed every reconcile, so it can change<br />while LastResult and NodeResults are frozen across an incomplete window;<br />it is a liveness count, not the coverage signal — CoverageComplete is. |  | Optional: \{\} <br /> |
-| `nodeResults` _[NodeHealthNodeResult](#nodehealthnoderesult) array_ | NodeResults holds one entry per node in the most recent complete<br />evaluation, sorted by node name, as bounded per-node detail. Capped at<br />100 entries, so in a larger fleet a node can be absent here although it<br />reported; the fleet-wide coverage signal is the CoverageComplete<br />condition, which names the nodes that have not reported. The verdict and<br />coverage are computed across every node before truncation. Like<br />LastResult it is frozen, not cleared, across an incomplete window. |  | MaxItems: 100 <br />Optional: \{\} <br /> |
-
-
-#### NodeHealthCheckType
-
-_Underlying type:_ _string_
-
-NodeHealthCheckType selects what a NodeHealthCheck asserts on each node.
-
-The five types are not equal in what they cost the agent. DiskHeadroom and
-InodeHeadroom are a statfs over a read-only hostPath mount and keep the
-hardened default profile. NodeCondition is evaluated by the operator, not
-the agent, and needs a cluster-wide read on Node objects. KubeletHealthz
-needs hostNetwork, because the kubelet's health endpoint binds to
-localhost. ContainerRuntime needs the runtime socket mounted and the agent
-running as root to open it. The operator grants each privilege only when a
-check of that type is present, so a spec that declares only headroom checks
-never pays for the others (#206).
-
-_Validation:_
-- Enum: [DiskHeadroom InodeHeadroom NodeCondition KubeletHealthz ContainerRuntime]
-
-_Appears in:_
-- [NodeHealthCheckItem](#nodehealthcheckitem)
-
-| Field | Description |
-| --- | --- |
-| `DiskHeadroom` | NodeHealthCheckDiskHeadroom asserts the percentage of free bytes on the<br />filesystem holding Path stays above the thresholds.<br /> |
-| `InodeHeadroom` | NodeHealthCheckInodeHeadroom asserts the percentage of free inodes on the<br />filesystem holding Path stays above the thresholds.<br /> |
-| `NodeCondition` | NodeHealthCheckNodeCondition asserts the node's own status conditions<br />carry their healthy value (Ready=True; every pressure condition False).<br /> |
-| `KubeletHealthz` | NodeHealthCheckKubeletHealthz asserts the kubelet answers its localhost<br />/healthz endpoint.<br /> |
-| `ContainerRuntime` | NodeHealthCheckContainerRuntime asserts the container runtime accepts<br />connections on its CRI socket.<br /> |
-
-
-#### NodeHealthNodeResult
-
-
-
-NodeHealthNodeResult is the folded verdict for one node on the most recent
-complete evaluation.
-
-
-
-_Appears in:_
-- [NodeHealthCheckStatus](#nodehealthcheckstatus)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `node` _string_ | Node is the node the result belongs to. |  | MaxLength: 253 <br /> |
-| `result` _string_ | Result is the worst outcome across every check evaluated on this node. |  | Enum: [Pass Warn Fail Error Skipped Unknown] <br /> |
-| `message` _string_ | Message summarises the worst check on the node, so a failing node is<br />triaged without opening the HealthReport. |  | MaxLength: 512 <br />Optional: \{\} <br /> |
-| `observedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | ObservedAt is when the node's report was produced. |  | Optional: \{\} <br /> |
-
-
-#### ThresholdValue
-
-_Underlying type:_ _string_
-
-ThresholdValue is one adapter threshold knob value. It is an ordinary
-string on the wire; the MaxLength bound exists so the API server's CEL cost
-estimator has a real input size for the threshold shape rules below (an
-unbounded map value string prices those rules out of the per-CRD budget).
-
-_Validation:_
-- MaxLength: 64
-
-_Appears in:_
-- [AddonCheckFamilyPolicy](#addoncheckfamilypolicy)
-
 
 

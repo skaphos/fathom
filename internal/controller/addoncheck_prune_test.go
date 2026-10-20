@@ -17,20 +17,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func TestPruneHealthReportHistoryProtectsCreatedReportAndOrdersTies(t *testing.T) {
 	t.Parallel()
 
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	limit := int32(2)
-	check := &fathomv1alpha1.AddonCheck{
+	check := &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "check", Namespace: "default"},
-		Spec:       fathomv1alpha1.AddonCheckSpec{HistoryLimit: &limit},
+		Spec:       fathomv1.AddonCheckSpec{HistoryLimit: &limit},
 	}
 	oldest := metav1.NewTime(time.Unix(1_699_999_999, 0))
 	tied := metav1.NewTime(time.Unix(1_700_000_000, 0))
@@ -46,7 +46,7 @@ func TestPruneHealthReportHistoryProtectsCreatedReportAndOrdersTies(t *testing.T
 			if err := c.List(ctx, list, opts...); err != nil {
 				return err
 			}
-			items := list.(*fathomv1alpha1.HealthReportList).Items
+			items := list.(*fathomv1.HealthReportList).Items
 			movePruneTestReport(items, "new-report", 0)
 			// Reverse the tied seeds so the expected survivor also proves that
 			// the name tie-break, rather than API list order, decides retention.
@@ -59,7 +59,7 @@ func TestPruneHealthReportHistoryProtectsCreatedReportAndOrdersTies(t *testing.T
 		context.Background(), logr.Discard(), check, "new-report",
 	)
 
-	var survivors fathomv1alpha1.HealthReportList
+	var survivors fathomv1.HealthReportList
 	if err := base.List(context.Background(), &survivors); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPruneHealthReportHistoryProtectsCreatedReportAndOrdersTies(t *testing.T
 	}
 }
 
-func movePruneTestReport(reports []fathomv1alpha1.HealthReport, name string, target int) {
+func movePruneTestReport(reports []fathomv1.HealthReport, name string, target int) {
 	for i := range reports {
 		if reports[i].Name == name {
 			reports[target], reports[i] = reports[i], reports[target]
@@ -81,14 +81,14 @@ func movePruneTestReport(reports []fathomv1alpha1.HealthReport, name string, tar
 	}
 }
 
-func healthReportForPruneTest(name string, created metav1.Time) *fathomv1alpha1.HealthReport {
-	return &fathomv1alpha1.HealthReport{ObjectMeta: metav1.ObjectMeta{
+func healthReportForPruneTest(name string, created metav1.Time) *fathomv1.HealthReport {
+	return &fathomv1.HealthReport{ObjectMeta: metav1.ObjectMeta{
 		Name:              name,
 		Namespace:         "default",
 		CreationTimestamp: created,
 		Labels: map[string]string{
-			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-			fathomv1alpha1.LabelHealthReportSourceName: "check",
+			fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+			fathomv1.LabelHealthReportSourceName: "check",
 		},
 	}}
 }

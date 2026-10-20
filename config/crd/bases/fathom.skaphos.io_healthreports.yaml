@@ -14,7 +14,23 @@ spec:
     singular: healthreport
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.result
+      name: Result
+      type: string
+    - jsonPath: .spec.sourceRef.kind
+      name: Source
+      type: string
+    - jsonPath: .spec.sourceRef.name
+      name: Name
+      type: string
+    - jsonPath: .spec.observedAt
+      name: Observed
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: HealthReport is the Schema for the healthreports API.
@@ -320,6 +336,8 @@ spec:
           status:
             description: HealthReportStatus defines the observed state of HealthReport.
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

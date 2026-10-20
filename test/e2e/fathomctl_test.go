@@ -29,7 +29,6 @@ const (
 	fathomctlDNS     = "fathomctl-dns"
 	fathomctlNodeCrt = "fathomctl-ncc"
 	fathomctlCH      = "fathomctl-e2e"
-	fathomctlPaused  = "fathomctl-paused"
 )
 
 // fathomctlRunOutcome mirrors the `run -o json` element the CLI contracts in
@@ -89,7 +88,7 @@ func kubectlJSONPath(kind, name, ns, path string) (string, error) {
 }
 
 func fathomctlFixtureManifest() string {
-	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: %[2]s
@@ -101,7 +100,7 @@ spec:
     - name: kubernetes.default.svc.cluster.local
       recordType: A
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: NodeCertificateCheck
 metadata:
   name: %[3]s
@@ -113,24 +112,9 @@ spec:
     - /etc/kubernetes/pki/ca.crt
   interval: 30s
   timeout: 20s
+
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
-kind: AddonCheck
-metadata:
-  name: %[6]s
-  namespace: %[1]s
-spec:
-  addonType: coredns
-  paused: true
-  policy:
-    system_health:
-      enabled: true
-      namespaces: [kube-system]
-      thresholds:
-        deploymentName: "coredns"
-        serviceName: "kube-dns"
----
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: hc-addon
@@ -138,7 +122,7 @@ metadata:
 spec:
   checkRef: {kind: AddonCheck, name: %[4]s}
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: hc-dns
@@ -146,7 +130,7 @@ metadata:
 spec:
   checkRef: {kind: DNSCheck, name: %[2]s}
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: hc-ncc
@@ -154,13 +138,13 @@ metadata:
 spec:
   checkRef: {kind: NodeCertificateCheck, name: %[3]s}
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: %[5]s
 spec:
   namespaces: [%[1]s]
-`, fathomctlNS, fathomctlDNS, fathomctlNodeCrt, fathomctlAddon, fathomctlCH, fathomctlPaused)
+`, fathomctlNS, fathomctlDNS, fathomctlNodeCrt, fathomctlAddon, fathomctlCH)
 }
 
 var _ = Describe("fathomctl", Ordered, Label(utils.CoreLabel, "fathomctl"), func() {
@@ -376,14 +360,4 @@ var _ = Describe("fathomctl", Ordered, Label(utils.CoreLabel, "fathomctl"), func
 		Expect(info).NotTo(HaveKey("operator"))
 	})
 
-	// FR-023: a paused check is refused before anything is written.
-	It("refuses to trigger a paused check and exits 1", func() {
-		out, err := fathomctl("run", "addoncheck/"+fathomctlPaused, "-n", fathomctlNS)
-		Expect(fathomctlExitCode(err)).To(Equal(1), "expected exit 1:\n%s", out)
-		Expect(out).To(ContainSubstring("paused"))
-
-		written, err := kubectlJSONPath("addoncheck", fathomctlPaused, fathomctlNS, `{.metadata.annotations.fathom\.skaphos\.io/run-now}`)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(written).To(BeEmpty(), "a paused check must not be written")
-	})
 })

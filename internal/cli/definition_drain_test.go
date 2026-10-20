@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	definitions "github.com/skaphos/fathom/pkg/addondefinition"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -613,19 +614,19 @@ func TestDefinitionDrainCommandRequiresExplicitTarget(t *testing.T) {
 // uses all four fields. A comparison that drops one silently accepts a
 // different leader, so each field is diverged on its own here.
 func TestSameEpochComparesEveryContractField(t *testing.T) {
-	base := func() *api.DefinitionLeaderEpoch {
-		return &api.DefinitionLeaderEpoch{LeaseUID: "lease-uid", HolderIdentity: "leader-process", AcquireTime: metav1.NewMicroTime(time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)), LeaseTransitions: 2}
+	base := func() *fathomv1.DefinitionLeaderEpoch {
+		return &fathomv1.DefinitionLeaderEpoch{LeaseUID: "lease-uid", HolderIdentity: "leader-process", AcquireTime: metav1.NewMicroTime(time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)), LeaseTransitions: 2}
 	}
 	if !sameEpoch(base(), base()) {
 		t.Fatal("identical epochs compared unequal")
 	}
-	for name, diverge := range map[string]func(*api.DefinitionLeaderEpoch){
-		"leaseUID":       func(e *api.DefinitionLeaderEpoch) { e.LeaseUID = "recreated-lease-uid" },
-		"holderIdentity": func(e *api.DefinitionLeaderEpoch) { e.HolderIdentity = "other-process" },
-		"acquireTime": func(e *api.DefinitionLeaderEpoch) {
+	for name, diverge := range map[string]func(*fathomv1.DefinitionLeaderEpoch){
+		"leaseUID":       func(e *fathomv1.DefinitionLeaderEpoch) { e.LeaseUID = "recreated-lease-uid" },
+		"holderIdentity": func(e *fathomv1.DefinitionLeaderEpoch) { e.HolderIdentity = "other-process" },
+		"acquireTime": func(e *fathomv1.DefinitionLeaderEpoch) {
 			e.AcquireTime = metav1.NewMicroTime(e.AcquireTime.Add(time.Microsecond))
 		},
-		"leaseTransitions": func(e *api.DefinitionLeaderEpoch) { e.LeaseTransitions++ },
+		"leaseTransitions": func(e *fathomv1.DefinitionLeaderEpoch) { e.LeaseTransitions++ },
 	} {
 		t.Run(name, func(t *testing.T) {
 			other := base()
@@ -778,7 +779,7 @@ func TestDrainEpochSurvivesSubsecondWireRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded api.DefinitionLeaderEpoch
+	var decoded fathomv1.DefinitionLeaderEpoch
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}

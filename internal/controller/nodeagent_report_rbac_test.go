@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodecert"
 	"github.com/skaphos/fathom/internal/nodehealth"
 )
@@ -82,9 +82,9 @@ var _ = DescribeTable("node-agent RBAC migration through the filtered manager ca
 			g.Expect(allowed).To(BeFalse())
 		}).Should(Succeed())
 	},
-	Entry("for NodeCertificateCheck", &fathomv1alpha1.NodeCertificateCheck{}),
-	Entry("for NodeHealthCheck", &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{
-		Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckNodeCondition}},
+	Entry("for NodeCertificateCheck", &fathomv1.NodeCertificateCheck{}),
+	Entry("for NodeHealthCheck", &fathomv1.NodeHealthCheck{Spec: fathomv1.NodeHealthCheckSpec{
+		Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckNodeCondition}},
 	}}),
 )
 
@@ -137,9 +137,9 @@ var _ = DescribeTable("node-agent teardown through the filtered manager cache",
 		Expect(preservedBinding.Subjects).To(HaveLen(1))
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(foreignDS), &appsv1.DaemonSet{})).To(Succeed())
 	},
-	Entry("for NodeCertificateCheck", &fathomv1alpha1.NodeCertificateCheck{}),
-	Entry("for NodeHealthCheck", &fathomv1alpha1.NodeHealthCheck{Spec: fathomv1alpha1.NodeHealthCheckSpec{
-		Checks: []fathomv1alpha1.NodeHealthCheckItem{{Type: fathomv1alpha1.NodeHealthCheckNodeCondition}},
+	Entry("for NodeCertificateCheck", &fathomv1.NodeCertificateCheck{}),
+	Entry("for NodeHealthCheck", &fathomv1.NodeHealthCheck{Spec: fathomv1.NodeHealthCheckSpec{
+		Checks: []fathomv1.NodeHealthCheckItem{{Type: fathomv1.NodeHealthCheckNodeCondition}},
 	}}),
 )
 
@@ -174,9 +174,9 @@ func newFilteredNodeAgentClient() (client.Client, func()) {
 
 func nodeAgentName(owner client.Object) string {
 	switch check := owner.(type) {
-	case *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1.NodeCertificateCheck:
 		return agentResourceName(check)
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		return nodeHealthAgentResourceName(check)
 	default:
 		panic("unsupported node check type")
@@ -185,11 +185,11 @@ func nodeAgentName(owner client.Object) string {
 
 func ensureNodeAgentRBAC(ctx context.Context, c client.Client, reader client.Reader, owner client.Object, roleName string) {
 	switch check := owner.(type) {
-	case *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1.NodeCertificateCheck:
 		r := &NodeCertificateCheckReconciler{Client: c, APIReader: reader, Scheme: k8sscheme.Scheme, NodeAgentRoleName: roleName}
 		_, err := r.ensureAgentRBAC(ctx, check)
 		Expect(err).NotTo(HaveOccurred())
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		r := &NodeHealthCheckReconciler{Client: c, APIReader: reader, Scheme: k8sscheme.Scheme, NodeAgentRoleName: roleName}
 		_, err := r.ensureAgentRBAC(ctx, check)
 		Expect(err).NotTo(HaveOccurred())
@@ -200,9 +200,9 @@ func ensureNodeAgentRBAC(ctx context.Context, c client.Client, reader client.Rea
 
 func revokeNodeAgent(ctx context.Context, c client.Client, reader client.Reader, owner client.Object, roleName string) error {
 	switch check := owner.(type) {
-	case *fathomv1alpha1.NodeCertificateCheck:
+	case *fathomv1.NodeCertificateCheck:
 		return (&NodeCertificateCheckReconciler{Client: c, APIReader: reader, NodeAgentRoleName: roleName}).revokeNodeCertAgent(ctx, check)
-	case *fathomv1alpha1.NodeHealthCheck:
+	case *fathomv1.NodeHealthCheck:
 		return (&NodeHealthCheckReconciler{Client: c, APIReader: reader, NodeAgentRoleName: roleName}).revokeAgent(ctx, check)
 	default:
 		panic("unsupported node check type")
@@ -486,14 +486,14 @@ func TestEnsureAgentRBACDrainsLegacyBindingsWithoutClusterRoleRequests(t *testin
 			ownerKind: nodecert.KindNodeCertificateCheck,
 			roleRules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}}},
 			newOwner: func() client.Object {
-				return &fathomv1alpha1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-migrate", Namespace: "ns", UID: "nc-uid"}}
+				return &fathomv1.NodeCertificateCheck{ObjectMeta: metav1.ObjectMeta{Name: "nc-migrate", Namespace: "ns", UID: "nc-uid"}}
 			},
 			agentName: func(owner client.Object) string {
-				return agentResourceName(owner.(*fathomv1alpha1.NodeCertificateCheck))
+				return agentResourceName(owner.(*fathomv1.NodeCertificateCheck))
 			},
 			ensureRBAC: func(c client.Client, scheme *runtime.Scheme, owner client.Object) error {
 				r := &NodeCertificateCheckReconciler{Client: c, Scheme: scheme}
-				_, err := r.ensureAgentRBAC(context.Background(), owner.(*fathomv1alpha1.NodeCertificateCheck))
+				_, err := r.ensureAgentRBAC(context.Background(), owner.(*fathomv1.NodeCertificateCheck))
 				return err
 			},
 		},
@@ -504,14 +504,14 @@ func TestEnsureAgentRBACDrainsLegacyBindingsWithoutClusterRoleRequests(t *testin
 				APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create", "get", "update"},
 			}},
 			newOwner: func() client.Object {
-				return &fathomv1alpha1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-migrate", Namespace: "ns", UID: "nh-uid"}}
+				return &fathomv1.NodeHealthCheck{ObjectMeta: metav1.ObjectMeta{Name: "nh-migrate", Namespace: "ns", UID: "nh-uid"}}
 			},
 			agentName: func(owner client.Object) string {
-				return nodeHealthAgentResourceName(owner.(*fathomv1alpha1.NodeHealthCheck))
+				return nodeHealthAgentResourceName(owner.(*fathomv1.NodeHealthCheck))
 			},
 			ensureRBAC: func(c client.Client, scheme *runtime.Scheme, owner client.Object) error {
 				r := &NodeHealthCheckReconciler{Client: c, Scheme: scheme}
-				_, err := r.ensureAgentRBAC(context.Background(), owner.(*fathomv1alpha1.NodeHealthCheck))
+				_, err := r.ensureAgentRBAC(context.Background(), owner.(*fathomv1.NodeHealthCheck))
 				return err
 			},
 		},
@@ -528,7 +528,7 @@ func TestEnsureAgentRBACDrainsLegacyBindingsWithoutClusterRoleRequests(t *testin
 				ObjectMeta: metav1.ObjectMeta{
 					Name: agentName, Namespace: owner.GetNamespace(),
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: tc.ownerKind,
+						APIVersion: fathomv1.GroupVersion.String(), Kind: tc.ownerKind,
 						Name: owner.GetName(), UID: owner.GetUID(), Controller: &controller,
 					}},
 				},

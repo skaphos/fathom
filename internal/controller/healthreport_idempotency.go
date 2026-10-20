@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 const healthReportNameHashLength = 16
@@ -38,17 +38,17 @@ func deterministicHealthReportName(sourceName string, keyParts ...string) string
 	return base + "-" + suffix
 }
 
-func useDeterministicHealthReportName(report *fathomv1alpha1.HealthReport, sourceName string, keyParts ...string) {
+func useDeterministicHealthReportName(report *fathomv1.HealthReport, sourceName string, keyParts ...string) {
 	report.GenerateName = ""
 	report.Name = deterministicHealthReportName(sourceName, keyParts...)
 }
 
-func createOrReuseHealthReport(ctx context.Context, c client.Client, report *fathomv1alpha1.HealthReport) (*fathomv1alpha1.HealthReport, bool, error) {
+func createOrReuseHealthReport(ctx context.Context, c client.Client, report *fathomv1.HealthReport) (*fathomv1.HealthReport, bool, error) {
 	if err := c.Create(ctx, report); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, false, err
 		}
-		existing := &fathomv1alpha1.HealthReport{}
+		existing := &fathomv1.HealthReport{}
 		if getErr := c.Get(ctx, types.NamespacedName{Namespace: report.Namespace, Name: report.Name}, existing); getErr != nil {
 			return nil, false, getErr
 		}
@@ -60,7 +60,7 @@ func createOrReuseHealthReport(ctx context.Context, c client.Client, report *fat
 	return report, true, nil
 }
 
-func validateReusableHealthReport(existing, expected *fathomv1alpha1.HealthReport) error {
+func validateReusableHealthReport(existing, expected *fathomv1.HealthReport) error {
 	if existing.Spec.SourceRef != expected.Spec.SourceRef {
 		return fmt.Errorf("healthreport %s/%s already exists with mismatched sourceRef", existing.Namespace, existing.Name)
 	}

@@ -153,12 +153,11 @@ Derived kinds have no work of their own to redo, so `run` triggers what they
 observe:
 
 - `run healthcheck/<name>` triggers the executable check named by
-  `spec.checkRef`. A paused HealthCheck is refused: it would not mirror the
-  fresh result.
+  `spec.checkRef`.
 - `run clusterhealth/<name>` triggers the source behind every HealthCheck in
   `status.children` (the operator's own record of selection, capped by the
-  controller). A shared source is triggered once. A child that is missing,
-  paused, or references an unsupported kind is reported and skipped; the rest
+  controller). A shared source is triggered once. A child that is missing
+  or references an unsupported kind is reported and skipped; the rest
   proceed, and the skip makes the exit code `1`.
 
 `--all` and `-l` select **executable kinds only**, within the `-n`/`-A`
@@ -195,7 +194,7 @@ An explicit timeout stays absolute and is never expanded. If
 the annotation changes to a different value before the token is consumed,
 the run is reported as **superseded**. If the operator
 reports it can never run the check (`Ready=False` with `InvalidPolicy`, `ItemsRejected` (a NodeHealthCheck item the operator's allowlist refuses),
-`MissingAdapter`, `AdapterLookupFailed`, `NoMatchingNodes`, or `Paused`),
+`MissingAdapter`, `AdapterLookupFailed`, or `NoMatchingNodes`),
 `--wait` fails immediately with that reason instead of waiting out the
 deadline. The condition must belong to the object's current generation, so a
 stale reason from before a spec change does not abort the new run. Transient
@@ -261,6 +260,39 @@ deployment, image, error}}`; `operator` is omitted with `--client`.
 
 A locally built binary reports a `git describe` version; a release archive
 reports the release tag.
+
+## export
+
+```text
+fathomctl export [--output <file>] [-n <namespace>] [global flags]
+```
+
+Read-only. Renders every check resource still served at `fathom.skaphos.io/v1alpha1`
+as a `v1` manifest, for the alpha-to-`v1` migration of release 0.7.0
+(`RELEASE.md` → "v1 API migration"). It reads the live CRDs to learn which
+kinds still serve the alpha version, lists `ClusterHealth`, `AddonCheck`,
+`DNSCheck`, `NodeCertificateCheck`, `NodeHealthCheck` and `HealthCheck` in
+that order (targets before the wrappers that reference them), then namespace,
+then name, and writes one YAML document per object:
+
+- `apiVersion` rewritten to `fathom.skaphos.io/v1`;
+- `spec.paused` removed (the field no longer exists);
+- `spec.checkRef.apiVersion` rewritten to `fathom.skaphos.io/v1` when present;
+- `status` and server-populated metadata (uid, resourceVersion,
+  managedFields, creationTimestamp, generation, ownerReferences,
+  `kubectl.kubernetes.io/last-applied-configuration`) removed, so the output
+  is fit to commit and `kubectl apply`.
+
+`--output` writes the documents to a file atomically; without it they go to
+stdout, preceded by a comment naming the source context and time. `-n`
+restricts the namespaced kinds to one namespace. `HealthReport`s are history,
+not intent, and are never exported; neither are the runtime definition kinds.
+
+| Situation | Outcome |
+| --- | --- |
+| No Fathom CRD serves `v1alpha1` | `nothing to export: no Fathom CRD serves v1alpha1 (already upgraded?)` on stderr, exit `1`, nothing written. |
+| An object cannot be listed or rendered | `cannot export <kind>/<ns>/<name>: <reason>` on stderr; the rest are still written; exit `1`. |
+| Everything rendered | Exit `0`. The verb never writes to the cluster. |
 
 ## Lifecycle verbs
 
@@ -328,6 +360,26 @@ which incompatible changes are sanctioned and whether the release is a stop
 that must be installed on the way to a later one. Its `floor` is the oldest
 version that data covers.
 
+A release that stops serving a version a live CRD still stores (0.7.0 moved
+the check kinds from `v1alpha1` to `v1`) cannot update that CRD in place: the
+API server refuses to drop a stored version. The plan then shows the action
+`replace`. Before anything changes it lists every object of that CRD that the
+replacement will remove, by namespace and name, and states that their
+`HealthReport` history goes with them. A `replace` needs an upgrade-path
+sanction with `path: "*"`; when the inventory is non-empty it also needs
+`--accept-incompatible-crds`, and when it is empty the sanction alone
+suffices. With consent, the CLI deletes the CRD, waits for it to be gone
+(which deletes the objects), creates the release's CRD and waits for it to be
+`Established`, then prints how many objects it removed. A CRD that is already
+gone at delete time counts as replaced. `--rollback-on-failure` is refused
+with a `replace` in the plan. Run [`fathomctl export`](#export) first; it is
+the step that keeps the checks.
+
+`install` over CRDs left behind by an earlier uninstall never replaces: a
+leftover CRD that stores a version the release drops is refused with
+`leftover-stored-version`, because such CRDs carry no recorded version to
+judge a sanction against.
+
 ### Shared flags (install, upgrade)
 
 | Flag | Default | Notes |
@@ -385,16 +437,21 @@ chart's defaults). `upgrade` prints the plan first:
 Fathom upgrade plan: v0.6.0 -> v0.7.0 (release fathom in fathom-system)
 Path:      direct
 CRDs:
-  addonchecks.fathom.skaphos.io        update
-  dnschecks.fathom.skaphos.io          update      incompatible (sanctioned by v0.7.0 (<issue>)): ^.spec.targets <check>: <crdify message>
-  nodehealthchecks.fathom.skaphos.io   unchanged
+  addonchecks.fathom.skaphos.io        replace     incompatible (sanctioned by v0.7.0 (<issue>)): storedVersionRemoval: stored versions removed: [v1alpha1]
+  dnschecks.fathom.skaphos.io          replace     incompatible (sanctioned by v0.7.0 (<issue>)): storedVersionRemoval: stored versions removed: [v1alpha1]
+  addondefinitions.fathom.skaphos.io   unchanged
+replace crd/addonchecks.fathom.skaphos.io (v1alpha1 -> v1): 12 objects will be removed
+  default/coredns
+  default/cert-manager
+  …
+  and their HealthReport history
 Operator:  ghcr.io/skaphos/fathom-operator@sha256:… -> ghcr.io/skaphos/fathom-operator@sha256:…
 Values:    (in effect; the chart's defaults apply to everything else)
   image:
     …
 ```
 
-The second CRD line is illustrative. With `-o json|yaml` the plan is printed
+The inventory block appears once per CRD to be replaced. With `-o json|yaml` the plan is printed
 as `{from, to, release, namespace, path, stops, crds, refusals, operator,
 values}`; values whose keys look like credentials are redacted.
 
@@ -403,7 +460,9 @@ values}`; values whose keys look like credentials are redacted.
 | Compatible changes | CRDs applied and `Established`, then the operator rolled out; waits until the rollout is complete (`kubectl rollout status` semantics: every replica updated and available, no old replica left — a surge whose new pod never becomes ready is a failure even while the old pod keeps the Deployment `Available`). Exit `0`. |
 | Already at this version, CRDs unchanged, no `-f`/`--set*` | `Fathom is already at vX; nothing to do`, exit `0`. With value flags the release is upgraded in place. |
 | `helm upgrade` fails after the CRDs were applied | Exit `1`; the CRDs stay on the new schema and the error names `helm history` and a retry. |
-| Sanctioned incompatible change, no `--accept-incompatible-crds` | `acknowledgement-required`; lists each change with its reason and issue; `next:` repeats the command with the flag. |
+| Sanctioned incompatible change, no `--accept-incompatible-crds` | `acknowledgement-required`; lists each change with its reason and issue, and for a `replace` the objects it would remove; `next:` repeats the command with the flag. |
+| Sanctioned served-version replacement, objects present, flag given | Each affected CRD is deleted (with its objects and their `HealthReport` history), recreated at the new version and awaited `Established`; the removed count is printed; then the operator is rolled out. |
+| Sanctioned served-version replacement, no objects left | Proceeds without the flag; the plan prints `0 objects will be removed`. |
 | Incompatible change no release sanctions | `unsanctioned-incompatible`; names the CRD, path and crdify finding. |
 | CRD scope change | `scope-change`; recreating the CRD deletes every resource of that kind; `next:` `fathomctl uninstall --purge-crds --export <file>`. Never sanctionable. |
 | A declared stop between the installed version and this one | `stop-skipped`; prints the full path (`v0.7.0 -> v0.8.0 -> v0.9.0`); `next:` the first stop's `fathomctl`. `--accept-incompatible-crds` does not bypass it. |
@@ -510,6 +569,10 @@ CRDs:       9/9 current
 Upgrade to this fathomctl (v0.7.0): direct
 ```
 
+When a check kind's CRD still serves `v1alpha1`, `status` adds
+`upgrade required: <crd> serves v1alpha1; run fathomctl export, then fathomctl upgrade`
+for each such CRD.
+
 CRD states, judged from the `fathom.skaphos.io/version` annotation against the
 operator's version:
 
@@ -551,11 +614,12 @@ the release is pending or failed, or more than one Fathom release exists.
 | `below-floor` | install, upgrade | The installed version predates the upgrade data's `floor`. |
 | `stop-skipped` | install, upgrade | A declared stop lies between the installed version and this one. |
 | `crd-downgrade` | install | Leftover CRDs record a newer release than this CLI. |
+| `leftover-stored-version` | install | A leftover CRD stores a version this release no longer serves; `next:` `fathomctl export`, delete the CRDs, then `fathomctl install`. |
 | `scope-change` | install, upgrade | A CRD changes scope. |
 | `unsanctioned-incompatible` | install, upgrade | An incompatible CRD change no release sanctions. |
-| `acknowledgement-required` | install, upgrade | Sanctioned incompatible changes need `--accept-incompatible-crds`. |
+| `acknowledgement-required` | install, upgrade | Sanctioned incompatible changes need `--accept-incompatible-crds`; for a served-version replacement, only while objects of that kind still exist. |
 | `rollback-refused` | upgrade | `--rollback-on-failure` with an incompatible CRD change in the plan. |
-| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` cannot enumerate — a kind it does not know, or one no longer served at `v1alpha1` (both from a newer release) — so it could not count or export its resources. Use the `fathomctl` from the installed release. |
+| `unknown-kinds` | uninstall | `--purge-crds` found a `fathom.skaphos.io` CRD this `fathomctl` cannot enumerate — a kind it does not know (from a newer release), or a CRD that serves no version at all — so it could not count or export its resources. Known kinds are enumerated at whatever version their live CRD serves. Use the `fathomctl` from the installed release. |
 | `confirmation-required` | uninstall | A destructive uninstall without a terminal and without `--yes`. |
 
 Supplying image values is a usage error rather than a refusal reason; it also

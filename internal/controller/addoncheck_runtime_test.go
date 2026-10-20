@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	"github.com/skaphos/fathom/internal/adapter/registry"
@@ -95,7 +96,7 @@ func (a *runtimeCheckAdapter) Run(ctx context.Context, req adapter.Request) (ada
 type fakeRuntimeSession struct {
 	mu        sync.Mutex
 	lease     types.NamespacedName
-	epoch     *fathomv1alpha1.DefinitionLeaderEpoch
+	epoch     *fathomv1.DefinitionLeaderEpoch
 	epochOK   bool
 	admitErr  error
 	admits    int
@@ -107,7 +108,7 @@ type fakeRuntimeSession struct {
 func newFakeRuntimeSession() *fakeRuntimeSession {
 	return &fakeRuntimeSession{
 		lease: types.NamespacedName{Namespace: lifecycleNamespace, Name: runtimeCheckLease},
-		epoch: &fathomv1alpha1.DefinitionLeaderEpoch{
+		epoch: &fathomv1.DefinitionLeaderEpoch{
 			LeaseUID:         "lease-uid-1",
 			HolderIdentity:   lifecycleLeader,
 			AcquireTime:      metav1.NewMicroTime(time.Unix(1700000000, 0).UTC()),
@@ -122,7 +123,7 @@ func newFakeRuntimeSession() *fakeRuntimeSession {
 
 func (s *fakeRuntimeSession) LeaseRef() types.NamespacedName { return s.lease }
 
-func (s *fakeRuntimeSession) Epoch() *fathomv1alpha1.DefinitionLeaderEpoch {
+func (s *fakeRuntimeSession) Epoch() *fathomv1.DefinitionLeaderEpoch {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.epoch == nil {
@@ -132,7 +133,7 @@ func (s *fakeRuntimeSession) Epoch() *fathomv1alpha1.DefinitionLeaderEpoch {
 	return &observed
 }
 
-func (s *fakeRuntimeSession) EpochValid(persisted *fathomv1alpha1.DefinitionLeaderEpoch) bool {
+func (s *fakeRuntimeSession) EpochValid(persisted *fathomv1.DefinitionLeaderEpoch) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.epochOK && persisted != nil && s.epoch != nil &&
@@ -234,17 +235,17 @@ func (f *runtimeCheckFixture) advance(d time.Duration) {
 	f.clock = f.clock.Add(d)
 }
 
-func runtimeCheckObject() *fathomv1alpha1.AddonCheck {
+func runtimeCheckObject() *fathomv1.AddonCheck {
 	timeout := metav1.Duration{Duration: runtimeCheckTimeout}
-	return &fathomv1alpha1.AddonCheck{
+	return &fathomv1.AddonCheck{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: runtimeCheckNamespace, Name: runtimeCheckName,
 			UID: runtimeCheckUID, Generation: 1,
 		},
-		Spec: fathomv1alpha1.AddonCheckSpec{
+		Spec: fathomv1.AddonCheckSpec{
 			AddonType: lifecycleAddon,
 			Timeout:   &timeout,
-			Policy:    map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(true)}},
+			Policy:    map[string]fathomv1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(true)}},
 		},
 	}
 }
@@ -252,7 +253,7 @@ func runtimeCheckObject() *fathomv1alpha1.AddonCheck {
 func isRuntimeFenceKind(obj client.Object) bool {
 	switch obj.(type) {
 	case *fathomv1alpha1.AddonDefinition, *fathomv1alpha1.AddonDefinitionBinding,
-		*fathomv1alpha1.AddonCheck, *corev1.ServiceAccount:
+		*fathomv1.AddonCheck, *corev1.ServiceAccount:
 		return true
 	}
 	return false
@@ -264,7 +265,7 @@ func newRuntimeCheckFixture(t *testing.T, objs ...client.Object) *runtimeCheckFi
 		t: t, scheme: runtime.NewScheme(), session: newFakeRuntimeSession(),
 		clock: runtimeCheckClockStart,
 	}
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, fathomv1alpha1.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, fathomv1.AddToScheme, fathomv1alpha1.AddToScheme} {
 		if err := add(f.scheme); err != nil {
 			t.Fatalf("scheme: %v", err)
 		}
@@ -274,7 +275,7 @@ func newRuntimeCheckFixture(t *testing.T, objs ...client.Object) *runtimeCheckFi
 	}
 	f.store = fake.NewClientBuilder().
 		WithScheme(f.scheme).
-		WithStatusSubresource(&fathomv1alpha1.AddonCheck{}, &fathomv1alpha1.AddonDefinition{}, &fathomv1alpha1.AddonDefinitionBinding{}).
+		WithStatusSubresource(&fathomv1.AddonCheck{}, &fathomv1alpha1.AddonDefinition{}, &fathomv1alpha1.AddonDefinitionBinding{}).
 		WithObjects(objs...).
 		Build()
 
@@ -452,9 +453,9 @@ func (f *runtimeCheckFixture) runOK() RuntimeAttempt {
 	return attempt
 }
 
-func (f *runtimeCheckFixture) check() *fathomv1alpha1.AddonCheck {
+func (f *runtimeCheckFixture) check() *fathomv1.AddonCheck {
 	f.t.Helper()
-	var check fathomv1alpha1.AddonCheck
+	var check fathomv1.AddonCheck
 	key := types.NamespacedName{Namespace: runtimeCheckNamespace, Name: runtimeCheckName}
 	if err := f.store.Get(context.Background(), key, &check); err != nil {
 		f.t.Fatalf("get AddonCheck: %v", err)
@@ -494,7 +495,7 @@ func (f *runtimeCheckFixture) counters() (cachedFence, control, writes, runs int
 	return f.cachedFenceReads, f.controlReads, f.statusWrites, f.evaluatorRuns
 }
 
-func runtimeReadyCondition(t *testing.T, check *fathomv1alpha1.AddonCheck) *metav1.Condition {
+func runtimeReadyCondition(t *testing.T, check *fathomv1.AddonCheck) *metav1.Condition {
 	t.Helper()
 	return apiMeta.FindStatusCondition(check.Status.Conditions, addonCheckConditionReady)
 }
@@ -835,7 +836,7 @@ func TestPublicationPrecedenceIsAnOrder(t *testing.T) {
 	}
 	supersedeCheck := func(f *runtimeCheckFixture) {
 		check := f.check()
-		check.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(false)}}
+		check.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(false)}}
 		// The fake client does not simulate the API server's generation bump,
 		// so the edit sets the generation the API server would.
 		check.Generation = 2
@@ -1051,7 +1052,7 @@ func TestASupersededOrRecreatedAddonCheckDiscardsTheRun(t *testing.T) {
 	}{
 		{"the generation advanced with an unchanged policy", func(f *runtimeCheckFixture) {
 			check := f.check()
-			check.Spec.Paused = true
+			check.Spec.HistoryLimit = ptr.To(int32(5))
 			// The fake client does not simulate the API server's generation
 			// bump, so the edit sets the generation the API server would.
 			check.Generation = 2
@@ -1059,7 +1060,7 @@ func TestASupersededOrRecreatedAddonCheckDiscardsTheRun(t *testing.T) {
 		}},
 		{"the policy changed at an unchanged generation", func(f *runtimeCheckFixture) {
 			check := f.check()
-			check.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(false)}}
+			check.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{"health": {Enabled: ptr.To(false)}}
 			f.update(check)
 		}},
 		{"the check was deleted and recreated at the same generation and policy", func(f *runtimeCheckFixture) {
@@ -1304,7 +1305,7 @@ func TestALeadershipChangeDuringTheRunRejectsPublication(t *testing.T) {
 		{"the Lease was recreated under a new holder", func(s *fakeRuntimeSession) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			s.epoch = &fathomv1alpha1.DefinitionLeaderEpoch{
+			s.epoch = &fathomv1.DefinitionLeaderEpoch{
 				LeaseUID:         "lease-uid-2",
 				HolderIdentity:   "a-different-holder",
 				AcquireTime:      metav1.NewMicroTime(time.Unix(1700009999, 0).UTC()),
@@ -1516,7 +1517,7 @@ func TestPublicationWriteFailuresAreReportedToTheCaller(t *testing.T) {
 
 // seedEvidence runs one successful evaluation so later rows have completed
 // evidence to preserve, and returns the evidence exactly as stored.
-func (f *runtimeCheckFixture) seedEvidence() *fathomv1alpha1.AddonCheckEvidence {
+func (f *runtimeCheckFixture) seedEvidence() *fathomv1.AddonCheckEvidence {
 	f.t.Helper()
 	if attempt := f.runOK(); !attempt.Published {
 		f.t.Fatalf("seed run did not publish evidence: %+v", attempt)
@@ -1528,7 +1529,7 @@ func (f *runtimeCheckFixture) seedEvidence() *fathomv1alpha1.AddonCheckEvidence 
 	return evidence
 }
 
-func (f *runtimeCheckFixture) evidence() *fathomv1alpha1.AddonCheckEvidence {
+func (f *runtimeCheckFixture) evidence() *fathomv1.AddonCheckEvidence {
 	f.t.Helper()
 	return f.check().Status.LastSuccessfulEvaluation
 }
@@ -1549,10 +1550,10 @@ func TestCompletedEvidenceCarriesItsOwnRevisionAndAuthorityContext(t *testing.T)
 	if evidence == nil {
 		t.Fatal("a completed run stored no evidence")
 	}
-	if evidence.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictPass {
+	if evidence.Verdict != fathomv1.AddonCheckEvidenceVerdictPass {
 		t.Errorf("verdict = %q, want Pass", evidence.Verdict)
 	}
-	if evidence.Coverage != fathomv1alpha1.AddonCheckCoverageChecksEvaluated {
+	if evidence.Coverage != fathomv1.AddonCheckCoverageChecksEvaluated {
 		t.Errorf("coverage = %q, want ChecksEvaluated", evidence.Coverage)
 	}
 	if !evidence.ObservedAt.Time.Equal(f.now()) {
@@ -1588,13 +1589,13 @@ func TestCompletedEvidenceCarriesItsOwnRevisionAndAuthorityContext(t *testing.T)
 		t.Errorf("authority.leaderEpoch = %+v, want the observed epoch", evidence.Authority.LeaderEpoch)
 	}
 	status := f.check().Status
-	if status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptCompleted {
+	if status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptCompleted {
 		t.Errorf("latestAttemptOutcome = %q, want Completed", status.LatestAttemptOutcome)
 	}
 	if status.LatestAttemptAt == nil || !status.LatestAttemptAt.Time.Equal(f.now()) {
 		t.Errorf("latestAttemptAt = %v, want the attempt time", status.LatestAttemptAt)
 	}
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceCurrent {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceCurrent {
 		t.Errorf("evidenceFreshness = %q, want Current immediately after a completed run", status.EvidenceFreshness)
 	}
 }
@@ -1650,7 +1651,7 @@ func TestAFailedAttemptPreservesEvidenceAndNeverRenewsItsObservationTime(t *test
 				t.Fatalf("a failed attempt rewrote completed evidence:\nbefore %+v\nafter  %+v", before, after)
 			}
 			status := f.check().Status
-			if status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptError {
+			if status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptError {
 				t.Errorf("latestAttemptOutcome = %q, want Error", status.LatestAttemptOutcome)
 			}
 			if status.LatestAttemptAt == nil || !status.LatestAttemptAt.Time.Equal(f.now()) {
@@ -1659,7 +1660,7 @@ func TestAFailedAttemptPreservesEvidenceAndNeverRenewsItsObservationTime(t *test
 			if status.LatestAttemptReason != tc.reason {
 				t.Errorf("latestAttemptReason = %q, want %q", status.LatestAttemptReason, tc.reason)
 			}
-			if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceUnavailable {
+			if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceUnavailable {
 				t.Errorf("evidenceFreshness = %q, want Unavailable", status.EvidenceFreshness)
 			}
 			ready := runtimeReadyCondition(t, f.check())
@@ -1692,7 +1693,7 @@ func TestUnknownAddonTypeRetainsEvidenceAndReportsUnknownWhenThereIsNone(t *test
 			t.Fatalf("a missing definition rewrote evidence:\nbefore %+v\nafter  %+v", before, after)
 		}
 		status := f.check().Status
-		if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceUnavailable {
+		if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceUnavailable {
 			t.Errorf("evidenceFreshness = %q, want Unavailable", status.EvidenceFreshness)
 		}
 		ready := runtimeReadyCondition(t, f.check())
@@ -1716,7 +1717,7 @@ func TestUnknownAddonTypeRetainsEvidenceAndReportsUnknownWhenThereIsNone(t *test
 		if status.LastResult != "" {
 			t.Errorf("lastResult = %q, want empty; a never-run check has an Unknown verdict, not a stored one", status.LastResult)
 		}
-		if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceUnavailable {
+		if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceUnavailable {
 			t.Errorf("evidenceFreshness = %q, want Unavailable when there is no evidence", status.EvidenceFreshness)
 		}
 	})
@@ -1730,38 +1731,38 @@ func TestUnknownAddonTypeRetainsEvidenceAndReportsUnknownWhenThereIsNone(t *test
 func TestEvidenceEligibilityByAttemptReason(t *testing.T) {
 	for _, tc := range []struct {
 		reason string
-		want   fathomv1alpha1.AddonCheckEvidenceFreshness
+		want   fathomv1.AddonCheckEvidenceFreshness
 	}{
 		// "Prior evidence retained ..., freshness=Unavailable": no dispatchable
 		// snapshot claims the identity at all.
-		{reasonUnknownAddonType, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{registry.ReasonBuiltinCollision, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{registry.ReasonRuntimeCollision, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{registry.ReasonAdmissionClosed, fathomv1alpha1.AddonCheckEvidenceUnavailable},
+		{reasonUnknownAddonType, fathomv1.AddonCheckEvidenceUnavailable},
+		{registry.ReasonBuiltinCollision, fathomv1.AddonCheckEvidenceUnavailable},
+		{registry.ReasonRuntimeCollision, fathomv1.AddonCheckEvidenceUnavailable},
+		{registry.ReasonAdmissionClosed, fathomv1.AddonCheckEvidenceUnavailable},
 		// Authority withdrawn, mismatched, denied or unestablished.
-		{reasonAuthorizationRevoked, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{reasonBindingMismatch, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{reasonAccessDenied, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{reasonDefinitionUnavailable, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{reasonAuthorizationUnavailable, fathomv1alpha1.AddonCheckEvidenceUnavailable},
+		{reasonAuthorizationRevoked, fathomv1.AddonCheckEvidenceUnavailable},
+		{reasonBindingMismatch, fathomv1.AddonCheckEvidenceUnavailable},
+		{reasonAccessDenied, fathomv1.AddonCheckEvidenceUnavailable},
+		{reasonDefinitionUnavailable, fathomv1.AddonCheckEvidenceUnavailable},
+		{reasonAuthorizationUnavailable, fathomv1.AddonCheckEvidenceUnavailable},
 		// Invalid input: "Invalid edit stored | ... freshness=Unavailable".
-		{reasonInvalidDefinition, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{reasonInvalidBinding, fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{"InputLimitExceeded", fathomv1alpha1.AddonCheckEvidenceUnavailable},
-		{"ScopeDenied", fathomv1alpha1.AddonCheckEvidenceUnavailable},
+		{reasonInvalidDefinition, fathomv1.AddonCheckEvidenceUnavailable},
+		{reasonInvalidBinding, fathomv1.AddonCheckEvidenceUnavailable},
+		{"InputLimitExceeded", fathomv1.AddonCheckEvidenceUnavailable},
+		{"ScopeDenied", fathomv1.AddonCheckEvidenceUnavailable},
 		// The revision or context was replaced, not the inputs withdrawn.
-		{reasonSuperseded, fathomv1alpha1.AddonCheckEvidenceSuperseded},
+		{reasonSuperseded, fathomv1.AddonCheckEvidenceSuperseded},
 		// A run that could not complete leaves its inputs perfectly eligible.
 		// The matrix row "Deadline, size, parser or read budget exhausted"
 		// names an attempt error and says nothing about the definition or
 		// binding, so age alone decides here.
-		{reasonRuntimeTimeout, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{reasonRunCanceled, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{reasonIncompleteEvaluation, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"WorkLimitExceeded", fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"ResponseLimitExceeded", fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"ExecutionFailed", fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{reasonRunCompleted, fathomv1alpha1.AddonCheckEvidenceCurrent},
+		{reasonRuntimeTimeout, fathomv1.AddonCheckEvidenceCurrent},
+		{reasonRunCanceled, fathomv1.AddonCheckEvidenceCurrent},
+		{reasonIncompleteEvaluation, fathomv1.AddonCheckEvidenceCurrent},
+		{"WorkLimitExceeded", fathomv1.AddonCheckEvidenceCurrent},
+		{"ResponseLimitExceeded", fathomv1.AddonCheckEvidenceCurrent},
+		{"ExecutionFailed", fathomv1.AddonCheckEvidenceCurrent},
+		{reasonRunCompleted, fathomv1.AddonCheckEvidenceCurrent},
 	} {
 		if got := addonCheckEvidenceEligibility(tc.reason); got != tc.want {
 			t.Errorf("eligibility(%q) = %q, want %q", tc.reason, got, tc.want)
@@ -1782,9 +1783,9 @@ func TestFreshnessWindowIsTwoEffectiveIntervalsPlusOneEffectiveTimeout(t *testin
 		{"declared cadence", &metav1.Duration{Duration: time.Hour}, &metav1.Duration{Duration: 20 * time.Second},
 			2*time.Hour + 20*time.Second},
 		{"defaulted cadence", nil, nil,
-			2*fathomv1alpha1.DefaultAddonCheckInterval + fathomv1alpha1.DefaultAddonCheckTimeout},
+			2*fathomv1.DefaultAddonCheckInterval + fathomv1.DefaultAddonCheckTimeout},
 		{"sub-floor cadence is clamped, not honoured", &metav1.Duration{Duration: time.Second}, &metav1.Duration{Duration: time.Millisecond},
-			2*fathomv1alpha1.MinCheckInterval + fathomv1alpha1.MinCheckTimeout},
+			2*fathomv1.MinCheckInterval + fathomv1.MinCheckTimeout},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			check := runtimeCheckObject()
@@ -1805,8 +1806,8 @@ func TestFreshnessWindowIsTwoEffectiveIntervalsPlusOneEffectiveTimeout(t *testin
 		if AddonCheckEvidenceAged(check, runtimeCheckClockStart.Add(1000*time.Hour)) {
 			t.Error("a check with no evidence reported aged evidence")
 		}
-		check.Status.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
-			Verdict: fathomv1alpha1.AddonCheckEvidenceVerdictPass,
+		check.Status.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
+			Verdict: fathomv1.AddonCheckEvidenceVerdictPass,
 			// A zero observedAt is what a hand-edited or partially-migrated
 			// status carries; it must read as ancient, never as brand new.
 		}
@@ -1826,18 +1827,18 @@ func TestFreshnessIsCurrentWithinTwoIntervalsPlusTimeoutAndStaleBeyond(t *testin
 	// or a wrong formula would move the boundary and the rows with it. The
 	// formula itself is pinned separately, in
 	// TestFreshnessWindowIsTwoEffectiveIntervalsPlusOneEffectiveTimeout.
-	const window = 2*fathomv1alpha1.DefaultAddonCheckInterval + runtimeCheckTimeout
+	const window = 2*fathomv1.DefaultAddonCheckInterval + runtimeCheckTimeout
 
 	for _, tc := range []struct {
 		name string
 		age  time.Duration
-		want fathomv1alpha1.AddonCheckEvidenceFreshness
+		want fathomv1.AddonCheckEvidenceFreshness
 	}{
-		{"just observed", 0, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"one interval short of the window", window - fathomv1alpha1.DefaultAddonCheckInterval, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"exactly at the window", window, fathomv1alpha1.AddonCheckEvidenceCurrent},
-		{"one nanosecond past the window", window + time.Nanosecond, fathomv1alpha1.AddonCheckEvidenceStale},
-		{"long past the window", 10 * window, fathomv1alpha1.AddonCheckEvidenceStale},
+		{"just observed", 0, fathomv1.AddonCheckEvidenceCurrent},
+		{"one interval short of the window", window - fathomv1.DefaultAddonCheckInterval, fathomv1.AddonCheckEvidenceCurrent},
+		{"exactly at the window", window, fathomv1.AddonCheckEvidenceCurrent},
+		{"one nanosecond past the window", window + time.Nanosecond, fathomv1.AddonCheckEvidenceStale},
+		{"long past the window", 10 * window, fathomv1.AddonCheckEvidenceStale},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newRuntimeCheckFixture(t)
@@ -1874,18 +1875,18 @@ func TestAgedPassEvidenceGoesStaleWithoutLosingItsPassVerdict(t *testing.T) {
 	f := newRuntimeCheckFixture(t)
 	f.ready()
 	before := f.seedEvidence()
-	if before.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictPass {
+	if before.Verdict != fathomv1.AddonCheckEvidenceVerdictPass {
 		t.Fatalf("seed verdict = %q, want Pass", before.Verdict)
 	}
 
-	f.advance(2*fathomv1alpha1.DefaultAddonCheckInterval + runtimeCheckTimeout + time.Second)
+	f.advance(2*fathomv1.DefaultAddonCheckInterval + runtimeCheckTimeout + time.Second)
 	f.script(func(context.Context, adapter.Request) (adapter.Result, error) {
 		return adapter.Result{}, errors.New("ExecutionFailed: the addon's API server is unreachable")
 	})
 	f.runOK()
 
 	status := f.check().Status
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceStale {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceStale {
 		t.Fatalf("evidenceFreshness = %q, want Stale", status.EvidenceFreshness)
 	}
 	if !equality.Semantic.DeepEqual(before, status.LastSuccessfulEvaluation) {
@@ -1899,7 +1900,7 @@ func TestAgedPassEvidenceGoesStaleWithoutLosingItsPassVerdict(t *testing.T) {
 		t.Fatalf("the next eligible run did not replace aged evidence: %+v", attempt)
 	}
 	status = f.check().Status
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceCurrent {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceCurrent {
 		t.Errorf("evidenceFreshness = %q after a fresh completion, want Current", status.EvidenceFreshness)
 	}
 	if evidence := status.LastSuccessfulEvaluation; evidence == nil || !evidence.ObservedAt.Time.Equal(f.now()) {
@@ -1933,7 +1934,7 @@ func TestCompletedAllSkippedRunReplacesEvidenceAndAdvancesItsObservation(t *test
 			f := newRuntimeCheckFixture(t)
 			f.ready()
 			seeded := f.seedEvidence()
-			if seeded.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictPass {
+			if seeded.Verdict != fathomv1.AddonCheckEvidenceVerdictPass {
 				t.Fatalf("seed verdict = %q, want Pass so the replacement is observable", seeded.Verdict)
 			}
 
@@ -1948,14 +1949,14 @@ func TestCompletedAllSkippedRunReplacesEvidenceAndAdvancesItsObservation(t *test
 			if evidence == nil {
 				t.Fatal("a completed all-Skipped run removed the evidence instead of replacing it")
 			}
-			if evidence.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictSkipped {
+			if evidence.Verdict != fathomv1.AddonCheckEvidenceVerdictSkipped {
 				t.Errorf("verdict = %q, want Skipped", evidence.Verdict)
 			}
-			if evidence.Coverage != fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated {
+			if evidence.Coverage != fathomv1.AddonCheckCoverageNoChecksEvaluated {
 				t.Errorf("coverage = %q, want NoChecksEvaluated", evidence.Coverage)
 			}
-			if evidence.Message != fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage {
-				t.Errorf("message = %q, want %q", evidence.Message, fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage)
+			if evidence.Message != fathomv1.AddonCheckNoChecksEvaluatedMessage {
+				t.Errorf("message = %q, want %q", evidence.Message, fathomv1.AddonCheckNoChecksEvaluatedMessage)
 			}
 			if !evidence.ObservedAt.Time.Equal(f.now()) {
 				t.Errorf("observedAt = %s, want the all-Skipped run's own time %s; it advances after the fences succeed",
@@ -1965,10 +1966,10 @@ func TestCompletedAllSkippedRunReplacesEvidenceAndAdvancesItsObservation(t *test
 				t.Errorf("all-Skipped evidence lost its revision/context: %+v", evidence)
 			}
 			status := f.check().Status
-			if status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptCompleted {
+			if status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptCompleted {
 				t.Errorf("latestAttemptOutcome = %q, want Completed; all-Skipped is evidence, not a failed attempt", status.LatestAttemptOutcome)
 			}
-			if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceCurrent {
+			if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceCurrent {
 				t.Errorf("evidenceFreshness = %q, want Current", status.EvidenceFreshness)
 			}
 			ready := runtimeReadyCondition(t, f.check())
@@ -1986,11 +1987,11 @@ func TestMixedSkippedRunsKeepTheExistingAggregateAndReportEvaluatedCoverage(t *t
 	for _, tc := range []struct {
 		name    string
 		outcome adapter.Outcome
-		want    fathomv1alpha1.AddonCheckEvidenceVerdict
+		want    fathomv1.AddonCheckEvidenceVerdict
 	}{
-		{"one pass beside skips", adapter.OutcomePass, fathomv1alpha1.AddonCheckEvidenceVerdictPass},
-		{"one warn beside skips", adapter.OutcomeWarn, fathomv1alpha1.AddonCheckEvidenceVerdictWarn},
-		{"one fail beside skips", adapter.OutcomeFail, fathomv1alpha1.AddonCheckEvidenceVerdictFail},
+		{"one pass beside skips", adapter.OutcomePass, fathomv1.AddonCheckEvidenceVerdictPass},
+		{"one warn beside skips", adapter.OutcomeWarn, fathomv1.AddonCheckEvidenceVerdictWarn},
+		{"one fail beside skips", adapter.OutcomeFail, fathomv1.AddonCheckEvidenceVerdictFail},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newRuntimeCheckFixture(t)
@@ -2013,11 +2014,11 @@ func TestMixedSkippedRunsKeepTheExistingAggregateAndReportEvaluatedCoverage(t *t
 			if evidence.Verdict != tc.want {
 				t.Errorf("verdict = %q, want %q; Skipped never raises or lowers an evaluated verdict", evidence.Verdict, tc.want)
 			}
-			if evidence.Coverage != fathomv1alpha1.AddonCheckCoverageChecksEvaluated {
+			if evidence.Coverage != fathomv1.AddonCheckCoverageChecksEvaluated {
 				t.Errorf("coverage = %q, want ChecksEvaluated", evidence.Coverage)
 			}
-			if evidence.Message == fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage {
-				t.Errorf("a run that evaluated a check claimed %q", fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage)
+			if evidence.Message == fathomv1.AddonCheckNoChecksEvaluatedMessage {
+				t.Errorf("a run that evaluated a check claimed %q", fathomv1.AddonCheckNoChecksEvaluatedMessage)
 			}
 			// The pre-existing external surface still describes the most recent
 			// run, unchanged in meaning: lastResult is "the aggregate result
@@ -2045,15 +2046,15 @@ func TestRatioThresholdedEvidenceUsesTheFamilyAwareAggregate(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		unhealthy int
-		want      fathomv1alpha1.AddonCheckEvidenceVerdict
+		want      fathomv1.AddonCheckEvidenceVerdict
 	}{
-		{"unhealthy ratio under the fail threshold", 1, fathomv1alpha1.AddonCheckEvidenceVerdictPass},
-		{"unhealthy ratio past the fail threshold", 12, fathomv1alpha1.AddonCheckEvidenceVerdictFail},
+		{"unhealthy ratio under the fail threshold", 1, fathomv1.AddonCheckEvidenceVerdictPass},
+		{"unhealthy ratio past the fail threshold", 12, fathomv1.AddonCheckEvidenceVerdictFail},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			check := runtimeCheckObject()
-			check.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-				"health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+			check.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{
+				"health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1.ThresholdValue{
 					adapter.ThresholdKeyFailRatio: "10",
 				}},
 			}
@@ -2100,9 +2101,9 @@ func TestRuntimePolicyIsValidatedOnTheFencedCheckBeforeRun(t *testing.T) {
 	queued := f.check()
 	invalid := queued.DeepCopy()
 	invalid.Generation = 2
-	invalid.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+	invalid.Spec.Policy["health"] = fathomv1.AddonCheckFamilyPolicy{
 		Enabled: ptr.To(false),
-		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+		Thresholds: map[string]fathomv1.ThresholdValue{
 			adapter.ThresholdKeyFailRatio: "150",
 		},
 	}
@@ -2140,9 +2141,9 @@ func TestRuntimePolicyIsValidatedOnTheFencedCheckBeforeRun(t *testing.T) {
 
 	corrected := got.DeepCopy()
 	corrected.Generation = 3
-	corrected.Spec.Policy["health"] = fathomv1alpha1.AddonCheckFamilyPolicy{
+	corrected.Spec.Policy["health"] = fathomv1.AddonCheckFamilyPolicy{
 		Enabled: ptr.To(true),
-		Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+		Thresholds: map[string]fathomv1.ThresholdValue{
 			adapter.ThresholdKeyFailRatio: "10",
 		},
 	}
@@ -2206,7 +2207,7 @@ func TestACheckLevelErrorNeverBecomesCompletedEvidence(t *testing.T) {
 		t.Fatalf("an undeterminable run overwrote evidence:\nbefore %+v\nafter  %+v", before, after)
 	}
 	status := f.check().Status
-	if status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptError {
+	if status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptError {
 		t.Errorf("latestAttemptOutcome = %q, want Error", status.LatestAttemptOutcome)
 	}
 }
@@ -2222,24 +2223,24 @@ func TestCompletedEvidenceFoldAndNarrowing(t *testing.T) {
 		for _, tc := range []struct {
 			name     string
 			checks   []adapter.CheckResult
-			verdict  fathomv1alpha1.HealthReportResult
-			coverage fathomv1alpha1.AddonCheckEvidenceCoverage
+			verdict  fathomv1.HealthReportResult
+			coverage fathomv1.AddonCheckEvidenceCoverage
 			message  string
 		}{
 			{"no checks at all", nil,
-				fathomv1alpha1.HealthReportResultSkipped,
-				fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated,
-				fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage},
+				fathomv1.HealthReportResultSkipped,
+				fathomv1.AddonCheckCoverageNoChecksEvaluated,
+				fathomv1.AddonCheckNoChecksEvaluatedMessage},
 			{"only skips", []adapter.CheckResult{skipped, skipped},
-				fathomv1alpha1.HealthReportResultSkipped,
-				fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated,
-				fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage},
+				fathomv1.HealthReportResultSkipped,
+				fathomv1.AddonCheckCoverageNoChecksEvaluated,
+				fathomv1.AddonCheckNoChecksEvaluatedMessage},
 			{"one pass among skips", []adapter.CheckResult{skipped, {Family: "health", Outcome: adapter.OutcomePass}},
-				fathomv1alpha1.HealthReportResultPass,
-				fathomv1alpha1.AddonCheckCoverageChecksEvaluated, "2 checks evaluated"},
+				fathomv1.HealthReportResultPass,
+				fathomv1.AddonCheckCoverageChecksEvaluated, "2 checks evaluated"},
 			{"one fail among skips", []adapter.CheckResult{skipped, {Family: "health", Outcome: adapter.OutcomeFail}},
-				fathomv1alpha1.HealthReportResultFail,
-				fathomv1alpha1.AddonCheckCoverageChecksEvaluated, "2 checks evaluated"},
+				fathomv1.HealthReportResultFail,
+				fathomv1.AddonCheckCoverageChecksEvaluated, "2 checks evaluated"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				verdict, coverage, message := addonCheckEvidenceOutcome(
@@ -2254,16 +2255,16 @@ func TestCompletedEvidenceFoldAndNarrowing(t *testing.T) {
 
 	t.Run("narrowing", func(t *testing.T) {
 		for _, tc := range []struct {
-			aggregate fathomv1alpha1.HealthReportResult
-			want      fathomv1alpha1.AddonCheckEvidenceVerdict
+			aggregate fathomv1.HealthReportResult
+			want      fathomv1.AddonCheckEvidenceVerdict
 			ok        bool
 		}{
-			{fathomv1alpha1.HealthReportResultPass, fathomv1alpha1.AddonCheckEvidenceVerdictPass, true},
-			{fathomv1alpha1.HealthReportResultWarn, fathomv1alpha1.AddonCheckEvidenceVerdictWarn, true},
-			{fathomv1alpha1.HealthReportResultFail, fathomv1alpha1.AddonCheckEvidenceVerdictFail, true},
-			{fathomv1alpha1.HealthReportResultSkipped, fathomv1alpha1.AddonCheckEvidenceVerdictSkipped, true},
-			{fathomv1alpha1.HealthReportResultError, "", false},
-			{fathomv1alpha1.HealthReportResultUnknown, "", false},
+			{fathomv1.HealthReportResultPass, fathomv1.AddonCheckEvidenceVerdictPass, true},
+			{fathomv1.HealthReportResultWarn, fathomv1.AddonCheckEvidenceVerdictWarn, true},
+			{fathomv1.HealthReportResultFail, fathomv1.AddonCheckEvidenceVerdictFail, true},
+			{fathomv1.HealthReportResultSkipped, fathomv1.AddonCheckEvidenceVerdictSkipped, true},
+			{fathomv1.HealthReportResultError, "", false},
+			{fathomv1.HealthReportResultUnknown, "", false},
 			{"", "", false},
 		} {
 			got, ok := addonCheckCompletedVerdict(tc.aggregate)
@@ -2298,7 +2299,7 @@ func TestASupersededRunReportsSupersededFreshnessAndKeepsItsEvidence(t *testing.
 		t.Fatalf("a superseded run rewrote evidence:\nbefore %+v\nafter  %+v", before, after)
 	}
 	status := f.check().Status
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceSuperseded {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceSuperseded {
 		t.Errorf("evidenceFreshness = %q, want Superseded", status.EvidenceFreshness)
 	}
 }
@@ -2330,7 +2331,7 @@ func TestACompletedRunIsNeverAlsoRecordedAsAFailedAttempt(t *testing.T) {
 		t.Fatalf("an identical completed run wrote status %d more times", writes-seeded)
 	}
 	status := f.check().Status
-	if status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptCompleted {
+	if status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptCompleted {
 		t.Errorf("latestAttemptOutcome = %q, want Completed", status.LatestAttemptOutcome)
 	}
 	if status.LatestAttemptReason != reasonRunCompleted {
@@ -2445,10 +2446,10 @@ func TestRecordedTextIsBoundedToTheSchemaLimits(t *testing.T) {
 // are the bounds that actually exist — and that an out-of-enum verdict is
 // rejected rather than silently stored.
 var _ = Describe("AddonCheck runtime evidence schema", func() {
-	newCheck := func(name string) *fathomv1alpha1.AddonCheck {
-		return &fathomv1alpha1.AddonCheck{
+	newCheck := func(name string) *fathomv1.AddonCheck {
+		return &fathomv1.AddonCheck{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name},
-			Spec:       fathomv1alpha1.AddonCheckSpec{AddonType: "schema-probe"},
+			Spec:       fathomv1.AddonCheckSpec{AddonType: "schema-probe"},
 		}
 	}
 
@@ -2460,53 +2461,53 @@ var _ = Describe("AddonCheck runtime evidence schema", func() {
 		})
 
 		observed := metav1.NewTime(runtimeCheckClockStart)
-		check.Status.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
-			Verdict:    fathomv1alpha1.AddonCheckEvidenceVerdictSkipped,
-			Coverage:   fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated,
-			Message:    fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage,
+		check.Status.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
+			Verdict:    fathomv1.AddonCheckEvidenceVerdictSkipped,
+			Coverage:   fathomv1.AddonCheckCoverageNoChecksEvaluated,
+			Message:    fathomv1.AddonCheckNoChecksEvaluatedMessage,
 			ObservedAt: observed,
-			Revision: fathomv1alpha1.AddonCheckEvidenceRevision{
+			Revision: fathomv1.AddonCheckEvidenceRevision{
 				DefinitionUID: string(lifecycleDefUID), DefinitionGeneration: 3,
 				SchemaVersion: "v1alpha1", SemanticsVersion: 1,
 				AdapterVersion: "1.2.3", OperatorBuild: lifecycleBuild,
 			},
-			Authority: fathomv1alpha1.AddonCheckEvidenceAuthority{
+			Authority: fathomv1.AddonCheckEvidenceAuthority{
 				BindingUID: "binding-uid-1", BindingGeneration: 2,
 				ServiceAccountUID: "sa-uid-1", CheckUID: "check-uid-1", CheckGeneration: 4,
 				PolicyDigest: strings.Repeat("a", 64),
-				LeaderEpoch: &fathomv1alpha1.DefinitionLeaderEpoch{
+				LeaderEpoch: &fathomv1.DefinitionLeaderEpoch{
 					LeaseUID: "lease-uid-1", HolderIdentity: lifecycleLeader,
 					AcquireTime: metav1.NewMicroTime(runtimeCheckClockStart), LeaseTransitions: 3,
 				},
 			},
 		}
 		check.Status.LatestAttemptAt = &metav1.Time{Time: runtimeCheckClockStart.Add(time.Hour)}
-		check.Status.LatestAttemptOutcome = fathomv1alpha1.AddonCheckAttemptError
+		check.Status.LatestAttemptOutcome = fathomv1.AddonCheckAttemptError
 		check.Status.LatestAttemptReason = reasonAuthorizationRevoked
 		check.Status.LatestAttemptMessage = strings.Repeat("m", addonCheckStatusTextLimit)
-		check.Status.EvidenceFreshness = fathomv1alpha1.AddonCheckEvidenceUnavailable
+		check.Status.EvidenceFreshness = fathomv1.AddonCheckEvidenceUnavailable
 		check.Status.EvidenceFreshnessReason = strings.Repeat("r", addonCheckStatusTextLimit)
 		Expect(k8sClient.Status().Update(ctx, check)).To(Succeed())
 
-		var stored fathomv1alpha1.AddonCheck
+		var stored fathomv1.AddonCheck
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(check), &stored)).To(Succeed())
 		Expect(stored.Status.LastSuccessfulEvaluation).NotTo(BeNil())
 		Expect(stored.Status.LastSuccessfulEvaluation.Verdict).
-			To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictSkipped))
+			To(Equal(fathomv1.AddonCheckEvidenceVerdictSkipped))
 		Expect(stored.Status.LastSuccessfulEvaluation.Coverage).
-			To(Equal(fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated))
+			To(Equal(fathomv1.AddonCheckCoverageNoChecksEvaluated))
 		Expect(stored.Status.LastSuccessfulEvaluation.Message).
-			To(Equal(fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage))
+			To(Equal(fathomv1.AddonCheckNoChecksEvaluatedMessage))
 		Expect(stored.Status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally("==", observed.Time))
 		Expect(stored.Status.LastSuccessfulEvaluation.Authority.LeaderEpoch).NotTo(BeNil())
-		Expect(stored.Status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
-		Expect(stored.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
+		Expect(stored.Status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
+		Expect(stored.Status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceUnavailable))
 		// The pre-existing surface is untouched by the new fields.
 		Expect(stored.Status.LastResult).To(BeEmpty())
 	})
 
 	DescribeTable("rejects values outside the declared bounds",
-		func(ctx SpecContext, name string, mutate func(*fathomv1alpha1.AddonCheckStatus)) {
+		func(ctx SpecContext, name string, mutate func(*fathomv1.AddonCheckStatus)) {
 			check := newCheck(name)
 			Expect(k8sClient.Create(ctx, check)).To(Succeed())
 			DeferCleanup(func(ctx SpecContext) {
@@ -2522,43 +2523,43 @@ var _ = Describe("AddonCheck runtime evidence schema", func() {
 		// a zero metav1.Time marshals to null, so omitting it would make the
 		// write fail for a reason that has nothing to do with the bound under
 		// test.
-		Entry("an Error verdict", "reject-error-verdict", func(s *fathomv1alpha1.AddonCheckStatus) {
-			s.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
+		Entry("an Error verdict", "reject-error-verdict", func(s *fathomv1.AddonCheckStatus) {
+			s.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
 				Verdict:    "Error",
-				Coverage:   fathomv1alpha1.AddonCheckCoverageChecksEvaluated,
+				Coverage:   fathomv1.AddonCheckCoverageChecksEvaluated,
 				ObservedAt: metav1.NewTime(runtimeCheckClockStart),
 			}
 		}),
-		Entry("an unknown coverage", "reject-unknown-coverage", func(s *fathomv1alpha1.AddonCheckStatus) {
-			s.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
-				Verdict:    fathomv1alpha1.AddonCheckEvidenceVerdictPass,
+		Entry("an unknown coverage", "reject-unknown-coverage", func(s *fathomv1.AddonCheckStatus) {
+			s.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
+				Verdict:    fathomv1.AddonCheckEvidenceVerdictPass,
 				Coverage:   "SomeChecksEvaluated",
 				ObservedAt: metav1.NewTime(runtimeCheckClockStart),
 			}
 		}),
-		Entry("an unknown freshness", "reject-unknown-freshness", func(s *fathomv1alpha1.AddonCheckStatus) {
+		Entry("an unknown freshness", "reject-unknown-freshness", func(s *fathomv1.AddonCheckStatus) {
 			s.EvidenceFreshness = "Fresh"
 		}),
-		Entry("an unknown attempt outcome", "reject-unknown-outcome", func(s *fathomv1alpha1.AddonCheckStatus) {
+		Entry("an unknown attempt outcome", "reject-unknown-outcome", func(s *fathomv1.AddonCheckStatus) {
 			s.LatestAttemptOutcome = "Failed"
 		}),
 		// The runner truncates to exactly these limits; one code point past
 		// each must be refused, or the truncation would be decorative.
-		Entry("an over-long attempt message", "reject-long-message", func(s *fathomv1alpha1.AddonCheckStatus) {
+		Entry("an over-long attempt message", "reject-long-message", func(s *fathomv1.AddonCheckStatus) {
 			s.LatestAttemptMessage = strings.Repeat("m", addonCheckStatusTextLimit+1)
 		}),
-		Entry("an over-long attempt reason", "reject-long-reason", func(s *fathomv1alpha1.AddonCheckStatus) {
+		Entry("an over-long attempt reason", "reject-long-reason", func(s *fathomv1.AddonCheckStatus) {
 			s.LatestAttemptReason = strings.Repeat("r", addonCheckStatusReasonLimit+1)
 		}),
-		Entry("an over-long freshness reason", "reject-long-freshness-reason", func(s *fathomv1alpha1.AddonCheckStatus) {
+		Entry("an over-long freshness reason", "reject-long-freshness-reason", func(s *fathomv1.AddonCheckStatus) {
 			s.EvidenceFreshnessReason = strings.Repeat("f", addonCheckStatusTextLimit+1)
 		}),
-		Entry("an over-long identifier", "reject-long-identifier", func(s *fathomv1alpha1.AddonCheckStatus) {
-			s.LastSuccessfulEvaluation = &fathomv1alpha1.AddonCheckEvidence{
-				Verdict:    fathomv1alpha1.AddonCheckEvidenceVerdictPass,
-				Coverage:   fathomv1alpha1.AddonCheckCoverageChecksEvaluated,
+		Entry("an over-long identifier", "reject-long-identifier", func(s *fathomv1.AddonCheckStatus) {
+			s.LastSuccessfulEvaluation = &fathomv1.AddonCheckEvidence{
+				Verdict:    fathomv1.AddonCheckEvidenceVerdictPass,
+				Coverage:   fathomv1.AddonCheckCoverageChecksEvaluated,
 				ObservedAt: metav1.NewTime(runtimeCheckClockStart),
-				Authority: fathomv1alpha1.AddonCheckEvidenceAuthority{
+				Authority: fathomv1.AddonCheckEvidenceAuthority{
 					PolicyDigest: strings.Repeat("d", addonCheckStatusIdentifierLimit+1),
 				},
 			}
@@ -2581,9 +2582,9 @@ var _ = Describe("AddonCheck runtime evidence schema", func() {
 
 // reports returns every stored HealthReport for the fixture's check, ordered by
 // observation so "the first report" stays meaningful across rows.
-func (f *runtimeCheckFixture) reports() []fathomv1alpha1.HealthReport {
+func (f *runtimeCheckFixture) reports() []fathomv1.HealthReport {
 	f.t.Helper()
-	var list fathomv1alpha1.HealthReportList
+	var list fathomv1.HealthReportList
 	if err := f.store.List(context.Background(), &list, client.InNamespace(runtimeCheckNamespace)); err != nil {
 		f.t.Fatalf("list HealthReports: %v", err)
 	}
@@ -2635,7 +2636,7 @@ func skippedRun(context.Context, adapter.Request) (adapter.Result, error) {
 // from. contracts/runtime.md's recovery column requires that "history remains
 // attributable": a report that cannot name its revision and authority cannot be
 // told apart from one produced under authority since revoked.
-func assertReportAttribution(t *testing.T, report *fathomv1alpha1.HealthReport, evidence *fathomv1alpha1.AddonCheckEvidence) {
+func assertReportAttribution(t *testing.T, report *fathomv1.HealthReport, evidence *fathomv1.AddonCheckEvidence) {
 	t.Helper()
 	attribution := report.Spec.Attribution
 	if attribution == nil {
@@ -2680,8 +2681,8 @@ func TestPassToSkippedReplacesEvidenceAndCreatesATransitionReport(t *testing.T) 
 	}
 
 	skipped := f.evidence()
-	if skipped.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictSkipped ||
-		skipped.Coverage != fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated {
+	if skipped.Verdict != fathomv1.AddonCheckEvidenceVerdictSkipped ||
+		skipped.Coverage != fathomv1.AddonCheckCoverageNoChecksEvaluated {
 		t.Fatalf("evidence = %+v, want Skipped/NoChecksEvaluated", skipped)
 	}
 
@@ -2703,9 +2704,9 @@ func TestPassToSkippedReplacesEvidenceAndCreatesATransitionReport(t *testing.T) 
 		}
 	}
 	assertReportAttribution(t, &reports[1], skipped)
-	if reports[1].Spec.Attribution.Message != fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage {
+	if reports[1].Spec.Attribution.Message != fathomv1.AddonCheckNoChecksEvaluatedMessage {
 		t.Errorf("the Skipped report's coverage message = %q, want %q",
-			reports[1].Spec.Attribution.Message, fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage)
+			reports[1].Spec.Attribution.Message, fathomv1.AddonCheckNoChecksEvaluatedMessage)
 	}
 	// The superseded report keeps its own provenance: history is never
 	// rewritten by the run that replaced it.
@@ -2757,11 +2758,11 @@ func TestMixedSkippedTransitionsUseTheExistingAggregateAndKeepEverySkippedEntry(
 	for _, tc := range []struct {
 		name    string
 		outcome adapter.Outcome
-		want    fathomv1alpha1.HealthReportResult
+		want    fathomv1.HealthReportResult
 	}{
-		{"one pass beside skips", adapter.OutcomePass, fathomv1alpha1.HealthReportResultPass},
-		{"one warn beside skips", adapter.OutcomeWarn, fathomv1alpha1.HealthReportResultWarn},
-		{"one fail beside skips", adapter.OutcomeFail, fathomv1alpha1.HealthReportResultFail},
+		{"one pass beside skips", adapter.OutcomePass, fathomv1.HealthReportResultPass},
+		{"one warn beside skips", adapter.OutcomeWarn, fathomv1.HealthReportResultWarn},
+		{"one fail beside skips", adapter.OutcomeFail, fathomv1.HealthReportResultFail},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newRuntimeCheckFixture(t)
@@ -2783,7 +2784,7 @@ func TestMixedSkippedTransitionsUseTheExistingAggregateAndKeepEverySkippedEntry(
 			}
 
 			evidence := f.evidence()
-			if evidence.Coverage != fathomv1alpha1.AddonCheckCoverageChecksEvaluated {
+			if evidence.Coverage != fathomv1.AddonCheckCoverageChecksEvaluated {
 				t.Errorf("coverage = %q, want ChecksEvaluated: one evaluated check is coverage", evidence.Coverage)
 			}
 			reports := f.reports()
@@ -2800,7 +2801,7 @@ func TestMixedSkippedTransitionsUseTheExistingAggregateAndKeepEverySkippedEntry(
 			}
 			var skipped int
 			for _, entry := range report.Spec.Checks {
-				if entry.Result == fathomv1alpha1.HealthReportResultSkipped {
+				if entry.Result == fathomv1.HealthReportResultSkipped {
 					skipped++
 				}
 			}
@@ -2818,7 +2819,7 @@ func TestMixedSkippedTransitionsUseTheExistingAggregateAndKeepEverySkippedEntry(
 // its first appearance is a transition worth a report.
 func TestZeroEnabledChecksIsCompletedSkippedEvidenceAndATransition(t *testing.T) {
 	check := runtimeCheckObject()
-	check.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+	check.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{
 		"health": {Enabled: ptr.To(false)},
 	}
 	f := newRuntimeCheckFixture(t, lifecycleDefinition(), lifecycleBinding(), lifecycleServiceAccount(), check)
@@ -2833,13 +2834,13 @@ func TestZeroEnabledChecksIsCompletedSkippedEvidenceAndATransition(t *testing.T)
 		t.Fatal("the first completed evaluation created no report")
 	}
 	evidence := f.evidence()
-	if evidence.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictSkipped ||
-		evidence.Coverage != fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated ||
-		evidence.Message != fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage {
+	if evidence.Verdict != fathomv1.AddonCheckEvidenceVerdictSkipped ||
+		evidence.Coverage != fathomv1.AddonCheckCoverageNoChecksEvaluated ||
+		evidence.Message != fathomv1.AddonCheckNoChecksEvaluatedMessage {
 		t.Fatalf("evidence = %+v, want Skipped/NoChecksEvaluated/%q",
-			evidence, fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage)
+			evidence, fathomv1.AddonCheckNoChecksEvaluatedMessage)
 	}
-	if status := f.check().Status; status.LatestAttemptOutcome != fathomv1alpha1.AddonCheckAttemptCompleted {
+	if status := f.check().Status; status.LatestAttemptOutcome != fathomv1.AddonCheckAttemptCompleted {
 		t.Errorf("latestAttemptOutcome = %q, want Completed", status.LatestAttemptOutcome)
 	}
 	ready := runtimeReadyCondition(t, f.check())
@@ -2850,7 +2851,7 @@ func TestZeroEnabledChecksIsCompletedSkippedEvidenceAndATransition(t *testing.T)
 	if len(reports) != 1 {
 		t.Fatalf("stored %d reports, want 1", len(reports))
 	}
-	if reports[0].Spec.Result != fathomv1alpha1.HealthReportResultSkipped {
+	if reports[0].Spec.Result != fathomv1.HealthReportResultSkipped {
 		t.Errorf("report result = %q, want Skipped", reports[0].Spec.Result)
 	}
 	assertReportAttribution(t, &reports[0], evidence)
@@ -2984,34 +2985,34 @@ func TestAFailedAttemptAddsNoReportAndNeverRedatesTheStoredOne(t *testing.T) {
 // "historical provenance is preserved when superseded" requirement is enforced
 // by the API server rather than by the operator's good manners.
 var _ = Describe("runtime HealthReport attribution", func() {
-	newReport := func(name string) *fathomv1alpha1.HealthReport {
-		return &fathomv1alpha1.HealthReport{
+	newReport := func(name string) *fathomv1.HealthReport {
+		return &fathomv1.HealthReport{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name},
-			Spec: fathomv1alpha1.HealthReportSpec{
-				SourceRef: fathomv1alpha1.HealthReportTargetRef{
-					APIVersion: fathomv1alpha1.GroupVersion.String(), Kind: "AddonCheck",
+			Spec: fathomv1.HealthReportSpec{
+				SourceRef: fathomv1.HealthReportTargetRef{
+					APIVersion: fathomv1.GroupVersion.String(), Kind: "AddonCheck",
 					Namespace: "default", Name: runtimeCheckName,
 				},
 				AddonType:  lifecycleAddon,
-				Result:     fathomv1alpha1.HealthReportResultSkipped,
+				Result:     fathomv1.HealthReportResultSkipped,
 				ObservedAt: metav1.NewTime(runtimeCheckClockStart),
-				Attribution: &fathomv1alpha1.HealthReportAttribution{
-					Revision: fathomv1alpha1.AddonCheckEvidenceRevision{
+				Attribution: &fathomv1.HealthReportAttribution{
+					Revision: fathomv1.AddonCheckEvidenceRevision{
 						DefinitionUID: string(lifecycleDefUID), DefinitionGeneration: 7,
 						SchemaVersion: "v1alpha1", SemanticsVersion: 1,
 						AdapterVersion: "1.0.0", OperatorBuild: lifecycleBuild,
 					},
-					Authority: fathomv1alpha1.AddonCheckEvidenceAuthority{
+					Authority: fathomv1.AddonCheckEvidenceAuthority{
 						BindingUID: "binding-uid-1", BindingGeneration: 2,
 						ServiceAccountUID: "sa-uid-1", CheckUID: string(runtimeCheckUID), CheckGeneration: 3,
 						PolicyDigest: strings.Repeat("d", 64),
-						LeaderEpoch: &fathomv1alpha1.DefinitionLeaderEpoch{
+						LeaderEpoch: &fathomv1.DefinitionLeaderEpoch{
 							LeaseUID: "lease-uid-1", HolderIdentity: lifecycleLeader,
 							AcquireTime: metav1.NewMicroTime(runtimeCheckClockStart), LeaseTransitions: 3,
 						},
 					},
-					Coverage: fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated,
-					Message:  fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage,
+					Coverage: fathomv1.AddonCheckCoverageNoChecksEvaluated,
+					Message:  fathomv1.AddonCheckNoChecksEvaluatedMessage,
 				},
 			},
 		}
@@ -3024,7 +3025,7 @@ var _ = Describe("runtime HealthReport attribution", func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, report))).To(Succeed())
 		})
 
-		var stored fathomv1alpha1.HealthReport
+		var stored fathomv1.HealthReport
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(report), &stored)).To(Succeed())
 		Expect(stored.Spec.Attribution).NotTo(BeNil())
 		Expect(stored.Spec.Attribution.Revision.DefinitionUID).To(Equal(string(lifecycleDefUID)))
@@ -3032,9 +3033,9 @@ var _ = Describe("runtime HealthReport attribution", func() {
 		Expect(stored.Spec.Attribution.Authority.LeaderEpoch).NotTo(BeNil())
 		Expect(stored.Spec.Attribution.Authority.LeaderEpoch.HolderIdentity).To(Equal(lifecycleLeader))
 		Expect(stored.Spec.Attribution.Coverage).
-			To(Equal(fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated))
+			To(Equal(fathomv1.AddonCheckCoverageNoChecksEvaluated))
 		Expect(stored.Spec.Attribution.Message).
-			To(Equal(fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage))
+			To(Equal(fathomv1.AddonCheckNoChecksEvaluatedMessage))
 	})
 
 	It("refuses to let a later run re-attribute stored history", func(ctx SpecContext) {
@@ -3044,14 +3045,14 @@ var _ = Describe("runtime HealthReport attribution", func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, report))).To(Succeed())
 		})
 
-		var stored fathomv1alpha1.HealthReport
+		var stored fathomv1.HealthReport
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(report), &stored)).To(Succeed())
 		stored.Spec.Attribution.Revision.DefinitionGeneration = 8
 		// Named explicitly so the rejection cannot be satisfied by an unrelated
 		// failure (a conflict, say) and quietly stop proving immutability.
 		Expect(k8sClient.Update(ctx, &stored)).To(MatchError(ContainSubstring("spec is immutable")))
 
-		stored = fathomv1alpha1.HealthReport{}
+		stored = fathomv1.HealthReport{}
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(report), &stored)).To(Succeed())
 		Expect(stored.Spec.Attribution.Revision.DefinitionGeneration).To(Equal(int64(7)))
 	})
@@ -3212,8 +3213,8 @@ func TestARepeatedTransitionRecordsItsOwnReport(t *testing.T) {
 // into Pass" holds in history as well as in status.
 func TestRuntimeTransitionReportsCarryTheRatioRollupEntry(t *testing.T) {
 	check := runtimeCheckObject()
-	check.Spec.Policy = map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
-		"health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1alpha1.ThresholdValue{
+	check.Spec.Policy = map[string]fathomv1.AddonCheckFamilyPolicy{
+		"health": {Enabled: ptr.To(true), Thresholds: map[string]fathomv1.ThresholdValue{
 			adapter.ThresholdKeyFailRatio: "10",
 		}},
 	}
@@ -3239,11 +3240,11 @@ func TestRuntimeTransitionReportsCarryTheRatioRollupEntry(t *testing.T) {
 		t.Fatalf("stored %d reports, want 1", len(reports))
 	}
 	report := &reports[0]
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultFail {
+	if report.Spec.Result != fathomv1.HealthReportResultFail {
 		t.Errorf("report result = %q, want Fail: 12 of 20 unhealthy is past a 10%% failRatio", report.Spec.Result)
 	}
 
-	var rollup *fathomv1alpha1.HealthReportCheck
+	var rollup *fathomv1.HealthReportCheck
 	for i := range report.Spec.Checks {
 		if report.Spec.Checks[i].Details[detailRollup] == detailRollupRatio {
 			rollup = &report.Spec.Checks[i]
@@ -3252,7 +3253,7 @@ func TestRuntimeTransitionReportsCarryTheRatioRollupEntry(t *testing.T) {
 	if rollup == nil {
 		t.Fatalf("the report carries no ratio rollup entry among its %d checks", len(report.Spec.Checks))
 	}
-	if rollup.Result != fathomv1alpha1.HealthReportResultFail {
+	if rollup.Result != fathomv1.HealthReportResultFail {
 		t.Errorf("rollup entry result = %q, want Fail", rollup.Result)
 	}
 	if rollup.Details[detailRollupPopulation] != "20" || rollup.Details[detailRollupUnhealthy] != "12" {
@@ -3290,7 +3291,7 @@ func TestRuntimeTransitionReportsCarryTheRatioRollupEntry(t *testing.T) {
 func TestIneligibleInputsOutrankEvidenceAgeing(t *testing.T) {
 	// Spelled from the contract, not from AddonCheckEvidenceWindow: this test
 	// must age the evidence even if that formula is wrong.
-	const window = 2*fathomv1alpha1.DefaultAddonCheckInterval + runtimeCheckTimeout
+	const window = 2*fathomv1.DefaultAddonCheckInterval + runtimeCheckTimeout
 
 	// The control row. It shares the age of every row below and differs only in
 	// that its inputs stay eligible, which is what makes the rows below a
@@ -3306,7 +3307,7 @@ func TestIneligibleInputsOutrankEvidenceAgeing(t *testing.T) {
 		})
 		f.runOK()
 
-		if got := f.check().Status.EvidenceFreshness; got != fathomv1alpha1.AddonCheckEvidenceStale {
+		if got := f.check().Status.EvidenceFreshness; got != fathomv1.AddonCheckEvidenceStale {
 			t.Fatalf("evidenceFreshness = %q at age %s with eligible inputs, want Stale", got, window+time.Minute)
 		}
 	})
@@ -3357,7 +3358,7 @@ func TestIneligibleInputsOutrankEvidenceAgeing(t *testing.T) {
 				t.Fatalf("reason = %q, want %q (%s)", attempt.Reason, tc.reason, attempt.Message)
 			}
 			status := f.check().Status
-			if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceUnavailable {
+			if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceUnavailable {
 				t.Fatalf("evidenceFreshness = %q for aged evidence whose inputs are no longer eligible, want Unavailable; "+
 					"Stale would promise a refresh these inputs can no longer deliver", status.EvidenceFreshness)
 			}
@@ -3386,9 +3387,9 @@ func TestIneligibleInputsOutrankEvidenceAgeing(t *testing.T) {
 // once, here, and tied to the end-to-end run that produces it.
 func TestTheNoChecksEvaluatedMessageIsTheContractLiteral(t *testing.T) {
 	const literal = "no checks evaluated"
-	if fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage != literal {
+	if fathomv1.AddonCheckNoChecksEvaluatedMessage != literal {
 		t.Fatalf("AddonCheckNoChecksEvaluatedMessage = %q, want the contract literal %q",
-			fathomv1alpha1.AddonCheckNoChecksEvaluatedMessage, literal)
+			fathomv1.AddonCheckNoChecksEvaluatedMessage, literal)
 	}
 
 	f := newRuntimeCheckFixture(t)
@@ -3405,10 +3406,10 @@ func TestTheNoChecksEvaluatedMessageIsTheContractLiteral(t *testing.T) {
 	if evidence.Message != literal {
 		t.Errorf("evidence message = %q, want the contract literal %q", evidence.Message, literal)
 	}
-	if evidence.Coverage != fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated {
+	if evidence.Coverage != fathomv1.AddonCheckCoverageNoChecksEvaluated {
 		t.Errorf("coverage = %q, want NoChecksEvaluated", evidence.Coverage)
 	}
-	if evidence.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictSkipped {
+	if evidence.Verdict != fathomv1.AddonCheckEvidenceVerdictSkipped {
 		t.Errorf("verdict = %q, want Skipped", evidence.Verdict)
 	}
 }
@@ -3589,7 +3590,7 @@ func TestARecoveredRunClearsTheStaleFreshnessExplanation(t *testing.T) {
 	f.runOK()
 
 	status := f.check().Status
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceUnavailable {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceUnavailable {
 		t.Fatalf("evidenceFreshness = %q after revocation, want Unavailable", status.EvidenceFreshness)
 	}
 	if status.EvidenceFreshnessReason == "" {
@@ -3605,7 +3606,7 @@ func TestARecoveredRunClearsTheStaleFreshnessExplanation(t *testing.T) {
 	}
 
 	status = f.check().Status
-	if status.EvidenceFreshness != fathomv1alpha1.AddonCheckEvidenceCurrent {
+	if status.EvidenceFreshness != fathomv1.AddonCheckEvidenceCurrent {
 		t.Fatalf("evidenceFreshness = %q after a fresh completion, want Current", status.EvidenceFreshness)
 	}
 	if status.EvidenceFreshnessReason != "" {
@@ -3717,7 +3718,7 @@ type failingReportCreateClient struct {
 func (c failingReportCreateClient) Create(
 	ctx context.Context, obj client.Object, opts ...client.CreateOption,
 ) error {
-	if _, ok := obj.(*fathomv1alpha1.HealthReport); ok && *c.remaining > 0 {
+	if _, ok := obj.(*fathomv1.HealthReport); ok && *c.remaining > 0 {
 		*c.remaining--
 		return errors.New("etcdserver: request timed out")
 	}
@@ -3766,7 +3767,7 @@ func TestALostReportCreateIsBackfilledOnTheNextRun(t *testing.T) {
 	// The dangerous part is that the PUBLICATION succeeded: status already
 	// shows the verdict history is missing.
 	seeded := f.evidence()
-	if seeded == nil || seeded.Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictPass {
+	if seeded == nil || seeded.Verdict != fathomv1.AddonCheckEvidenceVerdictPass {
 		t.Fatalf("evidence = %+v, want a published Pass", seeded)
 	}
 	if got := f.check().Status.LastReportName; got != "" {
@@ -3788,7 +3789,7 @@ func TestALostReportCreateIsBackfilledOnTheNextRun(t *testing.T) {
 	if len(reports) != 1 {
 		t.Fatalf("stored %d reports, want the backfilled 1", len(reports))
 	}
-	if reports[0].Spec.Result != fathomv1alpha1.HealthReportResultPass {
+	if reports[0].Spec.Result != fathomv1.HealthReportResultPass {
 		t.Errorf("backfilled report result = %q, want Pass", reports[0].Spec.Result)
 	}
 	if got := f.check().Status.LastReportName; got != repeat {
@@ -3829,7 +3830,7 @@ func TestAReportPointerThatContradictsTheVerdictIsRepaired(t *testing.T) {
 	if _, _, err := f.runAndRecordWith(lossy); err == nil {
 		t.Fatal("the fixture did not fail the report create")
 	}
-	if f.evidence().Verdict != fathomv1alpha1.AddonCheckEvidenceVerdictSkipped {
+	if f.evidence().Verdict != fathomv1.AddonCheckEvidenceVerdictSkipped {
 		t.Fatal("the Pass->Skipped run published nothing; the row needs the contradiction")
 	}
 	if got := f.check().Status.LastReportName; got != seed {
@@ -3850,7 +3851,7 @@ func TestAReportPointerThatContradictsTheVerdictIsRepaired(t *testing.T) {
 	if current.Status.LastReportName != repaired {
 		t.Errorf("lastReportName = %q, want %q", current.Status.LastReportName, repaired)
 	}
-	var named fathomv1alpha1.HealthReport
+	var named fathomv1.HealthReport
 	key := client.ObjectKey{Namespace: runtimeCheckNamespace, Name: repaired}
 	if err := f.store.Get(context.Background(), key, &named); err != nil {
 		t.Fatalf("get the repaired report: %v", err)
@@ -3861,7 +3862,7 @@ func TestAReportPointerThatContradictsTheVerdictIsRepaired(t *testing.T) {
 	}
 	// Repaired by ADDING. The superseded entry keeps its own result and its own
 	// observation: "Historical reports are ... never rewritten by this run."
-	if reports[0].Spec.Result != fathomv1alpha1.HealthReportResultPass {
+	if reports[0].Spec.Result != fathomv1.HealthReportResultPass {
 		t.Errorf("the seed report became %q; history is repaired by adding, never by rewriting", reports[0].Spec.Result)
 	}
 	if reports[0].Name != seed {
@@ -3880,7 +3881,7 @@ func TestARetentionPrunedPointerIsNotResurrected(t *testing.T) {
 	if seed == "" {
 		t.Fatal("the seed evaluation created no report")
 	}
-	var pruned fathomv1alpha1.HealthReport
+	var pruned fathomv1.HealthReport
 	key := client.ObjectKey{Namespace: runtimeCheckNamespace, Name: seed}
 	if err := f.store.Get(context.Background(), key, &pruned); err != nil {
 		t.Fatalf("get the seed report: %v", err)
@@ -3923,7 +3924,7 @@ func TestAReportCarriesThePublishedVerdictNotOneRecomputedAtReportTime(t *testin
 
 	// What the run published, against what a report-time recomputation of its
 	// own checks would conclude.
-	published.Status.LastSuccessfulEvaluation.Verdict = fathomv1alpha1.AddonCheckEvidenceVerdictWarn
+	published.Status.LastSuccessfulEvaluation.Verdict = fathomv1.AddonCheckEvidenceVerdictWarn
 	recomputed, _ := aggregateWithRatioRollups(attempt.Evidence.Checks, ratioThresholdsByFamily(published))
 	if string(recomputed) == string(published.Status.LastSuccessfulEvaluation.Verdict) {
 		t.Fatalf("this row needs the published verdict and the recomputed aggregate to differ; both are %q", recomputed)
@@ -3938,12 +3939,12 @@ func TestAReportCarriesThePublishedVerdictNotOneRecomputedAtReportTime(t *testin
 		t.Fatal("the first completed evaluation created no report")
 	}
 
-	var report fathomv1alpha1.HealthReport
+	var report fathomv1.HealthReport
 	key := client.ObjectKey{Namespace: runtimeCheckNamespace, Name: name}
 	if err := f.store.Get(context.Background(), key, &report); err != nil {
 		t.Fatalf("get the report: %v", err)
 	}
-	if report.Spec.Result != fathomv1alpha1.HealthReportResultWarn {
+	if report.Spec.Result != fathomv1.HealthReportResultWarn {
 		t.Errorf("report result = %q, want the PUBLISHED verdict Warn; %q is what a report-time recomputation produces, "+
 			"and a verdict nothing published cannot be attributed to a run",
 			report.Spec.Result, recomputed)

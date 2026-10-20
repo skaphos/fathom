@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // TestParseKind_AcceptedSpellings locks every spelling the contract promises:
@@ -79,39 +79,21 @@ func TestKindTable_Invariants(t *testing.T) {
 	}
 }
 
-func TestKindTable_ItemsAndPaused(t *testing.T) {
+func TestKindTable_Items(t *testing.T) {
 	ac := kindByName("AddonCheck")
-	list := &fathomv1alpha1.AddonCheckList{Items: []fathomv1alpha1.AddonCheck{
-		{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: fathomv1alpha1.AddonCheckSpec{Paused: true}},
+	list := &fathomv1.AddonCheckList{Items: []fathomv1.AddonCheck{
+		{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
 	}}
 	items := ac.Items(list)
 	if len(items) != 2 || items[0].GetName() != "a" {
 		t.Fatalf("Items = %v", items)
 	}
-	if !ac.Paused(items[0]) || ac.Paused(items[1]) {
-		t.Error("Paused should read spec.paused")
-	}
 	// Items must alias the list entries, not copy them, so later mutation of
 	// the returned object (GVK stamping) is visible through either handle.
 	items[1].SetName("renamed")
 	if list.Items[1].Name != "renamed" {
 		t.Error("Items should return pointers into the list, not copies")
-	}
-
-	hc := kindByName("HealthCheck")
-	if !hc.Paused(&fathomv1alpha1.HealthCheck{Spec: fathomv1alpha1.HealthCheckSpec{Paused: true}}) {
-		t.Error("HealthCheck Paused should read spec.paused")
-	}
-	ncc := kindByName("NodeCertificateCheck")
-	if !ncc.Paused(&fathomv1alpha1.NodeCertificateCheck{Spec: fathomv1alpha1.NodeCertificateCheckSpec{Paused: true}}) {
-		t.Error("NodeCertificateCheck Paused should read spec.paused")
-	}
-	for _, k := range []string{"DNSCheck", "NodeHealthCheck", "ClusterHealth"} {
-		d := kindByName(k)
-		if d.Paused(d.New()) {
-			t.Errorf("%s has no paused field; Paused must be false", k)
-		}
 	}
 }
 
@@ -162,4 +144,4 @@ func TestParseTarget(t *testing.T) {
 }
 
 // compile-time check that every constructor yields a client.Object.
-var _ = []client.Object{&fathomv1alpha1.AddonCheck{}, &fathomv1alpha1.ClusterHealth{}}
+var _ = []client.Object{&fathomv1.AddonCheck{}, &fathomv1.ClusterHealth{}}

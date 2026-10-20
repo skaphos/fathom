@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 type failingHealthCheckListClient struct{ client.Client }
@@ -44,7 +44,7 @@ func TestListSelectedHealthChecks_ErrorNamesScope(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ch := &fathomv1alpha1.ClusterHealth{Spec: fathomv1alpha1.ClusterHealthSpec{Namespaces: tc.namespaces}}
+			ch := &fathomv1.ClusterHealth{Spec: fathomv1.ClusterHealthSpec{Namespaces: tc.namespaces}}
 			_, err := r.listSelectedHealthChecks(context.Background(), ch, labels.Everything())
 			if err == nil {
 				t.Fatal("listSelectedHealthChecks: expected error")

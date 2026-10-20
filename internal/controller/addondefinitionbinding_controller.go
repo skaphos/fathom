@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/registry"
 	"github.com/skaphos/fathom/pkg/adapter"
@@ -130,7 +131,7 @@ var errDrainReaderUnwired = errors.New(
 // cannot run the other way (verified with `go list -deps ./internal/app`).
 type DrainEvidence struct {
 	// Epoch is the leadership epoch the acknowledgement describes.
-	Epoch fathomv1alpha1.DefinitionLeaderEpoch
+	Epoch fathomv1.DefinitionLeaderEpoch
 	// Limitation is the observation caveat published with the acknowledgement:
 	// a suspended prior holder is not fenced, so this is an observation rather
 	// than proof of exclusive execution.
@@ -159,7 +160,7 @@ type RuntimeLeadershipSession interface {
 	// EpochValid reports whether an epoch belongs to this session's observed
 	// leadership. Equality uses all four epoch fields; resourceVersion is
 	// excluded because ordinary renewal changes it.
-	EpochValid(*fathomv1alpha1.DefinitionLeaderEpoch) bool
+	EpochValid(*fathomv1.DefinitionLeaderEpoch) bool
 	// Revoke closes admission for the binding and cancels its in-flight work.
 	Revoke(key string)
 	// Restore reopens admission after explicit reauthorization. It grants
@@ -872,7 +873,7 @@ func (r *AddonDefinitionBindingReconciler) directBinding(ctx context.Context, na
 // Lease outside that namespace is a misconfiguration and fails closed rather
 // than reaching for a permission this feature refuses to add: no cluster-wide
 // Lease read is introduced anywhere.
-func (r *AddonDefinitionBindingReconciler) directLeaderEpoch(ctx context.Context) (*fathomv1alpha1.DefinitionLeaderEpoch, error) {
+func (r *AddonDefinitionBindingReconciler) directLeaderEpoch(ctx context.Context) (*fathomv1.DefinitionLeaderEpoch, error) {
 	ref := r.Leadership.LeaseRef()
 	if ref.Name == "" || ref.Namespace != r.OperatorNamespace {
 		return nil, fmt.Errorf("configured leader Lease %s is not in the operator namespace %q", ref, r.OperatorNamespace)
@@ -893,7 +894,7 @@ func (r *AddonDefinitionBindingReconciler) directLeaderEpoch(ctx context.Context
 // leadership epoch. It mirrors the CLI verifier's derivation exactly, so the
 // operator and `fathomctl definition drain` cannot disagree about what epoch a
 // Lease represents.
-func leaderEpochFromLease(lease *coordinationv1.Lease) (*fathomv1alpha1.DefinitionLeaderEpoch, error) {
+func leaderEpochFromLease(lease *coordinationv1.Lease) (*fathomv1.DefinitionLeaderEpoch, error) {
 	spec := lease.Spec
 	if lease.UID == "" || !lease.DeletionTimestamp.IsZero() ||
 		spec.HolderIdentity == nil || *spec.HolderIdentity == "" ||
@@ -903,7 +904,7 @@ func leaderEpochFromLease(lease *coordinationv1.Lease) (*fathomv1alpha1.Definiti
 		spec.LeaseTransitions == nil || *spec.LeaseTransitions < 0 {
 		return nil, fmt.Errorf("lease %s/%s lacks live leadership evidence", lease.Namespace, lease.Name)
 	}
-	return &fathomv1alpha1.DefinitionLeaderEpoch{
+	return &fathomv1.DefinitionLeaderEpoch{
 		LeaseUID:         string(lease.UID),
 		HolderIdentity:   *spec.HolderIdentity,
 		AcquireTime:      *spec.AcquireTime,
@@ -912,7 +913,7 @@ func leaderEpochFromLease(lease *coordinationv1.Lease) (*fathomv1alpha1.Definiti
 }
 
 // sameLeaderEpoch compares all four epoch fields.
-func sameLeaderEpoch(a, b *fathomv1alpha1.DefinitionLeaderEpoch) bool {
+func sameLeaderEpoch(a, b *fathomv1.DefinitionLeaderEpoch) bool {
 	return a != nil && b != nil &&
 		a.LeaseUID == b.LeaseUID &&
 		a.HolderIdentity == b.HolderIdentity &&

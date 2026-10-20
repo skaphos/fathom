@@ -32,7 +32,7 @@ kind: Namespace
 metadata:
   name: ` + ns + `
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: DNSCheck
 metadata:
   name: ` + dnsName + `
@@ -44,7 +44,7 @@ spec:
     - name: kubernetes.default.svc.cluster.local
       recordType: Host
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: ` + health + `
@@ -53,11 +53,11 @@ metadata:
     dnscheck-aggregation-e2e: "true"
 spec:
   checkRef:
-    apiVersion: fathom.skaphos.io/v1alpha1
+    apiVersion: fathom.skaphos.io/v1
     kind: DNSCheck
     name: ` + dnsName + `
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: ` + aggregate + `

@@ -32,7 +32,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: NodeHealthCheck is the Schema for the nodehealthchecks API.
@@ -56,36 +56,9 @@ spec:
             type: object
           spec:
             description: |-
-              NodeHealthCheckSpec defines the desired state of NodeHealthCheck.
-
-              A NodeHealthCheck asserts a set of node-local health signals on every
-              selected node — filesystem headroom, the node's own conditions, kubelet
-              health, and container-runtime liveness — and reports one verdict per node
-              plus a single folded verdict for the check. The node-local signals are
-              collected by the same hardened node-agent DaemonSet NodeCertificateCheck
-              uses; the operator rolls the per-node reports into a HealthReport and
-              mirrors the aggregate into Status.
-
-              There is no field to pause a NodeHealthCheck. Stopping a check means
-              deleting it (#262).
-              The comparison uses the effective interval: an omitted interval is 5m at
-              runtime, so timeout: 10m without an interval is rejected here rather than
-              admitted and silently capped. Keep the literal in step with
-              DefaultNodeHealthCheckInterval.
-              Per-node results and HealthReport checks are keyed by the item's identity —
-              its type plus what it measures: the path for the headroom types, the socket
-              for ContainerRuntime (its default counts as a value), nothing for the
-              rest — so two items with the same identity would collide there. Rejecting
-              the duplicate at write time is far kinder than a status update failing
-              later with an error that says nothing about the specification that caused
-              it. Two ContainerRuntime items with different sockets are distinct. The
-              pathless types key on their own type name rather than an empty string:
-              gofmt rewrites two adjacent apostrophes inside a doc comment as a
-              typographic quote, which would silently break the rule at CRD install.
-              A headroom path that is also a ContainerRuntime socket would be mounted
-              twice at one mountPath — as a Directory and as a Socket —
-              which the kubelet rejects, and a directory mount over a socket is
-              meaningless anyway. The socket's default counts as a value.
+              Spec is required: a stable object without one is meaningless, and
+              requiring it keeps field-level immutability rules from being bypassed
+              by removing and re-adding the whole spec.
             properties:
               checks:
                 description: |-
@@ -542,6 +515,8 @@ spec:
                 maxLength: 1024
                 type: string
             type: object
+        required:
+        - spec
         type: object
         x-kubernetes-validations:
         - message: metadata.name must be no more than 63 characters

@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/test/utils"
 )
@@ -167,7 +168,7 @@ var _ = Describe("runtime AddonDefinition on a real cluster", Ordered, Serial, L
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(reviewedFile, data, 0o600)).To(Succeed())
 		definitionE2EApply(definitionE2ECheck(false))
-		definitionE2EApply(fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+		definitionE2EApply(fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: %s
@@ -181,12 +182,12 @@ spec:
       enabled: true
 `, definitionE2EPeer, definitionE2ENS))
 		Eventually(func(g Gomega) {
-			var peer fathomv1alpha1.AddonCheck
+			var peer fathomv1.AddonCheck
 			definitionE2EGetJSON(&peer, "addoncheck", definitionE2EPeer, "-n", definitionE2ENS)
 			g.Expect(peer.Status.LastResult).To(Equal("Pass"))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		Consistently(func(g Gomega) {
-			var check fathomv1alpha1.AddonCheck
+			var check fathomv1.AddonCheck
 			definitionE2EGetJSON(&check, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 			g.Expect(check.Status.LastSuccessfulEvaluation).To(BeNil())
 		}, 12*time.Second, 3*time.Second).Should(Succeed())
@@ -224,7 +225,7 @@ spec:
 			return out
 		}, 100*time.Second, 5*time.Second).Should(ContainSubstring("runtime dispatch admitted"))
 		// The definition is still unbound: election alone cannot authorize it.
-		var unbound fathomv1alpha1.AddonCheck
+		var unbound fathomv1.AddonCheck
 		definitionE2EGetJSON(&unbound, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 		Expect(unbound.Status.LastSuccessfulEvaluation).To(BeNil())
 
@@ -261,11 +262,11 @@ spec:
 		bindingUID = string(binding.UID)
 
 		Eventually(func(g Gomega) {
-			var check fathomv1alpha1.AddonCheck
+			var check fathomv1.AddonCheck
 			definitionE2EGetJSON(&check, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 			e := check.Status.LastSuccessfulEvaluation
 			g.Expect(e).NotTo(BeNil())
-			g.Expect(e.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(e.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 			g.Expect(e.Revision.DefinitionUID).To(Equal(definitionUID))
 			g.Expect(e.Authority.ServiceAccountUID).To(Equal(readerUID))
 			g.Expect(e.Authority.BindingUID).To(Equal(bindingUID))
@@ -286,12 +287,12 @@ spec:
 		out, err := utils.Run(exec.Command("kubectl", "patch", "addoncheck", definitionE2EName,
 			"-n", definitionE2ENS, "--type=merge", "-p", `{"spec":{"interval":"5m"}}`))
 		Expect(err).NotTo(HaveOccurred(), out)
-		var quiesced fathomv1alpha1.AddonCheck
+		var quiesced fathomv1.AddonCheck
 		definitionE2EGetJSON(&quiesced, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
 			g.Expect(status.ObservedGeneration).To(Equal(quiesced.Generation))
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastRunTime).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation.Authority.CheckUID).To(Equal(string(quiesced.UID)))
@@ -306,7 +307,7 @@ spec:
 			"-n", definitionE2ENS, "--type=merge", "-p",
 			`{"spec":{"policy":{"health":{"thresholds":{"failRatio":"150"}}}}}`))
 		Expect(err).NotTo(HaveOccurred(), out)
-		var invalid fathomv1alpha1.AddonCheck
+		var invalid fathomv1.AddonCheck
 		definitionE2EGetJSON(&invalid, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
@@ -335,7 +336,7 @@ spec:
 			"-n", definitionE2ENS, "--type=merge", "-p",
 			`{"spec":{"interval":"10s","policy":{"health":{"thresholds":{"failRatio":"0"}}}}}`))
 		Expect(err).NotTo(HaveOccurred(), out)
-		var corrected fathomv1alpha1.AddonCheck
+		var corrected fathomv1.AddonCheck
 		definitionE2EGetJSON(&corrected, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
@@ -344,12 +345,12 @@ spec:
 				HaveField("Type", "Accepted"), HaveField("Status", metav1.ConditionTrue))))
 			g.Expect(status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionTrue))))
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastRunTime).NotTo(BeNil())
 			g.Expect(status.LastRunTime.Time).To(BeTemporally(">", beforeInvalidRun.Time))
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation.Verdict).
-				To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+				To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
 				To(BeTemporally(">", beforeInvalidEvidence.ObservedAt.Time))
 		}, 2*time.Minute, time.Second).Should(Succeed())
@@ -380,7 +381,7 @@ spec:
 				"the delegated identity did not reach group discovery")
 			g.Expect(fallback).To(BeZero(), "manager discovery was used after delegated denial")
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("AccessDenied"))
 			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, time.Second).Should(Succeed(),
@@ -394,14 +395,14 @@ spec:
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
-			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
 		}, 2*time.Minute, time.Second).Should(Succeed())
 
 		By("letting real held API reads time out while a built-in peer advances and old Pass evidence ages")
-		definitionE2EApply(fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+		definitionE2EApply(fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: HealthCheck
 metadata:
   name: %s-fixture-wrapper
@@ -413,7 +414,7 @@ spec:
     kind: AddonCheck
     name: %s
 ---
-apiVersion: fathom.skaphos.io/v1alpha1
+apiVersion: fathom.skaphos.io/v1
 kind: ClusterHealth
 metadata:
   name: %s-fixture-aggregate
@@ -448,7 +449,7 @@ spec:
 		beforeTimeout := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("Timeout"))
 			g.Expect(status.LastSuccessfulEvaluation).To(Equal(beforeTimeout))
 		}, 30*time.Second, time.Second).Should(Succeed())
@@ -461,13 +462,13 @@ spec:
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func(g Gomega) {
 			g.Expect(definitionE2ECheckStatus().EvidenceFreshness).
-				To(Equal(fathomv1alpha1.AddonCheckEvidenceStale))
-			var wrapper fathomv1alpha1.HealthCheck
+				To(Equal(fathomv1.AddonCheckEvidenceStale))
+			var wrapper fathomv1.HealthCheck
 			definitionE2EGetJSON(&wrapper, "healthcheck", definitionE2EName+"-fixture-wrapper", "-n", definitionE2ENS)
-			g.Expect(wrapper.Status.Result).To(Equal(fathomv1alpha1.HealthReportResultPass))
-			g.Expect(wrapper.Status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceStale))
+			g.Expect(wrapper.Status.Result).To(Equal(fathomv1.HealthReportResultPass))
+			g.Expect(wrapper.Status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceStale))
 			g.Expect(wrapper.Status.SourceObservedAt).To(Equal(&beforeTimeout.ObservedAt))
-			var aggregate fathomv1alpha1.ClusterHealth
+			var aggregate fathomv1.ClusterHealth
 			definitionE2EGetJSON(&aggregate, "clusterhealth", definitionE2EName+"-fixture-aggregate")
 			g.Expect(aggregate.Status.MatchedCount).To(Equal(int32(1)))
 			g.Expect(aggregate.Status.ObservedAt).To(Equal(&beforeTimeout.ObservedAt))
@@ -484,7 +485,7 @@ spec:
 			status := definitionE2ECheckStatus()
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
 				To(BeTemporally(">", beforeTimeout.ObservedAt.Time))
-			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 		}, 2*time.Minute, time.Second).Should(Succeed())
 		Expect(definitionE2EReportCount()).To(Equal(passReports))
 
@@ -528,7 +529,7 @@ spec:
 			status := definitionE2ECheckStatus()
 			g.Expect(status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse))))
-			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
+			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceUnavailable))
 			g.Expect(status.LastSuccessfulEvaluation).To(Equal(beforeRevocation))
 		}, 2*time.Minute, time.Second).Should(Succeed(),
 			"the disabled binding did not drain and preserve the previous evidence")
@@ -536,7 +537,7 @@ spec:
 		definitionE2EApply(definitionE2EBinding(definitionUID, readerUID, true))
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
 				To(BeTemporally(">", beforeRevocation.ObservedAt.Time))
@@ -604,7 +605,7 @@ spec:
 		fixture.releaseRead()
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation.Revision.DefinitionGeneration).
 				To(Equal(edited.Generation))
@@ -619,7 +620,7 @@ spec:
 			status := definitionE2ECheckStatus()
 			g.Expect(status.LastSuccessfulEvaluation.Revision.DefinitionGeneration).
 				To(Equal(restored.Generation))
-			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 		}, 2*time.Minute, time.Second).Should(Succeed())
 		Expect(definitionE2EReportCount()).To(Equal(passReports))
 	})
@@ -629,11 +630,11 @@ spec:
 		var retargeted fathomv1alpha1.AddonDefinition
 		definitionE2EGetJSON(&retargeted, "addondefinition", definitionE2EName)
 		Eventually(func(g Gomega) {
-			var check fathomv1alpha1.AddonCheck
+			var check fathomv1.AddonCheck
 			definitionE2EGetJSON(&check, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 			g.Expect(check.Status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(check.Status.LastSuccessfulEvaluation.Revision.DefinitionGeneration).To(Equal(retargeted.Generation))
-			g.Expect(check.Status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(check.Status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		Expect(definitionE2EReportCount()).To(Equal(passReports), "same verdict must not add history")
 
@@ -673,7 +674,7 @@ spec:
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse),
 				HaveField("Reason", "InvalidDefinition"))))
 			status := definitionE2ECheckStatus()
-			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
+			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceUnavailable))
 			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		before = definitionE2EFrozenEvidence(before)
@@ -687,7 +688,7 @@ spec:
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
 			g.Expect(status.LastSuccessfulEvaluation.Revision.DefinitionGeneration).
 				To(BeNumerically(">", before.Revision.DefinitionGeneration))
-			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceCurrent))
+			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceCurrent))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		Expect(definitionE2EReportCount()).To(Equal(passReports),
 			"invalid attempt and same-verdict recovery must not add transition history")
@@ -882,9 +883,9 @@ spec:
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("AccessDenied"))
-			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1alpha1.AddonCheckEvidenceUnavailable))
+			g.Expect(status.EvidenceFreshness).To(Equal(fathomv1.AddonCheckEvidenceUnavailable))
 			g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		before = definitionE2EFrozenEvidence(before)
@@ -898,7 +899,7 @@ spec:
 		definitionE2EApply(definitionE2EGrants("external-secrets", "external-secrets"))
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		definitionE2EHostileInput()
@@ -908,8 +909,8 @@ spec:
 			status := definitionE2ECheckStatus()
 			e := status.LastSuccessfulEvaluation
 			g.Expect(e).NotTo(BeNil())
-			g.Expect(e.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictSkipped))
-			g.Expect(e.Coverage).To(Equal(fathomv1alpha1.AddonCheckCoverageNoChecksEvaluated))
+			g.Expect(e.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictSkipped))
+			g.Expect(e.Coverage).To(Equal(fathomv1.AddonCheckCoverageNoChecksEvaluated))
 			g.Expect(e.Message).To(Equal("no checks evaluated"))
 			g.Expect(e.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
@@ -1005,7 +1006,7 @@ spec:
     namespaces: [kube-system]
 `, namespace, collisionDef.UID, collisionSA.Metadata.UID))
 		Eventually(func(g Gomega) {
-			var peer fathomv1alpha1.AddonCheck
+			var peer fathomv1.AddonCheck
 			definitionE2EGetJSON(&peer, "addoncheck", definitionE2EPeer, "-n", definitionE2ENS)
 			g.Expect(peer.Status.Conditions).To(ContainElement(And(
 				HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionFalse),
@@ -1117,7 +1118,7 @@ spec:
 				"-n", namespace, "--since=2m"))
 			return out
 		}, time.Minute, 5*time.Second).Should(ContainSubstring("LeaderElectionRequired"))
-		Consistently(func() *fathomv1alpha1.AddonCheckEvidence {
+		Consistently(func() *fathomv1.AddonCheckEvidence {
 			return definitionE2ECheckStatus().LastSuccessfulEvaluation
 		}, 12*time.Second, 3*time.Second).Should(Equal(before),
 			"an enabled binding ran without leader election")
@@ -1156,7 +1157,7 @@ spec:
 			status := definitionE2ECheckStatus()
 			g.Expect(status.LastSuccessfulEvaluation).NotTo(BeNil())
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
-			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 			g.Expect(status.LastSuccessfulEvaluation.Authority.ServiceAccountUID).To(Equal(readerUID))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		Eventually(definitionE2EReportCount, time.Minute, 3*time.Second).Should(Equal(passReports+2),
@@ -1168,15 +1169,15 @@ spec:
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
 			g.Expect(status.LatestAttemptReason).To(Equal("AccessDenied"))
 			g.Expect(status.LastSuccessfulEvaluation).To(Equal(metricsPass))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		definitionE2EApply(definitionE2EGrants("external-secrets", "external-secrets"))
 		Eventually(func(g Gomega) {
 			status := definitionE2ECheckStatus()
-			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
-			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1alpha1.AddonCheckEvidenceVerdictPass))
+			g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
+			g.Expect(status.LastSuccessfulEvaluation.Verdict).To(Equal(fathomv1.AddonCheckEvidenceVerdictPass))
 			g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).
 				To(BeTemporally(">", metricsPass.ObservedAt.Time))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
@@ -1232,8 +1233,8 @@ func definitionE2EWaitRollout() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), out)
 }
 
-func definitionE2ECheckStatus() fathomv1alpha1.AddonCheckStatus {
-	var check fathomv1alpha1.AddonCheck
+func definitionE2ECheckStatus() fathomv1.AddonCheckStatus {
+	var check fathomv1.AddonCheck
 	definitionE2EGetJSON(&check, "addoncheck", definitionE2EName, "-n", definitionE2ENS)
 	return check.Status
 }
@@ -1245,7 +1246,7 @@ func definitionE2ECheckStatus() fathomv1alpha1.AddonCheckStatus {
 // pass its final fence and publish once more under the old context, with a
 // newer observedAt (#356). That publication is legitimate; evidence attributed
 // to any other revision or authority is not.
-func definitionE2EAttributedTo(before *fathomv1alpha1.AddonCheckEvidence) OmegaMatcher {
+func definitionE2EAttributedTo(before *fathomv1.AddonCheckEvidence) OmegaMatcher {
 	return SatisfyAll(
 		Not(BeNil()),
 		HaveField("Revision", Equal(before.Revision)),
@@ -1259,8 +1260,8 @@ func definitionE2EAttributedTo(before *fathomv1alpha1.AddonCheckEvidence) OmegaM
 // evaluation interval, then returns it. Specs take their exact baseline from
 // here, AFTER the freeze, rather than from a snapshot taken before the action
 // that froze publication.
-func definitionE2EFrozenEvidence(before *fathomv1alpha1.AddonCheckEvidence) *fathomv1alpha1.AddonCheckEvidence {
-	var frozen *fathomv1alpha1.AddonCheckEvidence
+func definitionE2EFrozenEvidence(before *fathomv1.AddonCheckEvidence) *fathomv1.AddonCheckEvidence {
+	var frozen *fathomv1.AddonCheckEvidence
 	EventuallyWithOffset(1, func(g Gomega) {
 		current := definitionE2ECheckStatus().LastSuccessfulEvaluation.DeepCopy()
 		g.Expect(current).To(definitionE2EAttributedTo(before))
@@ -1273,14 +1274,14 @@ func definitionE2EFrozenEvidence(before *fathomv1alpha1.AddonCheckEvidence) *fat
 	return frozen
 }
 
-func definitionE2EPeerStatus() fathomv1alpha1.AddonCheckStatus {
-	var check fathomv1alpha1.AddonCheck
+func definitionE2EPeerStatus() fathomv1.AddonCheckStatus {
+	var check fathomv1.AddonCheck
 	definitionE2EGetJSON(&check, "addoncheck", definitionE2EPeer, "-n", definitionE2ENS)
 	return check.Status
 }
 
 func definitionE2EReportCount() int {
-	var list fathomv1alpha1.HealthReportList
+	var list fathomv1.HealthReportList
 	definitionE2EGetJSON(&list, "healthreport", "-n", definitionE2ENS)
 	n := 0
 	for _, report := range list.Items {
@@ -1348,7 +1349,7 @@ subjects:
 	definitionE2EApply(hostile)
 	Eventually(func(g Gomega) {
 		status := definitionE2ECheckStatus()
-		g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptError))
+		g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptError))
 		g.Expect(status.LatestAttemptReason).To(Equal("InputLimitExceeded"))
 		g.Expect(status.LastSuccessfulEvaluation).To(definitionE2EAttributedTo(before))
 	}, 2*time.Minute, 5*time.Second).Should(Succeed())
@@ -1362,7 +1363,7 @@ subjects:
 	definitionE2EApply(workload)
 	Eventually(func(g Gomega) {
 		status := definitionE2ECheckStatus()
-		g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1alpha1.AddonCheckAttemptCompleted))
+		g.Expect(status.LatestAttemptOutcome).To(Equal(fathomv1.AddonCheckAttemptCompleted))
 		g.Expect(status.LastSuccessfulEvaluation.ObservedAt.Time).To(BeTemporally(">", before.ObservedAt.Time))
 	}, 2*time.Minute, 5*time.Second).Should(Succeed())
 }
@@ -1396,7 +1397,7 @@ func definitionE2ECheck(skip bool) string {
 	if skip {
 		enabled = "false"
 	}
-	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1alpha1
+	return fmt.Sprintf(`apiVersion: fathom.skaphos.io/v1
 kind: AddonCheck
 metadata:
   name: %s

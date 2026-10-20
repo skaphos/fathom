@@ -11,7 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
@@ -32,15 +32,15 @@ func TestAggregateNodeReports(t *testing.T) {
 	tests := []struct {
 		name    string
 		reports []nodecert.NodeReport
-		want    fathomv1alpha1.HealthReportResult
+		want    fathomv1.HealthReportResult
 	}{
-		{"no reports", nil, fathomv1alpha1.HealthReportResultSkipped},
-		{"node with no certs", []nodecert.NodeReport{report("a")}, fathomv1alpha1.HealthReportResultSkipped},
-		{"single pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass)}, fathomv1alpha1.HealthReportResultPass},
-		{"pass plus skipped folds to pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeSkipped)}, fathomv1alpha1.HealthReportResultPass},
-		{"all skipped", []nodecert.NodeReport{report("a", nodecert.OutcomeSkipped)}, fathomv1alpha1.HealthReportResultSkipped},
-		{"pass warn fail", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeWarn), report("b", nodecert.OutcomeFail)}, fathomv1alpha1.HealthReportResultFail},
-		{"error wins across nodes", []nodecert.NodeReport{report("a", nodecert.OutcomeFail), report("b", nodecert.OutcomeError)}, fathomv1alpha1.HealthReportResultError},
+		{"no reports", nil, fathomv1.HealthReportResultSkipped},
+		{"node with no certs", []nodecert.NodeReport{report("a")}, fathomv1.HealthReportResultSkipped},
+		{"single pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass)}, fathomv1.HealthReportResultPass},
+		{"pass plus skipped folds to pass", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeSkipped)}, fathomv1.HealthReportResultPass},
+		{"all skipped", []nodecert.NodeReport{report("a", nodecert.OutcomeSkipped)}, fathomv1.HealthReportResultSkipped},
+		{"pass warn fail", []nodecert.NodeReport{report("a", nodecert.OutcomePass, nodecert.OutcomeWarn), report("b", nodecert.OutcomeFail)}, fathomv1.HealthReportResultFail},
+		{"error wins across nodes", []nodecert.NodeReport{report("a", nodecert.OutcomeFail), report("b", nodecert.OutcomeError)}, fathomv1.HealthReportResultError},
 	}
 
 	for _, tt := range tests {
@@ -121,37 +121,37 @@ func TestResolveTolerations(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		spec             fathomv1alpha1.NodeCertificateCheckSpec
+		spec             fathomv1.NodeCertificateCheckSpec
 		wantCount        int
 		wantControlPlane bool
 	}{
 		{
 			name:             "default: no tolerations, no control-plane",
-			spec:             fathomv1alpha1.NodeCertificateCheckSpec{},
+			spec:             fathomv1.NodeCertificateCheckSpec{},
 			wantCount:        0,
 			wantControlPlane: false,
 		},
 		{
 			name:             "opt-out explicit false stays off",
-			spec:             fathomv1alpha1.NodeCertificateCheckSpec{IncludeControlPlaneNodes: boolPtr(false)},
+			spec:             fathomv1.NodeCertificateCheckSpec{IncludeControlPlaneNodes: boolPtr(false)},
 			wantCount:        0,
 			wantControlPlane: false,
 		},
 		{
 			name:             "opt-in adds the two control-plane tolerations",
-			spec:             fathomv1alpha1.NodeCertificateCheckSpec{IncludeControlPlaneNodes: boolPtr(true)},
+			spec:             fathomv1.NodeCertificateCheckSpec{IncludeControlPlaneNodes: boolPtr(true)},
 			wantCount:        2,
 			wantControlPlane: true,
 		},
 		{
 			name:             "explicit tolerations pass through without control-plane",
-			spec:             fathomv1alpha1.NodeCertificateCheckSpec{Tolerations: []corev1.Toleration{custom}},
+			spec:             fathomv1.NodeCertificateCheckSpec{Tolerations: []corev1.Toleration{custom}},
 			wantCount:        1,
 			wantControlPlane: false,
 		},
 		{
 			name: "explicit tolerations plus opt-in are combined",
-			spec: fathomv1alpha1.NodeCertificateCheckSpec{
+			spec: fathomv1.NodeCertificateCheckSpec{
 				Tolerations:              []corev1.Toleration{custom},
 				IncludeControlPlaneNodes: boolPtr(true),
 			},
@@ -161,7 +161,7 @@ func TestResolveTolerations(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			check := &fathomv1alpha1.NodeCertificateCheck{Spec: tc.spec}
+			check := &fathomv1.NodeCertificateCheck{Spec: tc.spec}
 			got := resolveTolerations(check)
 			if len(got) != tc.wantCount {
 				t.Fatalf("toleration count = %d, want %d (%v)", len(got), tc.wantCount, got)
@@ -179,8 +179,8 @@ func TestResolveTolerations(t *testing.T) {
 // nothing (or the attacker's target).
 func TestResolveCertPathsFiltersDisallowed(t *testing.T) {
 	t.Run("drops disallowed, keeps allowed", func(t *testing.T) {
-		check := &fathomv1alpha1.NodeCertificateCheck{
-			Spec: fathomv1alpha1.NodeCertificateCheckSpec{
+		check := &fathomv1.NodeCertificateCheck{
+			Spec: fathomv1.NodeCertificateCheckSpec{
 				Paths: []string{"/etc/kubernetes/pki", "/root/.ssh/id_rsa", "/var/lib/kubelet/pki"},
 			},
 		}
@@ -197,8 +197,8 @@ func TestResolveCertPathsFiltersDisallowed(t *testing.T) {
 	})
 
 	t.Run("all disallowed falls back to defaults", func(t *testing.T) {
-		check := &fathomv1alpha1.NodeCertificateCheck{
-			Spec: fathomv1alpha1.NodeCertificateCheckSpec{Paths: []string{"/root/.ssh", "/proc/1/environ"}},
+		check := &fathomv1.NodeCertificateCheck{
+			Spec: fathomv1.NodeCertificateCheckSpec{Paths: []string{"/root/.ssh", "/proc/1/environ"}},
 		}
 		got := resolveCertPaths(check)
 		want := nodecert.DefaultCertPaths()

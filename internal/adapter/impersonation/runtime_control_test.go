@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	api "github.com/skaphos/fathom/api/v1alpha1"
 	"github.com/skaphos/fathom/internal/adapter/impersonation"
 	execution "github.com/skaphos/fathom/internal/adapter/runtime"
@@ -46,8 +47,8 @@ func TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity(t *testing.T) {
 				t.Error("authority inventory is not bounded")
 			}
 			body = &api.AddonDefinitionBindingList{Items: []api.AddonDefinitionBinding{*binding}}
-		case "/apis/fathom.skaphos.io/v1alpha1/namespaces/checks/addonchecks/check":
-			body = &api.AddonCheck{ObjectMeta: metav1.ObjectMeta{Name: "check", Namespace: "checks", UID: "check-uid", Generation: 1}}
+		case "/apis/fathom.skaphos.io/v1/namespaces/checks/addonchecks/check":
+			body = &fathomv1.AddonCheck{ObjectMeta: metav1.ObjectMeta{Name: "check", Namespace: "checks", UID: "check-uid", Generation: 1}}
 		case "/apis/coordination.k8s.io/v1/namespaces/operator/leases/leader":
 			body = &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "leader", Namespace: "operator", UID: "lease-uid"}}
 		case "/api":
@@ -166,7 +167,7 @@ func TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity(t *testing.T) {
 	if delegatedCalls.Load() < 2 {
 		t.Fatal("delegated discovery and target were not read")
 	}
-	if err := reader.Get(b.Context(), targets.Check, &api.AddonCheck{}); err != nil {
+	if err := reader.Get(b.Context(), targets.Check, &fathomv1.AddonCheck{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := reader.Get(b.Context(), types.NamespacedName{Namespace: "operator", Name: "leader"}, &coordinationv1.Lease{}); err != nil {
@@ -178,7 +179,7 @@ func TestRuntimeControlReaderSharesBudgetWithoutSharingIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := reader.Get(b.Context(), targets.Check, &api.AddonCheck{}); err == nil || !strings.Contains(err.Error(), "WorkLimitExceeded") {
+	if err := reader.Get(b.Context(), targets.Check, &fathomv1.AddonCheck{}); err == nil || !strings.Contains(err.Error(), "WorkLimitExceeded") {
 		t.Fatalf("final fence escaped shared budget: %v", err)
 	}
 	if calls.Load() != count {

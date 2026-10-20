@@ -17,19 +17,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/internal/nodecert"
 )
 
 // agentResourceName is the shared name of the per-check ServiceAccount,
 // RoleBinding, and DaemonSet the operator manages for a NodeCertificateCheck.
-func agentResourceName(check *fathomv1alpha1.NodeCertificateCheck) string {
+func agentResourceName(check *fathomv1.NodeCertificateCheck) string {
 	return check.Name + "-node-agent"
 }
 
 // agentLabels are applied to every operator-managed node-agent object so they
 // trace back to their check and are discoverable.
-func agentLabels(check *fathomv1alpha1.NodeCertificateCheck) map[string]string {
+func agentLabels(check *fathomv1.NodeCertificateCheck) map[string]string {
 	return map[string]string{
 		nodecert.LabelManagedBy:  nodecert.ManagedByValue,
 		nodecert.LabelSourceKind: nodecert.KindNodeCertificateCheck,
@@ -53,7 +53,7 @@ func mergeLabels(existing, desired map[string]string) map[string]string {
 // CRD admission rule, e.g. for a cluster still running an older CRD); if every
 // configured path is rejected the default set is used rather than scanning
 // nothing.
-func resolveCertPaths(check *fathomv1alpha1.NodeCertificateCheck) []string {
+func resolveCertPaths(check *fathomv1.NodeCertificateCheck) []string {
 	if len(check.Spec.Paths) > 0 {
 		if allowed := nodecert.FilterAllowedPaths(check.Spec.Paths); len(allowed) > 0 {
 			return allowed
@@ -65,7 +65,7 @@ func resolveCertPaths(check *fathomv1alpha1.NodeCertificateCheck) []string {
 // resolveThresholds returns the effective warn/critical day thresholds, applying
 // defaults for unset fields and clamping criticalDays to be no larger than
 // warnDays so the Fail boundary never sits above the Warn boundary.
-func resolveThresholds(check *fathomv1alpha1.NodeCertificateCheck) (warnDays, criticalDays int) {
+func resolveThresholds(check *fathomv1.NodeCertificateCheck) (warnDays, criticalDays int) {
 	warnDays = defaultNodeCertWarnDays
 	criticalDays = defaultNodeCertCriticalDays
 	if check.Spec.WarnDays != nil {
@@ -85,7 +85,7 @@ func resolveThresholds(check *fathomv1alpha1.NodeCertificateCheck) (warnDays, cr
 // are appended only when the check explicitly opts in via IncludeControlPlaneNodes.
 // Scheduling the privileged agent onto control-plane nodes — and mounting their
 // host paths — is therefore never a silent default (SKA-590 / #155).
-func resolveTolerations(check *fathomv1alpha1.NodeCertificateCheck) []corev1.Toleration {
+func resolveTolerations(check *fathomv1.NodeCertificateCheck) []corev1.Toleration {
 	var tolerations []corev1.Toleration
 	if len(check.Spec.Tolerations) > 0 {
 		tolerations = append(tolerations, check.Spec.Tolerations...)
@@ -110,34 +110,34 @@ func joinPaths(paths []string) string {
 	return strings.Join(paths, ",")
 }
 
-func nodeCertInterval(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
+func nodeCertInterval(check *fathomv1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Interval != nil && check.Spec.Interval.Duration > 0 {
-		return clampCadence(check.Spec.Interval.Duration, fathomv1alpha1.MinCheckInterval)
+		return clampCadence(check.Spec.Interval.Duration, fathomv1.MinCheckInterval)
 	}
-	return fathomv1alpha1.DefaultNodeCertificateCheckInterval
+	return fathomv1.DefaultNodeCertificateCheckInterval
 }
 
-func nodeCertTimeout(check *fathomv1alpha1.NodeCertificateCheck) time.Duration {
+func nodeCertTimeout(check *fathomv1.NodeCertificateCheck) time.Duration {
 	if check.Spec.Timeout != nil && check.Spec.Timeout.Duration > 0 {
-		return clampCadence(check.Spec.Timeout.Duration, fathomv1alpha1.MinCheckTimeout)
+		return clampCadence(check.Spec.Timeout.Duration, fathomv1.MinCheckTimeout)
 	}
-	return fathomv1alpha1.DefaultNodeCertificateCheckTimeout
+	return fathomv1.DefaultNodeCertificateCheckTimeout
 }
 
-func nodeOutcomeToResult(o nodecert.Outcome) fathomv1alpha1.HealthReportResult {
+func nodeOutcomeToResult(o nodecert.Outcome) fathomv1.HealthReportResult {
 	switch o {
 	case nodecert.OutcomePass:
-		return fathomv1alpha1.HealthReportResultPass
+		return fathomv1.HealthReportResultPass
 	case nodecert.OutcomeWarn:
-		return fathomv1alpha1.HealthReportResultWarn
+		return fathomv1.HealthReportResultWarn
 	case nodecert.OutcomeFail:
-		return fathomv1alpha1.HealthReportResultFail
+		return fathomv1.HealthReportResultFail
 	case nodecert.OutcomeError:
-		return fathomv1alpha1.HealthReportResultError
+		return fathomv1.HealthReportResultError
 	case nodecert.OutcomeSkipped:
-		return fathomv1alpha1.HealthReportResultSkipped
+		return fathomv1.HealthReportResultSkipped
 	default:
-		return fathomv1alpha1.HealthReportResultUnknown
+		return fathomv1.HealthReportResultUnknown
 	}
 }
 
@@ -145,14 +145,14 @@ func nodeOutcomeToResult(o nodecert.Outcome) fathomv1alpha1.HealthReportResult {
 // certificate of every reporting node via the shared WorstResult fold. Skipped
 // is informational there (a Skipped cert alongside Pass certs folds to Pass),
 // and no certificates at all (every node scanned nothing) yields Skipped.
-func aggregateNodeReports(reports []nodecert.NodeReport) fathomv1alpha1.HealthReportResult {
-	var results []fathomv1alpha1.HealthReportResult
+func aggregateNodeReports(reports []nodecert.NodeReport) fathomv1.HealthReportResult {
+	var results []fathomv1.HealthReportResult
 	for _, rep := range reports {
 		for _, c := range rep.Certs {
 			results = append(results, nodeOutcomeToResult(c.Outcome))
 		}
 	}
-	return fathomv1alpha1.WorstResult(results, false)
+	return fathomv1.WorstResult(results, false)
 }
 
 // Ready reasons for a complete roll-up. Reporting means at least one path
@@ -201,8 +201,8 @@ func nodeCertReportingReason(reports []nodecert.NodeReport) (reason, message str
 
 // healthReportForNodeCert builds the rolled-up HealthReport: one check per
 // (node, certificate), aggregated into a single worst-case Result.
-func healthReportForNodeCert(check *fathomv1alpha1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1alpha1.HealthReportResult, observedAt metav1.Time) *fathomv1alpha1.HealthReport {
-	var checks []fathomv1alpha1.HealthReportCheck
+func healthReportForNodeCert(check *fathomv1.NodeCertificateCheck, reports []nodecert.NodeReport, aggregate fathomv1.HealthReportResult, observedAt metav1.Time) *fathomv1.HealthReport {
+	var checks []fathomv1.HealthReportCheck
 	for _, rep := range reports {
 		certObservedAt := observedAt
 		if !rep.ObservedAt.IsZero() {
@@ -224,10 +224,10 @@ func healthReportForNodeCert(check *fathomv1alpha1.NodeCertificateCheck, reports
 			if len(c.SANs) > 0 {
 				details["sans"] = strings.Join(c.SANs, ",")
 			}
-			checks = append(checks, fathomv1alpha1.HealthReportCheck{
+			checks = append(checks, fathomv1.HealthReportCheck{
 				Family:     nodeCertReportFamily,
 				Result:     nodeOutcomeToResult(c.Outcome),
-				TargetRef:  fathomv1alpha1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: rep.Node},
+				TargetRef:  fathomv1.HealthReportTargetRef{APIVersion: "v1", Kind: "Node", Name: rep.Node},
 				Summary:    c.Summary,
 				Details:    details,
 				ObservedAt: certObservedAt,
@@ -235,18 +235,18 @@ func healthReportForNodeCert(check *fathomv1alpha1.NodeCertificateCheck, reports
 		}
 	}
 
-	return &fathomv1alpha1.HealthReport{
+	return &fathomv1.HealthReport{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    check.Namespace,
 			GenerateName: check.Name + "-",
 			Labels: map[string]string{
-				fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
-				fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+				fathomv1.LabelHealthReportSourceName: check.Name,
 			},
 		},
-		Spec: fathomv1alpha1.HealthReportSpec{
-			SourceRef: fathomv1alpha1.HealthReportTargetRef{
-				APIVersion: fathomv1alpha1.GroupVersion.String(),
+		Spec: fathomv1.HealthReportSpec{
+			SourceRef: fathomv1.HealthReportTargetRef{
+				APIVersion: fathomv1.GroupVersion.String(),
 				Kind:       "NodeCertificateCheck",
 				Namespace:  check.Namespace,
 				Name:       check.Name,
@@ -269,9 +269,9 @@ func putIfNotEmpty(m map[string]string, key, value string) {
 // pruneNodeCertHealthReports enforces Spec.HistoryLimit by deleting the oldest
 // HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
-func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, protected string) {
+func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1.NodeCertificateCheck, protected string) {
 	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
-		fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
-		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+		fathomv1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+		fathomv1.LabelHealthReportSourceName: check.Name,
 	}, historyLimit(check.Spec.HistoryLimit), protected)
 }

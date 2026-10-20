@@ -14,7 +14,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // gatherCheckSeries returns the label→value map for one metric family from
@@ -299,12 +299,12 @@ func TestDNSCheckTargetSeriesCeiling(t *testing.T) {
 // guarantee (FR-002/SC-004).
 func TestCheckResultValuesMatchAPIVocabulary(t *testing.T) {
 	api := []string{
-		string(fathomv1alpha1.HealthReportResultPass),
-		string(fathomv1alpha1.HealthReportResultWarn),
-		string(fathomv1alpha1.HealthReportResultFail),
-		string(fathomv1alpha1.HealthReportResultError),
-		string(fathomv1alpha1.HealthReportResultSkipped),
-		string(fathomv1alpha1.HealthReportResultUnknown),
+		string(fathomv1.HealthReportResultPass),
+		string(fathomv1.HealthReportResultWarn),
+		string(fathomv1.HealthReportResultFail),
+		string(fathomv1.HealthReportResultError),
+		string(fathomv1.HealthReportResultSkipped),
+		string(fathomv1.HealthReportResultUnknown),
 	}
 	if len(api) != len(checkResultValues) {
 		t.Fatalf("vocabulary drift: metrics has %d values, api has %d", len(checkResultValues), len(api))

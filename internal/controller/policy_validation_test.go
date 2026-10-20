@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 	"github.com/skaphos/fathom/pkg/adapter"
 )
 
@@ -32,8 +32,8 @@ func (fakePolicyAdapter) Run(context.Context, adapter.Request) (adapter.Result, 
 	return adapter.Result{}, nil
 }
 
-func checkWithPolicy(policy map[string]fathomv1alpha1.AddonCheckFamilyPolicy) *fathomv1alpha1.AddonCheck {
-	return &fathomv1alpha1.AddonCheck{Spec: fathomv1alpha1.AddonCheckSpec{AddonType: "fake", Policy: policy}}
+func checkWithPolicy(policy map[string]fathomv1.AddonCheckFamilyPolicy) *fathomv1.AddonCheck {
+	return &fathomv1.AddonCheck{Spec: fathomv1.AddonCheckSpec{AddonType: "fake", Policy: policy}}
 }
 
 func badSelector() *metav1.LabelSelector {
@@ -46,18 +46,18 @@ func TestValidateAddonCheckPolicy(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		policy       map[string]fathomv1alpha1.AddonCheckFamilyPolicy
+		policy       map[string]fathomv1.AddonCheckFamilyPolicy
 		adapter      adapter.Adapter
 		wantCount    int
 		wantContains []string
 	}{
 		{"empty policy is valid", nil, adapterWith("system_health"), 0, nil},
-		{"known family, no selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 0, nil},
-		{"known family, good selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: goodSelector}}, adapterWith("system_health"), 0, nil},
-		{"unknown family key", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"bogus": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 1, []string{`unknown family "bogus"`}},
-		{"invalid selector on known family", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: badSelector()}}, adapterWith("system_health"), 1, []string{`family "system_health" has an invalid labelSelector:`}},
-		{"nil adapter skips family check but validates selector", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {LabelSelector: badSelector()}}, nil, 1, []string{`family "anything" has an invalid labelSelector:`}},
-		{"unknown family and bad selector both reported", map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"bogus": {LabelSelector: badSelector()}}, adapterWith("system_health"), 2, []string{`unknown family "bogus"`, `family "bogus" has an invalid labelSelector:`}},
+		{"known family, no selector", map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 0, nil},
+		{"known family, good selector", map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: goodSelector}}, adapterWith("system_health"), 0, nil},
+		{"unknown family key", map[string]fathomv1.AddonCheckFamilyPolicy{"bogus": {Enabled: ptr.To(true)}}, adapterWith("system_health"), 1, []string{`unknown family "bogus"`}},
+		{"invalid selector on known family", map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {LabelSelector: badSelector()}}, adapterWith("system_health"), 1, []string{`family "system_health" has an invalid labelSelector:`}},
+		{"nil adapter skips family check but validates selector", map[string]fathomv1.AddonCheckFamilyPolicy{"anything": {LabelSelector: badSelector()}}, nil, 1, []string{`family "anything" has an invalid labelSelector:`}},
+		{"unknown family and bad selector both reported", map[string]fathomv1.AddonCheckFamilyPolicy{"bogus": {LabelSelector: badSelector()}}, adapterWith("system_health"), 2, []string{`unknown family "bogus"`, `family "bogus" has an invalid labelSelector:`}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,39 +96,39 @@ func TestValidateAddonCheckPolicy_ThresholdKeys(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		policy       map[string]fathomv1alpha1.AddonCheckFamilyPolicy
+		policy       map[string]fathomv1.AddonCheckFamilyPolicy
 		adapter      adapter.Adapter
 		wantCount    int
 		wantContains []string
 	}{
 		{
 			"advertised keys accepted",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"restartWarnCount": "3"}}},
 			advertising, 0, nil,
 		},
 		{
 			"unknown key on an advertised family rejected",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCont": "3"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"restartWarnCont": "3"}}},
 			advertising, 1, []string{`family "system_health" has an unknown threshold key "restartWarnCont"`},
 		},
 		{
 			"unknown keys reported deterministically sorted",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"zzz": "1", "aaa": "2"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"zzz": "1", "aaa": "2"}}},
 			advertising, 2, []string{`unknown threshold key "aaa"`, `unknown threshold key "zzz"`},
 		},
 		{
 			"unadvertised family is not validated",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"cert_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"cert_health": {Thresholds: map[string]fathomv1.ThresholdValue{"whatever": "x"}}},
 			advertising, 0, nil,
 		},
 		{
 			"adapter without ThresholdAdvertiser skips threshold validation",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"whatever": "x"}}},
 			plain, 0, nil,
 		},
 		{
 			"nil adapter skips threshold validation",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"whatever": "x"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1.ThresholdValue{"whatever": "x"}}},
 			nil, 0, nil,
 		},
 	}
@@ -151,7 +151,7 @@ func TestValidateAddonCheckPolicy_ThresholdKeys(t *testing.T) {
 // TestValidateAddonCheckPolicy_DeterministicOrder guards the stable ordering the
 // Accepted-condition message depends on (map iteration is randomized).
 func TestValidateAddonCheckPolicy_DeterministicOrder(t *testing.T) {
-	policy := map[string]fathomv1alpha1.AddonCheckFamilyPolicy{
+	policy := map[string]fathomv1.AddonCheckFamilyPolicy{
 		"zeta": {Enabled: ptr.To(true)}, "alpha": {Enabled: ptr.To(true)}, "mu": {Enabled: ptr.To(true)},
 	}
 	adp := fakePolicyAdapter{families: []adapter.Family{"system_health"}}
@@ -185,49 +185,49 @@ func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		policy       map[string]fathomv1alpha1.AddonCheckFamilyPolicy
+		policy       map[string]fathomv1.AddonCheckFamilyPolicy
 		adapter      adapter.Adapter
 		wantCount    int
 		wantContains []string
 	}{
 		{
 			"reserved keys accepted on an advertising adapter that does not list them",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "1", "failRatio": "5%"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"warnRatio": "1", "failRatio": "5%"}}},
 			advertising, 0, nil,
 		},
 		{
 			"reserved keys accepted on a non-advertising adapter",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "2.5"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"failRatio": "2.5"}}},
 			plain, 0, nil,
 		},
 		{
 			"reserved keys coexist with advertised adapter keys",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"restartWarnCount": "3", "failRatio": "5"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"restartWarnCount": "3", "failRatio": "5"}}},
 			advertising, 0, nil,
 		},
 		{
 			"warnRatio is rejected for a legacy adapter even when it advertises the key",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "5"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"warnRatio": "5"}}},
 			legacy, 1, []string{"adapter \"fake\" uses contract version 1.0.0", "warnRatio and failRatio require contract version 1.1.0 or newer"},
 		},
 		{
 			"an empty reserved value still requires the new contract for a legacy adapter",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": ""}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"failRatio": ""}}},
 			legacy, 1, []string{"adapter \"fake\" uses contract version 1.0.0", "warnRatio and failRatio require contract version 1.1.0 or newer"},
 		},
 		{
 			"non-numeric ratio value rejected, naming family and key",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "banana"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"failRatio": "banana"}}},
 			plain, 1, []string{`family "system_health" has an invalid ratio threshold: failRatio:`, `"banana"`},
 		},
 		{
 			"out-of-range ratio value rejected",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"warnRatio": "150"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"system_health": {Thresholds: map[string]fathomv1.ThresholdValue{"warnRatio": "150"}}},
 			plain, 1, []string{`family "system_health" has an invalid ratio threshold: warnRatio:`, `"150"`},
 		},
 		{
 			"ratio values validated even with a nil adapter",
-			map[string]fathomv1alpha1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1alpha1.ThresholdValue{"failRatio": "-1"}}},
+			map[string]fathomv1.AddonCheckFamilyPolicy{"anything": {Thresholds: map[string]fathomv1.ThresholdValue{"failRatio": "-1"}}},
 			nil, 1, []string{`family "anything" has an invalid ratio threshold: failRatio:`},
 		},
 	}
@@ -248,7 +248,7 @@ func TestValidateAddonCheckPolicy_RatioThresholds(t *testing.T) {
 }
 
 func TestSetAddonCheckAccepted(t *testing.T) {
-	check := &fathomv1alpha1.AddonCheck{}
+	check := &fathomv1.AddonCheck{}
 	check.Generation = 3
 
 	// Valid policy -> Accepted True/SpecAccepted.

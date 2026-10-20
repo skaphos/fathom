@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 package controller
 
 import (
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 // runTriggerDue is the one place the on-demand trigger contract is decided:
@@ -24,7 +24,7 @@ import (
 // check's whole status, which is far worse than ignoring a token no supported
 // writer produces (fathomctl's is 27 characters).
 func runTriggerDue(annotations map[string]string, lastConsumed string) (token string, due bool) {
-	token = annotations[fathomv1alpha1.AnnotationRunNow]
+	token = annotations[fathomv1.AnnotationRunNow]
 	if len(token) > maxRunTriggerLength {
 		return "", false
 	}

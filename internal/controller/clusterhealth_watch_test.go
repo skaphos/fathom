@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	fathomv1alpha1 "github.com/skaphos/fathom/api/v1alpha1"
+	fathomv1 "github.com/skaphos/fathom/api/v1"
 )
 
 func TestClusterHealthSelectsHealthCheck(t *testing.T) {
@@ -112,14 +112,14 @@ func TestClusterHealthSelectsHealthCheck(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ch := &fathomv1alpha1.ClusterHealth{
-				Spec: fathomv1alpha1.ClusterHealthSpec{
+			ch := &fathomv1.ClusterHealth{
+				Spec: fathomv1.ClusterHealthSpec{
 					Selector:           tc.selector,
 					Namespaces:         tc.namespaces,
 					ExcludedNamespaces: tc.excludedNamespaces,
 				},
 			}
-			hc := &fathomv1alpha1.HealthCheck{
+			hc := &fathomv1.HealthCheck{
 				ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: tc.hcNamespace, Labels: tc.hcLabels},
 			}
 			if got := clusterHealthSelectsHealthCheck(ch, hc); got != tc.want {
@@ -137,19 +137,19 @@ func TestHealthCheckEventHandler(t *testing.T) {
 	t.Parallel()
 
 	scheme := runtime.NewScheme()
-	if err := fathomv1alpha1.AddToScheme(scheme); err != nil {
+	if err := fathomv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("AddToScheme: %v", err)
 	}
-	ch := &fathomv1alpha1.ClusterHealth{
+	ch := &fathomv1.ClusterHealth{
 		ObjectMeta: metav1.ObjectMeta{Name: "ch-watch"},
-		Spec: fathomv1alpha1.ClusterHealthSpec{
+		Spec: fathomv1.ClusterHealthSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "a"}},
 		},
 	}
-	matching := &fathomv1alpha1.HealthCheck{
+	matching := &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "default", Labels: map[string]string{"team": "a"}},
 	}
-	other := &fathomv1alpha1.HealthCheck{
+	other := &fathomv1.HealthCheck{
 		ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "default", Labels: map[string]string{"team": "z"}},
 	}
 
