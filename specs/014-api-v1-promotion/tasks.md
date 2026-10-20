@@ -211,7 +211,7 @@ Single Go module, kubebuilder v4 layout: `api/`, `internal/`, `cmd/`, `config/`,
 - [X] T088 Run `graphify update .` and commit `graphify-out/` changes with the feature (per repo guidance)
 - [X] T089 Run the full `go -C tools tool task ci` plus `crd-compat`, then the full e2e stack `go -C tools tool task test-e2e` (all shards) on the final branch state; record outcomes in each PR's test plan
 - [X] T090 [P] Add a `CHANGELOG`-facing release note draft to the PR 2 description with the `feat!:` subject and a `BREAKING CHANGE:` footer naming the seven kinds, pause removal and the required export/upgrade sequence, so release-please renders it
-- [ ] T091 Review the four PRs' Copilot and adversarial review threads, address or resolve each (per the repo's review loop), and run `/speckit-adversarial-review` as the mandatory after-implement hook before reporting completion
+- [X] T091 Review the four PRs' Copilot and adversarial review threads, address or resolve each (per the repo's review loop), and run `/speckit-adversarial-review` as the mandatory after-implement hook before reporting completion
 
 ---
 
