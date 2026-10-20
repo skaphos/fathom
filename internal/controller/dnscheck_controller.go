@@ -612,7 +612,7 @@ func (r *DNSCheckReconciler) persistDNSHealthReport(
 		return err
 	}
 	if created {
-		r.pruneDNSHealthReports(ctx, log, check)
+		r.pruneDNSHealthReports(ctx, log, check, persisted.Name)
 	}
 
 	check.Status.LastReportName = persisted.Name
@@ -685,11 +685,11 @@ func healthReportForDNSCheck(
 
 // pruneDNSHealthReports enforces spec.historyLimit. Failures are logged rather
 // than returned: the new report already landed, and the next run retries.
-func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.DNSCheck) {
+func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1alpha1.DNSCheck, protected string) {
 	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
 		fathomv1alpha1.LabelHealthReportSourceKind: dnsCheckKind,
 		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), "")
+	}, historyLimit(check.Spec.HistoryLimit), protected)
 }
 
 // finishDNSCheck persists status when it changed and schedules the next run.

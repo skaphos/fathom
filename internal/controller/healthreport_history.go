@@ -31,7 +31,10 @@ func historyLimit(limit *int32) int {
 // so retention does not depend on API list order. It is shared by every
 // report-writing reconciler.
 //
-// "Oldest" orders by spec.observedAt, then creation time, then name. A limit
+// "Oldest" orders by creation time (the API server's clock, which does not
+// step back across an operator failover the way spec.observedAt can), then
+// spec.observedAt, then name; protectedName is the report the caller's
+// status is about to name, so no clock anomaly can strand it. A limit
 // below 1 is a no-op: CRD validation rejects it, but a Minimum=1 would prune
 // the just-created report and strand status.lastReportName. Delete errors are
 // logged, not returned — one transient failure must not block pruning the
@@ -85,11 +88,11 @@ func olderHealthReport(left, right *fathomv1alpha1.HealthReport, protectedName s
 	if right.Name == protectedName {
 		return true
 	}
-	if !left.Spec.ObservedAt.Equal(&right.Spec.ObservedAt) {
-		return left.Spec.ObservedAt.Before(&right.Spec.ObservedAt)
-	}
 	if !left.CreationTimestamp.Equal(&right.CreationTimestamp) {
 		return left.CreationTimestamp.Before(&right.CreationTimestamp)
+	}
+	if !left.Spec.ObservedAt.Equal(&right.Spec.ObservedAt) {
+		return left.Spec.ObservedAt.Before(&right.Spec.ObservedAt)
 	}
 	return left.Name < right.Name
 }

@@ -615,11 +615,11 @@ func decideNodeHealthRollup(status *fathomv1alpha1.NodeHealthCheckStatus, aggreg
 // pruneNodeHealthHealthReports enforces Spec.HistoryLimit by deleting the
 // oldest HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
-func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck) {
+func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeHealthCheck, protected string) {
 	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
 		fathomv1alpha1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
 		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), "")
+	}, historyLimit(check.Spec.HistoryLimit), protected)
 }
 
 // nodeHealthEvaluationsInScope keeps only evaluations for nodes in expected,

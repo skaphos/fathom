@@ -168,39 +168,55 @@ def load_allowlist(path):
 
 
 def served_versions(path):
-    """Names of the versions a CRD file serves.
+    """Names of the versions a CRD file serves, or None when its spec.versions
+    block cannot be read (the caller then refuses to judge the CRD at all).
 
-    Reads only the `spec.versions` block of a controller-gen CRD: entries start
-    with `  - ` and their scalar keys sit at exactly four spaces of indent.
-    Schema properties called `name` or `served` nest deeper and never match.
+    Walks the `versions:` block by indentation, so controller-gen's two-space
+    sequence entries and a four-space layout both parse: an entry starts at
+    the indent of the first `- ` after `versions:`, and only `name`/`served`
+    keys at that entry's own key indent count — schema properties called
+    `name` or `served` nest deeper and never match.
     """
-    served = []
-    name, is_served, in_versions = None, False, False
+    lines = open(path, encoding="utf-8").read().split("\n")
+    start, vindent = None, None
+    for i, line in enumerate(lines):
+        if line.strip() == "versions:" and len(line) - len(line.lstrip(" ")) <= 4:
+            start, vindent = i + 1, len(line) - len(line.lstrip(" "))
+            break
+    if start is None:
+        return None
+    served, entries = [], 0
+    name, is_served, entry_indent = None, False, None
 
     def flush():
         if name is not None and is_served:
             served.append(name)
 
-    for raw in open(path, encoding="utf-8"):
-        line = raw.rstrip("\n")
-        if not in_versions:
-            in_versions = line == "  versions:"
+    for line in lines[start:]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if line and not line.startswith("   ") and not line.startswith("  - "):
+        indent = len(line) - len(line.lstrip(" "))
+        is_item = stripped.startswith("- ")
+        if entry_indent is None:
+            if not is_item or indent < vindent:
+                break
+            entry_indent = indent
+        if indent < entry_indent or (indent == entry_indent and not is_item):
             break  # left the versions block
-        if line.startswith("  - "):
+        if is_item and indent == entry_indent:
             flush()
-            name, is_served = None, False
-            line = "    " + line[4:]
-        if line.startswith("    ") and not line.startswith("     "):
-            key, _, value = line.strip().partition(":")
+            name, is_served, entries = None, False, entries + 1
+            stripped, indent = stripped[2:].strip(), entry_indent + 2
+        if indent == entry_indent + 2 and ":" in stripped:
+            key, _, value = stripped.partition(":")
             value = value.strip()
             if key == "name":
                 name = value
             elif key == "served":
                 is_served = value == "true"
     flush()
-    return served
+    return served if entries and served else None
 
 
 SERVED_VERSION_REMOVAL = "servedVersionRemoval"
@@ -217,6 +233,9 @@ for filename in names:
     findings, warnings = [], []
     old_served = served_versions(os.path.join(workdir, f"old-{filename}"))
     new_served = served_versions(os.path.join(workdir, f"new-{filename}"))
+    if old_served is None or new_served is None:
+        print(f"check-crd-compat: cannot read the served versions of {crd} (unsupported spec.versions layout?); refusing to judge it rather than fail open")
+        sys.exit(1)
     for version in old_served:
         if version not in new_served:
             findings.append(("^", SERVED_VERSION_REMOVAL, [

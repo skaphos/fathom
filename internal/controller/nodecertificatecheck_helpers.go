@@ -269,9 +269,9 @@ func putIfNotEmpty(m map[string]string, key, value string) {
 // pruneNodeCertHealthReports enforces Spec.HistoryLimit by deleting the oldest
 // HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
-func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck) {
+func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, protected string) {
 	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
 		fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
 		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), "")
+	}, historyLimit(check.Spec.HistoryLimit), protected)
 }

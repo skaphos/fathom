@@ -54,9 +54,10 @@ func observedPruneTestReport(name string, created, observed metav1.Time) *fathom
 	return r
 }
 
-// spec.observedAt decides age before creation time: a report observed earlier
-// is pruned first even when it was persisted later.
-func TestPruneHealthReportsOrdersByObservedAtBeforeCreationTime(t *testing.T) {
+// Creation time (the API server's clock) decides age before spec.observedAt
+// (the operator's clock, which can step back across a failover): a report
+// persisted earlier is pruned first even when it was observed later.
+func TestPruneHealthReportsOrdersByCreationTimeBeforeObservedAt(t *testing.T) {
 	t.Parallel()
 	early := metav1.NewTime(time.Unix(1_700_000_000, 0))
 	late := metav1.NewTime(time.Unix(1_700_000_100, 0))
@@ -71,8 +72,30 @@ func TestPruneHealthReportsOrdersByObservedAtBeforeCreationTime(t *testing.T) {
 	if deleted != 1 {
 		t.Fatalf("deleted = %d, want 1", deleted)
 	}
-	if got := remainingPruneTestReports(t, c); len(got) != 2 || got[0] != "newest" || got[1] != "observed-late-created-early" {
-		t.Fatalf("remaining = %v, want the two most recently observed", got)
+	if got := remainingPruneTestReports(t, c); len(got) != 2 || got[0] != "newest" || got[1] != "observed-early-created-late" {
+		t.Fatalf("remaining = %v, want the two most recently created", got)
+	}
+}
+
+// The report a reconciler has just persisted is never pruned, even when a
+// clock step makes it observe earlier than its predecessor and the limit is
+// one: status.lastReportName is about to point at it.
+func TestPruneHealthReportsKeepsTheJustPersistedReportAcrossAClockStep(t *testing.T) {
+	t.Parallel()
+	early := metav1.NewTime(time.Unix(1_700_000_000, 0))
+	late := metav1.NewTime(time.Unix(1_700_000_100, 0))
+	c := pruneTestClient(t,
+		observedPruneTestReport("previous", early, late),
+		observedPruneTestReport("persisted", late, early),
+	)
+
+	deleted := pruneHealthReports(context.Background(), c, logr.Discard(), "default", pruneTestLabels, 1, "persisted")
+
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+	if got := remainingPruneTestReports(t, c); len(got) != 1 || got[0] != "persisted" {
+		t.Fatalf("remaining = %v, want the just-persisted report", got)
 	}
 }
 

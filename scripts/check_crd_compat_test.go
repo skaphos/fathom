@@ -56,6 +56,39 @@ func fixtureAllowlist(t *testing.T, name string) string {
 	return absPath(t, filepath.Join("testdata", "crd-compat", name))
 }
 
+// controller-gen writes two-space sequence entries, but the gate must not fail
+// open on another valid layout: with fixtureCRD's four-space entries a
+// v1alpha1 -> v1 swap used to parse as "no served versions" on both sides and
+// pass as compatible.
+func TestCompatGateReadsServedVersionsAtAnyIndent(t *testing.T) {
+	alpha := fixtureCRD(baseProps)
+	v1 := strings.Replace(alpha, "- name: v1alpha1", "- name: v1", 1)
+	if v1 == alpha {
+		t.Fatal("fixture no longer serves v1alpha1")
+	}
+	ok, out := runCRDCompat(t, writeFixture(t, alpha, v1, ""))
+	if ok {
+		t.Fatalf("a served-version swap in a four-space layout passed the gate:\n%s", out)
+	}
+	if !strings.Contains(out, "INCOMPATIBLE ^ (servedVersionRemoval)") {
+		t.Errorf("expected the swap to be reported:\n%s", out)
+	}
+}
+
+// A CRD whose served versions cannot be read is refused, never judged as
+// serving none: an unreadable layout must not become a silent pass.
+func TestCompatGateRefusesACRDWhoseVersionsItCannotRead(t *testing.T) {
+	alpha := fixtureCRD(baseProps)
+	unserved := strings.Replace(alpha, "      served: true\n", "", 1)
+	if unserved == alpha {
+		t.Fatal("fixture no longer declares served: true")
+	}
+	ok, out := runCRDCompat(t, writeFixture(t, unserved, unserved, ""))
+	if ok || !strings.Contains(out, "cannot read the served versions") {
+		t.Fatalf("ok = %v, want a refusal naming the unreadable versions:\n%s", ok, out)
+	}
+}
+
 func TestCompatGateReportsServedVersionRemoval(t *testing.T) {
 	out, code := runCompatGate(t, fixtureAllowlist(t, "allowlist-widgets.yaml"))
 	if code != 1 {

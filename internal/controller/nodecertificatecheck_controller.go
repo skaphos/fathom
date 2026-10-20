@@ -1052,7 +1052,7 @@ func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Lo
 		return err
 	}
 	if created {
-		pruneNodeCertHealthReports(ctx, r.Client, log, check)
+		pruneNodeCertHealthReports(ctx, r.Client, log, check, persistedReport.Name)
 	}
 
 	// Reusing a deterministic HealthReport hands back that report's original
