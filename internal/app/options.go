@@ -104,9 +104,22 @@ type RuntimeLoadingOptions struct {
 	Enabled bool `mapstructure:"enabled"`
 }
 
+// RetentionOptions bounds HealthReport history after a check is deleted
+// and across a namespace (spec 014, contracts/retention.md).
+type RetentionOptions struct {
+	// ReportWindow is how long a deleted check's reports are kept before the
+	// operator prunes them. Zero prunes them on the first sweep that finds
+	// the check gone.
+	ReportWindow time.Duration `mapstructure:"report_window"`
+	// ReportCapPerKind is the most reports of one source kind a namespace
+	// keeps, live and orphaned alike; the oldest go first.
+	ReportCapPerKind int `mapstructure:"report_cap_per_kind"`
+}
+
 // Options is the resolved runtime configuration for the operator.
 type Options struct {
 	RuntimeLoading         RuntimeLoadingOptions `mapstructure:"runtimeLoading"`
+	Retention              RetentionOptions      `mapstructure:"retention"`
 	Metrics                MetricsOptions        `mapstructure:"metrics"`
 	Webhook                WebhookOptions        `mapstructure:"webhook"`
 	Tracing                TracingOptions        `mapstructure:"tracing"`
@@ -169,6 +182,17 @@ const DefaultNodeAgentImage = "ghcr.io/skaphos/fathom-node-agent:v0.6.0" // x-re
 // 48-pod burst in a tenant namespace.
 const DefaultDNSCheckMaxConcurrentProbes = 4
 
+// DefaultRetentionReportWindow keeps a deleted check's reports for 30 days
+// (clarified in spec 014): long enough for a monthly incident review, short
+// enough that a namespace that churns checks does not accumulate history
+// without bound.
+const DefaultRetentionReportWindow = 30 * 24 * time.Hour
+
+// DefaultRetentionReportCapPerKind is the default history limit (10) times
+// fifty checks per namespace: above any shipped sample set, small enough that
+// a namespace list stays cheap.
+const DefaultRetentionReportCapPerKind = 500
+
 // DefaultOptions returns Options pre-populated with the operator's defaults.
 // These match the values registered as flag and Viper defaults.
 //
@@ -192,6 +216,10 @@ func DefaultOptions() Options {
 			Enabled:       false,
 			SamplingRatio: 1.0,
 			Insecure:      false,
+		},
+		Retention: RetentionOptions{
+			ReportWindow:     DefaultRetentionReportWindow,
+			ReportCapPerKind: DefaultRetentionReportCapPerKind,
 		},
 		DNSCheck: DNSCheckOptions{
 			MaxConcurrentProbes: DefaultDNSCheckMaxConcurrentProbes,
@@ -279,6 +307,12 @@ func (o *Options) Validate() error {
 	// silently never evaluate.
 	if o.DNSCheck.MaxConcurrentProbes < 1 {
 		errs = append(errs, fmt.Errorf("dnscheck.max_concurrent_probes is %d; must be at least 1", o.DNSCheck.MaxConcurrentProbes))
+	}
+	if o.Retention.ReportWindow < 0 {
+		errs = append(errs, fmt.Errorf("retention.report_window is %s; must not be negative (0 prunes orphaned reports at once)", o.Retention.ReportWindow))
+	}
+	if o.Retention.ReportCapPerKind < 1 {
+		errs = append(errs, fmt.Errorf("retention.report_cap_per_kind is %d; must be at least 1", o.Retention.ReportCapPerKind))
 	}
 
 	return errors.Join(errs...)
@@ -387,6 +421,10 @@ func bindings(defaults Options) []flagBinding {
 			usage: "The operator's own namespace, where per-addon ServiceAccounts live for adapter impersonation (SKA-58). In cluster it is set from the Pod namespace via the downward API (FATHOM_NAMESPACE) and is required; empty while in-cluster fails closed (SKA-162). Empty is only valid out of cluster."},
 		{flagName: "dnscheck-max-concurrent-probes", viperKey: "dnscheck.max_concurrent_probes", isInt: true, intDef: defaults.DNSCheck.MaxConcurrentProbes,
 			usage: "Maximum probe pods a single DNSCheck may run at once. The cluster-wide ceiling is this times the controller's reconcile concurrency. Lower it where tenant namespaces have tight pod quotas; raise it to shorten runs for checks with many targets."},
+		{flagName: "retention-report-window", viperKey: "retention.report_window", isDuration: true, durationDef: defaults.Retention.ReportWindow,
+			usage: "How long a deleted check's HealthReports are kept before the operator prunes them (Go duration, e.g. 720h). 0 prunes them on the first sweep that finds the check gone."},
+		{flagName: "retention-report-cap-per-kind", viperKey: "retention.report_cap_per_kind", isInt: true, intDef: defaults.Retention.ReportCapPerKind,
+			usage: "Most HealthReports of one check kind a namespace keeps, counting live and deleted checks alike; the oldest are pruned first."},
 		{flagName: "tracing-enabled", viperKey: "tracing.enabled", isBool: true, boolDef: defaults.Tracing.Enabled,
 			usage: "Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead)."},
 		{flagName: "tracing-otlp-endpoint", viperKey: "tracing.otlp_endpoint", stringDef: defaults.Tracing.OTLPEndpoint,

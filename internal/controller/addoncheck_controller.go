@@ -25,7 +25,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -217,7 +216,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// is loud (Accepted=False) and gates the run, instead of being silently
 	// ignored (unknown family) or only surfacing as a post-run Error (invalid
 	// selector) -- SKA-54. Policy is validated only once an adapter is resolved,
-	// since the valid family set is the adapter's; a paused or adapterless check
+	// since the valid family set is the adapter's; an adapterless check
 	// defers validation and is accepted structurally.
 	//
 	// Ready is given its final value here in a single write, rather than being
@@ -284,7 +283,7 @@ func (r *AddonCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// A ready AddonCheck is requeued one interval out so its HealthReport tracks
 	// the addon's live state instead of freezing at first sight. This requeue
 	// must survive the no-status-change fast path below, or periodic execution
-	// stalls after the first run. Paused / adapterless checks are left to a
+	// stalls after the first run. Adapterless checks are left to a
 	// spec change (generation bump) to wake them.
 	result = ctrl.Result{}
 	if runtimeBacked || (adapterReady && policyValid) {
@@ -441,11 +440,6 @@ func (r *AddonCheckReconciler) runAddonCheck(ctx context.Context, log logr.Logge
 			check.Status.LastResult,
 			newResult,
 		)
-		if r.Scheme != nil {
-			if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
-				return err
-			}
-		}
 		persistedReport, created, err := createOrReuseHealthReport(ctx, r.Client, report)
 		if err != nil {
 			return err
@@ -802,11 +796,6 @@ func (r *AddonCheckReconciler) recordRuntimeTransition(
 		previousVerdict,
 		string(evidence.Verdict),
 	)
-	if r.Scheme != nil {
-		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
-			return "", err
-		}
-	}
 	persisted, created, err := createOrReuseHealthReport(ctx, r.Client, report)
 	if err != nil {
 		return "", err
@@ -908,6 +897,7 @@ func runtimeHealthReportForAddonCheck(
 			Labels: map[string]string{
 				fathomv1.LabelHealthReportSourceKind: "AddonCheck",
 				fathomv1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceUID:  string(check.UID),
 			},
 		},
 		Spec: fathomv1.HealthReportSpec{
@@ -953,10 +943,7 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(
 	check *fathomv1.AddonCheck,
 	protectedName string,
 ) {
-	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
-		fathomv1.LabelHealthReportSourceKind: "AddonCheck",
-		fathomv1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), protectedName)
+	pruneHealthReports(ctx, r.Client, log, check.Namespace, reportSelector("AddonCheck", check), historyLimit(check.Spec.HistoryLimit), protectedName)
 }
 
 func addonCheckTimeout(check *fathomv1.AddonCheck) time.Duration {
@@ -1004,7 +991,7 @@ func setAddonCheckAccepted(check *fathomv1.AddonCheck, policyErrs []string) {
 // problems are deterministically ordered (stable Accepted-condition message) and
 // empty when the policy is valid.
 //
-// Family validation is skipped when selectedAdapter is nil (a paused or
+// Family validation is skipped when selectedAdapter is nil (an
 // unregistered addonType), since the valid family set is not yet known; selector
 // validation is adapter-independent and always runs. Threshold keys are
 // validated only when the adapter implements [adapter.ThresholdAdvertiser]
@@ -1173,6 +1160,7 @@ func healthReportForAddonCheck(check *fathomv1.AddonCheck, selectedAdapter adapt
 			Labels: map[string]string{
 				fathomv1.LabelHealthReportSourceKind: "AddonCheck",
 				fathomv1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceUID:  string(check.UID),
 			},
 		},
 		Spec: fathomv1.HealthReportSpec{

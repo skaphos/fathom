@@ -226,6 +226,8 @@ func init() {
 		NodeCertificateExpiryDays,
 		NodeHealthCheckResult,
 		NodeHealthFilesystemFreePercent,
+		HealthReportsRetained,
+		HealthReportsPrunedTotal,
 	)
 }
 
@@ -406,4 +408,48 @@ func DeleteNodeHealthSeries(namespace, check string) {
 	labels := prometheus.Labels{"namespace": namespace, "check": check}
 	NodeHealthCheckResult.DeletePartialMatch(labels)
 	NodeHealthFilesystemFreePercent.DeletePartialMatch(labels)
+}
+
+// HealthReport retention (spec 014, contracts/retention.md): what a namespace
+// holds for deleted checks, and what each prune pass removed and why.
+var (
+	// HealthReportsRetained is the number of reports in a namespace whose
+	// check no longer exists, per source kind, as of the last sweep.
+	HealthReportsRetained = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fathom_healthreports_retained",
+			Help: "HealthReports kept for a deleted check, by namespace and source kind.",
+		},
+		[]string{"namespace", "source_kind"},
+	)
+
+	// HealthReportsPrunedTotal counts reports the retention sweep deleted, by
+	// reason: "window" (the deleted check's retention window elapsed) or "cap"
+	// (the namespace exceeded its per-kind cap).
+	HealthReportsPrunedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "fathom_healthreports_pruned_total",
+			Help: "HealthReports pruned by the retention sweep, by namespace, source kind and reason.",
+		},
+		[]string{"namespace", "source_kind", "reason"},
+	)
+)
+
+// ObserveReportsRetained sets the retained gauge for one namespace and kind.
+func ObserveReportsRetained(namespace, kind string, n int) {
+	HealthReportsRetained.WithLabelValues(namespace, kind).Set(float64(n))
+}
+
+// RecordReportsPruned adds a prune pass's deletions for one namespace, kind
+// and reason.
+func RecordReportsPruned(namespace, kind, reason string, n int) {
+	if n > 0 {
+		HealthReportsPrunedTotal.WithLabelValues(namespace, kind, reason).Add(float64(n))
+	}
+}
+
+// DeleteRetentionSeries removes a namespace's retention series, for a
+// namespace that no longer exists.
+func DeleteRetentionSeries(namespace string) {
+	HealthReportsRetained.DeletePartialMatch(prometheus.Labels{"namespace": namespace})
 }

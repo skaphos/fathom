@@ -133,7 +133,8 @@ Status fields to start with:
 | `Ready` | `False / AdapterLookupFailed` | Adapter lookup failed for a reason other than "not found". | Inspect operator logs; this points to startup/registry wiring. |
 | `Ready` | `False / AdapterRunFailed` | The adapter could not complete the run. The check result is `Error`. | Read the condition message and operator logs; verify adapter RBAC in [rbac.md](rbac.md). |
 There is no `Paused` condition and no `spec.paused`: stopping a check means
-deleting it (#262).
+deleting it (#262); its `HealthReport`s are kept for the retention window
+([Report retention](configuration.md#report-retention)).
 
 Force an immediate run:
 
@@ -167,7 +168,8 @@ Status fields to start with:
 | `Ready` | `False / TargetNotFound` | The referenced target does not exist in the wrapper namespace, or in explicit `checkRef.namespace`. Mirrored fields are cleared. | Create the target, or replace the wrapper if the immutable reference is wrong. |
 | `Ready` | `False / TargetLookupFailed` | Reading a supported target failed with a transient API error. The last readable mirrored snapshot is preserved and the controller returns the error for retry. | Check controller logs, API-server availability, and RBAC; do not treat the retained snapshot as new evidence. |
 There is no `Paused` condition and no `spec.paused`: stopping a check means
-deleting it (#262).
+deleting it (#262); its `HealthReport`s are kept for the retention window
+([Report retention](configuration.md#report-retention)).
 
 Namespace contract: `ClusterHealth` is cluster-scoped and selects `HealthCheck`
 wrappers under the allowlist / denylist / open filter (`spec.namespaces`,
@@ -295,7 +297,9 @@ Freshness and coverage rules:
 | `Ready` | `False / AdmissionPolicyProvisioningFailed` | Creating/updating the report-authenticity `ValidatingAdmissionPolicy` or its binding failed. | Check operator RBAC on `admissionregistration.k8s.io` and cluster API support. |
 | `Ready` | `False / NetworkPolicyProvisioningFailed` | Creating/updating the per-check node-agent `NetworkPolicy` failed. | Check operator RBAC on `networking.k8s.io` and admission policies. |
 There is no `Paused` condition and no `spec.paused`: stopping a check means
-deleting it (#262); the agent DaemonSet, RBAC and NetworkPolicy are removed with it.
+deleting it (#262); the agent DaemonSet, RBAC and NetworkPolicy are removed with it,
+while its `HealthReport`s are kept for the retention window
+([Report retention](configuration.md#report-retention)).
 
 Useful report inspection:
 

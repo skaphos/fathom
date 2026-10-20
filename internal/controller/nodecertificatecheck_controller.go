@@ -204,8 +204,8 @@ func (r *NodeCertificateCheckReconciler) apiReader() client.Reader {
 // privilege of its own, so this grant does not trip the RBAC escalation check.
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionpolicies;validatingadmissionpolicybindings,verbs=get;list;watch;create;update
 
-// Reconcile ensures the node-agent DaemonSet and its RBAC exist (or are removed
-// while paused), rolls up the per-node report ConfigMaps into a HealthReport,
+// Reconcile ensures the node-agent DaemonSet and its RBAC exist (the DaemonSet
+// is revoked when provisioning fails), rolls up the per-node report ConfigMaps into a HealthReport,
 // and mirrors the aggregate into Status.
 func (r *NodeCertificateCheckReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	ctx, span := reconcilerTracer(r.Tracer).Start(ctx, "nodecertificatecheck.reconcile", trace.WithAttributes(
@@ -411,7 +411,7 @@ func consumeNodeCertRunTrigger(check *fathomv1.NodeCertificateCheck, before *fat
 }
 
 // finish persists Status if it changed and requeues after interval (0 disables
-// the periodic requeue, used while paused).
+// the periodic requeue).
 func (r *NodeCertificateCheckReconciler) finish(ctx context.Context, log logr.Logger, before *fathomv1.NodeCertificateCheckStatus, check *fathomv1.NodeCertificateCheck, interval time.Duration) (ctrl.Result, error) {
 	if !equality.Semantic.DeepEqual(before, &check.Status) {
 		if err := r.Status().Update(ctx, check); err != nil {
@@ -653,7 +653,7 @@ func (r *NodeCertificateCheckReconciler) ensureAgentRBAC(ctx context.Context, ch
 // and implementation-specific post-DNAT endpoints. The agent reaches the API
 // server via KUBERNETES_SERVICE_HOST, an IP, so it needs no DNS egress.
 // Owner-referenced, so it is garbage-collected with the check; like the agent
-// RBAC it is deliberately left in place while paused.
+// RBAC it is deliberately left in place when the agent is revoked.
 // Enforcement requires a NetworkPolicy-capable CNI — on clusters without one
 // this object is inert, which is also why creating it is safe unconditionally.
 func (r *NodeCertificateCheckReconciler) ensureAgentNetworkPolicy(ctx context.Context, check *fathomv1.NodeCertificateCheck) error {
@@ -1004,11 +1004,6 @@ func (r *NodeCertificateCheckReconciler) rollup(ctx context.Context, log logr.Lo
 		check.Status.LastResult,
 		string(aggregate),
 	)
-	if r.Scheme != nil {
-		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
-			return err
-		}
-	}
 	persistedReport, created, err := createOrReuseHealthReport(ctx, r.Client, report)
 	if err != nil {
 		return err

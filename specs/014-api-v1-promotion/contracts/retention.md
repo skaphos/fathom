@@ -30,6 +30,9 @@ the same name are neither counted nor pruned by it.
 Orphan detection runs on delete events of any check kind in the namespace
 and on a periodic sweep, so a check deleted while the operator was down is
 noticed on the next sweep; its `source-deleted-at` is then the sweep time.
+A pass that leaves stamped reports behind schedules the next sweep for the
+earliest expiry (at most an hour away), so the window is honoured promptly
+rather than at the mercy of unrelated report traffic in the namespace.
 
 ## The per-kind cap
 
@@ -41,8 +44,12 @@ of that kind are deleted with reason `cap`. "Oldest" orders by
 
 ## Bounded work
 
-Each pass deletes at most 50 reports and requeues immediately if work
-remains. A pass never blocks a check's own reconcile.
+Each pass attempts at most 50 writes (stamps and deletes, refused attempts
+included) and requeues after one second if work remains. A report the API server refuses to write is
+reported and retried with backoff without blocking the rest of the pass. The
+cap never removes the report a live check's `status.lastReportName` names,
+so a namespace with more live checks of one kind than the cap stays above
+it by that many. A pass never blocks a check's own reconcile.
 
 ## Observability
 

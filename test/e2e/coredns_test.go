@@ -48,9 +48,9 @@ var _ = Describe("CoreDNS AddonCheck", Ordered, Label(utils.CoreLabel, "coredns"
 		Expect(err).NotTo(HaveOccurred(), "Failed to apply CoreDNS AddonCheck sample")
 	})
 
-	// Removing the AddonCheck owner-garbage-collects the HealthReports
-	// (per ownerReferences in the reconciler), so the cleanup is a single
-	// kubectl delete on the CR itself.
+	// Removing the AddonCheck leaves its HealthReports for the retention
+	// window (the operator prunes them later; nothing owner-references them),
+	// which is fine on a throwaway cluster: the cleanup is a single delete.
 	AfterAll(func() {
 		By("cleaning up the CoreDNS AddonCheck")
 		cmd := exec.Command("kubectl", "delete", "-f", corednsSamplePath, "--ignore-not-found=true")

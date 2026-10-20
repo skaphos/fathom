@@ -50,8 +50,9 @@ var _ = Describe("NodeLocal DNSCache AddonCheck", Ordered, Label("node-local-dns
 		Expect(err).NotTo(HaveOccurred(), "Failed to apply NodeLocal DNSCache AddonCheck sample")
 	})
 
-	// Removing the AddonCheck owner-garbage-collects the HealthReports (per
-	// ownerReferences in the reconciler), so the cleanup is a single delete.
+	// Removing the AddonCheck leaves its HealthReports for the retention
+	// window (nothing owner-references them), which is fine on a throwaway
+	// cluster: the cleanup is a single delete.
 	AfterAll(func() {
 		By("cleaning up the NodeLocal DNSCache AddonCheck")
 		cmd := exec.Command("kubectl", "delete", "-f", nodeLocalDNSSamplePath, "--ignore-not-found=true")

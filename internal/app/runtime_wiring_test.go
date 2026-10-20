@@ -680,8 +680,8 @@ func TestRuntimeLoadingUnavailableRegistersNothingRuntime(t *testing.T) {
 			if got, want := setupperTypes(controllers), setupperTypes(public); !slices.Equal(got, want) {
 				t.Fatalf("controller set = %v, want the built-in set %v", got, want)
 			}
-			if len(controllers) != 6 {
-				t.Fatalf("registered %d controllers, want the 6 built-ins: %v", len(controllers), setupperTypes(controllers))
+			if len(controllers) != 7 {
+				t.Fatalf("registered %d controllers, want the 7 built-ins: %v", len(controllers), setupperTypes(controllers))
 			}
 			addonCheck, ok := controllers[0].(*controller.AddonCheckReconciler)
 			if !ok {
@@ -718,17 +718,17 @@ func TestRuntimeWiringAttachesEverySeam(t *testing.T) {
 		t.Fatalf("defaultControllers: %v", err)
 	}
 
-	// Preserve unrelated built-ins: the six built-in reconcilers are still
+	// Preserve unrelated built-ins: the seven built-in reconcilers are still
 	// there, still first, still in their original order.
-	if len(controllers) != 8 {
-		t.Fatalf("registered %d controllers, want 6 built-ins plus the 2 runtime reconcilers: %v",
+	if len(controllers) != 9 {
+		t.Fatalf("registered %d controllers, want 7 built-ins plus the 2 runtime reconcilers: %v",
 			len(controllers), setupperTypes(controllers))
 	}
 	baseline, err := DefaultControllers(mgr, opts)
 	if err != nil {
 		t.Fatalf("DefaultControllers: %v", err)
 	}
-	if got, want := setupperTypes(controllers[:6]), setupperTypes(baseline); !slices.Equal(got, want) {
+	if got, want := setupperTypes(controllers[:7]), setupperTypes(baseline); !slices.Equal(got, want) {
 		t.Fatalf("built-in controller set changed: %v, want %v", got, want)
 	}
 
@@ -876,7 +876,7 @@ func TestRuntimeWiringAttachesEverySeam(t *testing.T) {
 
 	// Watches and indexes: every indexed lookup the two reconcilers make must
 	// have its index, or the lookup silently becomes an unbounded List.
-	for _, setupper := range controllers[6:] {
+	for _, setupper := range controllers[7:] {
 		if err := setupper.SetupWithManager(mgr); err != nil {
 			t.Fatalf("SetupWithManager(%T): %v", setupper, err)
 		}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -165,10 +166,10 @@ func runReports(cmd *cobra.Command, f *factory, opts *reportsOptions, args []str
 		return err
 	}
 	tb := newTable(out)
-	tb.row("NAME", "OBSERVED", "RESULT", "SUMMARY", "CHANGE")
+	tb.row("NAME", "OBSERVED", "RESULT", "SUMMARY", "CHANGE", "RETENTION")
 	for _, r := range shown {
 		observed := r.Spec.ObservedAt
-		tb.row(r.Name, age(&observed, now), orDash(string(r.Spec.Result)), truncate(reportSummary(r), summaryColumnWidth), changes[r.Name])
+		tb.row(r.Name, age(&observed, now), orDash(string(r.Spec.Result)), truncate(reportSummary(r), summaryColumnWidth), changes[r.Name], retainedMarker(r, now))
 	}
 	return tb.flush()
 }
@@ -189,14 +190,14 @@ func reportSource(ctx context.Context, c client.Client, ref checkRef) (checkRef,
 		return checkRef{}, err
 	}
 	if ref.Kind.Kind == "HealthCheck" && len(sources) == 1 {
-		if sources[0].Skip != "" && !strings.Contains(sources[0].Skip, "paused") {
+		if sources[0].Skip != "" {
 			return checkRef{}, fmt.Errorf("%s %s", ref, sources[0].Skip)
 		}
 		return sources[0].Ref, nil
 	}
 	names := make([]string, 0, len(sources))
 	for _, s := range sources {
-		if s.Skip == "" || strings.Contains(s.Skip, "paused") {
+		if s.Skip == "" {
 			names = append(names, s.Ref.String())
 		}
 	}
@@ -287,6 +288,12 @@ func renderReport(w io.Writer, r *fathomv1.HealthReport, now time.Time) {
 	d.line("Namespace", r.Namespace)
 	src := r.Spec.SourceRef
 	d.line("Source", src.Kind+"/"+src.Name)
+	if uid := r.Labels[fathomv1.LabelHealthReportSourceUID]; uid != "" {
+		d.line("Source UID", uid)
+	}
+	if marker := retainedMarker(r, now); marker != "" {
+		d.line("Retention", marker)
+	}
 	d.line("Result", orDash(string(r.Spec.Result)))
 	observed := r.Spec.ObservedAt
 	d.line("Observed", timestamp(&observed, now))
@@ -314,4 +321,21 @@ func renderReport(w io.Writer, r *fathomv1.HealthReport, now time.Time) {
 		tb.row("  "+c.Family, target, orDash(string(c.Result)), truncate(c.Summary, summaryColumnWidth))
 	}
 	_ = tb.flush()
+}
+
+// retainedMarker says when a report's check was deleted, or "" while the
+// check is alive (spec 014, contracts/retention.md). Reports of a deleted
+// check stay listable under the check's kind and name for the retention
+// window; the marker is what tells them apart from the live check's history.
+func retainedMarker(r *fathomv1.HealthReport, now time.Time) string {
+	raw, ok := r.Annotations[fathomv1.AnnotationHealthReportSourceDeletedAt]
+	if !ok {
+		return ""
+	}
+	deletedAt, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return "retained (check deleted " + raw + ")"
+	}
+	t := metav1.NewTime(deletedAt)
+	return "retained (check deleted " + age(&t, now) + " ago)"
 }

@@ -300,6 +300,12 @@ func defaultControllers(mgr ctrl.Manager, opts Options, runtime *runtimeWiring) 
 			Tracer:              tracer,
 			Recorder:            mgr.GetEventRecorder("fathom-dnscheck-controller"),
 		},
+		&controller.HealthReportRetentionReconciler{
+			Client:     mgr.GetClient(),
+			Recorder:   mgr.GetEventRecorder("fathom-healthreport-retention-controller"),
+			Window:     opts.Retention.ReportWindow,
+			CapPerKind: opts.Retention.ReportCapPerKind,
+		},
 	}
 	if runtime == nil {
 		// Default-off: no runtime reconciler, no runtime index, no runtime

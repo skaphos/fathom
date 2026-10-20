@@ -242,6 +242,7 @@ func healthReportForNodeCert(check *fathomv1.NodeCertificateCheck, reports []nod
 			Labels: map[string]string{
 				fathomv1.LabelHealthReportSourceKind: "NodeCertificateCheck",
 				fathomv1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceUID:  string(check.UID),
 			},
 		},
 		Spec: fathomv1.HealthReportSpec{
@@ -270,8 +271,5 @@ func putIfNotEmpty(m map[string]string, key, value string) {
 // HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
 func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1.NodeCertificateCheck, protected string) {
-	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
-		fathomv1.LabelHealthReportSourceKind: "NodeCertificateCheck",
-		fathomv1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), protected)
+	pruneHealthReports(ctx, c, log, check.Namespace, reportSelector("NodeCertificateCheck", check), historyLimit(check.Spec.HistoryLimit), protected)
 }

@@ -96,15 +96,16 @@ then name, matching the existing per-check prune tie-break.
   (fixed internal interval, 1h).
 - **Per pass**: list reports in the namespace; group by the three labels;
   resolve each group's check by kind and name and compare UID; stamp or
-  evaluate `source-deleted-at`; enforce the per-kind cap; delete at most 50
-  reports per pass and requeue immediately if any work remains.
+  evaluate `source-deleted-at`; enforce the per-kind cap (sparing each live
+  check's `status.lastReportName`); perform at most 50 writes per pass and
+  requeue after one second if any work remains; tolerate a refused write.
 - **Outputs**: metrics `fathom_healthreports_retained{namespace,source_kind}`
   (gauge) and `fathom_healthreports_pruned_total{namespace,source_kind,reason}`
   (counter, reason `window` | `cap`); one Event per pass that deleted anything,
   regarding the most recently pruned report so it lives in the affected
   namespace, reason `ReportsPruned`, action `Retain`.
-- **RBAC**: no new verbs (healthreports already `create;get;list;watch;delete`;
-  events already `create;patch`).
+- **RBAC**: `patch` on healthreports for the stamp (healthreports were
+  `create;get;list;watch;delete`; events already `create;patch`).
 
 ## Upgrade-path and compat-gate entries
 

@@ -181,6 +181,15 @@ strings; with the `WeaklyTypedInput` option `Load` already uses, a
 in that precedence, and `"0"` round-trips to zero
 (`internal/app/options_duration_test.go`).
 
+**Chart surface (T069, 2026-10-20)**: the Helm chart exposes operator options
+only through its free-form config file (`config.enabled`, `config.data`,
+rendered into `/etc/fathom/config.yaml`), as it does for every other option
+(the DNSCheck fan-out included); it has no typed per-option values. The
+retention options are therefore documented as `config.data.retention.*` in
+the configuration reference and no `values.yaml` or schema entry is added.
+The operator role gains `patch` on `healthreports` for the deleted-at stamp;
+the justification is in `docs/reference/operator-rbac.md`.
+
 **Rationale**: 30 days is the clarified default. 500 per kind per namespace is
 the default history limit (10) times fifty checks, well above any shipped
 sample set and small enough that a list stays cheap. Both belong in the

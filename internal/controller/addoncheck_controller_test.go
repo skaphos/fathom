@@ -1084,6 +1084,7 @@ var _ = Describe("AddonCheck Controller", func() {
 					Labels: map[string]string{
 						"fathom.skaphos.io/source-kind": "AddonCheck",
 						"fathom.skaphos.io/source-name": name,
+						"fathom.skaphos.io/source-uid":  string(resource.UID),
 					},
 				},
 				Spec: fathomv1.HealthReportSpec{
@@ -1149,6 +1150,7 @@ var _ = Describe("AddonCheck Controller", func() {
 					Labels: map[string]string{
 						"fathom.skaphos.io/source-kind": "AddonCheck",
 						"fathom.skaphos.io/source-name": name,
+						"fathom.skaphos.io/source-uid":  string(check.UID),
 					},
 				},
 				Spec: fathomv1.HealthReportSpec{

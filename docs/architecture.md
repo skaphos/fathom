@@ -178,7 +178,8 @@ focuses on controller ownership and data flow.
 `internal/controller/addoncheck_controller.go`
 
 - **Owns / produces:** `AddonCheck.status`; creates `HealthReport` objects
-  (owner-referenced to the `AddonCheck` via `controllerutil.SetControllerReference`).
+  (labelled with the check's kind, name and UID, not owner-referenced: a
+  deleted check's reports are kept for the retention window, ADR 0010).
 - **Watches:** `AddonCheck` only (`For(&AddonCheck{})`).
 - **Adapter dispatch:** resolves the adapter for `spec.addonType` from the
   in-process registry. If it is missing or lookup fails, it records a
@@ -268,9 +269,9 @@ adapter level is forced to `Error`.
   name-scoped `get`/`update` for current agent reports. The shared
   report-authenticity `ValidatingAdmissionPolicy` remains a runtime singleton.
   The reconciler also creates `HealthReport` objects and writes
-  `NodeCertificateCheck.status`. All owned
-  objects live in the check's namespace and are owner-referenced for cascading
-  garbage collection.
+  `NodeCertificateCheck.status`. The agent objects live in the check's
+  namespace and are owner-referenced for cascading garbage collection;
+  reports are not, so they outlive the check for the retention window.
 - **Watches:** `NodeCertificateCheck` (`For`), the owned `DaemonSet` /
   `ServiceAccount` / `Role` / `RoleBinding` / `NetworkPolicy` (`Owns`), and per-node
   report `ConfigMap`s by label (`Watches`), so a fresh node report triggers a

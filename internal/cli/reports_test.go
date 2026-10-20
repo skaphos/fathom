@@ -244,3 +244,45 @@ func TestChangedCheckCountKeysPerItem(t *testing.T) {
 		t.Fatalf("identical reports = %d changes, want 0", got)
 	}
 }
+
+// A report whose check was deleted stays listable under the check's name and
+// is marked as retained with the deletion time; the full view prints the
+// source UID (spec 014, contracts/retention.md).
+func TestReports_MarksRetainedReports(t *testing.T) {
+	retained := report("team-a", "coredns", "coredns-old", 3*time.Hour, fathomv1.HealthReportResultPass)
+	retained.Labels[fathomv1.LabelHealthReportSourceUID] = "old-uid"
+	retained.Annotations = map[string]string{fathomv1.AnnotationHealthReportSourceDeletedAt: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)}
+	live := report("team-a", "coredns", "coredns-new", time.Hour, fathomv1.HealthReportResultPass)
+	live.Labels[fathomv1.LabelHealthReportSourceUID] = "new-uid"
+	f, _ := fakeFactory(t, addonCheck("team-a", "coredns"), retained, live)
+
+	out, _, err := execVerb(f, "reports", "addoncheck/coredns")
+	if err != nil {
+		t.Fatalf("reports: %v", err)
+	}
+	if !strings.Contains(out, "RETENTION") {
+		t.Fatalf("table lacks the retention column:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "coredns-old"):
+			if !strings.Contains(line, "retained (check deleted") {
+				t.Errorf("retained report not marked: %q", line)
+			}
+		case strings.HasPrefix(line, "coredns-new"):
+			if strings.Contains(line, "retained") {
+				t.Errorf("live report marked as retained: %q", line)
+			}
+		}
+	}
+
+	out, _, err = execVerb(f, "reports", "addoncheck/coredns", "--report", "coredns-old")
+	if err != nil {
+		t.Fatalf("reports --report: %v", err)
+	}
+	for _, want := range []string{"Source UID", "old-uid", "Retention", "retained (check deleted"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("full view lacks %q:\n%s", want, out)
+		}
+	}
+}
