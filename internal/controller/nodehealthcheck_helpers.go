@@ -581,6 +581,7 @@ func healthReportForNodeHealth(check *fathomv1.NodeHealthCheck, evals []nodeHeal
 			Labels: map[string]string{
 				fathomv1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
 				fathomv1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceUID:  string(check.UID),
 			},
 		},
 		Spec: fathomv1.HealthReportSpec{
@@ -616,10 +617,7 @@ func decideNodeHealthRollup(status *fathomv1.NodeHealthCheckStatus, aggregate st
 // oldest HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
 func pruneNodeHealthHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1.NodeHealthCheck, protected string) {
-	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
-		fathomv1.LabelHealthReportSourceKind: nodehealth.KindNodeHealthCheck,
-		fathomv1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), protected)
+	pruneHealthReports(ctx, c, log, check.Namespace, reportSelector(nodehealth.KindNodeHealthCheck, check), historyLimit(check.Spec.HistoryLimit), protected)
 }
 
 // nodeHealthEvaluationsInScope keeps only evaluations for nodes in expected,

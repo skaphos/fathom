@@ -119,6 +119,7 @@ rules:
   - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - networking.k8s.io

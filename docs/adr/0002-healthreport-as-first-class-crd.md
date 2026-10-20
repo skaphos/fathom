@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 # 2. HealthReport as a first-class custom resource
 
-- **Status**: accepted
+- **Status**: accepted; cleanup rationale amended by [ADR 0010](0010-healthreport-retention.md) (reports outlive their check for a retention window and carry no owner reference)
 - **Date**: 2026-05-10
 - **Deciders**: Shawn Stratton
 

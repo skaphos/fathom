@@ -287,3 +287,9 @@ reason contract.
 There is no pause. To stop a check, delete it; to resume, recreate it (from
 Git, which is where it came from). Fathom emits signal and does not own alert
 suppression: silence the alert in the alerting stack instead (#262).
+
+Deleting a check does not delete its history: its `HealthReport`s stay for
+the retention window (30 days by default, `retention.report_window`), marked
+as retained, and `fathomctl reports <kind>/<name>` still lists them. A check
+recreated under the same name starts its own history. See
+[Report retention](../reference/configuration.md#report-retention).

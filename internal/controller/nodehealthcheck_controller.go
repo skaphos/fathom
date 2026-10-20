@@ -1000,11 +1000,6 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 		check.Status.LastResult,
 		string(aggregate),
 	)
-	if r.Scheme != nil {
-		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
-			return err
-		}
-	}
 	persistedReport, _, err := createOrReuseHealthReport(ctx, r.Client, report)
 	if err != nil {
 		return err

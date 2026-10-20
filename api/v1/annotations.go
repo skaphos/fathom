@@ -28,4 +28,17 @@ const AnnotationRunNow = "fathom.skaphos.io/run-now"
 const (
 	LabelHealthReportSourceKind = "fathom.skaphos.io/source-kind"
 	LabelHealthReportSourceName = "fathom.skaphos.io/source-name"
+	// LabelHealthReportSourceUID pins a report to one *instance* of its check:
+	// a check deleted and recreated under the same name gets a new UID, so its
+	// predecessor's retained history is neither counted against it nor pruned
+	// by it (spec 014, FR-013b).
+	LabelHealthReportSourceUID = "fathom.skaphos.io/source-uid"
 )
+
+// AnnotationHealthReportSourceDeletedAt is stamped (RFC 3339, once, never
+// rewritten) on a report the first time the operator finds its check gone.
+// Retention measures the window from it; it is lifecycle provenance about a
+// deleted owner, not a health verdict — those stay in spec and status (ADR
+// 0010). Reports carry no owner reference, so deleting a check keeps them
+// for the configured window.
+const AnnotationHealthReportSourceDeletedAt = "fathom.skaphos.io/source-deleted-at"

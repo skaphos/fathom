@@ -29,7 +29,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	fathomv1 "github.com/skaphos/fathom/api/v1"
@@ -602,11 +601,6 @@ func (r *DNSCheckReconciler) persistDNSHealthReport(
 		string(verdict),
 		observedAt.UTC().Format(time.RFC3339Nano),
 	)
-	if r.Scheme != nil {
-		if err := controllerutil.SetControllerReference(check, report, r.Scheme); err != nil {
-			return err
-		}
-	}
 	persisted, created, err := createOrReuseHealthReport(ctx, r.Client, report)
 	if err != nil {
 		return err
@@ -665,6 +659,7 @@ func healthReportForDNSCheck(
 			Labels: map[string]string{
 				fathomv1.LabelHealthReportSourceKind: dnsCheckKind,
 				fathomv1.LabelHealthReportSourceName: check.Name,
+				fathomv1.LabelHealthReportSourceUID:  string(check.UID),
 			},
 		},
 		Spec: fathomv1.HealthReportSpec{
@@ -686,10 +681,7 @@ func healthReportForDNSCheck(
 // pruneDNSHealthReports enforces spec.historyLimit. Failures are logged rather
 // than returned: the new report already landed, and the next run retries.
 func (r *DNSCheckReconciler) pruneDNSHealthReports(ctx context.Context, log logr.Logger, check *fathomv1.DNSCheck, protected string) {
-	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
-		fathomv1.LabelHealthReportSourceKind: dnsCheckKind,
-		fathomv1.LabelHealthReportSourceName: check.Name,
-	}, historyLimit(check.Spec.HistoryLimit), protected)
+	pruneHealthReports(ctx, r.Client, log, check.Namespace, reportSelector(dnsCheckKind, check), historyLimit(check.Spec.HistoryLimit), protected)
 }
 
 // finishDNSCheck persists status when it changed and schedules the next run.

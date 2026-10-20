@@ -223,7 +223,10 @@ spec:
 - **`timeout`** (default `30s`) — bounds a single scan-and-publish pass.
 - **No `paused`** — to stop the scan, delete the check; the agent DaemonSet,
   its RBAC and its NetworkPolicy are owner-referenced and removed with it
-  (#262). Recreate the check to resume.
+  (#262). Its `HealthReport`s are not: they stay for the retention window
+  (30 days by default; see
+  [Report retention](../reference/configuration.md#report-retention)).
+  Recreate the check to resume; it starts its own history.
 - **`historyLimit`** (default `10`, min `1`) — `HealthReport`s retained for this
   check; older ones are pruned.
 
@@ -376,8 +379,8 @@ The agent is built for least privilege:
   and CNI caveats.
 
 When you `delete` a `NodeCertificateCheck`, its DaemonSet, ServiceAccount,
-Roles, RoleBindings, NetworkPolicy, and reports are garbage-collected via their owner
-references.
+Roles, RoleBindings and NetworkPolicy are garbage-collected via their owner
+references; its reports stay for the retention window (see above).
 
 ## Reference
 

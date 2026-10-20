@@ -318,14 +318,18 @@ func upgradeStopVersion() string {
 	Expect(err).NotTo(HaveOccurred())
 	raw, err := os.ReadFile(filepath.Join(root, "deploy", "helm", "fathom-operator", "upgrade-path.yaml"))
 	Expect(err).NotTo(HaveOccurred())
-	version := ""
+	version, stop := "", ""
 	for _, line := range strings.Split(string(raw), "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "- version:"); ok {
+		trimmed := strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(trimmed, "- version:"); ok {
 			version = strings.TrimSpace(rest)
 		}
+		if trimmed == "stop: true" {
+			stop = version
+		}
 	}
-	Expect(version).NotTo(BeEmpty(), "upgrade-path.yaml declares no release")
-	return version
+	Expect(stop).NotTo(BeEmpty(), "upgrade-path.yaml declares no stop release; the alpha-to-v1 scenario has nothing to upgrade to")
+	return stop
 }
 
 const (
@@ -414,6 +418,8 @@ var _ = Describe("fathomctl alpha-to-v1 upgrade", Ordered, Label(utils.Lifecycle
 		Expect(out).To(ContainSubstring("  " + v1UpgradeChecksNS + "/coredns-sample"))
 		Expect(out).To(ContainSubstring("and their HealthReport history"))
 		Expect(servedVersions("AddonCheck")).To(Equal("v1alpha1"), "a refused upgrade must change nothing")
+		status, _ := cli.run("status", "-n", lifecycleNS)
+		Expect(status).To(ContainSubstring("serves v1alpha1; run fathomctl export, then fathomctl upgrade"), "status names the procedure while a CRD still serves alpha")
 	})
 
 	It("replaces the seven CRDs with the flag and rolls the new operator out", func() {
@@ -449,13 +455,47 @@ var _ = Describe("fathomctl alpha-to-v1 upgrade", Ordered, Label(utils.Lifecycle
 		}, 3*time.Minute, 5*time.Second).Should(Succeed(), "the recreated ClusterHealth never aggregated")
 	})
 
+	It("keeps a deleted check's reports for the window, then prunes them with a metric and an Event", func() {
+		// A short window and a tiny cap so pruning is observed inside the run
+		// (quickstart §4); a values-only upgrade at the same version.
+		out, err := cli.run("upgrade", "-n", lifecycleNS, "--timeout", "5m",
+			"--set", "config.enabled=true", "--set", "config.data.retention.report_window=90s", "--set", "config.data.retention.report_cap_per_kind=5")
+		Expect(err).NotTo(HaveOccurred(), out)
+
+		before, err := kubectl("get", "healthreports", "-n", v1UpgradeChecksNS, "-l", "fathom.skaphos.io/source-name=cluster-dns", "-o", "name")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(utils.GetNonEmptyLines(before)).NotTo(BeEmpty(), "the recreated DNSCheck produced no history to retain")
+		_, err = kubectl("delete", "dnscheck", "cluster-dns", "-n", v1UpgradeChecksNS)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			out, err := kubectl("get", "healthreports", "-n", v1UpgradeChecksNS, "-l", "fathom.skaphos.io/source-name=cluster-dns",
+				"-o", `jsonpath={range .items[*]}{.metadata.annotations.fathom\.skaphos\.io/source-deleted-at}{"\n"}{end}`)
+			g.Expect(err).NotTo(HaveOccurred())
+			stamps := utils.GetNonEmptyLines(out)
+			g.Expect(stamps).To(HaveLen(len(utils.GetNonEmptyLines(before))), "every report of the deleted check is stamped, none deleted yet")
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		listing, err := cli.run("reports", "dnscheck/cluster-dns", "-n", v1UpgradeChecksNS)
+		Expect(err).NotTo(HaveOccurred(), listing)
+		Expect(listing).To(ContainSubstring("retained (check deleted"))
+
+		Eventually(func(g Gomega) {
+			out, _ := kubectl("get", "healthreports", "-n", v1UpgradeChecksNS, "-l", "fathom.skaphos.io/source-name=cluster-dns", "-o", "name")
+			g.Expect(utils.GetNonEmptyLines(out)).To(BeEmpty(), "the window elapsed; the reports must be gone")
+		}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		events, err := kubectl("get", "events", "-n", v1UpgradeChecksNS, "--field-selector", "reason=ReportsPruned", "-o", "jsonpath={.items[*].message}")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(events).To(ContainSubstring("pruned"))
+		Expect(events).To(ContainSubstring("window:"))
+	})
+
 	It("has nothing left to export and a clean status", func() {
 		out, err := cli.run("export")
 		Expect(err).To(HaveOccurred())
 		Expect(out).To(ContainSubstring("nothing to export"))
 		status, err := cli.run("status", "-n", lifecycleNS)
 		Expect(err).NotTo(HaveOccurred(), status)
-		Expect(status).NotTo(ContainSubstring("upgrade required"))
+		Expect(status).NotTo(ContainSubstring("serves v1alpha1"))
 		Expect(status).To(ContainSubstring(fmt.Sprintf("CRDs:       %d/%d current", lifecycleCRDs, lifecycleCRDs)))
 	})
 })

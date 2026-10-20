@@ -158,3 +158,31 @@ func TestPruneHealthReportsHonoursTheLabelSelector(t *testing.T) {
 		t.Fatalf("remaining = %v, want b and the other check's report", got)
 	}
 }
+
+// The per-check prune selects on the UID label too, so a recreated check of
+// the same name neither counts nor deletes its predecessor's retained
+// history (spec 014, FR-013a).
+func TestPruneHealthReportsIgnoresAPredecessorsReports(t *testing.T) {
+	t.Parallel()
+	created := metav1.NewTime(time.Unix(1_700_000_000, 0))
+	withUID := func(name, uid string) *fathomv1.HealthReport {
+		r := healthReportForPruneTest(name, created)
+		r.Labels[fathomv1.LabelHealthReportSourceUID] = uid
+		return r
+	}
+	c := pruneTestClient(t, withUID("old-a", "old"), withUID("old-b", "old"), withUID("new-a", "new"), withUID("new-b", "new"))
+	labels := map[string]string{
+		fathomv1.LabelHealthReportSourceKind: "AddonCheck",
+		fathomv1.LabelHealthReportSourceName: "check",
+		fathomv1.LabelHealthReportSourceUID:  "new",
+	}
+
+	deleted := pruneHealthReports(context.Background(), c, logr.Discard(), "default", labels, 1, "")
+
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1 (only the live check's surplus)", deleted)
+	}
+	if got := remainingPruneTestReports(t, c); len(got) != 3 || got[0] != "new-b" || got[1] != "old-a" || got[2] != "old-b" {
+		t.Fatalf("remaining = %v, want the predecessor's two reports untouched", got)
+	}
+}

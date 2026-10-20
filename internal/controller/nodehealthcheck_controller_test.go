@@ -897,7 +897,7 @@ var _ = Describe("NodeHealthCheck Controller", func() {
 		for i := 0; i < 3; i++ {
 			extra := &fathomv1.HealthReport{ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("nh-retain-old-%d", i), Namespace: name.Namespace,
-				Labels: map[string]string{fathomv1.LabelHealthReportSourceKind: nodeHealthKind, fathomv1.LabelHealthReportSourceName: check.Name},
+				Labels: map[string]string{fathomv1.LabelHealthReportSourceKind: nodeHealthKind, fathomv1.LabelHealthReportSourceName: check.Name, fathomv1.LabelHealthReportSourceUID: string(check.UID)},
 			}, Spec: fathomv1.HealthReportSpec{
 				SourceRef:   fathomv1.HealthReportTargetRef{APIVersion: fathomv1.GroupVersion.String(), Kind: nodeHealthKind, Namespace: name.Namespace, Name: check.Name},
 				AdapterName: "node-health-check", AdapterVersion: "0.1.0",

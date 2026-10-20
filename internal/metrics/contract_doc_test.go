@@ -34,6 +34,8 @@ var contractCollectors = []prometheus.Collector{
 	metrics.NodeCertificateExpiryDays,
 	metrics.NodeHealthCheckResult,
 	metrics.NodeHealthFilesystemFreePercent,
+	metrics.HealthReportsRetained,
+	metrics.HealthReportsPrunedTotal,
 }
 
 var descPattern = regexp.MustCompile(`fqName: "([^"]+)".*variableLabels: \{([^}]*)\}`)

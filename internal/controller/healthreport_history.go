@@ -25,6 +25,22 @@ func historyLimit(limit *int32) int {
 	return int(*limit)
 }
 
+// reportSelector is the label set a check's own reports carry: kind, name
+// and the check's UID, so a recreated check of the same name never selects
+// its predecessor's retained history (spec 014, FR-013a). The UID is omitted
+// only for an object the API server never assigned one — unit-test fixtures;
+// every persisted check has a UID.
+func reportSelector(kind string, check client.Object) map[string]string {
+	labels := map[string]string{
+		fathomv1.LabelHealthReportSourceKind: kind,
+		fathomv1.LabelHealthReportSourceName: check.GetName(),
+	}
+	if uid := string(check.GetUID()); uid != "" {
+		labels[fathomv1.LabelHealthReportSourceUID] = uid
+	}
+	return labels
+}
+
 // pruneHealthReports enforces one check's history limit over the HealthReports
 // selected by labels in namespace: the oldest beyond limit are deleted, the
 // report named protectedName is never a victim, and ties are broken by name

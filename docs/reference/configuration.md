@@ -85,6 +85,8 @@ the viper key by the rule above.
 | `--probe-image` | `probe_image` | `FATHOM_PROBE_IMAGE` | `ghcr.io/skaphos/fathom-probe:v0.6.0` <!-- x-release-please-version --> | Container image used by adapters that launch probe pods. See [Probe image default](#probe-image-default). |
 | `--node-agent-image` | `node_agent_image` | `FATHOM_NODE_AGENT_IMAGE` | `ghcr.io/skaphos/fathom-node-agent:v0.6.0` <!-- x-release-please-version --> | Container image used by the `NodeCertificateCheck` controller for the managed node-agent DaemonSet. See [Node-agent image default](#node-agent-image-default). |
 | `--namespace` | `namespace` | `FATHOM_NAMESPACE` | _(empty)_ | Operator namespace where per-addon ServiceAccounts live for adapter impersonation. In-cluster deployments set it from the pod namespace via downward API; empty disables impersonation for local out-of-cluster runs. |
+| `--retention-report-window` | `retention.report_window` | `FATHOM_RETENTION_REPORT_WINDOW` | `720h` | How long a deleted check's `HealthReport`s are kept before the operator prunes them (Go duration). `0` prunes them on the first sweep that finds the check gone. See [Report retention](#report-retention). |
+| `--retention-report-cap-per-kind` | `retention.report_cap_per_kind` | `FATHOM_RETENTION_REPORT_CAP_PER_KIND` | `500` | Most `HealthReport`s of one check kind a namespace keeps, counting live and deleted checks alike; the oldest are pruned first. Minimum `1`. |
 | `--dnscheck-max-concurrent-probes` | `dnscheck.max_concurrent_probes` | `FATHOM_DNSCHECK_MAX_CONCURRENT_PROBES` | `4` | Maximum probe pods a single `DNSCheck` may run at once. See [DNSCheck fan-out](#dnscheck-fan-out). |
 | `--tracing-enabled` | `tracing.enabled` | `FATHOM_TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing of reconciles and adapter runs, exported via OTLP/gRPC. Off by default (no-op tracer, ~zero overhead). See [Tracing](#tracing). |
 | `--tracing-otlp-endpoint` | `tracing.otlp_endpoint` | `FATHOM_TRACING_OTLP_ENDPOINT` | _(empty)_ | OTLP/gRPC collector endpoint (`host:port`). Empty uses the OTel SDK default (`localhost:4317`) and the standard `OTEL_EXPORTER_OTLP_*` env vars. |
@@ -211,6 +213,42 @@ Worked examples at the default concurrency of 4:
 `False` naming the count. That is deliberate — a truncated run says so rather
 than silently overrunning its bound. Raise `spec.timeout` and `spec.interval`
 together, raise `--dnscheck-max-concurrent-probes`, or declare fewer targets.
+
+## Report retention
+
+Deleting a check is the only way to stop it (there is no `spec.paused`), and
+a stop must not erase the history an incident review needs. `HealthReport`s
+therefore carry no owner reference; the operator keeps a deleted check's
+reports for `retention.report_window` (30 days by default), stamping each
+with `fathom.skaphos.io/source-deleted-at` the first time it finds the check
+gone and pruning them once that stamp is older than the window. A check
+recreated under the same name gets a new UID and never inherits, counts or
+prunes its predecessor's reports (`fathom.skaphos.io/source-uid`).
+
+Independently of the window, `retention.report_cap_per_kind` (500 by
+default) bounds how many reports of one kind a namespace holds, live and
+deleted checks together, so a pipeline that creates and deletes a check per
+run cannot grow history without bound; the oldest go first, except the
+report a live check's `status.lastReportName` names. Each sweep performs at
+most 50 writes and continues a second later if more remain; a namespace
+is swept on every check deletion, when the earliest retained report's
+window elapses, and hourly otherwise.
+
+Every pass that removes anything increments
+`fathom_healthreports_pruned_total{reason="window"|"cap"}` and records one
+`ReportsPruned` Event in the namespace; `fathom_healthreports_retained` is the
+count still held per namespace and kind. `fathomctl reports <kind>/<name>`
+lists a deleted check's reports with a `retained (check deleted …)` marker.
+With the Helm chart, set the options through the free-form config file:
+
+```yaml
+config:
+  enabled: true
+  data:
+    retention:
+      report_window: 168h
+      report_cap_per_kind: 200
+```
 
 ## Operator Namespace and Adapter Impersonation
 
