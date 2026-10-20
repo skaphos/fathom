@@ -15,6 +15,7 @@ import (
 	iofs "io/fs"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/pflag"
@@ -286,8 +287,8 @@ func (o *Options) Validate() error {
 // flagBinding pairs a flag name with its corresponding Viper key. Keeping them
 // in one table guarantees flags, env vars, and config file keys stay in sync.
 //
-// At most one of isBool/isFloat/isInt/isStringSlice is set; otherwise the
-// binding registers a string flag with stringDef as its default.
+// At most one of isBool/isFloat/isInt/isStringSlice/isDuration is set;
+// otherwise the binding registers a string flag with stringDef as its default.
 type flagBinding struct {
 	flagName  string
 	viperKey  string
@@ -303,6 +304,47 @@ type flagBinding struct {
 	// file key take the same comma-separated string or a list.
 	sliceDef      []string
 	isStringSlice bool
+	// A duration flag takes Go duration syntax ("720h", "90m"); the env var
+	// and config file key take the same string, which Viper's default decode
+	// hooks parse into time.Duration.
+	durationDef time.Duration
+	isDuration  bool
+}
+
+// registerFlag registers one binding onto fs as the flag kind its row declares.
+func registerFlag(fs *pflag.FlagSet, b flagBinding) {
+	switch {
+	case b.isBool:
+		fs.Bool(b.flagName, b.boolDef, b.usage)
+	case b.isFloat:
+		fs.Float64(b.flagName, b.floatDef, b.usage)
+	case b.isInt:
+		fs.Int(b.flagName, b.intDef, b.usage)
+	case b.isStringSlice:
+		fs.StringSlice(b.flagName, b.sliceDef, b.usage)
+	case b.isDuration:
+		fs.Duration(b.flagName, b.durationDef, b.usage)
+	default:
+		fs.String(b.flagName, b.stringDef, b.usage)
+	}
+}
+
+// bindingDefault is the built-in default a binding seeds Viper with.
+func bindingDefault(b flagBinding) any {
+	switch {
+	case b.isBool:
+		return b.boolDef
+	case b.isFloat:
+		return b.floatDef
+	case b.isInt:
+		return b.intDef
+	case b.isStringSlice:
+		return b.sliceDef
+	case b.isDuration:
+		return b.durationDef
+	default:
+		return b.stringDef
+	}
 }
 
 func bindings(defaults Options) []flagBinding {
@@ -362,18 +404,7 @@ func bindings(defaults Options) []flagBinding {
 func RegisterFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 	defaults := DefaultOptions()
 	for _, b := range bindings(defaults) {
-		switch {
-		case b.isBool:
-			fs.Bool(b.flagName, b.boolDef, b.usage)
-		case b.isFloat:
-			fs.Float64(b.flagName, b.floatDef, b.usage)
-		case b.isInt:
-			fs.Int(b.flagName, b.intDef, b.usage)
-		case b.isStringSlice:
-			fs.StringSlice(b.flagName, b.sliceDef, b.usage)
-		default:
-			fs.String(b.flagName, b.stringDef, b.usage)
-		}
+		registerFlag(fs, b)
 	}
 
 	// Bridge zap.Options' stdlib flags into our pflag set so cobra can parse them.
@@ -398,18 +429,7 @@ func Load(fs *pflag.FlagSet, zapOpts zap.Options, configFile string, configExpli
 
 	defaults := DefaultOptions()
 	for _, b := range bindings(defaults) {
-		switch {
-		case b.isBool:
-			v.SetDefault(b.viperKey, b.boolDef)
-		case b.isFloat:
-			v.SetDefault(b.viperKey, b.floatDef)
-		case b.isInt:
-			v.SetDefault(b.viperKey, b.intDef)
-		case b.isStringSlice:
-			v.SetDefault(b.viperKey, b.sliceDef)
-		default:
-			v.SetDefault(b.viperKey, b.stringDef)
-		}
+		v.SetDefault(b.viperKey, bindingDefault(b))
 		if f := fs.Lookup(b.flagName); f != nil {
 			if err := v.BindPFlag(b.viperKey, f); err != nil {
 				return Options{}, fmt.Errorf("bind flag %q: %w", b.flagName, err)
