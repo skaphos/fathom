@@ -2,12 +2,12 @@ version: "3"
 
 vars:
   TASK_RUNNER: go -C tools tool task -d ..
-  CONTROLLER_GEN: go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.22.0
+  CONTROLLER_GEN: go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.23.0
   KUSTOMIZE: go run sigs.k8s.io/kustomize/kustomize/v5@v5.8.3
   SETUP_ENVTEST: go run sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.25.2
-  GOLANGCI_RUNNER: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
-  GOIMPORTS_RUNNER: go run golang.org/x/tools/cmd/goimports@v0.51.0
-  GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0
+  GOLANGCI_RUNNER: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+  GOIMPORTS_RUNNER: go run golang.org/x/tools/cmd/goimports@v0.52.0
+  GOVULNCHECK_RUNNER: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
   CRD_REF_DOCS: go -C tools tool github.com/elastic/crd-ref-docs
   ENVTEST_K8S_VERSION: "1.37"
   IMG: '{{.IMG | default "controller:latest"}}'
@@ -402,10 +402,12 @@ tasks:
 
         # Repin every "<ref>@sha256:<old>" occurrence in $file with the freshly
         # resolved digest. Portable across GNU and BSD/macOS sed (sed -i.bak).
+        # A ref the file no longer pins is an error, not a skip: silently
+        # skipping it would leave the real pin stale while the task succeeds.
         repin() {
           file="$1"; ref="$2"
           [ -f "$file" ] || return 0
-          grep -qF "$ref@sha256:" "$file" || return 0
+          grep -qF "$ref@sha256:" "$file" || { echo "error: $file does not pin $ref@sha256:..." >&2; exit 1; }
           digest="$(resolve "$ref")"
           printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "error: invalid digest for $ref: $digest" >&2; exit 1; }
           esc="$(printf '%s' "$ref" | sed 's/\./\\./g')"
@@ -414,11 +416,19 @@ tasks:
           echo "repinned $ref -> $digest in $file"
         }
 
-        repin Dockerfile            golang:1.27.2
-        repin Dockerfile            gcr.io/distroless/static:nonroot
-        repin Dockerfile.probe      golang:1.27.2
-        repin Dockerfile.node-agent golang:1.27.2
-        repin .devcontainer/devcontainer.json golang:1.27.2
+        # The golang tag moves with every toolchain bump, so read it from each
+        # file rather than repeating it here, where it would go stale.
+        golang_ref() {
+          grep -oE 'golang:[0-9]+(\.[0-9]+)*@sha256:' "$1" | head -n 1 | sed 's/@sha256:$//'
+        }
+
+        for f in Dockerfile Dockerfile.probe Dockerfile.node-agent .devcontainer/devcontainer.json; do
+          [ -f "$f" ] || continue
+          ref="$(golang_ref "$f")"
+          [ -n "$ref" ] || { echo "error: $f has no digest-pinned golang image" >&2; exit 1; }
+          repin "$f" "$ref"
+        done
+        repin Dockerfile gcr.io/distroless/static:nonroot
 
   build-installer:
     desc: Render consolidated install.yaml under dist/

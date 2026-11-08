@@ -432,7 +432,7 @@ Container builds are hardened for reproducibility and supply-chain integrity:
   `golang` builder and the `gcr.io/distroless/static:nonroot` runtime;
   `Dockerfile.probe` and `Dockerfile.node-agent` pin the `golang` builder (their
   runtime is `scratch`). The readable tag is retained alongside the digest
-  (`golang:1.27.2@sha256:...`).
+  (`golang:1.27.3@sha256:...`).
   Refresh the digests with `go -C tools tool task images:refresh`, which
   re-resolves each multi-arch index digest (via `crane` or
   `docker buildx imagetools`) and rewrites the pins in place. Run it ad hoc or
