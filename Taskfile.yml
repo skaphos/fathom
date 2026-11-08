@@ -402,10 +402,12 @@ tasks:
 
         # Repin every "<ref>@sha256:<old>" occurrence in $file with the freshly
         # resolved digest. Portable across GNU and BSD/macOS sed (sed -i.bak).
+        # A ref the file no longer pins is an error, not a skip: silently
+        # skipping it would leave the real pin stale while the task succeeds.
         repin() {
           file="$1"; ref="$2"
           [ -f "$file" ] || return 0
-          grep -qF "$ref@sha256:" "$file" || return 0
+          grep -qF "$ref@sha256:" "$file" || { echo "error: $file does not pin $ref@sha256:..." >&2; exit 1; }
           digest="$(resolve "$ref")"
           printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "error: invalid digest for $ref: $digest" >&2; exit 1; }
           esc="$(printf '%s' "$ref" | sed 's/\./\\./g')"
@@ -414,11 +416,19 @@ tasks:
           echo "repinned $ref -> $digest in $file"
         }
 
-        repin Dockerfile            golang:1.27.2
-        repin Dockerfile            gcr.io/distroless/static:nonroot
-        repin Dockerfile.probe      golang:1.27.2
-        repin Dockerfile.node-agent golang:1.27.2
-        repin .devcontainer/devcontainer.json golang:1.27.2
+        # The golang tag moves with every toolchain bump, so read it from each
+        # file rather than repeating it here, where it would go stale.
+        golang_ref() {
+          grep -oE 'golang:[0-9]+(\.[0-9]+)*@sha256:' "$1" | head -n 1 | sed 's/@sha256:$//'
+        }
+
+        for f in Dockerfile Dockerfile.probe Dockerfile.node-agent .devcontainer/devcontainer.json; do
+          [ -f "$f" ] || continue
+          ref="$(golang_ref "$f")"
+          [ -n "$ref" ] || { echo "error: $f has no digest-pinned golang image" >&2; exit 1; }
+          repin "$f" "$ref"
+        done
+        repin Dockerfile gcr.io/distroless/static:nonroot
 
   build-installer:
     desc: Render consolidated install.yaml under dist/
