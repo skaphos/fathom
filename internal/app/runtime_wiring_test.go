@@ -407,9 +407,16 @@ func TestRuntimeDispatchGateStaysClosedWithoutElectionSyncOrGrace(t *testing.T) 
 				t.Fatalf("runtime dispatch was admitted although %s", tc.name)
 			}
 			cancel()
-			<-gateDone
+			if err := <-gateDone; err != nil {
+				t.Fatalf("gate: %v", err)
+			}
 			if sessionDone != nil {
-				<-sessionDone
+				// Only a join: some cases break the session on purpose (an
+				// unwired cache-sync gate makes Start fail), so its error is
+				// part of the breakage, not a shutdown fault.
+				if err := <-sessionDone; err != nil {
+					t.Logf("session ended: %v", err)
+				}
 			}
 			if f.admitted() {
 				t.Fatal("runtime dispatch is admitted after shutdown")
@@ -468,8 +475,12 @@ func TestRuntimeWorkerPoolRunsOnlyInsideAnAdmissibleSession(t *testing.T) {
 				}
 			}
 			cancel()
-			<-poolDone
-			<-sessionDone
+			if err := <-poolDone; err != nil {
+				t.Fatalf("pool: %v", err)
+			}
+			if err := <-sessionDone; err != nil {
+				t.Fatalf("session: %v", err)
+			}
 		})
 	}
 }

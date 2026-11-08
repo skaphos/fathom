@@ -70,7 +70,7 @@ releases:
     chart: cilium/cilium
     # Validated against kindest/node v1.37.0 (k8s 1.37) by the e2e suite. Bump
     # together with the node image in kind-cluster.yaml when k8s moves.
-    version: 1.20.2
+    version: 1.20.4
     wait: true
     timeout: 600
     values:
@@ -93,7 +93,7 @@ releases:
       tier: core
       addon: cert-manager
     chart: jetstack/cert-manager
-    version: v1.21.2
+    version: v1.21.3
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -124,7 +124,7 @@ releases:
     labels:
       addon: external-dns
     chart: external-dns/external-dns
-    version: 1.22.0
+    version: 1.23.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -176,7 +176,7 @@ releases:
     labels:
       addon: kube-state-metrics
     chart: prometheus-community/kube-state-metrics
-    version: 8.5.0
+    version: 9.0.0
     needs:
       - kube-system/cilium
     wait: true
@@ -198,7 +198,7 @@ releases:
     labels:
       addon: envoy-gateway
     chart: envoyproxy/gateway-helm
-    version: 1.9.1
+    version: 1.10.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -225,7 +225,7 @@ releases:
     labels:
       addon: istio
     chart: istio/base
-    version: 1.31.0
+    version: 1.31.4
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -237,7 +237,7 @@ releases:
     labels:
       addon: istio
     chart: istio/istiod
-    version: 1.31.0
+    version: 1.31.4
     needs:
       - istio-system/istio-base
     wait: true
@@ -280,7 +280,7 @@ releases:
     timeout: 600
     values:
       - image:
-          tag: "1.26.0@sha256:3ddee59877cfea79efc11e455287ed078faec8d33c008e45e225f22f6e8ecb63"
+          tag: "1.27.1@sha256:6748acde83ac08626a27a554da5364e8cac64bc950c6a1b6b939a3d27b364ae7"
         config:
           dnsDomain: "cluster.local"
           # kind's kube-dns Service IP (default serviceSubnet 10.96.0.0/16).
@@ -304,7 +304,7 @@ releases:
     # Fathom's adapter prefers v1 (with a v1beta1 fallback for older clusters)
     # so the e2e fixture tracks the current stable chart.
     chart: external-secrets/external-secrets
-    version: 2.10.0
+    version: 2.14.0
     needs:
       - kube-system/cilium
     createNamespace: true
@@ -338,7 +338,7 @@ releases:
     labels:
       addon: argocd
     chart: argo/argo-cd
-    version: 10.9.2
+    version: 10.15.0
     needs:
       - kube-system/cilium
     createNamespace: true
