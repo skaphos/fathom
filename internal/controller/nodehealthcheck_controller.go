@@ -985,8 +985,8 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 		// Retention runs on every complete roll-up, not only when a report is
 		// created: a lowered spec.historyLimit must take effect even while the
 		// aggregate is unchanged, and a reused deterministic report must not
-		// skip it either.
-		pruneNodeHealthHealthReports(ctx, r.Client, log, check)
+		// skip it either. The report status names stays referenceable.
+		pruneNodeHealthHealthReports(ctx, r.Client, log, check, check.Status.LastReportName)
 		return nil
 	}
 
@@ -1009,7 +1009,7 @@ func (r *NodeHealthCheckReconciler) rollup(ctx context.Context, log logr.Logger,
 	if err != nil {
 		return err
 	}
-	pruneNodeHealthHealthReports(ctx, r.Client, log, check)
+	pruneNodeHealthHealthReports(ctx, r.Client, log, check, persistedReport.Name)
 
 	// The observable run time must never move backward (COR-3), even when a
 	// deterministic HealthReport is reused with its original ObservedAt.
