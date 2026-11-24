@@ -8,13 +8,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -271,39 +269,9 @@ func putIfNotEmpty(m map[string]string, key, value string) {
 // pruneNodeCertHealthReports enforces Spec.HistoryLimit by deleting the oldest
 // HealthReports for this check beyond the cap. Failures are logged, not
 // returned: the new HealthReport already landed and the next reconcile retries.
-func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck) {
-	limit := defaultHealthReportHistoryLimit
-	if check.Spec.HistoryLimit != nil {
-		limit = int(*check.Spec.HistoryLimit)
-	}
-	if limit < 1 {
-		return
-	}
-
-	var reports fathomv1alpha1.HealthReportList
-	if err := c.List(ctx, &reports,
-		client.InNamespace(check.Namespace),
-		client.MatchingLabels{
-			fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
-			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-		},
-	); err != nil {
-		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
-		return
-	}
-	if len(reports.Items) <= limit {
-		return
-	}
-
-	sort.Slice(reports.Items, func(i, j int) bool {
-		return reports.Items[i].CreationTimestamp.Before(&reports.Items[j].CreationTimestamp)
-	})
-	excess := len(reports.Items) - limit
-	for i := 0; i < excess; i++ {
-		victim := &reports.Items[i]
-		if err := c.Delete(ctx, victim); err != nil && !apierrors.IsNotFound(err) {
-			log.Error(err, "delete old HealthReport failed", "name", victim.Name)
-		}
-	}
-	log.V(1).Info("pruned NodeCertificateCheck HealthReport history", "deleted", excess, "limit", limit)
+func pruneNodeCertHealthReports(ctx context.Context, c client.Client, log logr.Logger, check *fathomv1alpha1.NodeCertificateCheck, protected string) {
+	pruneHealthReports(ctx, c, log, check.Namespace, map[string]string{
+		fathomv1alpha1.LabelHealthReportSourceKind: "NodeCertificateCheck",
+		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+	}, historyLimit(check.Spec.HistoryLimit), protected)
 }

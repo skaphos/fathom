@@ -992,53 +992,10 @@ func (r *AddonCheckReconciler) pruneHealthReportHistory(
 	check *fathomv1alpha1.AddonCheck,
 	protectedName string,
 ) {
-	limit := defaultHealthReportHistoryLimit
-	if check.Spec.HistoryLimit != nil {
-		limit = int(*check.Spec.HistoryLimit)
-	}
-	if limit < 1 {
-		// CRD validation rejects this, but defend in depth: a Minimum=1 below
-		// would prune the just-created report and strand Status.LastReportName.
-		return
-	}
-
-	var reports fathomv1alpha1.HealthReportList
-	if err := r.List(ctx, &reports,
-		client.InNamespace(check.Namespace),
-		client.MatchingLabels{
-			fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
-			fathomv1alpha1.LabelHealthReportSourceName: check.Name,
-		},
-	); err != nil {
-		log.Error(err, "list HealthReports for retention pruning failed; will retry on next reconcile")
-		return
-	}
-	if len(reports.Items) <= limit {
-		return
-	}
-
-	sort.Slice(reports.Items, func(i, j int) bool {
-		left, right := &reports.Items[i], &reports.Items[j]
-		if left.Name == protectedName {
-			return false
-		}
-		if right.Name == protectedName {
-			return true
-		}
-		if left.CreationTimestamp.Equal(&right.CreationTimestamp) {
-			return left.Name < right.Name
-		}
-		return left.CreationTimestamp.Before(&right.CreationTimestamp)
-	})
-	excess := len(reports.Items) - limit
-	for i := 0; i < excess; i++ {
-		victim := &reports.Items[i]
-		if err := r.Delete(ctx, victim); err != nil && !apierrors.IsNotFound(err) {
-			log.Error(err, "delete old HealthReport failed", "name", victim.Name)
-			// Continue: a transient delete error on one report should not block pruning the rest.
-		}
-	}
-	log.V(1).Info("pruned HealthReport history", "deleted", excess, "limit", limit)
+	pruneHealthReports(ctx, r.Client, log, check.Namespace, map[string]string{
+		fathomv1alpha1.LabelHealthReportSourceKind: "AddonCheck",
+		fathomv1alpha1.LabelHealthReportSourceName: check.Name,
+	}, historyLimit(check.Spec.HistoryLimit), protectedName)
 }
 
 func addonCheckTimeout(check *fathomv1alpha1.AddonCheck) time.Duration {

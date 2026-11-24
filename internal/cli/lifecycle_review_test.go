@@ -60,9 +60,10 @@ func TestPurgeRefusesUnknownKinds(t *testing.T) {
 	}
 }
 
-// A known kind no longer served at the version this binary lists would list
-// as absent and be purged unseen, so it refuses too.
-func TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1(t *testing.T) {
+// A known kind is enumerated at whatever version its live CRD serves, not
+// the version this binary was compiled against: the storage version when it
+// is served, else the first served one. Only a CRD serving nothing refuses.
+func TestRefuseUnknownKindsReportsTheServedVersion(t *testing.T) {
 	crds := liveCRDs(t, "0.6.0", func(c *apiextensionsv1.CustomResourceDefinition) {
 		if c.Name != dnsCRD {
 			return
@@ -71,6 +72,64 @@ func TestPurgeRefusesAKnownKindNoLongerServedAtV1alpha1(t *testing.T) {
 		next.Name = "v1"
 		c.Spec.Versions[0].Served, c.Spec.Versions[0].Storage = false, false
 		c.Spec.Versions = append(c.Spec.Versions, next)
+	})
+	env := newLifecycleEnv(t, crds...)
+	live, err := refuseUnknownKinds(context.Background(), env.c)
+	if err != nil {
+		t.Fatalf("refuseUnknownKinds: %v", err)
+	}
+	if live["DNSCheck"] != "v1" {
+		t.Errorf("DNSCheck served version = %q, want v1", live["DNSCheck"])
+	}
+	if live["AddonCheck"] != "v1alpha1" {
+		t.Errorf("AddonCheck served version = %q, want v1alpha1", live["AddonCheck"])
+	}
+	if _, ok := live["Widget"]; ok {
+		t.Errorf("a kind with no CRD must not be reported live: %v", live)
+	}
+}
+
+// The storage version wins when it is served; otherwise the first served
+// version is used; a CRD serving nothing is unknown.
+func TestServedVersionPrefersStorageThenFirstServed(t *testing.T) {
+	crd := func(versions ...apiextensionsv1.CustomResourceDefinitionVersion) *apiextensionsv1.CustomResourceDefinition {
+		return &apiextensionsv1.CustomResourceDefinition{Spec: apiextensionsv1.CustomResourceDefinitionSpec{Versions: versions}}
+	}
+	cases := []struct {
+		name     string
+		crd      *apiextensionsv1.CustomResourceDefinition
+		want     string
+		wantSome bool
+	}{
+		{"storage served", crd(
+			apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1alpha1", Served: true},
+			apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1", Served: true, Storage: true},
+		), "v1", true},
+		{"storage unserved falls back to first served", crd(
+			apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1alpha1", Served: false, Storage: true},
+			apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1", Served: true},
+		), "v1", true},
+		{"nothing served", crd(
+			apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1alpha1", Served: false, Storage: true},
+		), "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := servedVersion(tc.crd)
+			if got != tc.want || ok != tc.wantSome {
+				t.Fatalf("servedVersion = (%q, %v), want (%q, %v)", got, ok, tc.want, tc.wantSome)
+			}
+		})
+	}
+}
+
+// A CRD in the group that serves no version at all cannot be enumerated and
+// refuses the purge before anything changes.
+func TestPurgeRefusesAKnownKindServingNoVersion(t *testing.T) {
+	crds := liveCRDs(t, "0.6.0", func(c *apiextensionsv1.CustomResourceDefinition) {
+		if c.Name == dnsCRD {
+			c.Spec.Versions[0].Served = false
+		}
 	})
 	env := newLifecycleEnv(t, crds...)
 	before := len(env.log.all())
